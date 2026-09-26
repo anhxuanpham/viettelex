@@ -166,7 +166,7 @@ class SwipeTypingTests {
         val path = SwipeSim(7).path(word, layout, sigma = 0.0, jitter = 0.0)
         val ctx = swipeContext()
         // như IME: ctx.english != null ⇒ thêm ứng viên tiếng Anh
-        val cands = decoder.decode(path, SwipeSuggest.TOP_K, ctx.folded, ctx.english, if (ctx.english != null) ctx.word else null)
+        val cands = decoder.decode(path, SwipeSuggest.TOP_K, ctx.folded, ctx.english, if (ctx.english != null) ctx.englishWord else null)
         val choice = SwipeSuggest.choose(cands, ctx.word, case)
         assertNotNull(choice)
         commitSwipe(choice!!, p)
@@ -175,13 +175,13 @@ class SwipeTypingTests {
 
     @Test fun swipeInSentenceSpacesAndPunctuation() {
         val s = session(); val p = MockProxy()
-        s.type(p, "tooi")                         // đang soạn "tôi"
+        s.type(p, "baif")                         // đang soạn "bài"
         s.swipe(p, "viet")
-        assertEquals("tôi viết", p.text)          // từ đang soạn được chốt + dấu cách treo
+        assertEquals("bài viết", p.text)          // từ đang soạn được chốt + dấu cách treo
         s.type(p, ",")
-        assertEquals("tôi viết,", p.text)         // dấu câu dính sát
+        assertEquals("bài viết,", p.text)         // dấu câu dính sát
         s.swipe(p, "nam")
-        assertTrue(p.text, p.text.startsWith("tôi viết, n"))
+        assertTrue(p.text, p.text.startsWith("bài viết, n"))
         s.type(p, " ")
         s.swipe(p, "rat")
         assertFalse(p.text, p.text.contains("  "))   // sau space của user: không thêm space
@@ -208,13 +208,13 @@ class SwipeTypingTests {
 
     @Test fun firstBackspaceDeletesWholeSwipedWord() {
         val s = session(); val p = MockProxy()
-        s.type(p, "tooi ")
+        s.type(p, "baif ")
         s.swipe(p, "viet")
-        assertEquals("tôi viết", p.text)
+        assertEquals("bài viết", p.text)
         s.handle(Key.Backspace, p)
-        assertEquals("tôi ", p.text)
+        assertEquals("bài ", p.text)
         s.handle(Key.Backspace, p)                // sau đó ⌫ như thường
-        assertEquals("tôi", p.text)
+        assertEquals("bài", p.text)
     }
 
     @Test fun telexKeyAfterSwipeChangesTone() {

@@ -118,9 +118,12 @@ targets:
       - Keyboard/SwipeGesture.swift
       - Keyboard/SwipeTyping.swift
       - Keyboard/SwipeEnglish.swift
+      - Keyboard/SyllableBigram.swift
       - path: Keyboard/Resources/vnlexicon.bin
         buildPhase: resources
       - path: Keyboard/Resources/enlexicon.bin
+        buildPhase: resources
+      - path: Keyboard/Resources/vnbigram.bin
         buildPhase: resources
     settings:
       base:

@@ -35,6 +35,7 @@ import com.viettelex.keyboard.SwipeEnglish
 import com.viettelex.keyboard.SwipeLayout
 import com.viettelex.keyboard.SwipePath
 import com.viettelex.keyboard.SwipeSuggest
+import com.viettelex.keyboard.SyllableBigram
 import com.viettelex.keyboard.WriteMode
 import com.viettelex.keyboard.TemplateItem
 import com.viettelex.keyboard.Templates
@@ -331,6 +332,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         worker().post {
             synchronized(swipeLock) { if (swipeDecoder === dec) dec.prepare() }
             if (session.swipeEnglish) SwipeEnglish.lexicon     // nạp từ điển Anh ở nền (lazy, thread-safe)
+            SyllableBigram.shared   // map bảng bigram tĩnh (lazy, chỉ khi gõ vuốt bật)
         }
     }
 
@@ -349,9 +351,9 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         val ctx = session.swipeContext()
         val t0 = if (TouchLog.enabled) System.nanoTime() else 0L
         // ctx.english != null ⇒ thêm ứng viên tiếng Anh (công tắc "Vuốt từ tiếng Anh"); điểm
-        // cá nhân của từ tiếng Anh dùng chung ctx.word (từ hay gõ / từ hay theo sau).
+        // cá nhân của từ tiếng Anh = ctx.englishWord (không có bigram tĩnh — chỉ cho âm tiết Việt).
         val cands = synchronized(swipeLock) {
-            dec.decode(path, SwipeSuggest.TOP_K, ctx.folded, ctx.english, if (ctx.english != null) ctx.word else null)
+            dec.decode(path, SwipeSuggest.TOP_K, ctx.folded, ctx.english, if (ctx.english != null) ctx.englishWord else null)
         }
         val choice = SwipeSuggest.choose(cands, ctx.word, case)
         if (TouchLog.enabled) TouchLog.write(String.format(java.util.Locale.ROOT, "swipe decode %.1fms pts=%d cands=%d",

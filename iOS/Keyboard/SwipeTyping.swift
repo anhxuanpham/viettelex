@@ -4,7 +4,7 @@
 // Luồng: KeyboardView phân loại chạm→vuốt (GestureClassifier) → `begin` HUỶ chữ
 // đầu đã chèn lúc chạm xuống (checkpoint engine, không ⌫) → nhấc tay → `finish`:
 // decode top-5 dạng không dấu (ngữ cảnh = từ kế tiếp hay gặp sau từ trước, theo
-// UserLangModel) → expand dạng thắng thành âm tiết có dấu → chèn top-1 (dấu cách
+// UserLangModel, + bigram âm tiết tĩnh SyllableBigram theo âm tiết trước) → expand dạng thắng thành âm tiết có dấu → chèn top-1 (dấu cách
 // treo + seed engine, xem EngineBridge.insertSwipeWord) → thanh gợi ý hiện biến thể.
 //
 // SwipeDecoder KHÔNG thread-safe: MỌI truy cập đi qua một hàng đợi serial (`queue`);
@@ -39,17 +39,61 @@ final class SwipeTyping {
     /// Layout lần cuối đã gửi xuống hàng đợi (chỉ đọc/ghi trên main).
     private(set) var layout: SwipeLayout?
 
-    /// Điểm ngữ cảnh (log-domain, GIỐNG bản Android): +1.5 nếu là từ kế tiếp hay gặp
-    /// sau từ trước (UserLangModel.nextWords); +0.4·ln(1+count) cho từ hay gõ, trần 1.5.
-    static let nextWordBonus: Float = 1.5
+    /// Điểm ngữ cảnh (log-domain, GIỐNG bản Android SwipeSuggest.Context):
+    ///  - cá nhân: +1.5 nếu là từ kế tiếp hay gặp sau từ trước (UserLangModel.nextWords);
+    ///    +0.4·ln(1+count) cho từ hay gõ, trần 1.5;
+    ///  - tĩnh: PMI bigram âm tiết (vnbigram.bin) sau âm tiết trước ·0.3, trần 1.2 (< 1.5 ⇒
+    ///    dữ liệu cá nhân vẫn thắng); đã có nextWords thì nhân 0.5.
+    static let nextBonus: Float = 1.5
     static let personalWeight: Float = 0.4
     static let personalCap: Float = 1.5
+    static let staticWeight: Float = 0.3
+    static let staticCap: Float = 1.2
+    static let staticDamp: Float = 0.5
+    private static let lambdaFreq = SwipeDecoder.Params().lambdaFreq
 
-    /// Điểm ngữ cảnh của một âm tiết có dấu.
+    /// Điểm ngữ cảnh cá nhân của một âm tiết có dấu.
     static func contextScore(_ w: String, next: Set<String>, count: (String) -> Int) -> Float {
         let c = count(w)
         let personal = c > 0 ? min(personalCap, personalWeight * log(1 + Float(c))) : 0
-        return (next.contains(w) ? nextWordBonus : 0) + personal
+        return (next.contains(w) ? nextBonus : 0) + personal
+    }
+
+    /// Ngữ cảnh một cú vuốt: cá nhân + bigram tĩnh theo âm tiết trước `prev`.
+    struct Context {
+        let next: Set<String>
+        let count: (String) -> Int
+        private let row: SyllableBigram.Row?
+        private let weight: Float
+
+        init(next: Set<String>, count: @escaping (String) -> Int = { _ in 0 },
+             prev: String? = nil, bigram: SyllableBigram? = nil) {
+            self.next = next
+            self.count = count
+            if let prev, let bigram, let id = SyllableBigram.id(of: prev) {
+                let r = bigram.row(id)
+                row = r.size > 0 ? r : nil
+            } else { row = nil }
+            weight = next.isEmpty ? SwipeTyping.staticWeight : SwipeTyping.staticWeight * SwipeTyping.staticDamp
+        }
+
+        /// Điểm bigram tĩnh của âm tiết có dấu `w` (0 nếu không có dữ liệu).
+        func staticScore(_ w: String) -> Float {
+            guard let row, let id = SyllableBigram.id(of: w) else { return 0 }
+            return min(SwipeTyping.staticCap, weight * row.score(id))
+        }
+
+        func word(_ w: String) -> Float {
+            SwipeTyping.contextScore(w, next: next, count: count) + staticScore(w)
+        }
+
+        /// Cho decoder: max(tần suất + ngữ cảnh) trên các âm tiết của dạng không dấu −
+        /// phần tần suất decoder đã cộng (≥ 0) ⇒ decode và expand chấm cùng một thước.
+        func folded(_ f: String) -> Float {
+            guard let i = SwipeLexicon.index(of: f),
+                  let best = SwipeDecoder.expand(f, limit: 1, context: word).first else { return 0 }
+            return max(0, best.score - SwipeTyping.lambdaFreq * Float(SwipeLexicon.forms.freq[i]) / 255)
+        }
     }
 
     /// Đặt layout (khác lần trước mới gửi); `prepare` = dựng template ngay ở nền.
@@ -59,7 +103,10 @@ final class SwipeTyping {
         let d = decoder
         queue.async {
             d.setLayout(l)
-            if prepare { d.prepare() }
+            if prepare {
+                d.prepare()
+                _ = SyllableBigram.shared   // map bảng bigram tĩnh (lười, chỉ khi gõ vuốt bật)
+            }
         }
     }
 
@@ -79,30 +126,26 @@ final class SwipeTyping {
 
     /// Giải mã (đồng bộ trên hàng đợi decoder) → dạng thắng + phương án.
     /// `contextWords` = từ hay theo sau từ trước (UserLangModel.nextWords), có dấu;
-    /// `count` = số lần user đã gõ một âm tiết (UserLangModel.count).
+    /// `count` = số lần user đã gõ một âm tiết (UserLangModel.count);
+    /// `prev` = âm tiết liền trước (bigram tĩnh).
     /// `english` (giai đoạn 3) = tham số tiếng Anh theo ngữ cảnh (SwipeLangContext.prior);
     /// nil = chỉ tiếng Việt (công tắc "Vuốt từ tiếng Anh" tắt).
     func resolve(_ path: SwipePath, contextWords: [String], count: @escaping (String) -> Int = { _ in 0 },
+                 prev: String? = nil, bigram: SyllableBigram? = SyllableBigram.shared,
                  english: SwipeEnglishPrior? = nil, case sc: SwipeCase) -> Choice? {
         guard layout != nil, path.count >= 2 else { return nil }
-        let next = Set(contextWords.map { $0.lowercased() })
+        let ctx = Context(next: Set(contextWords.map { $0.lowercased() }), count: count,
+                          prev: prev, bigram: bigram)
         let d = decoder
-        // Dạng không dấu: điểm = điểm tốt nhất trong các âm tiết của nó (tối đa 8).
-        let folded: (String) -> Float = { f in
-            var best: Float = 0
-            for w in SwipeDecoder.expand(f, limit: 8) {
-                best = max(best, Self.contextScore(w.word, next: next, count: count))
-            }
-            return best
-        }
-        // từ tiếng Anh: điểm cá nhân/từ kế tiếp y như âm tiết Việt
+        // từ tiếng Anh: chỉ điểm cá nhân/từ kế tiếp (bigram tĩnh là của âm tiết Việt)
+        let next = ctx.next
         let enCtx: ((String) -> Float)? = english == nil ? nil : { w in
             Self.contextScore(w, next: next, count: count)
         }
         let cands = queue.sync {
-            d.decode(path, topK: 5, context: folded, english: english, englishContext: enCtx)
+            d.decode(path, topK: 5, context: ctx.folded, english: english, englishContext: enCtx)
         }
-        return Self.pick(cands, contextWords: next, count: count, case: sc)
+        return Self.pick(cands, context: ctx, case: sc)
     }
 
     /// Phần thuần: từ top-K dạng không dấu → từ chèn + phương án. Phương án = các biến
@@ -110,16 +153,20 @@ final class SwipeTyping {
     /// (vd. vuốt "cho": chó · co · chờ).
     static func pick(_ folded: [String], contextWords: Set<String>,
                      count: @escaping (String) -> Int = { _ in 0 }, case sc: SwipeCase) -> Choice? {
-        pick(folded.map { SwipeCandidate(folded: $0, score: 0) }, contextWords: contextWords,
-             count: count, case: sc)
+        pick(folded.map { SwipeCandidate(folded: $0, score: 0) },
+             context: Context(next: contextWords, count: count), case: sc)
+    }
+
+    static func pick(_ folded: [String], context: Context, case sc: SwipeCase) -> Choice? {
+        pick(folded.map { SwipeCandidate(folded: $0, score: 0) }, context: context, case: sc)
     }
 
     /// Bản có nhãn ngôn ngữ (giai đoạn 3): ứng viên tiếng Anh hiển thị nguyên văn; top-1
     /// tiếng Anh ⇒ chèn nguyên văn. Luôn giữ 1 phương án ngôn ngữ kia nếu decoder có
-    /// (the ↔ thế) — thay phương án cuối. GIỐNG Android SwipeSuggest.choose.
-    static func pick(_ cands: [SwipeCandidate], contextWords: Set<String>,
-                     count: @escaping (String) -> Int = { _ in 0 }, case sc: SwipeCase) -> Choice? {
-        let ctx: (String) -> Float = { contextScore($0, next: contextWords, count: count) }
+    /// (the ↔ thế) — thay phương án cuối. GIỐNG Android SwipeSuggest.choose. Ngữ cảnh
+    /// (cá nhân + bigram tĩnh) chỉ dùng để bung dấu ứng viên tiếng Việt.
+    static func pick(_ cands: [SwipeCandidate], context: Context, case sc: SwipeCase) -> Choice? {
+        let ctx: (String) -> Float = context.word
         func words(_ c: SwipeCandidate, _ limit: Int) -> [String] {
             c.lang == .en ? [c.folded] : SwipeDecoder.expand(c.folded, limit: limit, context: ctx).map(\.word)
         }
@@ -160,11 +207,11 @@ final class SwipeTyping {
 
     /// Nhấc tay: giải mã rồi chèn. nil = không nhận ra gì (không đụng màn hình).
     func finish(_ path: SwipePath, case sc: SwipeCase, contextWords: [String],
-                count: @escaping (String) -> Int = { _ in 0 },
+                count: @escaping (String) -> Int = { _ in 0 }, prev: String? = nil,
                 english: SwipeEnglishPrior? = nil,
                 bridge: EngineBridge, proxy: TextProxyLike) -> Outcome? {
-        guard let r = resolve(path, contextWords: contextWords, count: count, english: english,
-                              case: sc) else {
+        guard let r = resolve(path, contextWords: contextWords, count: count, prev: prev,
+                              english: english, case: sc) else {
             TouchLog.write("swipe: không có ứng viên (pts=\(path.count))")
             return nil
         }

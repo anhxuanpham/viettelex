@@ -1045,7 +1045,8 @@ extension KeyboardViewController {
                                                  || isRecentEnglish(prev)),
             prev2: SwipeLangContext.classify(prev2, swipedEnglish: isRecentEnglish(prev2))) : nil
         let out = swipe.finish(path, case: sc, contextWords: ctx, count: { lm.count(of: $0) },
-                               english: english, bridge: bridge, proxy: Proxy(p: textDocumentProxy))
+                               prev: prev, english: english,
+                               bridge: bridge, proxy: Proxy(p: textDocumentProxy))
         if let out {
             if let c = out.committed { commitAndLearn(c.word, accepted: c.accepted) }
             if out.english { noteRecentEnglish(out.word) }
