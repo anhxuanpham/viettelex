@@ -246,6 +246,22 @@ class KeyboardSession(
         clearSwipe()
     }
 
+    /**
+     * Bàn phím cứng: phím sắp đi THẲNG tới app (Enter thật — Shift+Enter, "Enter để gửi"):
+     * chốt từ đang soạn (auto-restore + học) mà KHÔNG chèn gì; như [Key.Newline], ⌫ sau đó
+     * không mở lại từ cũ.
+     */
+    fun commitComposing(proxy: TextProxy) {
+        val literal = if (swipeLiteral) openSwipeWord() else null
+        clearSwipe()
+        if (literal != null) settleLiteral(literal)
+        else if (bridge.isComposing) commitAndLearn(bridge.boundary("", proxy))
+        bridge.forgetLastCommit()
+        lastWord = null; lastWord2 = null; clearUndo()
+        lastInsertWasSpace = false
+        generation++
+    }
+
     private fun clearUndo() { restoreUndoRaw = null; restoreUndoComposed = null; undoOfferActive = false }
 
     /**
