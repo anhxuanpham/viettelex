@@ -1,0 +1,109 @@
+package com.viettelex.keyboard
+
+/**
+ * Lịch sử clipboard (chỉ trên máy): tối đa [maxItems] mục, mục không ghim hết hạn sau
+ * [ttlMs] (mục "trông như bí mật" sau [sensitiveTtlMs]); mục ghim không hết hạn.
+ * Hàm thuần, không I/O — IME lo đọc/ghi file bằng [serialize]/[deserialize].
+ * iOS `ClipboardHistory.swift` port cùng hợp đồng.
+ */
+class ClipboardHistory(
+    val maxItems: Int = 20,
+    val ttlMs: Long = 3_600_000,
+    val sensitiveTtlMs: Long = 120_000,
+) {
+    data class Item(val text: String, val at: Long, val pinned: Boolean, val sensitive: Boolean)
+
+    /** Mới nhất ở đầu. */
+    private val list = ArrayList<Item>()
+
+    val size: Int get() = list.size
+
+    /** Thêm/đưa lên đầu. Trả false nếu bỏ qua (rỗng, quá dài). */
+    fun add(text: String, now: Long, sensitive: Boolean = ClipSensitivity.looksSecret(text)): Boolean {
+        if (text.isBlank() || text.length > MAX_TEXT) return false
+        val i = list.indexOfFirst { it.text == text }
+        val pinned = i >= 0 && list[i].pinned
+        if (i >= 0) list.removeAt(i)
+        list.add(0, Item(text, now, pinned, sensitive))
+        while (list.size > maxItems) {
+            val k = list.indexOfLast { !it.pinned }
+            if (k < 0) break
+            list.removeAt(k)
+        }
+        return true
+    }
+
+    /** Bỏ mục không ghim quá hạn. Trả true nếu có thay đổi. */
+    fun prune(now: Long): Boolean = list.removeAll { !it.pinned && now - it.at >= if (it.sensitive) sensitiveTtlMs else ttlMs }
+
+    /** Danh sách hiển thị: ghim lên trên, trong mỗi nhóm mới nhất trước. */
+    fun items(now: Long): List<Item> {
+        prune(now)
+        return list.filter { it.pinned } + list.filter { !it.pinned }
+    }
+
+    fun contains(text: String) = list.any { it.text == text }
+
+    fun togglePin(text: String): Boolean {
+        val i = list.indexOfFirst { it.text == text }
+        if (i < 0) return false
+        list[i] = list[i].copy(pinned = !list[i].pinned)
+        return true
+    }
+
+    fun remove(text: String): Boolean = list.removeAll { it.text == text }
+
+    /** "Xoá hết": bỏ mục không ghim, giữ mục ghim. */
+    fun clear() { list.removeAll { !it.pinned } }
+
+    fun removeAll() { list.clear() }
+
+    /** Mục mới nhất nếu vừa thêm trong [windowMs] (chip "vừa copy"). */
+    fun latestFresh(now: Long, windowMs: Long = 180_000): Item? =
+        list.firstOrNull()?.takeIf { now - it.at in 0 until windowMs }
+
+    /** Mỗi dòng: `at\tpinned\tsensitive\ttext` (text escape `\\`, `\n`, `\t`, `\r`). */
+    fun serialize(): String = buildString {
+        for (it in list) {
+            append(it.at).append('\t').append(if (it.pinned) '1' else '0').append('\t')
+                .append(if (it.sensitive) '1' else '0').append('\t').append(escape(it.text)).append('\n')
+        }
+    }
+
+    companion object {
+        const val MAX_TEXT = 4000
+
+        fun deserialize(s: String?, maxItems: Int = 20): ClipboardHistory {
+            val h = ClipboardHistory(maxItems)
+            if (s.isNullOrEmpty()) return h
+            for (line in s.split('\n')) {
+                val p = line.split('\t', limit = 4)
+                if (p.size != 4) continue
+                val at = p[0].toLongOrNull() ?: continue
+                val text = unescape(p[3])
+                if (text.isEmpty()) continue
+                h.list += Item(text, at, p[1] == "1", p[2] == "1")
+            }
+            while (h.list.size > maxItems) h.list.removeAt(h.list.size - 1)
+            return h
+        }
+
+        internal fun escape(t: String) = buildString(t.length) {
+            for (c in t) when (c) {
+                '\\' -> append("\\\\"); '\n' -> append("\\n"); '\t' -> append("\\t"); '\r' -> append("\\r")
+                else -> append(c)
+            }
+        }
+
+        internal fun unescape(t: String) = buildString(t.length) {
+            var i = 0
+            while (i < t.length) {
+                val c = t[i]
+                if (c == '\\' && i + 1 < t.length) {
+                    when (t[i + 1]) { 'n' -> append('\n'); 't' -> append('\t'); 'r' -> append('\r'); else -> append(t[i + 1]) }
+                    i += 2
+                } else { append(c); i++ }
+            }
+        }
+    }
+}

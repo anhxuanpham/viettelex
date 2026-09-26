@@ -117,6 +117,9 @@ targets:
       - Keyboard/SwipeDecoder.swift
       - Keyboard/SwipeGesture.swift
       - Keyboard/SwipeTyping.swift
+      - Keyboard/ClipDetect.swift
+      - Keyboard/ClipboardHistory.swift
+      - Keyboard/ClipboardFeature.swift
       - path: Keyboard/Resources/vnlexicon.bin
         buildPhase: resources
     settings:

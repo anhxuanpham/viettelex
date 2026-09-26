@@ -23,6 +23,9 @@ final class KeyboardViewController: UIInputViewController {
     private var swipe: SwipeTyping?
     /// Từ vuốt đang mở + phương án cho thanh gợi ý (hết hiệu lực khi từ đổi / chốt).
     private var swipeSuggest: (current: String, alts: [String])?
+    /// Lịch sử clipboard + chip tách số + ẩn danh (ClipboardFeature.swift).
+    private let clip = ClipboardFeature()
+    private var clipPanel: ClipboardPanel?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -54,6 +57,7 @@ final class KeyboardViewController: UIInputViewController {
         keyboard.onBarToggle = { [weak self] in self?.updateSuggestions() }
         keyboard.onTemplate = { [weak self] in self?.insertTemplate($0) }
         keyboard.onOpenTemplates = { [weak self] in self?.openTemplatesInApp() }
+        keyboard.onOpenClipboard = { [weak self] in self?.toggleClipboardPanel() }
         keyboard.translatesAutoresizingMaskIntoConstraints = false
         // Như KeyboardView: nền trong suốt = touch xuyên sang app host (rớt phím).
         view.backgroundColor = KeyboardView.touchableClear
@@ -88,7 +92,11 @@ final class KeyboardViewController: UIInputViewController {
         lastKeyWasEmailTrigger = false
         restoreUndo = nil; undoOfferActive = false
         let settings = KeyboardSettings.load()
-        learnEnabled = settings.learnWords
+        clip.load(from: UserDefaultsProvider.shared)
+        // Ẩn danh (thủ công, trong app): không học từ, không lưu clipboard.
+        learnEnabled = settings.learnWords && !clip.incognito
+        keyboard.setClipboardButton(visible: clip.historyEnabled && hasFullAccess)
+        keyboard.setIncognito(clip.incognito)
         filterSensitive = settings.filterSensitive
         showSuggestionsSetting = settings.showSuggestions
         swipeSetting = settings.swipeTyping
@@ -108,6 +116,9 @@ final class KeyboardViewController: UIInputViewController {
         keyboard.onSuggestion = { [weak self] item in
             guard let self else { return }
             if item == KeyboardView.restoreToken { self.restoreWordSwipe() }
+            else if item.hasPrefix(KeyboardView.clipTokenPrefix) {
+                self.insertClip(String(item.dropFirst(KeyboardView.clipTokenPrefix.count)), chip: true)
+            }
             else if self.acceptSwipeAlternative(item) { return }
             else { self.acceptSuggestion(item) }
         }
@@ -153,6 +164,7 @@ final class KeyboardViewController: UIInputViewController {
         }
         #endif
         super.viewWillDisappear(animated)
+        closeClipboardPanel()
         learnSettledSwipe()
         langModel.saveNow()   // extension có thể bị kill ngay sau disappear
     }
@@ -775,7 +787,15 @@ final class KeyboardViewController: UIInputViewController {
                 .prefix(3).map { caseForContext(DisplayCase.apply($0)) }
             set.nextWords = padWords(Array(top), need: 3)
         }
-        if composed.isEmpty, pasteOffer() { set.paste = true; set.pasteIsImage = pasteIsImage }
+        if composed.isEmpty, pasteOffer() {
+            set.paste = true; set.pasteIsImage = pasteIsImage
+            let chips = clip.chips(currentChange: pasteSeenChange, usedChange: pasteUsedChange)
+            if !chips.isEmpty {
+                // Chip tách số + ô "Dán" nguyên văn ở cuối (nếu còn chỗ).
+                set.clipChips = chips.prefix(2).map { ($0.label, KeyboardView.clipTokenPrefix + $0.value) }
+                set.clipChips.append(("Dán", KeyboardView.pasteToken))
+            }
+        }
         keyboard.showSuggestions(set)
     }
 
@@ -866,8 +886,11 @@ final class KeyboardViewController: UIInputViewController {
         pasteCheckedAt = now
         let pb = UIPasteboard.general
         let cc = pb.changeCount
-        if cc != pasteSeenChange { pasteSeenChange = cc; pasteSeenAt = now }
         let has = pb.hasStrings
+        if cc != pasteSeenChange {
+            pasteSeenChange = cc; pasteSeenAt = now
+            if has, cc != pasteUsedChange { autoCaptureClipboard(pb, change: cc) }
+        }
         // Ảnh: KHÔNG báo (user 25/09/2026) — iOS không cho bàn phím chèn ảnh, thẻ
         // hướng dẫn trông như nút bấm được nên gây hiểu nhầm.
         pasteIsImage = false
@@ -903,7 +926,12 @@ final class KeyboardViewController: UIInputViewController {
             let str = pb.string
             let noPrompt = str != nil && CACurrentMediaTime() - t0 < 0.25
             UserDefaults(suiteName: "group.com.viettelex")?.set(noPrompt, forKey: "pasteNoPrompt")
-            if let s = str, !s.isEmpty { textDocumentProxy.insertText(s) }
+            if let s = str, !s.isEmpty {
+                textDocumentProxy.insertText(s)
+                clip.captured(s, change: pb.changeCount, now: Date().timeIntervalSince1970,
+                              secureField: fieldTraits?.secure == true,
+                              concealed: Self.isConcealed(pb))
+            }
             pasteUsedChange = pb.changeCount
             pasteCached = false
             bridge.reset(); lastWord = nil; lastWord2 = nil
@@ -951,6 +979,82 @@ final class KeyboardViewController: UIInputViewController {
         KeyboardView.clickModifier()
         updateAutoShift()
         updateSuggestions()
+    }
+}
+
+// MARK: Lịch sử clipboard — glue ClipboardFeature ↔ UIPasteboard ↔ panel
+extension KeyboardViewController {
+    /// Trình quản lý mật khẩu đánh dấu clipboard "concealed" (quy ước nspasteboard.org,
+    /// 1Password) — đọc `types` không bật hỏi quyền dán.
+    fileprivate static func isConcealed(_ pb: UIPasteboard) -> Bool {
+        pb.types.contains { $0 == "org.nspasteboard.ConcealedType" || $0.hasPrefix("com.agilebits") }
+    }
+
+    /// changeCount mới lúc bàn phím đang hiện: tự đọc + ghi CHỈ khi user đã chọn
+    /// "Cho phép dán" (pasteNoPrompt) — nếu iOS vẫn hỏi (đọc chậm) thì ghi nhận lại
+    /// pasteNoPrompt=false để lần sau không tự đọc nữa.
+    fileprivate func autoCaptureClipboard(_ pb: UIPasteboard, change: Int) {
+        let group = UserDefaultsProvider.shared
+        let secure = fieldTraits?.secure == true
+        let concealed = clip.historyEnabled ? Self.isConcealed(pb) : false
+        guard clip.shouldAutoRead(fullAccess: hasFullAccess,
+                                  noPrompt: group?.bool(forKey: "pasteNoPrompt") == true,
+                                  secureField: secure, concealed: concealed) else { return }
+        let t0 = CACurrentMediaTime()
+        let str = pb.string
+        if CACurrentMediaTime() - t0 >= 0.25 {
+            UserDefaults(suiteName: "group.com.viettelex")?.set(false, forKey: "pasteNoPrompt")
+        }
+        guard let s = str else { return }
+        clip.captured(s, change: change, now: Date().timeIntervalSince1970,
+                      secureField: secure, concealed: concealed)
+        if clipPanel != nil { reloadClipboardPanel() }
+    }
+
+    /// Chèn nội dung từ chip / panel: nguyên văn, KHÔNG thêm space, KHÔNG học từ.
+    fileprivate func insertClip(_ text: String, chip: Bool) {
+        guard !text.isEmpty else { return }
+        applyingEdit = true
+        defer { applyingEdit = false }
+        learnSettledSwipe()
+        textDocumentProxy.insertText(text)
+        if chip { pasteUsedChange = pasteSeenChange; pasteCached = false }
+        bridge.reset(); lastWord = nil; lastWord2 = nil
+        KeyboardView.clickModifier()
+        updateAutoShift()
+        updateSuggestions()
+    }
+
+    fileprivate func toggleClipboardPanel() {
+        if clipPanel != nil { closeClipboardPanel(); return }
+        let p = ClipboardPanel()
+        p.onPaste = { [weak self] t in self?.insertClip(t, chip: false); self?.closeClipboardPanel() }
+        p.onTogglePin = { [weak self] t in self?.clip.togglePin(t); self?.reloadClipboardPanel() }
+        p.onDelete = { [weak self] t in self?.clip.remove(t); self?.reloadClipboardPanel() }
+        p.onClearAll = { [weak self] in self?.clip.clearUnpinned(); self?.reloadClipboardPanel() }
+        p.onClose = { [weak self] in self?.closeClipboardPanel() }
+        p.frame = keyboard.keyAreaFrame
+        p.autoresizingMask = [.flexibleWidth, .flexibleTopMargin]
+        keyboard.addSubview(p)
+        keyboard.overlayPanel = p
+        clipPanel = p
+        reloadClipboardPanel()
+        keyboard.setNeedsLayout()
+    }
+
+    fileprivate func reloadClipboardPanel() {
+        guard let p = clipPanel else { return }
+        p.frame = keyboard.keyAreaFrame
+        p.reload(items: clip.items(now: Date().timeIntervalSince1970),
+                 dark: keyboard.isDarkAppearance, incognito: clip.incognito)
+    }
+
+    fileprivate func closeClipboardPanel() {
+        guard let p = clipPanel else { return }
+        p.removeFromSuperview()
+        clipPanel = nil
+        keyboard?.overlayPanel = nil
+        keyboard?.setNeedsLayout()
     }
 }
 

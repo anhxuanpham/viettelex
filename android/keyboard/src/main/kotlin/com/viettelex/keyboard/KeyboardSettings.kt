@@ -32,6 +32,10 @@ data class KeyboardSettings(
     /** −10…10 dp mỗi hàng. */
     var rowHeightAdjust: Int = 0,
     var debugTouchLog: Boolean = false,
+    /** Lịch sử clipboard — mặc định TẮT. */
+    var clipboardHistory: Boolean = false,
+    /** Ẩn danh thủ công: không học từ, không lưu clipboard. */
+    var incognito: Boolean = false,
     /** Giá trị Keys.USERLM_RESET_AT (0 = chưa từng xoá). */
     var userlmResetAt: Long = 0,
 ) {
@@ -57,6 +61,8 @@ data class KeyboardSettings(
             s.templatesEnabled = b(Keys.TEMPLATES_ENABLED, s.templatesEnabled)
             s.showSpaceLogo = b(Keys.SHOW_SPACE_LOGO, s.showSpaceLogo)
             s.debugTouchLog = b(Keys.DEBUG_TOUCH_LOG, s.debugTouchLog)
+            s.clipboardHistory = b(Keys.CLIPBOARD_HISTORY, s.clipboardHistory)
+            s.incognito = b(Keys.INCOGNITO, s.incognito)
             s.rowHeightAdjust = ((get(Keys.ROW_HEIGHT_ADJUST) as? Number)?.toInt() ?: 0).coerceIn(-10, 10)
             s.userlmResetAt = (get(Keys.USERLM_RESET_AT) as? Number)?.toLong() ?: 0
             s.learnWords = s.showSuggestions   // bật gợi ý = bật học (quyết định 2026-07-24)

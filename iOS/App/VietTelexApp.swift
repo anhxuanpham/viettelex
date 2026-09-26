@@ -101,7 +101,7 @@ struct RootView: View {
             List {
                 switch tab {
                 case .kieuGo: kieuGoTab
-                case .tinhNang: TinhNangSections()
+                case .tinhNang: TinhNangSections(); RiengTuSection()
                 case .mauCau: MauCauSections()
                 case .gioiThieu: gioiThieuTab
                 }

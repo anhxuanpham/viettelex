@@ -56,7 +56,13 @@ class AndroidEditorPort(val ic: InputConnection) : EditorPort {
 class AndroidClipboard(private val ctx: Context) : ClipboardSource {
     private val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     @Volatile private var count = 0
-    private val listener = ClipboardManager.OnPrimaryClipChangedListener { count++ }
+    /**
+     * Gọi (main thread) mỗi lần clip đổi — IME ghi lịch sử clipboard. Listener chỉ sống
+     * khi process IME sống (VietTelex là bàn phím đang chọn); copy lúc process chết thì
+     * bù ở lần hiện kế ([ClipDescription.getTimestamp] ≤ 180 s).
+     */
+    var onChanged: (() -> Unit)? = null
+    private val listener = ClipboardManager.OnPrimaryClipChangedListener { count++; onChanged?.invoke() }
 
     init { cm.addPrimaryClipChangedListener(listener) }
 
@@ -80,9 +86,19 @@ class AndroidClipboard(private val ctx: Context) : ClipboardSource {
         return now - ts < 180_000
     }
 
+    /** Android 13+: app nguồn đánh dấu EXTRA_IS_SENSITIVE (mật khẩu, OTP từ trình quản lý mật khẩu). */
+    override fun isSensitive(): Boolean = try {
+        cm.primaryClipDescription?.extras?.getBoolean(EXTRA_IS_SENSITIVE, false) == true
+    } catch (_: Exception) { false }
+
     override fun readText(): String? = try {
         cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(ctx)?.toString()
     } catch (_: Exception) { null }
+
+    private companion object {
+        /** = ClipDescription.EXTRA_IS_SENSITIVE (API 33); hằng chuỗi để chạy cả máy cũ. */
+        const val EXTRA_IS_SENSITIVE = "android.content.extra.IS_SENSITIVE"
+    }
 }
 
 /** Blob assets: mmap (asset không nén) — fallback đọc cả file. */

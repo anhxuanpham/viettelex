@@ -35,6 +35,10 @@ object Keys {
     /** String JSON `[{"label":…,"text":…}]`; vắng ⇒ mặc định từ assets/ios-mau-cau.yml. */
     const val USER_TEMPLATES = "userTemplates"
     const val DEBUG_TOUCH_LOG = "debugTouchLog"
+    /** Lịch sử clipboard (mặc định TẮT — riêng tư). */
+    const val CLIPBOARD_HISTORY = "clipboardHistory"
+    /** Chế độ ẩn danh thủ công: không học từ, không lưu clipboard. */
+    const val INCOGNITO = "incognitoMode"
     // nội bộ IME
     const val SUGGESTION_BAR_COLLAPSED = "suggestionBarCollapsed"
     /** String, emoji nối bằng '\n' (xem [EmojiRecents]). */
@@ -45,6 +49,7 @@ object Keys {
     // file trong filesDir
     const val USERLM_FILE = "userlm.bin"
     const val TOUCHLOG_FILE = "touchlog.txt"
+    const val CLIPBOARD_FILE = "clipboard-history.txt"
 
     // assets
     const val ASSET_LEXICON = "vnlexicon.bin"
