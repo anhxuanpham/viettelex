@@ -129,6 +129,9 @@ struct RootView: View {
             if phase == .active {
                 keyboardEnabled = isKeyboardEnabled()
                 pasteReady = Self.readPasteReady()
+                ICloudSync.shared.start()          // tắt ⇒ không làm gì
+            } else if phase == .background {
+                ICloudSync.shared.syncNow()        // đẩy thay đổi vừa sửa lên iCloud
             }
         }
         .onChange(of: templatesEnabled) { on in
@@ -164,6 +167,7 @@ struct RootView: View {
     }
 
     @ViewBuilder private var gioiThieuTab: some View {
+        SaoLuuSection()
         DebugSection()
         // Logo + tên app trên đầu tab (user 2026-07-24), như About của macOS.
         Section {
@@ -353,7 +357,7 @@ struct TemplateItem: Equatable, Identifiable {
 struct MauCauSections: View {
     private static let store = UserDefaults(suiteName: "group.com.viettelex")
     /// Mặc định từ ios-mau-cau.yml bundle theo build — cùng file với keyboard.
-    private static let defaults: [TemplateItem] = {
+    static let bundledDefaults: [TemplateItem] = {
         guard let url = Bundle.main.url(forResource: "ios-mau-cau", withExtension: "yml"),
               let text = try? String(contentsOf: url, encoding: .utf8)
         else { return [TemplateItem(label: "👋", text: "Chào buổi sáng")] }
@@ -362,7 +366,7 @@ struct MauCauSections: View {
 
     static func load() -> [TemplateItem] {
         guard let raw = store?.array(forKey: "userTemplates") as? [[String: String]] else {
-            return defaults
+            return bundledDefaults
         }
         return raw.compactMap { e in
             guard let t = e["text"], !t.isEmpty else { return nil }
@@ -751,7 +755,7 @@ struct FullAccessNotice: View {
 }
 
 /// Toggle kèm chú giải nhỏ bên dưới tiêu đề — dùng chung cho 2 tab settings.
-private func settingToggle(_ title: String, _ caption: String, isOn: Binding<Bool>) -> some View {
+func settingToggle(_ title: String, _ caption: String, isOn: Binding<Bool>) -> some View {
     Toggle(isOn: isOn) {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)

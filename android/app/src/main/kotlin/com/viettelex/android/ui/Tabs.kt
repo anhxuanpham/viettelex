@@ -388,7 +388,7 @@ fun MauCauTab() {
 }
 
 @Composable
-private fun LinkRow(g: Glyph, title: String, onClick: () -> Unit) {
+internal fun LinkRow(g: Glyph, title: String, onClick: () -> Unit) {
     val c = LocalVT.current
     VTRow(onClick = onClick) {
         GlyphIcon(g, c.accent, 20.dp)
@@ -402,6 +402,7 @@ private fun LinkRow(g: Glyph, title: String, onClick: () -> Unit) {
 fun GioiThieuTab() {
     val c = LocalVT.current
     val ctx = LocalContext.current
+    SaoLuuSection()
     DebugSection()
     VTSection(plain = true) {
         Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
