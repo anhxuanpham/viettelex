@@ -332,7 +332,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         worker().post {
             synchronized(swipeLock) { if (swipeDecoder === dec) dec.prepare() }
             if (session.swipeEnglish) SwipeEnglish.lexicon     // nạp từ điển Anh ở nền (lazy, thread-safe)
-            SyllableBigram.shared   // map bảng bigram tĩnh (lazy, chỉ khi gõ vuốt bật)
+            SyllableBigram.shared   // bảng bigram tĩnh dùng chung (thanh gợi ý cũng dùng)
         }
     }
 

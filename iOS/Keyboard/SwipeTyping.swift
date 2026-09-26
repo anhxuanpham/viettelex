@@ -105,7 +105,7 @@ final class SwipeTyping {
             d.setLayout(l)
             if prepare {
                 d.prepare()
-                _ = SyllableBigram.shared   // map bảng bigram tĩnh (lười, chỉ khi gõ vuốt bật)
+                _ = SyllableBigram.shared   // bảng bigram tĩnh dùng chung (thanh gợi ý cũng map sẵn)
             }
         }
     }

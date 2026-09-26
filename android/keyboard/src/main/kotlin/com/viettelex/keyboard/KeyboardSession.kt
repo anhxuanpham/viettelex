@@ -1,6 +1,5 @@
 package com.viettelex.keyboard
 
-import kotlin.math.ln
 
 /** Phím gửi vào [KeyboardSession.handle] (≈ KeyboardView.Key iOS). */
 sealed class Key {
@@ -119,12 +118,14 @@ sealed class SuggestionPlan {
 class SuggestJob internal constructor(
     internal val req: Int, internal val gen: Int, internal val bridge: EngineBridge,
     val composed: String, val raw: String, internal val predicted: String, private val wantFix: Boolean,
+    /** Âm tiết liền trước (bigram tĩnh). */
+    private val prev: String? = null,
 ) {
-    class Result(val pool: List<VNSuggest.Match>, val fix: String?)
+    class Result(val pool: List<VNSuggest.Match>, val fix: String?, val pmi: FloatArray? = null)
     fun compute(): Result {
         val pool = VNSuggest.matches(composed, poolLimit = 24, excluding = composed.lowercase())
         val fix = if (pool.isEmpty() && wantFix) AdjacentKeyFixer.lexiconCorrection(raw, bridge) else null
-        return Result(pool, fix)
+        return Result(pool, fix, SuggestRank.inlinePmi(pool, prev))
     }
 }
 
@@ -521,13 +522,15 @@ class KeyboardSession(
         if (composed.isNotEmpty()) {
             val b = bridge
             return SuggestionPlan.Background(SuggestJob(suggestReq, generation, b, composed,
-                b.rawWord, b.predictedCommit, b.autoFixAdjacent))
+                b.rawWord, b.predictedCommit, b.autoFixAdjacent, lastWord))
         }
         val prev = lastWord
         val next: List<String> = if (prev != null) {
-            val n = SensitiveWords.filter(langModel.nextWords(prev, lastWord2, 6), filterSensitive)
-                .take(3).map { caseForContext(DisplayCase.apply(it, prev)) }
-            padWords(n, 3)
+            // cá nhân/seed trước; thiếu thì lấp bằng bigram tĩnh (người dùng mới) rồi mới topWords
+            val personal = SensitiveWords.filter(langModel.nextWords(prev, lastWord2, 6), filterSensitive).take(3)
+            val n = if (personal.size >= 3) personal else SuggestionFill.pad(personal,
+                SensitiveWords.filter(SuggestRank.bigramNext(prev, 6), filterSensitive), 3)
+            padWords(n.map { caseForContext(DisplayCase.apply(it, prev)) }, 3)
         } else {
             val top = SensitiveWords.filter(langModel.topWords(6), filterSensitive)
                 .take(3).map { caseForContext(DisplayCase.apply(it)) }
@@ -541,7 +544,7 @@ class KeyboardSession(
     fun completeSuggestions(job: SuggestJob, result: SuggestJob.Result): SuggestionSet? {
         if (job.req != suggestReq || job.gen != generation || bridge !== job.bridge ||
             job.bridge.composedWord != job.composed || !suggestionsActive || barCollapsed) return null
-        return composingSuggestions(job.composed, job.raw, job.predicted, result.pool, result.fix)
+        return composingSuggestions(job.composed, job.raw, job.predicted, result.pool, result.fix, result.pmi)
     }
 
     /** Đồng bộ (test / debug): tính luôn trên thread gọi. */
@@ -551,7 +554,8 @@ class KeyboardSession(
     }
 
     private fun composingSuggestions(composed: String, raw: String, predicted: String,
-                                     pool: List<VNSuggest.Match>, fix: String?): SuggestionSet {
+                                     pool: List<VNSuggest.Match>, fix: String?,
+                                     pmi: FloatArray? = null): SuggestionSet {
         val literal = if (predicted == composed) raw else composed
         var word: String? = null
         var word2: String? = null
@@ -562,13 +566,8 @@ class KeyboardSession(
                 ctxCacheKey = ctxKey
             }
             val ctx = ctxCache
-            val typedLen = Cp.count(composed)
-            fun score(w: String, f: Int): Double =
-                ln(f + 1.0) + 2.5 * ln(langModel.count(w) + 1.0) +
-                    (if (w in ctx) 4.0 else 0.0) + (if (Cp.count(w) == typedLen) 1.5 else 0.0)
             val ranked = SensitiveWords.filter(
-                pool.map { it.word to score(it.word, it.freq) }.sortedByDescending { it.second }.map { it.first },
-                filterSensitive)
+                SuggestRank.rankInline(pool, pmi, Cp.count(composed), langModel::count, ctx), filterSensitive)
             word = ranked.firstOrNull()?.let { DisplayCase.apply(it, lastWord) }
             word2 = ranked.getOrNull(1)?.let { DisplayCase.apply(it, lastWord) }
         } else if (fix != null) {

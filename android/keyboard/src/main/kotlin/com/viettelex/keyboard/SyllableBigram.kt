@@ -27,7 +27,7 @@ class SyllableBigram private constructor(private val buf: ByteBuffer) {
     private val scoreBase = nextBase + entries * 2
 
     /** Dải cặp của một âm tiết trước. [size] = 0 ⇒ không có dữ liệu. */
-    inner class Row internal constructor(private val lo: Int, private val hi: Int) {
+    inner class Row internal constructor(@PublishedApi internal val lo: Int, @PublishedApi internal val hi: Int) {
         val size: Int get() = hi - lo
         /** PMI (nat) của âm tiết sau id [next]; 0 nếu không có cặp. */
         fun score(next: Int): Float {
@@ -40,7 +40,15 @@ class SyllableBigram private constructor(private val buf: ByteBuffer) {
             }
             return 0f
         }
+
+        /** Duyệt mọi cặp (id âm tiết sau, PMI) của dải — thanh gợi ý lấy top từ kế tiếp. */
+        inline fun forEach(action: (next: Int, pmi: Float) -> Unit) {
+            for (m in lo until hi) action(nextAt(m), scoreAt(m))
+        }
     }
+
+    @PublishedApi internal fun nextAt(m: Int): Int = buf.getShort(nextBase + m * 2).toInt() and 0xFFFF
+    @PublishedApi internal fun scoreAt(m: Int): Float = (buf.get(scoreBase + m).toInt() and 0xFF) / qPerNat
 
     /** Dải của âm tiết trước id [prev] (id vnlexicon). */
     fun row(prev: Int): Row {
@@ -66,7 +74,7 @@ class SyllableBigram private constructor(private val buf: ByteBuffer) {
             return SyllableBigram(buf)
         }
 
-        /** Bảng dùng chung — map lần đầu cần (chỉ khi gõ vuốt bật). null nếu asset hỏng/lệch. */
+        /** Bảng dùng chung (gõ vuốt + thanh gợi ý) — map lần đầu cần. null nếu asset hỏng/lệch. */
         val shared: SyllableBigram? by lazy {
             try {
                 load(KeyboardData.buffer(Keys.ASSET_BIGRAM),

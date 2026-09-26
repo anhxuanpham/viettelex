@@ -54,6 +54,7 @@
 		658E42F174DDEEC703E5F454 /* SwipeEnglish.swift in Sources */ = {isa = PBXBuildFile; fileRef = E360BCC27ECE43C8DEB11CC7 /* SwipeEnglish.swift */; };
 		665AA760B41DC86808F42E23 /* TouchLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A73661E1643A0CAA02517C00 /* TouchLog.swift */; };
 		6689B752583E4AE424F48573 /* EngineBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AD709650C25830CA926EBCF /* EngineBridge.swift */; };
+		68638B723D1A630DC68B3727 /* SuggestBigramTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF6388E96DDD2233A554472A /* SuggestBigramTests.swift */; };
 		6883E23E2D9C7A63C862B4AC /* KeyCommitQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F1F925F053BA5BF36C118C /* KeyCommitQueue.swift */; };
 		777DFD50684EBFD29E6F41C8 /* ios-mau-cau.yml in Resources */ = {isa = PBXBuildFile; fileRef = E07A3B8533DF185DE4EC05F4 /* ios-mau-cau.yml */; };
 		7886DADD48383509BF8847BB /* SyllableBigram.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61F03C2E16BDF6FA989C1D95 /* SyllableBigram.swift */; };
@@ -173,6 +174,7 @@
 		A73661E1643A0CAA02517C00 /* TouchLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchLog.swift; sourceTree = "<group>"; };
 		A8F1F925F053BA5BF36C118C /* KeyCommitQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyCommitQueue.swift; sourceTree = "<group>"; };
 		B913AFA01B930811B2848696 /* SpaceLogo@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "SpaceLogo@2x.png"; sourceTree = "<group>"; };
+		BF6388E96DDD2233A554472A /* SuggestBigramTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestBigramTests.swift; sourceTree = "<group>"; };
 		C0D2E54E996214AA4F8CB065 /* TrackpadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackpadTests.swift; sourceTree = "<group>"; };
 		C445BEBA75DFC20101EC3BA9 /* VNSuggest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VNSuggest.swift; sourceTree = "<group>"; };
 		CAD72939A03B2CDB528A0C4A /* Keyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Keyboard.entitlements; sourceTree = "<group>"; };
@@ -262,6 +264,7 @@
 				6EAFABBBF6544841D633BFD9 /* PlaneCacheLayoutTests.swift */,
 				E2A6BDCAE323FDEA73473DB7 /* PlanePolicyTests.swift */,
 				75A9F065C3D6400280AE99D7 /* ReEditWordTests.swift */,
+				BF6388E96DDD2233A554472A /* SuggestBigramTests.swift */,
 				0A6B5A4EF96EB6E3DFBA7109 /* SwipeDecoderTests.swift */,
 				FC4C7AA642979C79BA435C61 /* SwipeEnglishTests.swift */,
 				821BD7CBEE8349CC782C3E41 /* SwipeTypingTests.swift */,
@@ -564,6 +567,7 @@
 				4059F85D6472E1CC2601D5DF /* ReEditWordTests.swift in Sources */,
 				0FC30ADCCD6DA0E278D59DD3 /* SeedData.swift in Sources */,
 				E29FDF78A65EA7E6F0F8EF8F /* SensitiveWords.swift in Sources */,
+				68638B723D1A630DC68B3727 /* SuggestBigramTests.swift in Sources */,
 				A755E9F920E0111F7E89F9DC /* SuggestionSupport.swift in Sources */,
 				2EB3139E049820E47859ECA3 /* SwipeDecoder.swift in Sources */,
 				7B129ED7F5EA736E7BF1C062 /* SwipeDecoderTests.swift in Sources */,
