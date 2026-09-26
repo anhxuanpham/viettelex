@@ -134,12 +134,65 @@ class SwipeDecoderTests {
         println(String.format(Locale.ROOT,
             "SWIPE accuracy σ0.25: top1 %.3f top3 %.3f | σ0.3: %.3f/%.3f | lệch đầu/cuối 0.5: %.3f/%.3f",
             a1, a3, b1, b3, c1, c3))
+        // đo 27/09/2026 (tầng 2 + kênh độ dài): 0.902/0.994 | 0.836/0.984 | 0.724/0.952
+        // (trước: 0.900/0.996 | 0.824/0.978 | 0.684/0.914)
         assertTrue("top1 σ0.25 = $a1", a1 >= 0.85)
         assertTrue("top3 σ0.25 = $a3", a3 >= 0.98)
-        assertTrue("top1 σ0.3 = $b1", b1 >= 0.78)
-        assertTrue("top3 σ0.3 = $b3", b3 >= 0.95)
-        assertTrue("top1 lệch = $c1", c1 >= 0.62)
-        assertTrue("top3 lệch = $c3", c3 >= 0.88)
+        assertTrue("top1 σ0.3 = $b1", b1 >= 0.80)
+        assertTrue("top3 σ0.3 = $b3", b3 >= 0.96)
+        assertTrue("top1 lệch = $c1", c1 >= 0.69)
+        assertTrue("top3 lệch = $c3", c3 >= 0.93)
+    }
+
+    /** Tầng 2 (σ thích nghi + căn phím + góc) + kênh độ dài phải hơn SHARK2 trần ở ca khó. */
+    @Test fun rescoreBeatsPlainShark2() {
+        val plain = SwipeDecoder(SwipeDecoder.Params(rescorePool = 0, lengthWeight = 0f)).also { it.setLayout(layout) }
+        val d = decoder(); val words = corpus()
+        val (p1, _) = accuracy(plain, words, 42, endOffset = 0.5)
+        val (n1, _) = accuracy(d, words, 42, endOffset = 0.5)
+        val (q1, _) = accuracy(plain, words, 7, sigma = 0.3)
+        val (m1, _) = accuracy(d, words, 7, sigma = 0.3)
+        println(String.format(Locale.ROOT, "SWIPE tầng 2: lệch 0.5 %.3f → %.3f | σ0.3 %.3f → %.3f", p1, n1, q1, m1))
+        assertTrue("lệch: $p1 → $n1", n1 >= p1 + 0.02)
+        assertTrue("σ0.3: $q1 → $m1", m1 >= q1)
+    }
+
+    /** Đường của [words] dời cả nét (dx, dy) phím — người dùng có lệch tay hệ thống. */
+    private fun biasedPaths(words: List<String>, seed: Long, dx: Float, dy: Float): List<SwipePath> {
+        val sim = SwipeSim(seed)
+        return words.map { w ->
+            val p = sim.path(w, layout)
+            val q = SwipePath(p.minDistance)
+            for (i in 0 until p.count) q.add(p.xs[i] + dx * layout.keyWidth, p.ys[i] + dy * layout.keyWidth, p.ts[i], force = true)
+            q
+        }
+    }
+
+    private fun top1(d: SwipeDecoder, paths: List<SwipePath>, words: List<String>): Double =
+        paths.indices.count { d.decode(paths[it], 1).firstOrNull()?.folded == words[it] }.toDouble() / words.size
+
+    @Test fun learnOffsetConvergesAndHelps() {
+        val d = decoder(); val words = corpus()
+        val train = words.filterIndexed { i, _ -> i % 2 == 0 }; val test = words.filterIndexed { i, _ -> i % 2 == 1 }
+        val trainPaths = biasedPaths(train, 5, 0.3f, 0.25f)
+        val testPaths = biasedPaths(test, 6, 0.3f, 0.25f)
+        val before = top1(d, testPaths, test)
+        for ((i, p) in trainPaths.take(120).withIndex()) assertTrue(d.learnOffset(p, train[i]))
+        val after = top1(d, testPaths, test)
+        println(String.format(Locale.ROOT, "SWIPE học lệch (0.30, 0.25): học được (%.3f, %.3f), top1 %.3f → %.3f",
+            d.offsetX, d.offsetY, before, after))
+        assertEquals(0.3f, d.offsetX, 0.08f)
+        assertEquals(0.25f, d.offsetY, 0.08f)
+        assertTrue("$before → $after", after >= before + 0.05)
+        // không lệch ⇒ học quanh 0 và không hại
+        val u = decoder()
+        val sim = SwipeSim(8)
+        for (w in train.take(120)) u.learnOffset(sim.path(w, layout), w)
+        assertTrue("lệch ảo (${u.offsetX}, ${u.offsetY})", kotlin.math.abs(u.offsetX) < 0.06f && kotlin.math.abs(u.offsetY) < 0.06f)
+        // dạng lạ / đường 1 điểm ⇒ không học
+        val p1 = SwipePath(1f); p1.add(10f, 10f, 0.0)
+        assertTrue(!u.learnOffset(sim.path("viet", layout), "zzz"))
+        assertTrue(!u.learnOffset(p1, "viet"))
     }
 
     /** Tỉ lệ (trên [n] đường nhiễu) mà [word] nằm trong top-[k]. */
@@ -242,12 +295,16 @@ class SwipeDecoderTests {
         val t0 = System.nanoTime(); d.prepare(); val build = (System.nanoTime() - t0) / 1e6
         val sim = SwipeSim(11)
         val paths = corpus(200).map { sim.path(it, layout) }
-        repeat(3) { for (p in paths) d.decode(p, 5) }   // hâm JIT
+        val plain = SwipeDecoder(SwipeDecoder.Params(rescorePool = 0, lengthWeight = 0f)).also { it.setLayout(layout); it.prepare() }
+        repeat(5) { for (p in paths) { d.decode(p, 5); plain.decode(p, 5) } }   // hâm JIT
         val t1 = System.nanoTime()
-        for (p in paths) d.decode(p, 5)
-        val per = (System.nanoTime() - t1) / 1e6 / paths.size
-        println(String.format(Locale.ROOT, "SWIPE benchmark JVM: dựng template %.1f ms, decode %.3f ms/đường, RAM template %d B",
-            build, per, d.templateBytes))
+        repeat(5) { for (p in paths) d.decode(p, 5) }
+        val per = (System.nanoTime() - t1) / 1e6 / paths.size / 5
+        val t2 = System.nanoTime()
+        repeat(5) { for (p in paths) plain.decode(p, 5) }
+        val perPlain = (System.nanoTime() - t2) / 1e6 / paths.size / 5
+        println(String.format(Locale.ROOT, "SWIPE benchmark JVM: dựng template %.1f ms, decode %.3f ms/đường " +
+            "(SHARK2 trần %.3f), RAM template %d B", build, per, perPlain, d.templateBytes))
         assertTrue("decode $per ms", per < 5.0)
     }
 
