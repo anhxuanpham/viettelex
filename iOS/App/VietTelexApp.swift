@@ -823,12 +823,18 @@ struct TinhNangSections: View {
             settingToggle("Thanh gợi ý", "Gợi ý từ + emoji, tự học từ bạn hay dùng (chỉ trên máy).", isOn: $showSuggestions)
             settingToggle("Lọc từ nhạy cảm khỏi gợi ý", "Không chủ động gợi ý từ tục — gõ tay và học vẫn bình thường.", isOn: $filterSensitive)
             settingToggle("Mẫu câu", "Nút ☰ trên bàn phím chèn nhanh câu soạn sẵn — quản lý ở tab Mẫu Câu.", isOn: $templatesEnabled)
-            Button("Xóa từ đã học", role: .destructive) {
-                if let dir = FileManager.default
-                    .containerURL(forSecurityApplicationGroupIdentifier: "group.com.viettelex") {
-                    try? FileManager.default.removeItem(at: dir.appendingPathComponent("userlm.plist"))
-                    try? FileManager.default.removeItem(at: dir.appendingPathComponent("userlm.json"))
+            NavigationLink {
+                UserDictView()
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Từ điển cá nhân")
+                    Text("Xem, tìm, xoá từ đã học; thêm tên riêng, thuật ngữ.")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
+            }
+            Button("Xóa từ đã học", role: .destructive) {
+                // Xoá file + đổi mốc userlmResetAt ⇒ bàn phím bỏ bảng trong RAM lần hiện kế tiếp.
+                UserDictStore.eraseAll()
             }
         } header: { Text("Gợi ý") }
 

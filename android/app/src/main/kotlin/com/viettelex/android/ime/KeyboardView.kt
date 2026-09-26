@@ -52,6 +52,8 @@ class KeyboardView(
         /** Nhấc tay ([commit]) hoặc huỷ (ACTION_CANCEL / bàn phím ẩn). */
         fun onSwipeDeleteEnd(commit: Boolean)
         fun onGlobe(longPress: Boolean)
+        /** Giữ lâu phím "," (chỉ khi [setVoiceAvailable]) — chuyển sang IME giọng nói. */
+        fun onVoiceInput()
         fun onDismissKeyboard()
         fun onTemplate(item: TemplateItem)
         fun onOpenTemplates()
@@ -197,6 +199,27 @@ class KeyboardView(
         keys.firstOrNull { it.kind == KeyKind.EMOJI }?.let { invalidateKey(it) }
     }
     private val globeLongRun = Runnable { globeFired = true; listener?.onGlobe(true) }
+
+    // --- giữ lâu "," = gõ giọng nói (kiểu Gboard; chỉ khi có IME giọng nói) ---
+    private var voiceAvailable = false
+    private var commaPtr = -1
+    private var commaKey: LaidKey? = null
+    private val voiceLongRun = Runnable {
+        val k = commaKey ?: return@Runnable
+        commits.disarm(k)                 // không chèn "," khi nhấc tay
+        commaPtr = -1
+        listener?.onVoiceInput()
+    }
+    fun setVoiceAvailable(on: Boolean) {
+        if (on == voiceAvailable) return
+        voiceAvailable = on
+        keys.firstOrNull { it.kind == KeyKind.PUNCT && it.label == "," }?.let { invalidateKey(it) }
+    }
+    private fun isVoiceComma(k: LaidKey) = voiceAvailable && plane == Plane.LETTERS && k.kind == KeyKind.PUNCT && k.label == ","
+    private fun cancelVoiceHold() {
+        if (commaPtr < 0) return
+        removeCallbacks(voiceLongRun); commaPtr = -1; commaKey = null
+    }
 
     // --- badge "ViệtTelex" ---
     private var badgeAlpha = 0f
@@ -376,8 +399,12 @@ class KeyboardView(
                 drawLabel(c, k.label, cx, cy - hintLift, digitPaint, digitOff, contentAlpha)
                 drawLabel(c, k.hint, cx, cy + hintDrop, hintPaint, hintOff, (contentAlpha * 0.7f).toInt())
             }
-            KeyKind.PUNCT -> if (k.label == ".com") drawLabel(c, k.label, cx, cy, comPaint, comOff, contentAlpha)
-                             else drawLabel(c, k.label, cx, cy, letterPaint, letterOff, contentAlpha)
+            KeyKind.PUNCT -> {
+                if (k.label == ".com") drawLabel(c, k.label, cx, cy, comPaint, comOff, contentAlpha)
+                else drawLabel(c, k.label, cx, cy, letterPaint, letterOff, contentAlpha)
+                // Gợi ý giữ lâu kiểu Gboard: 🎤 nhỏ, mờ ở góc trên-phải phím ",".
+                if (isVoiceComma(k)) icon(c, ImeIcons.MIC, k.right - hintInset, k.top + hintInset, 10f, theme.ink, (contentAlpha * 0.55f).toInt())
+            }
             KeyKind.PLANE, KeyKind.MORE -> drawLabel(c, k.label, cx, cy, controlPaint, controlOff, contentAlpha)
             KeyKind.SHIFT -> {
                 val id = when (shift) { Shift.CAPS -> ImeIcons.CAPS; Shift.ON -> ImeIcons.SHIFT_FILL; Shift.OFF -> ImeIcons.SHIFT }
@@ -476,6 +503,7 @@ class KeyboardView(
             commits.flush(); ptrPane[pid] = true; templatesPane.down(pid, x, y); return
         }
         val k = KeyLayout.hit(keys, plane, x, y, TouchGeometry.yOffset * d, d)
+        cancelVoiceHold()                 // ngón khác chạm ⇒ "," đang giữ là gõ thường
         if (TouchLog.enabled) {
             val lag = (SystemClock.uptimeMillis() - e.eventTime).toDouble()
             TouchLog.touchBegan(activeCount(), e.pointerCount, lag, k != null, (y / d).toDouble(),
@@ -512,6 +540,10 @@ class KeyboardView(
                 feedback.click(Feedback.LETTER, this)
                 press(k)
                 commits.arm(k, textFire(k.insert))
+                if (isVoiceComma(k)) {
+                    commaPtr = pid; commaKey = k
+                    postDelayed(voiceLongRun, GLOBE_HOLD_MS)
+                }
             }
             KeyKind.SPACE -> {
                 feedback.click(Feedback.SPACE, this)
@@ -577,6 +609,7 @@ class KeyboardView(
                 } else if (movedFar) removeCallbacks(spaceHoldRun)
             }
             k.kind == KeyKind.BACKSPACE && pid == bsPtr -> moveBackspace(k, x - ptrDownX[pid], y - ptrDownY[pid], movedFar)
+            pid == commaPtr && movedFar -> cancelVoiceHold()
         }
     }
 
@@ -599,7 +632,10 @@ class KeyboardView(
         when (k.kind) {
             KeyKind.LETTER -> hideBalloon(k)
             KeyKind.CHAR -> { hideBalloon(k); commits.release(k) }
-            KeyKind.PUNCT, KeyKind.RETURN, KeyKind.PAD -> commits.release(k)
+            KeyKind.PUNCT, KeyKind.RETURN, KeyKind.PAD -> {
+                if (pid == commaPtr) cancelVoiceHold()
+                commits.release(k)        // đã giữ lâu ⇒ disarm rồi, không chèn gì
+            }
             KeyKind.SPACE -> {
                 if (pid == spacePtr) {
                     removeCallbacks(spaceHoldRun); spacePtr = -1
@@ -683,6 +719,7 @@ class KeyboardView(
         endSwipe(commit = false)
         removeCallbacks(spaceHoldRun); removeCallbacks(bsStartRun); removeCallbacks(bsTickRun)
         removeCallbacks(globeLongRun)
+        cancelVoiceHold()
         spacePtr = -1; bsPtr = -1; globePtr = -1; bsRepeating = false
         if (trackpad) endTrackpad()
         balloon.hide(); balloonOwner = null

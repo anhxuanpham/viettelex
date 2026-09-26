@@ -41,7 +41,9 @@ object ImeIcons {
     const val CHECK = 26
     /** Toolbar Gboard (vị trí ☰ cũ): lưới 4 ô bo tròn. */
     const val GRID = 27
-    private const val COUNT = 28
+    /** Gợi ý giữ lâu "," = gõ giọng nói. */
+    const val MIC = 28
+    private const val COUNT = 29
 
     /** Thứ tự icon category của plane emoji (clock → flag). */
     val CATEGORY = intArrayOf(CLOCK, FACE, HARE, FORK_KNIFE, SOCCER, CAR, BULB, HEART, FLAG)
@@ -198,6 +200,11 @@ object ImeIcons {
             lineTo(3f, 14f); close()
         }
         p(CHECK, 2.2f) { moveTo(4.5f, 12.5f); lineTo(9.5f, 17.5f); lineTo(19.5f, 6.5f) }
+        p(MIC, 1.8f) {
+            addRoundRect(RectF(9f, 3f, 15f, 14f), 3f, 3f, Path.Direction.CW)
+            moveTo(5.5f, 11f); quadTo(5.5f, 17.5f, 12f, 17.5f); quadTo(18.5f, 17.5f, 18.5f, 11f)
+            moveTo(12f, 17.5f); lineTo(12f, 21f)
+        }
         p(GRID, 0f) {
             addRoundRect(RectF(4f, 4f, 10.5f, 10.5f), 1.8f, 1.8f, Path.Direction.CW)
             addRoundRect(RectF(13.5f, 4f, 20f, 10.5f), 1.8f, 1.8f, Path.Direction.CW)

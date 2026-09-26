@@ -30,6 +30,8 @@ final class UserLangModel {
     private var biPairs = 0
     private var triPairs = 0
     private var uniTotal = 0        // Σ uni.values — incremental, không reduce mỗi phím
+    /// Từ user tự thêm (màn Từ điển cá nhân): key lowercase → dạng hiển thị ("VietTelex").
+    private(set) var manual: [String: String] = [:]
 
     /// Lexicon tĩnh — controller nạp VNLexicon vào; từ trong lexicon được gợi ý
     /// ngay, từ lạ cần đạt ngưỡng. Mặc định false để tests kiểm soát được.
@@ -50,6 +52,8 @@ final class UserLangModel {
     private var loadGeneration = 0    // eraseAll() giữa chừng → bỏ kết quả load cũ
     private var pendingRecords: [(word: String, prev1: String?, prev2: String?, weight: Int)] = []
     private var pendingSeed: (uni: () -> [String: Int], bi: () -> [(String, String, Int)])?
+    /// Nguồn seed gần nhất — để reloadAfterExternalEdit() seed lại khi file bị app xoá.
+    private var seedSource: (uni: () -> [String: Int], bi: () -> [(String, String, Int)])?
 
     // Memo isKnownWord (VNSuggest.contains = binary search + alloc mỗi lần) —
     // tính hợp lệ của một từ không đổi trong đời keyboard.
@@ -63,6 +67,9 @@ final class UserLangModel {
     private static let unknownSuggestThreshold = 3
     private static let pendingRecordCap = 128
     static let sep = "\u{1}"
+    /// Count khởi điểm của từ thêm tay: ≥ ngưỡng gợi ý, xếp trên từ học 1-2 lần.
+    static let manualCount = 5
+    static let manualMaxLen = 24
 
     /// Store thật trong App Group; truyền nil cho tests (in-memory).
     init(appGroup: String? = "group.com.viettelex") {
@@ -80,9 +87,21 @@ final class UserLangModel {
     }
 
     /// Tests: store thật ở file tuỳ ý (App Group không có trong test hostless).
-    init(fileURL url: URL) {
+    /// `synchronous`: đọc file NGAY trên thread gọi (app — màn Từ điển cá nhân).
+    init(fileURL url: URL, synchronous: Bool = false) {
         fileURL = url
-        loadAsync(from: url)
+        if synchronous {
+            finishLoad(Self.readTables(from: url))
+        } else {
+            loadAsync(from: url)
+        }
+    }
+
+    /// Store App Group mở đồng bộ cho app chứa (màn Từ điển cá nhân); nil nếu không có App Group.
+    static func openSharedForEditing(appGroup: String = "group.com.viettelex") -> UserLangModel? {
+        guard let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup)
+        else { return nil }
+        return UserLangModel(fileURL: dir.appendingPathComponent("userlm.plist"), synchronous: true)
     }
 
     private func loadAsync(from url: URL) {
@@ -99,7 +118,9 @@ final class UserLangModel {
     private func finishLoad(_ t: LoadedTables?) {
         if let t {
             uni = t.uni; bi = t.bi; tri = t.tri; lastDecay = t.lastDecay
-            biPairs = t.biPairs; triPairs = t.triPairs; uniTotal = t.uniTotal
+            manual = t.manual
+            keepManual()
+            biPairs = t.biPairs; triPairs = t.triPairs; uniTotal = uni.values.reduce(0, +)
         }
         isLoaded = true
         topCache = nil
@@ -169,7 +190,98 @@ final class UserLangModel {
 
     /// Được phép XUẤT HIỆN trong gợi ý chưa? (learning vs suggesting)
     private func suggestable(_ w: String) -> Bool {
-        cachedKnown(w) || (uni[w] ?? 0) >= Self.unknownSuggestThreshold
+        cachedKnown(w) || manual[w] != nil || (uni[w] ?? 0) >= Self.unknownSuggestThreshold
+    }
+
+    // MARK: từ điển cá nhân (màn quản lý trong app)
+
+    struct Entry: Equatable {
+        let word: String      // dạng hiển thị
+        let count: Int
+        let manual: Bool
+    }
+
+    /// Mọi từ đã học + từ thêm tay, tần suất giảm dần (hoà: theo chữ cái). `query` ≠ rỗng:
+    /// chỉ từ CHỨA chuỗi tìm (bỏ dấu, không phân biệt hoa/thường — "viet" khớp "việt").
+    func entries(query: String = "") -> [Entry] {
+        let q = Self.fold(query.trimmingCharacters(in: .whitespaces))
+        return uni.compactMap { k, c -> Entry? in
+            guard q.isEmpty || Self.fold(k).contains(q) else { return nil }
+            return Entry(word: manual[k] ?? k, count: c, manual: manual[k] != nil)
+        }.sorted { $0.count != $1.count ? $0.count > $1.count : $0.word.lowercased() < $1.word.lowercased() }
+    }
+
+    /// Xoá hẳn một từ: unigram, mọi bigram/trigram có từ đó (ở vị trí trước hay sau), và
+    /// dấu "thêm tay". true nếu có gì bị xoá.
+    @discardableResult
+    func removeWord(_ word: String) -> Bool {
+        let w = word.lowercased()
+        var changed = manual.removeValue(forKey: w) != nil
+        if uni.removeValue(forKey: w) != nil { changed = true }
+        if bi.removeValue(forKey: w) != nil { changed = true }
+        for k in Array(bi.keys) where bi[k]?[w] != nil {
+            bi[k]?[w] = nil; changed = true
+            if bi[k]?.isEmpty == true { bi[k] = nil }
+        }
+        for k in Array(tri.keys) {
+            if k.components(separatedBy: Self.sep).contains(w) { tri[k] = nil; changed = true; continue }
+            if tri[k]?[w] != nil {
+                tri[k]?[w] = nil; changed = true
+                if tri[k]?.isEmpty == true { tri[k] = nil }
+            }
+        }
+        guard changed else { return false }
+        biPairs = bi.values.reduce(0) { $0 + $1.count }
+        triPairs = tri.values.reduce(0) { $0 + $1.count }
+        uniTotal = uni.values.reduce(0, +)
+        topCache = nil
+        knownCache[w] = nil
+        scheduleSave()
+        return true
+    }
+
+    /// Thêm tay một từ (tên riêng, thuật ngữ) — được gợi ý ngay (không cần đạt ngưỡng từ
+    /// lạ), hiện ở hoàn thiện từ khi gõ tiền tố, không bị decay/prune xoá. false nếu không hợp lệ.
+    @discardableResult
+    func addWord(_ raw: String) -> Bool {
+        guard let display = Self.normalizeManual(raw) else { return false }
+        let w = display.lowercased()
+        manual[w] = display
+        let had = uni[w] ?? 0
+        if had < Self.manualCount { uni[w] = Self.manualCount; uniTotal += Self.manualCount - had }
+        topCache = nil
+        scheduleSave()
+        return true
+    }
+
+    /// Từ thêm tay khớp tiền tố đang gõ (bỏ dấu, không phân biệt hoa/thường), dạng hiển thị.
+    func manualCompletions(_ prefix: String, limit: Int = 2) -> [String] {
+        guard !manual.isEmpty, !prefix.isEmpty else { return [] }
+        let f = Self.fold(prefix)
+        return manual.filter { k, d in d != prefix && Self.fold(k).hasPrefix(f) }
+            .sorted { a, b in
+                let ca = uni[a.key] ?? 0, cb = uni[b.key] ?? 0
+                return ca != cb ? ca > cb : a.key < b.key
+            }
+            .prefix(limit).map { $0.value }
+    }
+
+    /// Chuẩn hoá từ nhập tay: bỏ khoảng trắng đầu/cuối, chỉ chữ cái, 1…24 ký tự. nil = không hợp lệ.
+    static func normalizeManual(_ raw: String) -> String? {
+        let w = raw.trimmingCharacters(in: .whitespacesAndNewlines).precomposedStringWithCanonicalMapping
+        guard !w.isEmpty, w.count <= manualMaxLen, w.allSatisfy({ $0.isLetter }) else { return nil }
+        return w
+    }
+
+    /// Bỏ dấu + lowercase + đ→d.
+    static func fold(_ s: String) -> String {
+        s.lowercased().folding(options: .diacriticInsensitive, locale: nil)
+            .replacingOccurrences(of: "đ", with: "d")
+    }
+
+    /// Từ thêm tay luôn còn trong uni (decay/prune không được xoá).
+    private func keepManual() {
+        for k in manual.keys where (uni[k] ?? 0) < 1 { uni[k] = 1 }
     }
 
     // MARK: gợi ý
@@ -184,7 +296,7 @@ final class UserLangModel {
         var out: [String] = []
         out.reserveCapacity(limit)
         for (w, _) in sorted where suggestable(w) {
-            out.append(w)
+            out.append(manual[w] ?? w)
             if out.count >= limit { break }
         }
         topCache = (limit, out)
@@ -222,7 +334,7 @@ final class UserLangModel {
         // là 2·n·log n lượt) rồi sort tuple.
         return cands.map { ($0, score($0)) }
             .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0 < $1.0 }
-            .prefix(limit).map { $0.0 }
+            .prefix(limit).map { manual[$0.0] ?? $0.0 }
     }
 
     /// Điểm cá nhân của một từ (re-rank completion của lexicon).
@@ -234,6 +346,7 @@ final class UserLangModel {
     /// đã có dữ liệu; đang chờ load thì giữ closure lại, quyết sau swap-in.
     func seedIfEmpty(unigrams: @autoclosure @escaping () -> [String: Int],
                      bigrams: @autoclosure @escaping () -> [(String, String, Int)]) {
+        seedSource = (unigrams, bigrams)
         guard isLoaded else {
             pendingSeed = (unigrams, bigrams)
             return
@@ -266,6 +379,7 @@ final class UserLangModel {
         var biPairs: Int
         var triPairs: Int
         var uniTotal: Int
+        var manual: [String: String]
     }
     private struct LegacySnapshot: Codable { var uni: [String: Int]; var bi: [String: Int] }
 
@@ -275,12 +389,14 @@ final class UserLangModel {
         var bi: [String: [String: Int]] = [:]
         var tri: [String: [String: Int]] = [:]
         var lastDecay = Date()
+        var manual: [String: String] = [:]
         if let dict = (try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)) as? [String: Any],
            let u = dict["uni"] as? [String: Int] {
             uni = u
             bi = dict["bi"] as? [String: [String: Int]] ?? [:]
             tri = dict["tri"] as? [String: [String: Int]] ?? [:]
             lastDecay = dict["lastDecay"] as? Date ?? Date()
+            for d in dict["manual"] as? [String] ?? [] { manual[d.lowercased()] = d }
         } else if let old = try? JSONDecoder().decode(LegacySnapshot.self, from: data) {
             // v1 (userlm.json cùng nội dung): migrate bigram phẳng → nested
             uni = old.uni
@@ -296,7 +412,8 @@ final class UserLangModel {
             uni: uni, bi: bi, tri: tri, lastDecay: lastDecay,
             biPairs: bi.values.reduce(0) { $0 + $1.count },
             triPairs: tri.values.reduce(0) { $0 + $1.count },
-            uniTotal: uni.values.reduce(0, +)
+            uniTotal: uni.values.reduce(0, +),
+            manual: manual
         )
     }
 
@@ -333,7 +450,9 @@ final class UserLangModel {
     }
 
     private func snapshotPlist() -> [String: Any] {
-        ["version": 3, "uni": uni, "bi": bi, "tri": tri, "lastDecay": lastDecay]
+        // "manual" (từ thêm tay) — key mới, bản cũ đọc bỏ qua.
+        ["version": 3, "uni": uni, "bi": bi, "tri": tri, "lastDecay": lastDecay,
+         "manual": Array(manual.values)]
     }
 
     private static func write(_ plist: [String: Any], to url: URL) {
@@ -352,10 +471,39 @@ final class UserLangModel {
         DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: work)
     }
 
+    /// App chứa: ghi NGAY (đồng bộ) — sau đó mới báo bàn phím nạp lại.
+    func saveSync() {
+        saveWork?.cancel(); saveWork = nil
+        guard isLoaded, let url = fileURL else { return }
+        let snap = snapshotPlist()
+        ioQueue.sync { Self.write(snap, to: url) }
+    }
+
+    /// App đã sửa/xoá userlm.plist (Từ điển cá nhân / "Xóa từ đã học" — mốc userlmResetAt
+    /// trong App Group đổi): bỏ bảng trong RAM, huỷ ghi chờ (không bao giờ ghi đè bản của
+    /// app), nạp lại file (vắng ⇒ seed lại).
+    func reloadAfterExternalEdit() {
+        loadGeneration += 1              // load đang bay (nếu có) bị bỏ kết quả
+        saveWork?.cancel(); saveWork = nil
+        uni = [:]; bi = [:]; tri = [:]; manual = [:]; biPairs = 0; triPairs = 0; uniTotal = 0
+        pendingRecords = []; pendingSeed = nil
+        topCache = nil
+        knownCache.removeAll()
+        if let url = fileURL {
+            isLoaded = false
+            pendingSeed = seedSource
+            loadAsync(from: url)
+        } else {
+            isLoaded = true
+            if let s = seedSource { applySeed(unigrams: s.uni(), bigrams: s.bi()) }
+        }
+    }
+
     func eraseAll() {
         loadGeneration += 1              // load đang bay (nếu có) bị bỏ kết quả
         isLoaded = true
         saveWork?.cancel(); saveWork = nil
+        manual = [:]
         uni = [:]; bi = [:]; tri = [:]; biPairs = 0; triPairs = 0; uniTotal = 0
         pendingRecords = []; pendingSeed = nil
         topCache = nil
@@ -380,6 +528,7 @@ final class UserLangModel {
         tri = tri.compactMapValues { inner in
             let d = inner.compactMapValues(decayed); return d.isEmpty ? nil : d
         }
+        keepManual()
         biPairs = bi.values.reduce(0) { $0 + $1.count }
         triPairs = tri.values.reduce(0) { $0 + $1.count }
         uniTotal = uni.values.reduce(0, +)
@@ -392,6 +541,7 @@ final class UserLangModel {
     private func pruneIfNeeded() {
         if uni.count > Self.uniCap {
             uni = uni.compactMapValues { $0 / 2 == 0 ? nil : $0 / 2 }
+            keepManual()
             uniTotal = uni.values.reduce(0, +)
             topCache = nil
         }

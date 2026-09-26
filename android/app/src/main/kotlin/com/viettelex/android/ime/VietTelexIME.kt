@@ -79,6 +79,8 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         return AndroidEditorPort(ic).also { portCache = it }
     }
     private val feedback by lazy { Feedback(this) }
+    private val voice by lazy { VoiceInput(this) }
+    private var voiceChecked = false
 
     private var worker: Handler? = null
     private var workerThread: HandlerThread? = null
@@ -215,6 +217,10 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
             th.dp(KeyLayout.keyAreaDp(th.tablet, th.landscape, settings.rowHeightAdjust)),
             field.numberSigned, field.numberDecimal)
         st.setPlane(kb.plane)
+        // Giữ lâu "," = gõ giọng nói: chỉ khi máy có IME giọng nói (đọc lại khi vào ô mới —
+        // user có thể bật/tắt trong Cài đặt), không ở ô mật khẩu.
+        if (!restarting || !voiceChecked) { voice.refresh(); voiceChecked = true }
+        kb.setVoiceAvailable(voice.available && !field.isSecure)
         updateSwipeTyping()
         root?.refreshInsets()
         root?.requestLayout()
@@ -434,6 +440,10 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     private var switcherHintVisible = false
 
     override fun onDismissKeyboard() = requestHideSelf(0)
+
+    override fun onVoiceInput() {
+        if (!voice.launch()) { voice.refresh(); keyboard?.setVoiceAvailable(voice.available && !field.isSecure) }
+    }
 
     override fun onPlaneChanged(plane: Plane) {
         strip?.setPlane(plane)

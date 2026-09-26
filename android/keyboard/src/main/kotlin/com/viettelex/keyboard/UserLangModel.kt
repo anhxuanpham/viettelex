@@ -42,6 +42,8 @@ class UserLangModel(
     private var biPairs = 0
     private var triPairs = 0
     private var uniTotal = 0
+    /** Từ user tự thêm (màn Từ điển cá nhân): key lowercase → dạng hiển thị ("VietTelex"). */
+    private var manual = LinkedHashMap<String, String>()
 
     /** Lexicon tĩnh (VNSuggest.contains). Mặc định false để test kiểm soát. */
     var isKnownWord: (String) -> Boolean = { false }
@@ -85,6 +87,38 @@ class UserLangModel(
         private const val MAGIC = 0x56544C4D // "VTLM"
         private const val VERSION = 1
         private const val WEEK_MS = 7L * 86_400_000L
+        /** Đuôi tuỳ chọn sau bảng tri: danh sách từ thêm tay (bản cũ đọc bỏ qua đuôi). */
+        private const val MANUAL_MAGIC = 0x4D414E55 // "MANU"
+        /** Count khởi điểm của từ thêm tay: ≥ ngưỡng gợi ý, xếp trên từ học 1-2 lần. */
+        const val MANUAL_COUNT = 5
+        const val MANUAL_MAX_LEN = 24
+
+        /**
+         * Chuẩn hoá từ user gõ vào màn Từ điển cá nhân: bỏ khoảng trắng đầu/cuối, chỉ chữ
+         * cái (tên riêng, thuật ngữ — một "từ" không dấu cách), 1..24 ký tự. null = không hợp lệ.
+         */
+        fun normalizeManual(raw: String): String? {
+            val w = java.text.Normalizer.normalize(raw.trim(), java.text.Normalizer.Form.NFC)
+            if (w.isEmpty()) return null
+            var n = 0; var i = 0
+            while (i < w.length) {
+                val c = w.codePointAt(i)
+                if (!Character.isLetter(c)) return null
+                n++; i += Character.charCount(c)
+            }
+            return if (n <= MANUAL_MAX_LEN) w else null
+        }
+
+        /** Bỏ dấu + lowercase + đ→d — so tiền tố "kube"/"phuc" với từ thêm tay. */
+        fun fold(s: String): String {
+            val d = java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD)
+            val sb = StringBuilder(d.length)
+            for (ch in d) {
+                if (Character.getType(ch) == Character.NON_SPACING_MARK.toInt()) continue
+                sb.append(if (ch == 'đ') 'd' else ch)
+            }
+            return sb.toString()
+        }
 
         /** Từ "học được": chữ cái thuần, ≤12, không chuỗi lặp ≥3 ("heeeyyy"). */
         fun learnable(w: String): Boolean {
@@ -116,11 +150,13 @@ class UserLangModel(
     }
 
     private class Tables(val uni: HashMap<String, Int>, val bi: HashMap<String, HashMap<String, Int>>,
-                         val tri: HashMap<String, HashMap<String, Int>>, val lastDecay: Long)
+                         val tri: HashMap<String, HashMap<String, Int>>, val lastDecay: Long,
+                         val manual: LinkedHashMap<String, String>)
 
     private fun finishLoad(t: Tables?) {
         if (t != null) {
-            uni = t.uni; bi = t.bi; tri = t.tri; lastDecay = t.lastDecay
+            uni = t.uni; bi = t.bi; tri = t.tri; lastDecay = t.lastDecay; manual = t.manual
+            keepManual()
             recount()
         }
         isLoaded = true
@@ -213,7 +249,93 @@ class UserLangModel(
         return v
     }
 
-    private fun suggestable(w: String) = cachedKnown(w) || (uni[w] ?: 0) >= UNKNOWN_SUGGEST_THRESHOLD
+    private fun suggestable(w: String) =
+        cachedKnown(w) || w in manual || (uni[w] ?: 0) >= UNKNOWN_SUGGEST_THRESHOLD
+
+    // MARK: từ điển cá nhân (màn quản lý trong app)
+
+    /** Một dòng của màn Từ điển cá nhân. */
+    data class Entry(val word: String, val count: Int, val manual: Boolean)
+
+    /**
+     * Mọi từ đã học + từ thêm tay, tần suất giảm dần (hoà: theo chữ cái). [query] ≠ rỗng:
+     * chỉ từ CHỨA chuỗi tìm (bỏ dấu, không phân biệt hoa/thường — "viet" khớp "việt").
+     */
+    fun entries(query: String = ""): List<Entry> {
+        val q = fold(query.trim())
+        return uni.entries.asSequence()
+            .filter { q.isEmpty() || fold(it.key).contains(q) }
+            .map { (k, c) -> Entry(manual[k] ?: k, c, k in manual) }
+            .sortedWith(compareByDescending<Entry> { it.count }.thenBy { it.word.lowercase() })
+            .toList()
+    }
+
+    val isManualEmpty: Boolean get() = manual.isEmpty()
+
+    /**
+     * Xoá hẳn một từ: unigram, mọi bigram/trigram có từ đó (ở vị trí trước hay sau), và
+     * dấu "thêm tay". true nếu có gì bị xoá.
+     */
+    fun removeWord(word: String): Boolean {
+        val w = word.lowercase()
+        var changed = manual.remove(w) != null
+        uni.remove(w)?.let { changed = true }
+        if (bi.remove(w) != null) changed = true
+        val biIt = bi.entries.iterator()
+        while (biIt.hasNext()) {
+            val e = biIt.next()
+            if (e.value.remove(w) != null) changed = true
+            if (e.value.isEmpty()) biIt.remove()
+        }
+        val triIt = tri.entries.iterator()
+        while (triIt.hasNext()) {
+            val e = triIt.next()
+            val parts = e.key.split(SEP)
+            if (w in parts) { triIt.remove(); changed = true; continue }
+            if (e.value.remove(w) != null) changed = true
+            if (e.value.isEmpty()) triIt.remove()
+        }
+        if (!changed) return false
+        recount()
+        topCache = null
+        knownCache.remove(w)
+        scheduleSave()
+        return true
+    }
+
+    /**
+     * Thêm tay một từ (tên riêng, thuật ngữ) — được gợi ý ngay (không cần đạt ngưỡng
+     * từ lạ), hiện ở hoàn thiện từ khi gõ tiền tố, không bị decay/prune xoá. false nếu
+     * không hợp lệ ([normalizeManual]).
+     */
+    fun addWord(raw: String): Boolean {
+        val display = normalizeManual(raw) ?: return false
+        val w = display.lowercase()
+        manual[w] = display
+        val had = uni[w] ?: 0
+        if (had < MANUAL_COUNT) { uni[w] = MANUAL_COUNT; uniTotal += MANUAL_COUNT - had }
+        topCache = null
+        scheduleSave()
+        return true
+    }
+
+    /**
+     * Từ thêm tay khớp tiền tố đang gõ (bỏ dấu, không phân biệt hoa/thường), dạng hiển
+     * thị. Bỏ từ trùng hệt chuỗi đang gõ.
+     */
+    fun manualCompletions(prefix: String, limit: Int = 2): List<String> {
+        if (manual.isEmpty() || prefix.isEmpty()) return emptyList()
+        val f = fold(prefix)
+        return manual.entries.asSequence()
+            .filter { (k, d) -> d != prefix && fold(k).startsWith(f) }
+            .sortedByDescending { uni[it.key] ?: 0 }
+            .map { it.value }.take(limit).toList()
+    }
+
+    /** Từ thêm tay luôn còn trong uni (decay/prune không được xoá). */
+    private fun keepManual() {
+        for (k in manual.keys) if ((uni[k] ?: 0) < 1) uni[k] = 1
+    }
 
     // MARK: gợi ý
 
@@ -224,7 +346,7 @@ class UserLangModel(
         val out = ArrayList<String>(limit)
         for ((w, _) in sorted) {
             if (!suggestable(w)) continue
-            out.add(w)
+            out.add(manual[w] ?: w)
             if (out.size >= limit) break
         }
         topCache = out; topCacheK = limit
@@ -255,7 +377,7 @@ class UserLangModel(
         return cands.filter { suggestable(it) || it in seeds }
             .map { it to score(it) }
             .sortedWith(compareByDescending<Pair<String, Double>> { it.second }.thenBy { it.first })
-            .take(limit).map { it.first }
+            .take(limit).map { manual[it.first] ?: it.first }
     }
 
     /** Điểm cá nhân của một từ. */
@@ -312,18 +434,25 @@ class UserLangModel(
                     return m
                 }
                 val bi = nested(); val tri = nested()
-                Tables(uni, bi, tri, lastDecay)
+                val manual = LinkedHashMap<String, String>()
+                try {
+                    if (d.readInt() == MANUAL_MAGIC) {
+                        repeat(d.readInt()) { val disp = d.readUTF(); manual[disp.lowercase()] = disp }
+                    }
+                } catch (_: java.io.EOFException) { /* file cũ: không có đuôi */ }
+                Tables(uni, bi, tri, lastDecay, manual)
             }
         } catch (e: Exception) { null }
     }
 
     private class Snapshot(val uni: Map<String, Int>, val bi: Map<String, Map<String, Int>>,
-                           val tri: Map<String, Map<String, Int>>, val lastDecay: Long)
+                           val tri: Map<String, Map<String, Int>>, val lastDecay: Long,
+                           val manual: List<String>)
 
     private fun snapshot(): Snapshot {
         // copy nông trên main (rẻ so với encode + IO) — nền encode bản copy
         return Snapshot(HashMap(uni), bi.mapValuesTo(HashMap()) { HashMap(it.value) },
-            tri.mapValuesTo(HashMap()) { HashMap(it.value) }, lastDecay)
+            tri.mapValuesTo(HashMap()) { HashMap(it.value) }, lastDecay, manual.values.toList())
     }
 
     private fun write(s: Snapshot, f: File, gen: Int) {
@@ -340,6 +469,10 @@ class UserLangModel(
                         d.writeUTF(k); d.writeInt(inner.size)
                         for ((w, c) in inner) { d.writeUTF(w); d.writeInt(c) }
                     }
+                }
+                if (s.manual.isNotEmpty()) {
+                    d.writeInt(MANUAL_MAGIC); d.writeInt(s.manual.size)
+                    for (m in s.manual) d.writeUTF(m)
                 }
             }
             if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
@@ -384,7 +517,7 @@ class UserLangModel(
         loadGeneration++
         volatileGen++
         saveWork?.cancel(); saveWork = null
-        uni = HashMap(); bi = HashMap(); tri = HashMap()
+        uni = HashMap(); bi = HashMap(); tri = HashMap(); manual = LinkedHashMap()
         biPairs = 0; triPairs = 0; uniTotal = 0
         pendingRecords.clear(); pendingSeed = null
         topCache = null
@@ -423,6 +556,7 @@ class UserLangModel(
         uni = decayMap(uni)
         bi = nestedMap(bi) { decayMap(it) }
         tri = nestedMap(tri) { decayMap(it) }
+        keepManual()
         recount()
         lastDecay = now
         topCache = null
@@ -446,7 +580,7 @@ class UserLangModel(
     }
 
     private fun pruneIfNeeded() {
-        if (uni.size > UNI_CAP) { uni = halve(uni); uniTotal = uni.values.sum(); topCache = null }
+        if (uni.size > UNI_CAP) { uni = halve(uni); keepManual(); uniTotal = uni.values.sum(); topCache = null }
         if (biPairs > BI_CAP) {
             bi = nestedMap(bi) { halve(it) }
             biPairs = bi.values.sumOf { it.size }

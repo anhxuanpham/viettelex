@@ -11,3 +11,7 @@ Engine Telex (`TelexCore`) dùng chung với app macOS qua local path `../TelexC
 Build: `xcodegen generate && xcodebuild -project VietTelex-iOS.xcodeproj -scheme VietTelexApp -destination 'generic/platform=iOS Simulator' build`
 Tests: scheme `VietTelexKeyboardTests`. Bộ mẫu câu mặc định: `ios-mau-cau.yml`
 (bundle theo build). Blob emoji: `Scripts/blobify-emojisuggest.py`.
+
+Gõ giọng nói: KHÔNG có trên iOS — bàn phím bên thứ ba không được truy cập micro
+(Android dùng nút giữ lâu "," để chuyển sang IME giọng nói của hệ thống). Trên iOS
+dùng nút micro Đọc chính tả của hệ thống (dưới bàn phím, iPhone không nút Home) hoặc 🌐 về bàn phím Apple.
