@@ -54,6 +54,9 @@ final class KeyboardViewController: UIInputViewController {
         langModel.seedIfEmpty(unigrams: SeedData.unigrams, bigrams: SeedData.bigrams)
         // Load plist chạy nền — bar mở-đầu refresh khi dữ liệu sẵn sàng.
         langModel.onReady = { [weak self] in self?.updateSuggestions() }
+        // Map bảng bigram âm tiết (dùng chung gõ vuốt + thanh gợi ý) ở NỀN: lần chạm đầu
+        // hash vnlexicon (~150KB) để kiểm khớp — đừng để rơi vào main ở gợi ý từ kế tiếp.
+        Self.suggestQueue.async { _ = SyllableBigram.shared }
         keyboard.onDeleteWord = { [weak self] in self?.deleteWordBackward() }
         wireWordSwipe()
         wireSwipeTyping()
@@ -753,29 +756,36 @@ final class KeyboardViewController: UIInputViewController {
             // không có phím mới (suggestionGen), cùng bridge + cùng từ đang gõ.
             let req = suggestReq, gen = suggestionGen, b = bridge
             let raw = b.rawWord, predicted = b.predictedCommit, wantFix = b.autoFixAdjacent
+            let prev = lastWord
             Self.suggestQueue.async { [weak self] in
                 let pool = VNSuggest.matches(composed, poolLimit: 24,
                                              excluding: composed.lowercased())
                 let fix = pool.isEmpty && wantFix
                     ? AdjacentKeyFixer.lexiconCorrection(raw: raw, bridge: b) : nil
+                // bigram âm tiết tĩnh theo từ trước (mmap dùng chung với gõ vuốt; tra ~µs)
+                let pmi = SuggestRank.inlinePmi(pool, prev: prev)
                 DispatchQueue.main.async {
                     guard let self, req == self.suggestReq, gen == self.suggestionGen,
                           self.bridge === b, b.composedWord == composed,
                           self.suggestionsActive, self.keyboard?.isBarCollapsed != true
                     else { return }
-                    self.showComposingSuggestions(composed: composed, raw: raw,
-                                                  predicted: predicted, pool: pool, fix: fix)
+                    self.showComposingSuggestions(composed: composed, raw: raw, predicted: predicted,
+                                                  pool: pool, pmi: pmi, fix: fix)
                 }
             }
             return
         } else if let prev = lastWord {
             // vừa space sau một từ → gợi từ KẾ TIẾP (trigram/bigram cá nhân
-            // interpolate với seed)
-            let next = SensitiveWords.filter(
+            // interpolate với seed); thiếu thì lấp bằng bigram tĩnh (người dùng mới)
+            // rồi mới tới topWords
+            let personal = Array(SensitiveWords.filter(
                 langModel.nextWords(after: prev, prev2: lastWord2, limit: 6),
                 enabled: filterSensitive
-            ).prefix(3).map { caseForContext(DisplayCase.apply($0, after: prev)) }
-            set.nextWords = padWords(Array(next), need: 3)
+            ).prefix(3))
+            let next = personal.count >= 3 ? personal : SuggestionFill.pad(personal,
+                with: SensitiveWords.filter(SuggestRank.bigramNext(prev, limit: 6), enabled: filterSensitive),
+                need: 3)
+            set.nextWords = padWords(next.map { caseForContext(DisplayCase.apply($0, after: prev)) }, need: 3)
         } else {
             // field trống chưa gõ gì → từ user hay mở đầu nhất
             let top = SensitiveWords.filter(langModel.topWords(limit: 6),
@@ -789,7 +799,7 @@ final class KeyboardViewController: UIInputViewController {
 
     /// Phần main của gợi ý khi đang gõ dở: pool (VNSuggest) + fix đã tính nền.
     private func showComposingSuggestions(composed: String, raw: String, predicted: String,
-                                          pool: [(word: String, freq: Int)], fix: String?) {
+                                          pool: [VNSuggest.Match], pmi: [Float]?, fix: String?) {
         var set = KeyboardView.SuggestionSet()
         // Slot "nguyên văn" = phương án mà boundary SẼ KHÔNG cho ra —
         // lối thoát cho cả hai chiều collision (user chốt 2026-07-24):
@@ -810,19 +820,11 @@ final class KeyboardViewController: UIInputViewController {
                 } ?? []
                 ctxCacheKey = ctxKey
             }
-            let ctx = ctxCache
-            let typedLen = composed.count
-            func score(_ w: String, _ f: Int) -> Double {
-                log(Double(f) + 1)
-                    + 2.5 * log(Double(langModel.count(of: w)) + 1)
-                    + (ctx.contains(w) ? 4 : 0)
-                    + (w.count == typedLen ? 1.5 : 0)
-            }
-            // score tính 1 lần/ứng viên rồi sort tuple — không gọi lại
-            // trong comparator (2·n·log n lần).
-            let scored = pool.map { ($0.word, score($0.word, $0.freq)) }
+            // + bigram âm tiết tĩnh (SuggestRank — logic thuần, test đo trên heldout)
+            let lm = langModel
             let ranked = SensitiveWords.filter(
-                scored.sorted { $0.1 > $1.1 }.map { $0.0 },
+                SuggestRank.rankInline(pool, pmi: pmi, typedLen: composed.count,
+                                       count: { lm.count(of: $0) }, ctx: ctxCache),
                 enabled: filterSensitive)
             set.word = ranked.first.map { DisplayCase.apply($0, after: lastWord) }
             set.word2 = ranked.dropFirst().first.map { DisplayCase.apply($0, after: lastWord) }

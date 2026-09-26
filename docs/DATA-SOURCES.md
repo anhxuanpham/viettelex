@@ -3,7 +3,7 @@
 Mã nguồn VietTelex theo [MIT](../LICENSE). Một số **file dữ liệu** đóng gói trong app có
 nguồn và giấy phép riêng, ghi dưới đây.
 
-## vnbigram.bin — bigram âm tiết cho gõ vuốt
+## vnbigram.bin — bigram âm tiết cho gõ vuốt + thanh gợi ý
 
 `iOS/Keyboard/Resources/vnbigram.bin` = `android/app/src/main/assets/vnbigram.bin`
 (~1,2 MB, 400.807 cặp). Sinh bởi `Scripts/gen-syllable-bigram.py`. Chỉ chứa **số liệu
