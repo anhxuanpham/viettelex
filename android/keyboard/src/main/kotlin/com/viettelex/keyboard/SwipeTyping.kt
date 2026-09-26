@@ -116,8 +116,10 @@ object SwipeSuggest {
      * Điểm ngữ cảnh (log-domain, GIỐNG bản iOS SwipeTyping.contextScore):
      *  - cá nhân: từ kế tiếp hay gặp sau (prev2, prev1) +[NEXT_BONUS]; từ hay gõ
      *    +ln(1+count)·[PERSONAL_WEIGHT] (trần [PERSONAL_CAP]);
-     *  - tĩnh: PMI bigram âm tiết (vnbigram.bin) sau [prev] ·[STATIC_WEIGHT], trần [STATIC_CAP]
-     *    (< NEXT_BONUS ⇒ dữ liệu cá nhân vẫn thắng); đã có nextWords thì nhân [STATIC_DAMP].
+     *  - tĩnh: trigram âm tiết (vnlm.bin, [SyllableLM]) sau (prev2, prev) ·[LM_WEIGHT] kẹp
+     *    [[LM_FLOOR], [LM_CAP]]; không có vnlm.bin thì PMI bigram (vnbigram.bin) sau [prev]
+     *    ·[STATIC_WEIGHT], trần [STATIC_CAP] (< NEXT_BONUS ⇒ dữ liệu cá nhân vẫn thắng); đã có
+     *    nextWords thì nhân [STATIC_DAMP].
      * [folded] (cho decoder) = điểm âm tiết tốt nhất của dạng không dấu (tần suất + ngữ cảnh)
      * trừ phần tần suất decoder đã tính ⇒ decode và expand chấm cùng một thước.
      */
@@ -125,14 +127,28 @@ object SwipeSuggest {
                   private val count: (String) -> Int,
                   prev: String? = null, bigram: SyllableBigram? = null,
                   /** Tham số tiếng Anh cho decoder (giai đoạn 3); null = tắt vuốt tiếng Anh. */
-                  val english: SwipeEnglishPrior? = null) {
+                  val english: SwipeEnglishPrior? = null,
+                  /** Âm tiết trước nữa + mô hình trigram (vnlm.bin); có LM thì thay bigram PMI. */
+                  prev2: String? = null, lm: SyllableLM? = null) {
+        private val id1 = if (prev == null) -1 else SyllableBigram.idOf(prev)
+        private val lmCtx: SyllableLM.Context? =
+            if (lm == null || id1 < 0) null
+            else lm.context(if (prev2 == null) -1 else SyllableBigram.idOf(prev2), id1)
         private val row: SyllableBigram.Row? =
-            if (prev == null || bigram == null) null
-            else bigram.row(SyllableBigram.idOf(prev)).takeIf { it.size > 0 }
-        private val staticWeight = if (next.isEmpty()) STATIC_WEIGHT else STATIC_WEIGHT * STATIC_DAMP
+            if (lmCtx != null || id1 < 0 || bigram == null) null
+            else bigram.row(id1).takeIf { it.size > 0 }
+        private val damp = if (next.isEmpty()) 1f else STATIC_DAMP
+        private val staticWeight = (if (lmCtx != null) LM_WEIGHT else STATIC_WEIGHT) * damp
+        /** λ tần suất khi chọn dạng + bung dấu (hạ còn [LM_LAMBDA_FREQ] khi có trigram). */
+        val lambdaFreq: Float = if (lmCtx != null) LM_LAMBDA_FREQ else LAMBDA_FREQ
 
-        /** Điểm bigram tĩnh của âm tiết có dấu [w] (0 nếu không có dữ liệu). */
+        /** Điểm LM tĩnh của âm tiết có dấu [w] (0 nếu không có dữ liệu). */
         fun static(w: String): Float {
+            if (lmCtx != null) {
+                val id = SyllableBigram.idOf(w)
+                return if (id < 0) 0f
+                else maxOf(LM_FLOOR * damp, minOf(LM_CAP * damp, staticWeight * lmCtx.score(id)))
+            }
             val r = row ?: return 0f
             val id = SyllableBigram.idOf(w)
             return if (id < 0) 0f else minOf(STATIC_CAP, staticWeight * r.score(id))
@@ -145,7 +161,17 @@ object SwipeSuggest {
         val englishWord: (String) -> Float = { w ->
             val c = count(w)
             val p = if (c > 0) minOf(PERSONAL_CAP, PERSONAL_WEIGHT * ln(1.0 + c).toFloat()) else 0f
-            p + if (w in next) NEXT_BONUS else 0f
+            p + (if (w in next) NEXT_BONUS else 0f) + englishFreqShift(w)
+        }
+
+        /**
+         * Có trigram thì ứng viên Việt chấm tần suất bằng [LM_LAMBDA_FREQ] thay vì λ decoder —
+         * hạ y như vậy cho từ tiếng Anh để cán cân Việt/Anh (bias, margin) giữ nguyên.
+         */
+        private fun englishFreqShift(w: String): Float {
+            if (lmCtx == null) return 0f
+            val i = SwipeEnglish.indexOf(w)
+            return if (i < 0) 0f else -(LAMBDA_FREQ - LM_LAMBDA_FREQ) * SwipeEnglish.lexicon.freq[i] / 255f
         }
 
         val word: (String) -> Float = { w ->
@@ -155,15 +181,21 @@ object SwipeSuggest {
         }
 
         val folded: ((String) -> Float)? =
-            if (nextFolded.isEmpty() && row == null) null else { f -> foldedScore(f, word) }
+            if (nextFolded.isEmpty() && row == null && lmCtx == null) null
+            else { f -> foldedScore(f, word, lambdaFreq, clamp = lmCtx == null) }
     }
 
-    /** max(tần suất + ngữ cảnh) trên các âm tiết của [f] − tần suất decoder đã cộng (≥ 0). */
-    fun foldedScore(f: String, word: (String) -> Float): Float {
+    /**
+     * max(λ'·tần suất + ngữ cảnh) trên các âm tiết của [f] − tần suất decoder đã cộng. Không
+     * có trigram: λ' = λ, kẹp ≥ 0 (như cũ); có trigram: λ' = [LM_LAMBDA_FREQ], không kẹp.
+     */
+    fun foldedScore(f: String, word: (String) -> Float, lambdaFreq: Float = LAMBDA_FREQ,
+                    clamp: Boolean = true): Float {
         val i = SwipeLexicon.indexOf(f)
         if (i < 0) return 0f
-        val best = SwipeDecoder.expand(f, 1, context = word).firstOrNull() ?: return 0f
-        return maxOf(0f, best.score - LAMBDA_FREQ * SwipeLexicon.forms.freq[i].toFloat() / 255f)
+        val best = SwipeDecoder.expand(f, 1, lambdaFreq, context = word).firstOrNull() ?: return 0f
+        val d = best.score - LAMBDA_FREQ * SwipeLexicon.forms.freq[i].toFloat() / 255f
+        return if (clamp) maxOf(0f, d) else d
     }
 
     private val LAMBDA_FREQ = SwipeDecoder.Params().lambdaFreq
@@ -174,25 +206,39 @@ object SwipeSuggest {
     const val STATIC_WEIGHT = 0.3f
     const val STATIC_CAP = 1.2f
     const val STATIC_DAMP = 0.5f
+    /**
+     * Trigram (vnlm.bin, [SyllableLM]): điểm = s·[LM_WEIGHT] kẹp [[LM_FLOOR], [LM_CAP]] (có
+     * bằng chứng ÂM), λ tần suất hạ còn [LM_LAMBDA_FREQ]. Chỉnh trên tập dev (docs/DATA-SOURCES.md):
+     * heldout top-1 0.856 → 0.892, top-3 0.948 → 0.960. GIỐNG iOS SwipeTyping.lm*.
+     */
+    const val LM_WEIGHT = 0.15f
+    const val LM_CAP = 1.0f
+    const val LM_FLOOR = -1.0f
+    const val LM_LAMBDA_FREQ = 1.0f
 
     fun context(model: UserLangModel?, prev1: String?, prev2: String?,
                 english: SwipeEnglishPrior? = null,
-                bigram: SyllableBigram? = SyllableBigram.shared): Context {
+                bigram: SyllableBigram? = SyllableBigram.shared,
+                lm: SyllableLM? = SyllableLM.shared): Context {
         val next = if (model != null && prev1 != null) model.nextWords(prev1, prev2, 24).map { it.lowercase() }.toSet() else emptySet()
         val count: (String) -> Int = if (model == null) { _ -> 0 } else { w -> model.count(w) }
-        return Context(next, next.mapTo(HashSet()) { fold(it) }, count, prev1, bigram, english)
+        return Context(next, next.mapTo(HashSet()) { fold(it) }, count, prev1, bigram, english, prev2, lm)
     }
 
     /** Từ hiển thị của một ứng viên: tiếng Anh = chính nó; Việt = bung dấu. */
-    private fun wordsFor(c: SwipeCandidate, limit: Int, wordCtx: ((String) -> Float)?): List<String> =
+    private fun wordsFor(c: SwipeCandidate, limit: Int, wordCtx: ((String) -> Float)?,
+                         lambdaFreq: Float = LAMBDA_FREQ): List<String> =
         if (c.lang == SwipeLang.EN) listOf(c.folded)
-        else SwipeDecoder.expand(c.folded, limit, context = wordCtx).map { it.word }
+        else SwipeDecoder.expand(c.folded, limit, lambdaFreq, context = wordCtx).map { it.word }
 
     /**
      * Ứng viên không dấu (đã xếp) → top-1 có dấu + biến thể: dấu khác của dạng top-1 và
      * dạng top-2/3 (cho/co), xen kẽ, tối đa [MAX_ALTERNATIVES]. null nếu không có gì.
+     * [lambdaFreq] = [Context.lambdaFreq] (hạ khi có trigram).
      */
-    fun choose(cands: List<SwipeCandidate>, wordCtx: ((String) -> Float)?, case: Case = Case.LOWER): SwipeChoice? {
+    fun choose(cands: List<SwipeCandidate>, wordCtx: ((String) -> Float)?, case: Case = Case.LOWER,
+               lambdaFreq: Float = LAMBDA_FREQ): SwipeChoice? {
+        val wordsFor = { c: SwipeCandidate, limit: Int, ctx: ((String) -> Float)? -> wordsFor(c, limit, ctx, lambdaFreq) }
         var best: List<String> = emptyList()
         var bestIdx = -1
         for ((i, c) in cands.withIndex()) {

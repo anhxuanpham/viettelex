@@ -119,11 +119,14 @@ targets:
       - Keyboard/SwipeTyping.swift
       - Keyboard/SwipeEnglish.swift
       - Keyboard/SyllableBigram.swift
+      - Keyboard/SyllableLM.swift
       - path: Keyboard/Resources/vnlexicon.bin
         buildPhase: resources
       - path: Keyboard/Resources/enlexicon.bin
         buildPhase: resources
       - path: Keyboard/Resources/vnbigram.bin
+        buildPhase: resources
+      - path: Keyboard/Resources/vnlm.bin
         buildPhase: resources
     settings:
       base:

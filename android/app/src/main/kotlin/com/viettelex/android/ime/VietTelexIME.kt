@@ -36,6 +36,7 @@ import com.viettelex.keyboard.SwipeLayout
 import com.viettelex.keyboard.SwipePath
 import com.viettelex.keyboard.SwipeSuggest
 import com.viettelex.keyboard.SyllableBigram
+import com.viettelex.keyboard.SyllableLM
 import com.viettelex.keyboard.WriteMode
 import com.viettelex.keyboard.TemplateItem
 import com.viettelex.keyboard.Templates
@@ -333,6 +334,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
             synchronized(swipeLock) { if (swipeDecoder === dec) dec.prepare() }
             if (session.swipeEnglish) SwipeEnglish.lexicon     // nạp từ điển Anh ở nền (lazy, thread-safe)
             SyllableBigram.shared   // map bảng bigram tĩnh (lazy, chỉ khi gõ vuốt bật)
+            SyllableLM.shared       // map mô hình trigram (vnlm.bin)
         }
     }
 
@@ -355,7 +357,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         val cands = synchronized(swipeLock) {
             dec.decode(path, SwipeSuggest.TOP_K, ctx.folded, ctx.english, if (ctx.english != null) ctx.englishWord else null)
         }
-        val choice = SwipeSuggest.choose(cands, ctx.word, case)
+        val choice = SwipeSuggest.choose(cands, ctx.word, case, ctx.lambdaFreq)
         if (TouchLog.enabled) TouchLog.write(String.format(java.util.Locale.ROOT, "swipe decode %.1fms pts=%d cands=%d",
             (System.nanoTime() - t0) / 1e6, path.count, cands.size))
         if (choice == null || !proxy.begin()) { applyAutoShift(); refreshBar(); return }

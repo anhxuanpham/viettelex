@@ -4,7 +4,8 @@
 // Luồng: KeyboardView phân loại chạm→vuốt (GestureClassifier) → `begin` HUỶ chữ
 // đầu đã chèn lúc chạm xuống (checkpoint engine, không ⌫) → nhấc tay → `finish`:
 // decode top-5 dạng không dấu (ngữ cảnh = từ kế tiếp hay gặp sau từ trước, theo
-// UserLangModel, + bigram âm tiết tĩnh SyllableBigram theo âm tiết trước) → expand dạng thắng thành âm tiết có dấu → chèn top-1 (dấu cách
+// UserLangModel, + LM âm tiết tĩnh: trigram SyllableLM theo 2 âm tiết trước, thiếu thì
+// bigram SyllableBigram) → expand dạng thắng thành âm tiết có dấu → chèn top-1 (dấu cách
 // treo + seed engine, xem EngineBridge.insertSwipeWord) → thanh gợi ý hiện biến thể.
 //
 // SwipeDecoder KHÔNG thread-safe: MỌI truy cập đi qua một hàng đợi serial (`queue`);
@@ -51,6 +52,15 @@ final class SwipeTyping {
     static let staticCap: Float = 1.2
     static let staticDamp: Float = 0.5
     private static let lambdaFreq = SwipeDecoder.Params().lambdaFreq
+    /// Mô hình trigram (vnlm.bin, SyllableLM) — thay bigram PMI khi có: điểm = s·lmWeight
+    /// kẹp [lmFloor, lmCap] (có bằng chứng ÂM: "hiếm sau ngữ cảnh này"), và khi đó λ tần
+    /// suất lúc chọn dạng/bung dấu hạ còn lmLambdaFreq (LM gánh phần tiên nghiệm). Chỉnh
+    /// trên tập dev (Scripts/gen-syllable-lm.py, docs/DATA-SOURCES.md): heldout top-1
+    /// 0.856 → 0.892, top-3 0.948 → 0.960.
+    static let lmWeight: Float = 0.15
+    static let lmCap: Float = 1.0
+    static let lmFloor: Float = -1.0
+    static let lmLambdaFreq: Float = 1.0
 
     /// Điểm ngữ cảnh cá nhân của một âm tiết có dấu.
     static func contextScore(_ w: String, next: Set<String>, count: (String) -> Int) -> Float {
@@ -59,26 +69,42 @@ final class SwipeTyping {
         return (next.contains(w) ? nextBonus : 0) + personal
     }
 
-    /// Ngữ cảnh một cú vuốt: cá nhân + bigram tĩnh theo âm tiết trước `prev`.
+    /// Ngữ cảnh một cú vuốt: cá nhân + LM tĩnh theo âm tiết trước — trigram (`prev2`, `prev`)
+    /// của SyllableLM nếu có, không thì bigram PMI của SyllableBigram theo `prev`.
     struct Context {
         let next: Set<String>
         let count: (String) -> Int
         private let row: SyllableBigram.Row?
+        private let lmContext: SyllableLM.Context?
         private let weight: Float
+        /// λ tần suất khi chọn dạng + bung dấu (hạ khi có trigram).
+        let lambdaFreq: Float
 
         init(next: Set<String>, count: @escaping (String) -> Int = { _ in 0 },
-             prev: String? = nil, bigram: SyllableBigram? = nil) {
+             prev: String? = nil, bigram: SyllableBigram? = nil,
+             prev2: String? = nil, lm: SyllableLM? = nil) {
             self.next = next
             self.count = count
-            if let prev, let bigram, let id = SyllableBigram.id(of: prev) {
-                let r = bigram.row(id)
+            let id1 = prev.flatMap { SyllableBigram.id(of: $0) }
+            if let lm, let id1 {
+                lmContext = lm.context(prev2: prev2.flatMap { SyllableBigram.id(of: $0) } ?? -1, prev1: id1)
+            } else { lmContext = nil }
+            if lmContext == nil, let bigram, let id1 {
+                let r = bigram.row(id1)
                 row = r.size > 0 ? r : nil
             } else { row = nil }
-            weight = next.isEmpty ? SwipeTyping.staticWeight : SwipeTyping.staticWeight * SwipeTyping.staticDamp
+            let damp: Float = next.isEmpty ? 1 : SwipeTyping.staticDamp
+            weight = (lmContext != nil ? SwipeTyping.lmWeight : SwipeTyping.staticWeight) * damp
+            lambdaFreq = lmContext != nil ? SwipeTyping.lmLambdaFreq : SwipeTyping.lambdaFreq
         }
 
-        /// Điểm bigram tĩnh của âm tiết có dấu `w` (0 nếu không có dữ liệu).
+        /// Điểm LM tĩnh của âm tiết có dấu `w` (0 nếu không có dữ liệu).
         func staticScore(_ w: String) -> Float {
+            if let lmContext {
+                guard let id = SyllableBigram.id(of: w) else { return 0 }
+                let damp: Float = next.isEmpty ? 1 : SwipeTyping.staticDamp
+                return max(SwipeTyping.lmFloor * damp, min(SwipeTyping.lmCap * damp, weight * lmContext.score(id)))
+            }
             guard let row, let id = SyllableBigram.id(of: w) else { return 0 }
             return min(SwipeTyping.staticCap, weight * row.score(id))
         }
@@ -87,12 +113,22 @@ final class SwipeTyping {
             SwipeTyping.contextScore(w, next: next, count: count) + staticScore(w)
         }
 
-        /// Cho decoder: max(tần suất + ngữ cảnh) trên các âm tiết của dạng không dấu −
-        /// phần tần suất decoder đã cộng (≥ 0) ⇒ decode và expand chấm cùng một thước.
+        /// Có trigram thì ứng viên Việt chấm tần suất bằng lmLambdaFreq thay vì λ decoder — hạ
+        /// y như vậy cho từ tiếng Anh để cán cân Việt/Anh (bias, margin) giữ nguyên.
+        func englishFreqShift(_ w: String) -> Float {
+            guard lmContext != nil, let i = SwipeEnglish.index(of: w) else { return 0 }
+            return -(SwipeTyping.lambdaFreq - SwipeTyping.lmLambdaFreq) * Float(SwipeEnglish.lexicon.freq[i]) / 255
+        }
+
+        /// Cho decoder: max(λ'·tần suất + ngữ cảnh) trên các âm tiết của dạng không dấu −
+        /// phần tần suất decoder đã cộng ⇒ decode và expand chấm cùng một thước. Không có
+        /// trigram: λ' = λ và kẹp ≥ 0 (như cũ); có trigram: λ' = lmLambdaFreq, không kẹp.
         func folded(_ f: String) -> Float {
             guard let i = SwipeLexicon.index(of: f),
-                  let best = SwipeDecoder.expand(f, limit: 1, context: word).first else { return 0 }
-            return max(0, best.score - SwipeTyping.lambdaFreq * Float(SwipeLexicon.forms.freq[i]) / 255)
+                  let best = SwipeDecoder.expand(f, limit: 1, lambdaFreq: lambdaFreq, context: word).first
+            else { return 0 }
+            let d = best.score - SwipeTyping.lambdaFreq * Float(SwipeLexicon.forms.freq[i]) / 255
+            return lmContext != nil ? d : max(0, d)
         }
     }
 
@@ -106,6 +142,7 @@ final class SwipeTyping {
             if prepare {
                 d.prepare()
                 _ = SyllableBigram.shared   // map bảng bigram tĩnh (lười, chỉ khi gõ vuốt bật)
+                _ = SyllableLM.shared       // map mô hình trigram (vnlm.bin)
             }
         }
     }
@@ -127,20 +164,21 @@ final class SwipeTyping {
     /// Giải mã (đồng bộ trên hàng đợi decoder) → dạng thắng + phương án.
     /// `contextWords` = từ hay theo sau từ trước (UserLangModel.nextWords), có dấu;
     /// `count` = số lần user đã gõ một âm tiết (UserLangModel.count);
-    /// `prev` = âm tiết liền trước (bigram tĩnh).
+    /// `prev` = âm tiết liền trước, `prev2` = âm tiết trước nữa (LM tĩnh).
     /// `english` (giai đoạn 3) = tham số tiếng Anh theo ngữ cảnh (SwipeLangContext.prior);
     /// nil = chỉ tiếng Việt (công tắc "Vuốt từ tiếng Anh" tắt).
     func resolve(_ path: SwipePath, contextWords: [String], count: @escaping (String) -> Int = { _ in 0 },
                  prev: String? = nil, bigram: SyllableBigram? = SyllableBigram.shared,
+                 prev2: String? = nil, lm: SyllableLM? = SyllableLM.shared,
                  english: SwipeEnglishPrior? = nil, case sc: SwipeCase) -> Choice? {
         guard layout != nil, path.count >= 2 else { return nil }
         let ctx = Context(next: Set(contextWords.map { $0.lowercased() }), count: count,
-                          prev: prev, bigram: bigram)
+                          prev: prev, bigram: bigram, prev2: prev2, lm: lm)
         let d = decoder
         // từ tiếng Anh: chỉ điểm cá nhân/từ kế tiếp (bigram tĩnh là của âm tiết Việt)
         let next = ctx.next
         let enCtx: ((String) -> Float)? = english == nil ? nil : { w in
-            Self.contextScore(w, next: next, count: count)
+            Self.contextScore(w, next: next, count: count) + ctx.englishFreqShift(w)
         }
         let cands = queue.sync {
             d.decode(path, topK: 5, context: ctx.folded, english: english, englishContext: enCtx)
@@ -167,8 +205,10 @@ final class SwipeTyping {
     /// (cá nhân + bigram tĩnh) chỉ dùng để bung dấu ứng viên tiếng Việt.
     static func pick(_ cands: [SwipeCandidate], context: Context, case sc: SwipeCase) -> Choice? {
         let ctx: (String) -> Float = context.word
+        let lam = context.lambdaFreq
         func words(_ c: SwipeCandidate, _ limit: Int) -> [String] {
-            c.lang == .en ? [c.folded] : SwipeDecoder.expand(c.folded, limit: limit, context: ctx).map(\.word)
+            c.lang == .en ? [c.folded]
+                : SwipeDecoder.expand(c.folded, limit: limit, lambdaFreq: lam, context: ctx).map(\.word)
         }
         guard let top = cands.first else { return nil }
         let expanded = words(top, 6)
@@ -208,10 +248,10 @@ final class SwipeTyping {
     /// Nhấc tay: giải mã rồi chèn. nil = không nhận ra gì (không đụng màn hình).
     func finish(_ path: SwipePath, case sc: SwipeCase, contextWords: [String],
                 count: @escaping (String) -> Int = { _ in 0 }, prev: String? = nil,
-                english: SwipeEnglishPrior? = nil,
+                prev2: String? = nil, english: SwipeEnglishPrior? = nil,
                 bridge: EngineBridge, proxy: TextProxyLike) -> Outcome? {
         guard let r = resolve(path, contextWords: contextWords, count: count, prev: prev,
-                              english: english, case: sc) else {
+                              prev2: prev2, english: english, case: sc) else {
             TouchLog.write("swipe: không có ứng viên (pts=\(path.count))")
             return nil
         }
