@@ -22,6 +22,10 @@ gợi `gmail.com / yahoo.com / outlook.com`; kết thúc bằng `.` sau chữ/s�
 TLD `com / vn / net`. Các fragment này chèn không kèm space và không đi qua
 datastore (token chứa `@`/`.` không phải "từ").
 
+Chip số chạy song song cả hai trạng thái có chữ (xem tầng 7): khi token trước con
+trỏ là số/số tiền/biểu thức "…=", **một** chip chiếm slot GIỮA — literal vẫn ở slot
+đầu, nội dung slot giữa dời sang slot 3.
+
 Hành vi bấm nhận: **nguyên văn** = giữ như đã gõ; **từ** = thay từ đang gõ +
 space, đồng thời **học với weight 2**; **emoji** = thay từ bằng emoji (hành vi
 QuickType). Tự tắt ở field từ chối gợi ý (`isSecureTextEntry`,
@@ -117,6 +121,37 @@ App Store review) giấu chúng khỏi thanh. Phân tầng: chỉ token thô (l�
 đời thường (cướp, giết, đánh rắm, mày/má) KHÔNG lọc. Khi lọc, over-fetch 6
 lấy top-3 nên slot luôn được lấp.
 
+### 7. `NumberChips` — đọc số, định dạng tiền, máy tính nhanh
+
+Hàm thuần `NumberChips.chip(before:)` (Swift) ≡ `NumberChips.chip(before)` (Kotlin),
+cùng kết quả trên fixture chung `KeyboardTests/Fixtures/number-chips.txt`. Không bao
+giờ tự thay: chip chỉ hiện, chạm mới thay đúng đuôi đã tính (kiểm lại đuôi context
+trước khi xoá — lệch thì bỏ, không xoá mù).
+
+- **Chọn chip** (1 chip / lượt): `…=` → kết quả phép tính, chèn sau dấu `=`;
+  số + `k/nghìn/ngàn`, `tr/triệu`, `tỷ/tỉ/ty` (liền hoặc cách: `50k`, `1tr2`,
+  `1.2tr`, `2 tỷ`) → `1.200.000 ₫`; số chưa phân nhóm + `đ`/`₫` (≥4 chữ số) →
+  `1.250.000đ` (giữ ký hiệu); số đã định dạng + `đ`/`₫`, hoặc + `đồng`/`vnd` → chữ +
+  " đồng"; số trơn/có phân cách → chữ. Chuỗi chạm: `1tr2` → `1.200.000 ₫` →
+  `một triệu hai trăm nghìn đồng`. Viết hoa chữ đầu khi token ở đầu câu.
+- **Không gợi ý**: số trơn mở đầu bằng 0 (số điện thoại, mã) hoặc >12 chữ số
+  (số tài khoản); tiền có lẻ dưới 1 đồng.
+- **Đọc số**: "linh" (hàm có tuỳ chọn "lẻ"), mười/mươi, mốt sau mươi, lăm sau
+  mười/mươi, giữ "bốn" (không "tư"); nhóm 0 bỏ qua, nhóm sau nhóm đầu đọc đủ
+  "không trăm" (`1.000.001` = một triệu không trăm linh một); tỷ lặp mỗi 9 chữ số
+  (`10^12` = một nghìn tỷ, `10^18` = một tỷ tỷ). Thập phân "phẩy": phần lẻ ≤2 chữ số
+  không mở đầu 0 đọc như số (3,14 = ba phẩy mười bốn), còn lại đọc từng chữ số. Âm: "âm".
+- **Dấu phân cách** (không đoán): có cả `.` và `,` → dấu sau cùng là thập phân;
+  chỉ `,`: 1 lần = thập phân, ≥2 = phân nhóm; chỉ `.`: ≥2 = phân nhóm, 1 lần = phân
+  nhóm khi sau nó đúng 3 chữ số và phần nguyên 1–3 chữ số không mở đầu 0
+  (`1.250` = 1250), còn lại thập phân kiểu Anh (`1.5`).
+- **Máy tính**: `+ - * x × / ÷ : ( ) %`, có/không khoảng trắng; `A ± B%` = A ± A·B/100
+  (như máy tính điện thoại), còn lại `B%` = B/100. Kết quả kiểu Việt (thập phân `,`),
+  kiểu Anh nếu biểu thức dùng `.` thập phân hoặc `,` phân nhóm; phân nhóm nghìn chỉ
+  khi biểu thức có phân nhóm; ≤12 chữ số có nghĩa; chia 0 / |kết quả| ≥ 10^15 → không chip.
+- **Chi phí**: chỉ đọc `documentContextBeforeInput` khi token hiện tại hoặc ngay
+  trước có chữ số/phép tính (đếm dấu cách kể từ chữ số cuối ≤1).
+
 ## Settings (App Group `group.com.viettelex`)
 
 | Key | Mặc định | Ý nghĩa |
@@ -145,12 +180,15 @@ lấy top-3 nên slot luôn được lấp.
 | `ios/Keyboard/EmojiSuggest.swift` | GENERATED — emoji theo nghĩa |
 | `ios/Keyboard/DisplayCase.swift` | Case chuẩn proper noun |
 | `ios/Keyboard/SensitiveWords.swift` | Bộ lọc từ nhạy cảm |
+| `ios/Keyboard/NumberChips.swift` | Chip số: đọc chữ / định dạng tiền / máy tính (thuần) |
 | `ios/Keyboard/KeyboardViewController.swift` | Điều phối: context, học, build SuggestionSet |
 | `ios/Keyboard/KeyboardView.swift` | UI thanh gợi ý (SuggestionSet → slots) |
 
 Tests: `ios/KeyboardTests/EngineBridgeTests.swift` — goldens cho compat-match
 ("tô" ⊅ toàn), shrinkage (1 lần gõ nhầm không đè seed), trigram gating,
 ngưỡng học từ lạ, seed contract (max weight ≤50), filter tiers, display-case.
+`ios/KeyboardTests/NumberChipsTests.swift` + android `NumberChipsTests.kt` — cùng
+fixture `number-chips.txt` (đọc số, viết tắt k/tr/tỷ, biểu thức, chip theo context).
 
 ## Đường nâng cấp đã vạch (chưa làm)
 

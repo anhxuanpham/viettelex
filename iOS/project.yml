@@ -104,6 +104,7 @@ targets:
       - Keyboard/TouchGeometry.swift
       - Keyboard/TouchLog.swift
       - Keyboard/SuggestionSupport.swift
+      - Keyboard/NumberChips.swift
       - Keyboard/VNSuggest.swift
       - Keyboard/VNLexicon2.swift
       - Keyboard/EmojiSuggest.swift

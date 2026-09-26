@@ -84,6 +84,7 @@ fun refreshBar() = when (val plan = session.requestSuggestions(proxy)) {
 }                                                            // null ⇒ lượt cũ, bỏ
 ```
 `SuggestionSet` = `literal`, `word`, `word2`, `emojis`, `nextWords`, `paste`,
+`number` (chip số NumberChips — vẽ ở slot giữa, chạm gửi `SuggestionSet.NUMBER_TOKEN`),
 `signature()` (so để bỏ vẽ lại). Bar thu gọn: `session.barCollapsed = true` (pipeline
 ngừng; IME lưu `Keys.SUGGESTION_BAR_COLLAPSED`). Bar tắt/ô cấm: `session.suggestionsActive`.
 Chạm slot: `session.acceptSuggestion(item, proxy)` — item là đúng chuỗi hiển thị

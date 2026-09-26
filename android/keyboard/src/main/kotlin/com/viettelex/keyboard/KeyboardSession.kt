@@ -95,16 +95,21 @@ data class SuggestionSet(
     /** Thẻ Dán thay cả bar. */
     val paste: Boolean = false,
     val pasteIsImage: Boolean = false,
+    /** Chip số (NumberChips) — luôn ở slot GIỮA; chạm gửi [NUMBER_TOKEN]. */
+    val number: String? = null,
 ) {
-    val isEmpty: Boolean get() = literal == null && word == null && word2 == null && emojis.isEmpty() && nextWords.isEmpty()
+    val isEmpty: Boolean get() = literal == null && word == null && word2 == null && emojis.isEmpty() &&
+        nextWords.isEmpty() && number == null
     /** So để bỏ vẽ lại khi không đổi. */
     fun signature(): String = listOf(literal, word, word2, emojis.joinToString("\u0002"),
-        nextWords.joinToString("\u0002"), paste.toString()).joinToString("\u0001")
+        nextWords.joinToString("\u0002"), paste.toString(), number).joinToString("\u0001")
 
     companion object {
         /** Payload chạm thẻ Dán → truyền vào acceptSuggestion. */
         const val PASTE_TOKEN = "paste"
         const val PASTE_IMAGE_TOKEN = "pasteImage"
+        /** Payload chạm chip số (session giữ NumberChip: đuôi cần thay + chữ chèn). */
+        const val NUMBER_TOKEN = "\uE000number"
     }
 }
 
@@ -119,6 +124,7 @@ sealed class SuggestionPlan {
 class SuggestJob internal constructor(
     internal val req: Int, internal val gen: Int, internal val bridge: EngineBridge,
     val composed: String, val raw: String, internal val predicted: String, private val wantFix: Boolean,
+    internal val number: String? = null,
 ) {
     class Result(val pool: List<VNSuggest.Match>, val fix: String?)
     fun compute(): Result {
@@ -160,6 +166,10 @@ class KeyboardSession(
     /** Bar thu gọn — pipeline gợi ý ngừng. IME set theo chevron. */
     var barCollapsed = false
     private var lastKeyWasEmailTrigger = false
+    /** Số dấu cách kể từ chữ số/phép tính cuối (≤1 → đáng đọc context tìm chip số). */
+    private var numberSpaces = 99
+    /** Chip số đang hiện — payload [SuggestionSet.NUMBER_TOKEN]. */
+    private var numberChip: NumberChip? = null
     private var restoreUndoRaw: String? = null
     private var restoreUndoComposed: String? = null
     private var undoOfferActive = false
@@ -309,6 +319,14 @@ class KeyboardSession(
                 else if (!bridge.isComposing) { lastWord = null; lastWord2 = null }
             }
         }
+        // Chip số: chỉ đọc context khi token này / token ngay trước có chữ số/phép tính.
+        numberSpaces = when (key) {
+            is Key.Text -> if (key.text.firstOrNull()?.let { it.isDigit() || it in "=+-*/×÷:%().," } == true) 0 else 99
+            Key.Space, Key.DoubleSpacePeriod -> numberSpaces + 1
+            Key.Backspace -> 0
+            is Key.Letter -> numberSpaces
+            else -> 99
+        }
         lastInsertWasSpace = key == Key.Space || key == Key.DoubleSpacePeriod
         lastKeyWasEmailTrigger = key is Key.Text && (key.text == "@" || key.text == ".")
         initialCapsPending = false
@@ -444,6 +462,7 @@ class KeyboardSession(
     /** Gọi sau debounce 30 ms (hoặc khi hiện bàn phím / selection đổi / bật bar). */
     fun requestSuggestions(proxy: TextProxy): SuggestionPlan {
         suggestReq++
+        numberChip = null
         if (!suggestionsActive || barCollapsed) return SuggestionPlan.Ready(null)
         swipeAlternatives?.let { return SuggestionPlan.Ready(SuggestionSet(nextWords = it)) }
         val composed = bridge.composedWord
@@ -463,7 +482,7 @@ class KeyboardSession(
         if (composed.isNotEmpty()) {
             val b = bridge
             return SuggestionPlan.Background(SuggestJob(suggestReq, generation, b, composed,
-                b.rawWord, b.predictedCommit, b.autoFixAdjacent))
+                b.rawWord, b.predictedCommit, b.autoFixAdjacent, refreshNumberChip(proxy)))
         }
         val prev = lastWord
         val next: List<String> = if (prev != null) {
@@ -475,8 +494,18 @@ class KeyboardSession(
                 .take(3).map { caseForContext(DisplayCase.apply(it)) }
             padWords(top, 3)
         }
+        val number = refreshNumberChip(proxy)
         val paste = pasteOffer(proxy)
-        return SuggestionPlan.Ready(SuggestionSet(literal = literal, nextWords = next, paste = paste))
+        return SuggestionPlan.Ready(SuggestionSet(literal = literal, nextWords = next, paste = paste, number = number))
+    }
+
+    /** Chip số cho token trước con trỏ (đọc chữ / định dạng tiền / máy tính nhanh). */
+    private fun refreshNumberChip(proxy: TextProxy): String? {
+        numberChip = null
+        if (numberSpaces > 1) return null
+        val before = proxy.contextBeforeInput() ?: return null
+        numberChip = NumberChips.chip(before)
+        return numberChip?.display
     }
 
     /** Áp kết quả nền; null nếu đã lỗi thời (phím mới / lượt mới / từ khác / bar tắt). */
@@ -484,6 +513,7 @@ class KeyboardSession(
         if (job.req != suggestReq || job.gen != generation || bridge !== job.bridge ||
             job.bridge.composedWord != job.composed || !suggestionsActive || barCollapsed) return null
         return composingSuggestions(job.composed, job.raw, job.predicted, result.pool, result.fix)
+            .copy(number = job.number)
     }
 
     /** Đồng bộ (test / debug): tính luôn trên thread gọi. */
@@ -580,6 +610,7 @@ class KeyboardSession(
             bridge.reset(); lastWord = null; lastWord2 = null
             return
         }
+        if (item == SuggestionSet.NUMBER_TOKEN) { acceptNumberChip(proxy); return }
         val sw = swipeWord
         if (sw != null && sw == bridge.composedWord && item in swipeAlts) {
             // Chạm biến thể của từ vừa vuốt: thay từ, vẫn là composition mở (chưa học — học khi chốt).
@@ -616,6 +647,21 @@ class KeyboardSession(
         proxy.insertText(if (isWord) "$item " else item)
         bridge.reset()
         if (isWord) commitAndLearn(item, accepted = true) else { lastWord = null; lastWord2 = null }
+    }
+
+    /** Chạm chip số: thay đúng đuôi đã tính (kiểm lại đuôi trước khi xoá — lệch thì bỏ). */
+    private fun acceptNumberChip(proxy: TextProxy) {
+        val c = numberChip ?: return
+        numberChip = null
+        if (c.replace.isNotEmpty()) {
+            if (!proxy.confirmTail(c.replace)) { TouchLog.write("failsafe: number chip tail mismatch → skip"); return }
+            proxy.deleteCodePoints(Cp.count(c.replace))
+        }
+        proxy.insertText(c.insert)
+        bridge.reset()
+        lastWord = null; lastWord2 = null
+        clearUndo(); clearSwipe()
+        numberSpaces = 0          // kết quả mới cũng là số → chip kế trong chuỗi (tiền → chữ)
     }
 
     companion object {
