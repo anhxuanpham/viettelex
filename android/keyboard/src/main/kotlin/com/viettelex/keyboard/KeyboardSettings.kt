@@ -38,6 +38,8 @@ data class KeyboardSettings(
     var showSpaceLogo: Boolean = true,
     /** −10…10 dp mỗi hàng. */
     var rowHeightAdjust: Int = 0,
+    /** Hàng phím số 1…0 trên hàng chữ — mặc định TẮT. */
+    var numberRow: Boolean = false,
     var debugTouchLog: Boolean = false,
     /** Giá trị Keys.USERLM_RESET_AT (0 = chưa từng xoá). */
     var userlmResetAt: Long = 0,
@@ -65,6 +67,7 @@ data class KeyboardSettings(
             s.templatesEnabled = b(Keys.TEMPLATES_ENABLED, s.templatesEnabled)
             s.showSpaceLogo = b(Keys.SHOW_SPACE_LOGO, s.showSpaceLogo)
             s.debugTouchLog = b(Keys.DEBUG_TOUCH_LOG, s.debugTouchLog)
+            s.numberRow = b(Keys.NUMBER_ROW, s.numberRow)
             s.rowHeightAdjust = ((get(Keys.ROW_HEIGHT_ADJUST) as? Number)?.toInt() ?: 0).coerceIn(-10, 10)
             s.userlmResetAt = (get(Keys.USERLM_RESET_AT) as? Number)?.toLong() ?: 0
             s.learnWords = s.showSuggestions   // bật gợi ý = bật học (quyết định 2026-07-24)

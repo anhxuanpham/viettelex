@@ -253,6 +253,9 @@ fun TinhNangTab() {
             }
             IosStepper(adj, -10..10) { adj = it }
         }
+        RowDivider()
+        BoolToggle(Keys.NUMBER_ROW, Prefs.D.numberRow, "Hàng phím số",
+            "Thêm hàng 1 2 3 … 0 phía trên hàng chữ — gõ số không cần chuyển sang bàn phím ?123. Bàn phím cao thêm khoảng ¾ hàng.")
     }
 }
 

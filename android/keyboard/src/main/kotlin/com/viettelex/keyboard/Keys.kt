@@ -33,6 +33,8 @@ object Keys {
     const val HAPTIC_FEEDBACK = "hapticFeedback"
     /** Int −10…10 (dp mỗi hàng). */
     const val ROW_HEIGHT_ADJUST = "rowHeightAdjust"
+    /** Bool — hàng phím số trên plane chữ (tên như iOS App Group). */
+    const val NUMBER_ROW = "numberRow"
     /** String JSON `[{"label":…,"text":…}]`; vắng ⇒ mặc định từ assets/ios-mau-cau.yml. */
     const val USER_TEMPLATES = "userTemplates"
     const val DEBUG_TOUCH_LOG = "debugTouchLog"

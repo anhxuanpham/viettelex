@@ -223,7 +223,8 @@ class KeyboardView(
 
     fun configure(returnLabel: String, kind: InputKind, needsGlobe: Boolean, showLogo: Boolean,
                   templatesEnabled: Boolean, templates: List<TemplateItem>, keyAreaPx: Float,
-                  numberSigned: Boolean = false, numberDecimal: Boolean = false) {
+                  numberSigned: Boolean = false, numberDecimal: Boolean = false, numberRow: Boolean = false) {
+        this.numberRow = numberRow
         this.numberSigned = numberSigned
         this.numberDecimal = numberDecimal
         this.returnLabel = returnLabel
@@ -272,7 +273,8 @@ class KeyboardView(
 
     private var numberSigned = false
     private var numberDecimal = false
-    private fun signature() = "$returnLabel|$inputKind|$needsGlobe|$width|$keyAreaPx|$numberSigned|$numberDecimal"
+    private var numberRow = false
+    private fun signature() = "$returnLabel|$inputKind|$needsGlobe|$width|$keyAreaPx|$numberSigned|$numberDecimal|$numberRow"
 
     private fun rebuild() {
         if (width == 0) return
@@ -280,14 +282,14 @@ class KeyboardView(
         if (sig != builtSig) { planeCache.clear(); builtSig = sig }
         keys = planeCache.getOrPut(plane) {
             KeyLayout.build(LayoutConfig(plane, width.toFloat(), keyAreaPx, d, inputKind, needsGlobe,
-                theme.tablet, returnLabel, numberSigned, numberDecimal))
+                theme.tablet, returnLabel, numberSigned, numberDecimal, numberRow))
         }
         spaceKey = keys.firstOrNull { it.kind == KeyKind.SPACE }
         spaceKey?.let {
             val sz = theme.dp(22f)
             logoRect.set(it.right - theme.dp(10f) - sz, it.centerY - sz / 2, it.right - theme.dp(10f), it.centerY + sz / 2)
         }
-        val paneBottom = if (plane == Plane.TEMPLATES) keyAreaPx - keyAreaPx / 4f else keyAreaPx
+        val paneBottom = if (plane == Plane.TEMPLATES) keyAreaPx - KeyLayout.rowUnit(keyAreaPx, numberRow) else keyAreaPx
         templatesPane.layout(width.toFloat(), paneBottom)
         emojiPane.layout(width.toFloat(), keyAreaPx)
         publishSwipeLayout()
