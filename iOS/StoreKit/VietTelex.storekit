@@ -1,0 +1,85 @@
+{
+  "identifier" : "6F3B2C1A",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "69000",
+      "familyShareable" : true,
+      "internalID" : "900000001",
+      "localizations" : [
+        {
+          "description" : "Mở khoá VietTelex Plus vĩnh viễn",
+          "displayName" : "VietTelex Plus",
+          "locale" : "vi"
+        },
+        {
+          "description" : "Unlock VietTelex Plus forever",
+          "displayName" : "VietTelex Plus",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.viettelex.ios.plus",
+      "referenceName" : "VietTelex Plus",
+      "type" : "NonConsumable"
+    },
+    {
+      "displayPrice" : "25000",
+      "familyShareable" : false,
+      "internalID" : "900000002",
+      "localizations" : [
+        {
+          "description" : "Ủng hộ VietTelex",
+          "displayName" : "Ly cà phê ☕",
+          "locale" : "vi"
+        }
+      ],
+      "productID" : "com.viettelex.ios.tip.small",
+      "referenceName" : "Tip small",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "49000",
+      "familyShareable" : false,
+      "internalID" : "900000003",
+      "localizations" : [
+        {
+          "description" : "Ủng hộ VietTelex",
+          "displayName" : "Bữa trưa 🍜",
+          "locale" : "vi"
+        }
+      ],
+      "productID" : "com.viettelex.ios.tip.medium",
+      "referenceName" : "Tip medium",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "99000",
+      "familyShareable" : false,
+      "internalID" : "900000004",
+      "localizations" : [
+        {
+          "description" : "Ủng hộ VietTelex",
+          "displayName" : "Ủng hộ lớn ❤️",
+          "locale" : "vi"
+        }
+      ],
+      "productID" : "com.viettelex.ios.tip.large",
+      "referenceName" : "Tip large",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "900000000",
+    "_locale" : "vi",
+    "_storefront" : "VNM"
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

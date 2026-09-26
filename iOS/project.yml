@@ -28,6 +28,7 @@ targets:
     platform: iOS
     sources:
       - App
+      - Shared
       - path: ios-mau-cau.yml
         buildPhase: resources
     settings:
@@ -58,6 +59,7 @@ targets:
     platform: iOS
     sources:
       - Keyboard
+      - Shared
       - path: ios-mau-cau.yml
         buildPhase: resources
     settings:
@@ -117,6 +119,11 @@ targets:
       - Keyboard/SwipeDecoder.swift
       - Keyboard/SwipeGesture.swift
       - Keyboard/SwipeTyping.swift
+      # VietTelex Plus: gate dùng chung + logic mua (không StoreKit) + cấu hình StoreKit test.
+      - Shared
+      - App/Plus/PlusStoreModel.swift
+      - path: StoreKit/VietTelex.storekit
+        buildPhase: resources
       - path: Keyboard/Resources/vnlexicon.bin
         buildPhase: resources
     settings:
@@ -126,6 +133,17 @@ targets:
       - package: TelexCore
 
 schemes:
+  # App + file cấu hình StoreKit cục bộ (mua thử trên simulator, không cần App
+  # Store Connect). Release/archive không dùng file này.
+  VietTelexApp:
+    build:
+      targets:
+        VietTelexApp: all
+    run:
+      config: Debug
+      storeKitConfiguration: StoreKit/VietTelex.storekit
+    archive:
+      config: Release
   # Test scheme khai báo ở đây (trước đây là file xcscheme ngoài git, bị xcodegen
   # xoá mỗi lần generate). Chạy: xcodebuild -scheme VietTelexKeyboardTests test
   VietTelexKeyboardTests:
