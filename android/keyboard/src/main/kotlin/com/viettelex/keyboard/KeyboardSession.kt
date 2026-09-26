@@ -49,6 +49,8 @@ data class FieldTraits(
     val noLearning: Boolean = false,
     /** EditorInfo.packageName — tra bảng [WriteMode]. */
     val packageName: String? = null,
+    /** Ô URL (TYPE_TEXT_VARIATION_URI — omnibox tự hoàn tất): không gõ tắt. */
+    val urlField: Boolean = false,
 ) {
     /** Cách ghi chữ vào ô theo app (bảng [WriteMode.forPackage]). */
     val writeMode: WriteMode get() = WriteMode.forPackage(packageName)
@@ -204,6 +206,7 @@ class KeyboardSession(
         TouchLog.session("android")
         bridge = EngineBridge(settings)
         bridge.passthrough = field.passthrough
+        bridge.shortcutsAllowed = !field.urlField
         traits = field
         lastKeyWasEmailTrigger = false
         clearUndo()
@@ -301,19 +304,22 @@ class KeyboardSession(
         if (literal != null && (key is Key.Letter || key is Key.Text || key == Key.Space ||
                 key == Key.DoubleSpacePeriod || key == Key.Newline || key == Key.LineBreak)) {
             settleLiteral(literal)
-            if (key is Key.Letter) bridge.boundary(" ", proxy)
+            if (key is Key.Letter) bridge.boundary(" ", proxy, expand = false)
         }
+        // Từ vuốt không bao giờ là chữ tắt.
+        val expand = swiped == null
         when (key) {
             is Key.Letter -> { bridge.letter(key.ch, proxy); clearUndo() }
             is Key.Text -> {
-                commitAndLearn(bridge.boundary(key.text, proxy))
+                commitAndLearn(bridge.boundary(key.text, proxy, expand = expand))
                 lastWord = null; lastWord2 = null
                 clearUndo()
             }
             Key.Space -> {
                 val composedBefore = bridge.composedWord
-                val committed = bridge.boundary(" ", proxy)
-                if (composedBefore.isNotEmpty() && committed != composedBefore) {
+                val committed = bridge.boundary(" ", proxy, expand = expand)
+                // (Gõ tắt vừa bung thì không: ⌫ kế tiếp tự trả lại chữ tắt trong bridge.)
+                if (composedBefore.isNotEmpty() && committed != composedBefore && !bridge.expandedAtLastBoundary) {
                     restoreUndoRaw = committed; restoreUndoComposed = composedBefore
                 } else { restoreUndoRaw = null; restoreUndoComposed = null }
                 undoOfferActive = false
@@ -329,7 +335,7 @@ class KeyboardSession(
                     proxy.insertText(". ")
                     lastWord = null; lastWord2 = null
                 } else {
-                    commitAndLearn(bridge.boundary(" ", proxy))
+                    commitAndLearn(bridge.boundary(" ", proxy, expand = expand))
                 }
                 // Space đôi có thể đã thành ". ": ⌫ sau đó không được mở lại từ.
                 bridge.forgetLastCommit()
@@ -339,7 +345,7 @@ class KeyboardSession(
                 bridge.reset(); lastWord = null; lastWord2 = null; clearUndo()
             }
             Key.Newline, Key.LineBreak -> {
-                commitAndLearn(bridge.boundary("\n", proxy, lineBreak = key == Key.LineBreak))
+                commitAndLearn(bridge.boundary("\n", proxy, lineBreak = key == Key.LineBreak, expand = expand))
                 // Enter có thể là "gửi"/performEditorAction: ⌫ sau đó không mở lại từ cũ.
                 bridge.forgetLastCommit()
                 lastWord = null; lastWord2 = null; clearUndo()
@@ -429,11 +435,12 @@ class KeyboardSession(
         if (lit != null) {
             // từ tiếng Anh vuốt trước còn mở: chốt nó + dấu cách
             settleLiteral(lit)
-            bridge.boundary(" ", proxy)
+            bridge.boundary(" ", proxy, expand = false)
         } else if (bridge.isComposing) {
-            commitAndLearn(bridge.boundary(" ", proxy))
+            // dấu cách tự chèn trước từ vuốt: không phải ranh giới người dùng gõ → không gõ tắt
+            commitAndLearn(bridge.boundary(" ", proxy, expand = false))
         } else if (SwipeSuggest.needsLeadingSpace(proxy.contextBeforeInput())) {
-            bridge.boundary(" ", proxy)
+            bridge.boundary(" ", proxy, expand = false)
         }
         proxy.insertText(choice.word)
         if (choice.english) {
@@ -505,6 +512,13 @@ class KeyboardSession(
     private fun commitAndLearn(word: String, accepted: Boolean = false) {
         lastCommit = null
         if (word.isEmpty()) return
+        // Nội dung gõ tắt nhiều từ ("mọi người"): học lần lượt từng từ (bigram trong cụm).
+        val parts = ShortcutFile.words(word)
+        if (parts.size != 1 || parts[0] != word) {
+            for (p in parts) commitAndLearn(p, accepted)
+            if (parts.isEmpty()) { lastWord = null; lastWord2 = null }
+            return
+        }
         val learned = if (learnEnabled) langModel.record(word, lastWord, lastWord2, if (accepted) 2 else 1) else null
         lastCommit = LastCommit(word, lastWord, lastWord2, learned)
         if (UserLangModel.learnable(word)) { lastWord2 = lastWord; lastWord = word }
@@ -605,6 +619,10 @@ class KeyboardSession(
             word = words.firstOrNull()
             word2 = if (words.size > 1) words.last() else null
         }
+        // Đang gõ đúng một chữ tắt: slot chính hiện nội dung sẽ bung (chạm = bung ngay).
+        // Nội dung nhiều dòng không lên bar (gõ ranh giới vẫn bung).
+        val preview = bridge.shortcutPreview
+        if (preview != null && !preview.contains('\n') && word != preview) { word2 = word ?: word2; word = preview }
         return SuggestionSet(literal = literal, word = word, word2 = word2, emojis = emojis)
     }
 
