@@ -48,6 +48,11 @@ struct KeyboardSettings {
     /// Gõ vuốt (thử nghiệm, mặc định TẮT): tắt ⇒ không dựng template, không theo dõi
     /// touchesMoved thêm — 0 RAM/CPU.
     var swipeTyping = false
+    /// Vuốt ra từ tiếng Anh (công tắc con của Gõ vuốt) — mặc định BẬT: câu Việt chen từ
+    /// Anh rất thường (check mail, gửi file); decoder nghiêng Việt + biên độ nên chỉ ra
+    /// tiếng Anh khi hình vuốt thắng rõ / đang trong mạch Anh, từ điển chỉ nạp khi gõ vuốt
+    /// bật. Giống Android.
+    var swipeEnglish = true
 
     static func load() -> KeyboardSettings {
         var s = KeyboardSettings()
@@ -66,6 +71,7 @@ struct KeyboardSettings {
         if d.object(forKey: "contextualEnglish") != nil { s.contextualEnglish = d.bool(forKey: "contextualEnglish") }
         if d.object(forKey: "reEditWord") != nil { s.reEditWord = d.bool(forKey: "reEditWord") }
         if d.object(forKey: "swipeTyping") != nil { s.swipeTyping = d.bool(forKey: "swipeTyping") }
+        if d.object(forKey: "swipeEnglish") != nil { s.swipeEnglish = d.bool(forKey: "swipeEnglish") }
         s.learnWords = s.showSuggestions   // bật gợi ý = bật học (quyết định 2026-07-24)
         return s
     }
@@ -116,6 +122,9 @@ final class EngineBridge {
     struct SwipeOpen: Equatable {
         var fresh = true
         var accepted = false
+        /// Từ tiếng Anh chèn NGUYÊN VĂN (giai đoạn 3): engine trống, phím dấu Telex không
+        /// sửa nó (phím chữ kế = dấu cách treo), ⌫ đầu xoá cả từ, chốt ⇒ học + ngữ cảnh Anh.
+        var literal: String? = nil
     }
     struct SettledCommit: Equatable {
         let word: String
@@ -163,8 +172,8 @@ final class EngineBridge {
     private func letterAfterSwipe(_ ch: Character, proxy: TextProxyLike) {
         guard let open = swipeOpen else { return }
         let snapshot = engine
-        let before = engine.composed
-        if Self.isReEditKey(ch) {
+        let before = open.literal ?? engine.composed
+        if open.literal == nil, Self.isReEditKey(ch) {
             let action = engine.feed(ch)
             if case .replace(let bs, let insert) = action, bs > 0,
                engine.composed != before + String(ch),
@@ -205,13 +214,14 @@ final class EngineBridge {
     /// cách treo). Sau đó chèn `word` và SEED engine bằng nó để từ vẫn là composition
     /// đang mở. Seed không round-trip, hoặc boundary sẽ auto-restore nó ⇒ chữ thường
     /// (không mở), vẫn chèn.
+    /// `literal` = từ tiếng Anh: chèn nguyên văn, KHÔNG seed engine (xem SwipeOpen.literal).
     @discardableResult
-    func insertSwipeWord(_ word: String, accepted: Bool = false,
+    func insertSwipeWord(_ word: String, accepted: Bool = false, literal: Bool = false,
                          proxy: TextProxyLike) -> SettledCommit? {
         letterUndo = nil
         var committed = settledCommit
         settledCommit = nil
-        if !engine.isEmpty {
+        if !engine.isEmpty || swipeOpen?.literal != nil {
             let wasAccepted = swipeOpen?.accepted ?? false
             let final = boundary(" ", proxy: proxy)
             if !final.isEmpty { committed = SettledCommit(word: final, accepted: wasAccepted) }
@@ -220,15 +230,15 @@ final class EngineBridge {
             proxy.insertText(" ")
         }
         proxy.insertText(word)
-        openSwipeWord(word, accepted: accepted)
+        openSwipeWord(word, accepted: accepted, literal: literal)
         return committed
     }
 
     /// Thay từ vuốt đang mở bằng `word` (biến thể trên thanh gợi ý). false = không còn
     /// mở / màn hình lệch (caller xử lý như gợi ý thường).
-    func replaceSwipeWord(with word: String, proxy: TextProxyLike) -> Bool {
-        guard swipeOpen != nil, !engine.isEmpty else { return false }
-        let composed = engine.composed
+    func replaceSwipeWord(with word: String, literal: Bool = false, proxy: TextProxyLike) -> Bool {
+        guard let open = swipeOpen, open.literal != nil || !engine.isEmpty else { return false }
+        let composed = open.literal ?? engine.composed
         guard CompositionSync.canDelete(composed.count, expected: composed,
                                         context: { proxy.contextBeforeInput }) else {
             reset()
@@ -237,12 +247,18 @@ final class EngineBridge {
         letterUndo = nil
         for _ in 0..<composed.count { proxy.deleteBackward() }
         proxy.insertText(word)
-        openSwipeWord(word, accepted: true)
+        openSwipeWord(word, accepted: true, literal: literal)
         return true
     }
 
-    private func openSwipeWord(_ word: String, accepted: Bool) {
+    private func openSwipeWord(_ word: String, accepted: Bool, literal: Bool = false) {
         lastWasOwnBoundary = false
+        if literal {
+            engine.reset()
+            engine.forgetLastCommit()                 // ⌫ không mở lại từ trước qua từ Anh
+            swipeOpen = passthrough ? nil : SwipeOpen(fresh: true, accepted: accepted, literal: word)
+            return
+        }
         if !passthrough, engine.seed(word),
            engine.peekCommitText(autoRestore: settings.autoRestore) == word {
             swipeOpen = SwipeOpen(fresh: true, accepted: accepted)
@@ -304,8 +320,16 @@ final class EngineBridge {
     @discardableResult
     func boundary(_ text: String, proxy: TextProxyLike) -> String {
         letterUndo = nil
+        let literal = swipeOpen?.literal
         swipeOpen = nil
         guard !proxy.isSecure, !passthrough else { proxy.insertText(text); return "" }
+        if let literal, engine.isEmpty {
+            // từ tiếng Anh nguyên văn: chốt như đã gõ, ngữ cảnh Anh cho từ gõ tiếp
+            engine.noteExternalWord(english: true)
+            proxy.insertText(text)
+            lastWasOwnBoundary = text.last.map { !$0.isLetter } ?? false
+            return literal
+        }
         let before = engine.composed
         var action = engine.commitBoundary(autoRestore: settings.autoRestore)
         if !safeToApply(action, expected: before, proxy: proxy) {
@@ -331,6 +355,16 @@ final class EngineBridge {
         let open = swipeOpen
         swipeOpen = nil
         guard !proxy.isSecure, !passthrough else { proxy.deleteBackward(); return false }
+        if let lit = open?.literal, open?.fresh == true, engine.isEmpty {
+            // ⌫ đầu ngay sau vuốt từ tiếng Anh: xoá cả từ. Lệch ⇒ ⌫ thường.
+            if CompositionSync.canDelete(lit.count, expected: lit, context: { proxy.contextBeforeInput }) {
+                for _ in 0..<lit.count { proxy.deleteBackward() }
+            } else {
+                TouchLog.write("failsafe: swipe-word ⌫ len=\(lit.count) → ⌫ thường")
+                proxy.deleteBackward()
+            }
+            return false
+        }
         if open?.fresh == true, !engine.isEmpty {
             // ⌫ đầu tiên ngay sau vuốt: xoá cả từ (như Gboard/QuickPath). Lệch ⇒ ⌫ thường.
             let composed = engine.composed
@@ -456,11 +490,14 @@ final class EngineBridge {
         swipeOpen = nil
     }
 
-    var isComposing: Bool { !engine.isEmpty }
+    var isComposing: Bool { !engine.isEmpty || swipeOpen?.literal != nil }
 
-    /// Current word for the suggestion bar: on-screen composed form + raw keys.
-    var composedWord: String { engine.composed }
-    var rawWord: String { engine.rawKeystrokes }
+    /// Current word for the suggestion bar: on-screen composed form + raw keys. Từ tiếng
+    /// Anh vuốt ra (nguyên văn, engine trống) cũng tính là từ đang mở.
+    var composedWord: String { swipeOpen?.literal ?? engine.composed }
+    var rawWord: String { swipeOpen?.literal ?? engine.rawKeystrokes }
+    /// Từ đang mở là từ tiếng Anh nguyên văn vừa vuốt.
+    var isLiteralSwipeWordOpen: Bool { swipeOpen?.literal != nil }
     var autoFixAdjacent: Bool { settings.autoFixAdjacent }
     /// Cache kết quả AdjacentKeyFixer theo raw — sống cùng bridge (cùng setting).
     let adjacentFixCache = AdjacentKeyFixer.Cache()
@@ -484,7 +521,7 @@ final class EngineBridge {
     /// tiếp trên engine. KHÔNG copy struct: bản copy cũ kích hoạt COW copy ~10
     /// buffer cố định mỗi phím khi commitText mutate (reset + scratch).
     var predictedCommit: String {
-        engine.peekCommitText(autoRestore: settings.autoRestore)
+        swipeOpen?.literal ?? engine.peekCommitText(autoRestore: settings.autoRestore)
     }
 
     /// Fail-safe trước khi xoá: action định xoá `bs` ký tự của `expected` (từ đang gõ

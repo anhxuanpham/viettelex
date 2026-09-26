@@ -84,8 +84,15 @@ class GestureClassifier(val params: Params = Params()) {
     fun end() { state = State.IDLE }
 }
 
-/** Kết quả vuốt: từ chèn + biến thể cho thanh gợi ý (đã theo chữ hoa). */
-data class SwipeChoice(val word: String, val alternatives: List<String>)
+/**
+ * Kết quả vuốt: từ chèn + biến thể cho thanh gợi ý (đã theo chữ hoa). [english] = từ chèn
+ * là tiếng Anh (chèn nguyên văn, không seed Telex); [englishAlternatives] = các phương án
+ * tiếng Anh trong [alternatives].
+ */
+data class SwipeChoice(
+    val word: String, val alternatives: List<String>,
+    val english: Boolean = false, val englishAlternatives: Set<String> = emptySet(),
+)
 
 object SwipeSuggest {
     const val TOP_K = 5
@@ -110,7 +117,9 @@ object SwipeSuggest {
      * người dùng hay gõ cộng ln(1+count)·[PERSONAL_WEIGHT] (trần [PERSONAL_CAP]).
      */
     class Context(private val next: Set<String>, private val nextFolded: Set<String>,
-                  private val count: (String) -> Int) {
+                  private val count: (String) -> Int,
+                  /** Tham số tiếng Anh cho decoder; null = tắt vuốt tiếng Anh. */
+                  val english: SwipeEnglishPrior? = null) {
         val folded: ((String) -> Float)? = if (nextFolded.isEmpty()) null else { f -> if (f in nextFolded) NEXT_BONUS else 0f }
         val word: (String) -> Float = { w ->
             val c = count(w)
@@ -123,30 +132,41 @@ object SwipeSuggest {
     const val PERSONAL_WEIGHT = 0.4f
     const val PERSONAL_CAP = 1.5f
 
-    fun context(model: UserLangModel?, prev1: String?, prev2: String?): Context {
-        if (model == null) return Context(emptySet(), emptySet()) { 0 }
+    fun context(model: UserLangModel?, prev1: String?, prev2: String?, english: SwipeEnglishPrior? = null): Context {
+        if (model == null) return Context(emptySet(), emptySet(), { 0 }, english)
         val next = if (prev1 != null) model.nextWords(prev1, prev2, 24).map { it.lowercase() }.toSet() else emptySet()
-        return Context(next, next.mapTo(HashSet()) { fold(it) }) { model.count(it) }
+        return Context(next, next.mapTo(HashSet()) { fold(it) }, { model.count(it) }, english)
     }
+
+    /** Từ hiển thị của một ứng viên: tiếng Anh = chính nó; Việt = bung dấu. */
+    private fun wordsFor(c: SwipeCandidate, limit: Int, wordCtx: ((String) -> Float)?): List<String> =
+        if (c.lang == SwipeLang.EN) listOf(c.folded)
+        else SwipeDecoder.expand(c.folded, limit, context = wordCtx).map { it.word }
 
     /**
      * Ứng viên không dấu (đã xếp) → top-1 có dấu + biến thể: dấu khác của dạng top-1 và
      * dạng top-2/3 (cho/co), xen kẽ, tối đa [MAX_ALTERNATIVES]. null nếu không có gì.
      */
     fun choose(cands: List<SwipeCandidate>, wordCtx: ((String) -> Float)?, case: Case = Case.LOWER): SwipeChoice? {
-        var best: List<SwipeWord> = emptyList()
+        var best: List<String> = emptyList()
         var bestIdx = -1
         for ((i, c) in cands.withIndex()) {
-            best = SwipeDecoder.expand(c.folded, 8, context = wordCtx)
+            best = wordsFor(c, 8, wordCtx)
             if (best.isNotEmpty()) { bestIdx = i; break }
         }
         if (bestIdx < 0) return null
-        val word = best[0].word
-        val variants = best.drop(1).map { it.word }
+        val lead = cands[bestIdx].lang
+        val word = best[0]
+        val variants = best.drop(1)
+        val english = HashSet<String>()
+        if (lead == SwipeLang.EN) english.add(word)
         val others = ArrayList<String>()
         for (c in cands.drop(bestIdx + 1)) {
             if (others.size >= 2) break
-            SwipeDecoder.expand(c.folded, 1, context = wordCtx).firstOrNull()?.let { others.add(it.word) }
+            wordsFor(c, 1, wordCtx).firstOrNull()?.let {
+                others.add(it)
+                if (c.lang == SwipeLang.EN) english.add(it)
+            }
         }
         val alts = LinkedHashSet<String>()
         var vi = 0; var oi = 0
@@ -156,7 +176,20 @@ object SwipeSuggest {
             if (alts.size < MAX_ALTERNATIVES && oi < others.size) alts.add(others[oi++])
         }
         alts.remove(word)
-        return SwipeChoice(applyCase(word, case), alts.map { applyCase(it, case) })
+        // Luôn có 1 phương án ngôn ngữ kia nếu decoder có (the ↔ thế): thay phương án cuối.
+        val isOther = { w: String -> (w in english) != (lead == SwipeLang.EN) }
+        if (alts.none(isOther)) {
+            val c = cands.drop(bestIdx + 1).firstOrNull { it.lang != lead && wordsFor(it, 1, wordCtx).isNotEmpty() }
+            val w = c?.let { wordsFor(it, 1, wordCtx)[0] }
+            if (w != null && w != word) {
+                if (c.lang == SwipeLang.EN) english.add(w) else english.remove(w)
+                alts.remove(w)
+                if (alts.size >= MAX_ALTERNATIVES) alts.remove(alts.last())
+                alts.add(w)
+            }
+        }
+        return SwipeChoice(applyCase(word, case), alts.map { applyCase(it, case) },
+            lead == SwipeLang.EN, alts.filter { it in english }.mapTo(HashSet()) { applyCase(it, case) })
     }
 
     fun applyCase(w: String, case: Case): String = when (case) {

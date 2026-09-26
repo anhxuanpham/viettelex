@@ -230,6 +230,12 @@ fun TinhNangTab() {
     VTSection(header = "Thử nghiệm") {
         BoolToggle(Keys.SWIPE_TYPING, Prefs.D.swipeTyping, "Gõ vuốt",
             "Lướt ngón qua các chữ KHÔNG DẤU của một âm tiết rồi nhấc tay: viet → việt. Thanh gợi ý hiện các dấu khác; gõ phím dấu Telex ngay sau đó để đổi dấu, ⌫ xoá cả từ vừa vuốt. Tự tắt khi bật TalkBack và ở ô mật khẩu, email, địa chỉ web.")
+        val swipeOn by rememberBoolPref(Keys.SWIPE_TYPING, Prefs.D.swipeTyping)
+        if (swipeOn) {
+            RowDivider()
+            BoolToggle(Keys.SWIPE_ENGLISH, Prefs.D.swipeEnglish, "Vuốt từ tiếng Anh",
+                "Vuốt ra cả từ tiếng Anh xen trong câu: check, mail, file, meeting… Khi một nét vuốt vừa là từ Việt vừa là từ Anh (the/thế, can/cần), bàn phím ưu tiên tiếng Việt — trừ khi đang gõ tiếng Anh — và luôn để phương án kia trên thanh gợi ý.")
+        }
     }
     VTSection(header = "Giao diện", footer = APPLY_NOTE) {
         BoolToggle(Keys.SHOW_SPACE_LOGO, Prefs.D.showSpaceLogo, "Hiện logo Vᴛ", "Logo mờ ở góc phải phím space.")

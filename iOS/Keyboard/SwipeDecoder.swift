@@ -133,10 +133,13 @@ struct SwipePath {
 // MARK: - Kết quả
 
 struct SwipeCandidate: Equatable {
-    /// Dạng không dấu trong lexicon (đ gộp d), vd "viet".
+    /// Dạng không dấu trong lexicon (đ gộp d), vd "viet" — hoặc từ tiếng Anh nguyên văn
+    /// khi `lang == .en` (giai đoạn 3, SwipeEnglish.swift).
     let folded: String
     /// Điểm log (càng lớn càng tốt; chỉ so sánh tương đối).
     let score: Float
+    /// Nhãn ngôn ngữ: .vi = dạng không dấu cần expand; .en = chèn nguyên văn.
+    var lang: SwipeLang = .vi
 }
 
 struct SwipeWord: Equatable {
@@ -230,6 +233,9 @@ final class SwipeDecoder {
     // scratch cấp sẵn
     private var ux: [Float], uy: [Float], sx: [Float], sy: [Float]
     private var topScore: [Float] = [], topIdx: [Int] = []
+    // template tiếng Anh dựng ngay lúc chấm (không giữ): phím + điểm resample
+    private var ekx = [Float](repeating: 0, count: 32), eky = [Float](repeating: 0, count: 32)
+    private var erx: [Float], ery: [Float]
 
     init(params: Params = Params()) {
         self.params = params
@@ -244,6 +250,7 @@ final class SwipeDecoder {
         }
         alpha = a; alphaSum = s
         ux = [Float](repeating: 0, count: n); uy = ux; sx = ux; sy = ux
+        erx = ux; ery = ux
     }
 
     /// Đặt layout; khác layout cũ thì bỏ template (dựng lại lười).
@@ -300,22 +307,47 @@ final class SwipeDecoder {
     /// Giải mã đường vuốt → top-K dạng không dấu, điểm giảm dần.
     /// `context(folded)` (tuỳ chọn) cộng điểm ngữ cảnh (log-domain, vd từ
     /// UserLangModel với từ trước) cho `contextPool` ứng viên đầu.
+    ///
+    /// `english` (giai đoạn 3): thêm ~20k từ tiếng Anh vào CÙNG không gian ứng viên,
+    /// điểm = hình học + λ·tần suất (cùng thang) + `english.bias`; `englishContext(từ)`
+    /// là điểm ngữ cảnh riêng cho từ tiếng Anh. Sau khi xếp: tiếng Anh top-1 phải hơn
+    /// ứng viên Việt tốt nhất ≥ `english.margin`, và kết quả luôn giữ ≥ 1 ứng viên ngôn
+    /// ngữ kia nếu có (thanh gợi ý the ↔ thế). nil ⇒ hành vi cũ, y hệt từng bit.
+    /// (Overload riêng, `english` bắt buộc: closure đuôi `decode(p, topK: k) { … }` vẫn là
+    /// `context`.)
     func decode(_ path: SwipePath, topK: Int = 5,
                 context: ((String) -> Float)? = nil) -> [SwipeCandidate] {
         decode(xs: path.xs, ys: path.ys, count: path.count, topK: topK, context: context)
     }
 
+    func decode(_ path: SwipePath, topK: Int = 5, context: ((String) -> Float)? = nil,
+                english: SwipeEnglishPrior?,
+                englishContext: ((String) -> Float)? = nil) -> [SwipeCandidate] {
+        decode(xs: path.xs, ys: path.ys, count: path.count, topK: topK, context: context,
+               english: english, englishContext: englishContext)
+    }
+
     func decode(xs: [Float], ys: [Float], count: Int, topK: Int = 5,
                 context: ((String) -> Float)? = nil) -> [SwipeCandidate] {
+        decode(xs: xs, ys: ys, count: count, topK: topK, context: context, english: nil,
+               englishContext: nil)
+    }
+
+    func decode(xs: [Float], ys: [Float], count: Int, topK: Int = 5,
+                context: ((String) -> Float)? = nil,
+                english: SwipeEnglishPrior?,
+                englishContext: ((String) -> Float)? = nil) -> [SwipeCandidate] {
         guard count > 0, topK > 0, let l = layout else { return [] }
         if tpl.isEmpty { buildTemplates(l) }
         let forms = SwipeLexicon.forms
+        let en: SwipeEnglish.Lexicon? = english == nil ? nil : SwipeEnglish.lexicon
+        let fc = forms.count
         let n = params.points, w = l.keyWidth
         Self.resample(xs, ys, count, n, &ux, &uy)
         let (ucx, ucy, us) = Self.shapeFrame(ux, uy, n, w)
         for i in 0..<n { sx[i] = (ux[i] - ucx) * us; sy[i] = (uy[i] - ucy) * us }
 
-        let m = context == nil ? topK : max(topK, params.contextPool)
+        let m = context == nil && english == nil ? topK : max(topK, params.contextPool)
         if topScore.count < m {
             topScore = [Float](repeating: 0, count: m)
             topIdx = [Int](repeating: 0, count: m)
@@ -361,6 +393,9 @@ final class SwipeDecoder {
                         + lam * Float(forms.freq[f]) / 255
                     Self.insertTop(score, f, TS, TI, &filled, m)
                 }
+                if let en, let english {
+                    scoreEnglish(en, english.bias, l, r2, UX, UY, SX, SY, A, TS, TI, &filled, m, fc)
+                }
                 if filled >= topK { break }
             }
         }}}}}}}}
@@ -370,17 +405,105 @@ final class SwipeDecoder {
         for k in 0..<filled {
             let f = topIdx[k]
             var s = topScore[k]
+            if f >= fc, let en {
+                let w = en.words[f - fc]
+                if let englishContext { s += englishContext(w) }
+                out.append(SwipeCandidate(folded: w, score: s, lang: .en))
+                continue
+            }
             if let context { s += context(forms.folded[f]) }
             out.append(SwipeCandidate(folded: forms.folded[f], score: s))
         }
-        if context != nil {
+        if context != nil || englishContext != nil {
             // sort ổn định: bằng điểm giữ thứ tự hình học
             out = out.enumerated().sorted {
                 $0.element.score != $1.element.score
                     ? $0.element.score > $1.element.score : $0.offset < $1.offset
             }.map { $0.element }
         }
+        if let english { return Self.arbitrate(out, topK: topK, margin: english.margin) }
         return Array(out.prefix(topK))
+    }
+
+    /// Chấm các từ tiếng Anh lọt bộ lọc phím đầu/cuối (duyệt theo cặp phím đầu–cuối,
+    /// thứ tự cố định — parity Kotlin). Template dựng ngay tại chỗ, cùng công thức VN.
+    private func scoreEnglish(_ en: SwipeEnglish.Lexicon, _ bias: Float, _ l: SwipeLayout,
+                              _ r2: Float,
+                              _ UX: UnsafeBufferPointer<Float>, _ UY: UnsafeBufferPointer<Float>,
+                              _ SX: UnsafeBufferPointer<Float>, _ SY: UnsafeBufferPointer<Float>,
+                              _ A: UnsafeBufferPointer<Float>,
+                              _ TS: UnsafeMutableBufferPointer<Float>,
+                              _ TI: UnsafeMutableBufferPointer<Int>,
+                              _ filled: inout Int, _ m: Int, _ fc: Int) {
+        let n = params.points, w = l.keyWidth
+        let tunnelW = params.tunnel * w
+        let invS = 1 / (2 * params.sigmaShape * params.sigmaShape)
+        let invL = 1 / (2 * params.sigmaLoc * params.sigmaLoc)
+        let lam = params.lambdaFreq
+        // buffer cục bộ (tránh kiểm tra độc quyền truy cập property mỗi phần tử)
+        var kx = ekx, ky = eky, rx = erx, ry = ery
+        var okFirst = [Bool](repeating: false, count: 26), okLast = okFirst
+        for k in 0..<26 {
+            let x = l.centers[k * 2], y = l.centers[k * 2 + 1]
+            guard x.isFinite else { continue }
+            var dx = UX[0] - x, dy = UY[0] - y
+            okFirst[k] = dx * dx + dy * dy <= r2
+            dx = UX[n - 1] - x; dy = UY[n - 1] - y
+            okLast[k] = dx * dx + dy * dy <= r2
+        }
+        for a in 0..<26 where okFirst[a] {
+            for b in 0..<26 where okLast[b] {
+                let bk = a * 26 + b
+                for o in Int(en.bucketStart[bk])..<Int(en.bucketStart[bk + 1]) {
+                    let i = Int(en.order[o])
+                    let lo = Int(en.keyStart[i]), hi = Int(en.keyStart[i + 1])
+                    guard hi - lo <= kx.count else { continue }
+                    var mk = 0, ok = true
+                    for j in lo..<hi {
+                        let k = Int(en.keys[j])
+                        let x = l.centers[k * 2]
+                        guard x.isFinite else { ok = false; break }
+                        kx[mk] = x; ky[mk] = l.centers[k * 2 + 1]; mk += 1
+                    }
+                    guard ok else { continue }
+                    Self.resample(kx, ky, mk, n, &rx, &ry)
+                    let (cx, cy, sc) = Self.shapeFrame(rx, ry, n, w)
+                    var ds: Float = 0, dl: Float = 0
+                    for p in 0..<n {
+                        let tx = rx[p], ty = ry[p]
+                        let ex = SX[p] - (tx - cx) * sc, ey = SY[p] - (ty - cy) * sc
+                        ds += (ex * ex + ey * ey).squareRoot()
+                        let lx = UX[p] - tx, ly = UY[p] - ty
+                        let d = (lx * lx + ly * ly).squareRoot() - tunnelW
+                        if d > 0 { dl += A[p] * d }
+                    }
+                    ds = ds / Float(n)
+                    dl = dl / alphaSum / w
+                    let score = -(ds * ds) * invS - (dl * dl) * invL
+                        + lam * Float(en.freq[i]) / 255 + bias
+                    Self.insertTop(score, fc + i, TS, TI, &filled, m)
+                }
+            }
+        }
+    }
+
+    /// Phân xử ngôn ngữ trên danh sách đã xếp (thuần, parity Kotlin):
+    ///  1. top-1 tiếng Anh mà có ứng viên Việt kém < margin ⇒ ứng viên Việt đó lên đầu;
+    ///  2. top-K không có ngôn ngữ kia mà pool có ⇒ NỐI THÊM ứng viên tốt nhất của ngôn
+    ///     ngữ kia (kết quả dài tối đa topK+1, không chiếm chỗ ứng viên cùng ngôn ngữ) —
+    ///     thanh gợi ý luôn có phương án chéo.
+    static func arbitrate(_ sorted: [SwipeCandidate], topK: Int, margin: Float) -> [SwipeCandidate] {
+        var out = sorted
+        if let first = out.first, first.lang == .en, margin > 0,
+           let j = out.firstIndex(where: { $0.lang == .vi && $0.score > first.score - margin }) {
+            out.insert(out.remove(at: j), at: 0)
+        }
+        var top = Array(out.prefix(topK))
+        if topK >= 2, let lead = top.first?.lang, !top.contains(where: { $0.lang != lead }),
+           let other = out.first(where: { $0.lang != lead }) {
+            top.append(other)
+        }
+        return top
     }
 
     /// Bung dạng không dấu thành âm tiết có dấu, điểm = λ·tần suất/255

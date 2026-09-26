@@ -26,6 +26,13 @@ data class KeyboardSettings(
     var reEditWords: Boolean = true,
     /** Gõ vuốt (thử nghiệm) — mặc định TẮT; tắt ⇒ không dựng template, không ghi checkpoint. */
     var swipeTyping: Boolean = false,
+    /**
+     * Vuốt ra từ tiếng Anh (công tắc con của gõ vuốt) — mặc định BẬT: câu Việt chen từ
+     * Anh rất thường (check mail, gửi file); decoder nghiêng Việt + biên độ nên chỉ ra
+     * tiếng Anh khi hình vuốt thắng rõ / đang trong mạch Anh, và từ điển chỉ nạp khi gõ
+     * vuốt đang bật. Giống iOS.
+     */
+    var swipeEnglish: Boolean = true,
     // Phần UI (iOS đọc rải rác trong KeyboardView) — gom về đây cho IME.
     var templatesEnabled: Boolean = true,
     var showSpaceLogo: Boolean = true,
@@ -54,6 +61,7 @@ data class KeyboardSettings(
             s.contextualEnglish = b(Keys.CONTEXTUAL_ENGLISH, s.contextualEnglish)
             s.reEditWords = b(Keys.RE_EDIT_WORDS, s.reEditWords)
             s.swipeTyping = b(Keys.SWIPE_TYPING, s.swipeTyping)
+            s.swipeEnglish = b(Keys.SWIPE_ENGLISH, s.swipeEnglish)
             s.templatesEnabled = b(Keys.TEMPLATES_ENABLED, s.templatesEnabled)
             s.showSpaceLogo = b(Keys.SHOW_SPACE_LOGO, s.showSpaceLogo)
             s.debugTouchLog = b(Keys.DEBUG_TOUCH_LOG, s.debugTouchLog)

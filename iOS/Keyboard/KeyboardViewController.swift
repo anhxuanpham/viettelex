@@ -22,7 +22,13 @@ final class KeyboardViewController: UIInputViewController {
     private var swipeSetting = false
     private var swipe: SwipeTyping?
     /// Từ vuốt đang mở + phương án cho thanh gợi ý (hết hiệu lực khi từ đổi / chốt).
-    private var swipeSuggest: (current: String, alts: [String])?
+    /// `english` = các phương án tiếng Anh (chọn ⇒ chèn nguyên văn).
+    private var swipeSuggest: (current: String, alts: [String], english: Set<String>)?
+    /// Công tắc con "Vuốt từ tiếng Anh" (giai đoạn 3).
+    private var swipeEnglishSetting = true
+    /// Vài từ tiếng Anh vừa vuốt ra (chữ thường) — ngữ cảnh ngôn ngữ cho cú vuốt kế
+    /// (từ trùng chuỗi như "the" vuốt ra dạng Anh vẫn mở mạch Anh).
+    private var recentEnglish: [String] = []
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -92,8 +98,10 @@ final class KeyboardViewController: UIInputViewController {
         filterSensitive = settings.filterSensitive
         showSuggestionsSetting = settings.showSuggestions
         swipeSetting = settings.swipeTyping
+        swipeEnglishSetting = settings.swipeEnglish
         if !swipeSetting { swipe = nil }              // tắt ⇒ bỏ template (RAM)
         swipeSuggest = nil
+        recentEnglish = []
         // Trait ô (layout, return key, passthrough, bar) — force: mỗi lần hiện áp lại
         // appearance/mẫu câu dù trait y hệt (batchConfigure tự dedupe rebuild).
         refreshFieldTraits(force: true)
@@ -976,6 +984,7 @@ extension KeyboardViewController {
         keyboard.swipeEnabled = on
         if on, swipe == nil { swipe = SwipeTyping() }
         if on { pushSwipeLayout(prepare: true) }
+        if on, swipeEnglishSetting { swipe?.preloadEnglish() }
     }
 
     /// Tâm phím thật → decoder (đổi layout khi xoay/đổi cỡ; trùng thì no-op).
@@ -988,6 +997,16 @@ extension KeyboardViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         pushSwipeLayout(prepare: true)
+    }
+
+    private func isRecentEnglish(_ w: String?) -> Bool {
+        guard let w else { return false }
+        return recentEnglish.contains(w.lowercased())
+    }
+
+    private func noteRecentEnglish(_ w: String) {
+        recentEnglish.append(w.lowercased())
+        if recentEnglish.count > 4 { recentEnglish.removeFirst() }
     }
 
     /// Từ vuốt được chốt bởi phím chữ trước (dấu cách treo) — học khi chắc chắn.
@@ -1019,12 +1038,20 @@ extension KeyboardViewController {
         let prev2 = composing ? lastWord : lastWord2
         let ctx = prev.map { langModel.nextWords(after: $0, prev2: prev2, limit: 24) } ?? []
         let lm = langModel
+        // Ngôn ngữ theo 2 từ trước (giai đoạn 3): từ Anh vừa vuốt (nhãn) chắc nhất, rồi bảng
+        // từ của engine; mặc định nghiêng tiếng Việt.
+        let english: SwipeEnglishPrior? = swipeEnglishSetting ? SwipeLangContext.prior(
+            prev1: SwipeLangContext.classify(prev, swipedEnglish: bridge.isLiteralSwipeWordOpen
+                                                 || isRecentEnglish(prev)),
+            prev2: SwipeLangContext.classify(prev2, swipedEnglish: isRecentEnglish(prev2))) : nil
         let out = swipe.finish(path, case: sc, contextWords: ctx, count: { lm.count(of: $0) },
-                               bridge: bridge, proxy: Proxy(p: textDocumentProxy))
+                               english: english, bridge: bridge, proxy: Proxy(p: textDocumentProxy))
         if let out {
             if let c = out.committed { commitAndLearn(c.word, accepted: c.accepted) }
+            if out.english { noteRecentEnglish(out.word) }
             let alts = SensitiveWords.filter(out.alternatives, enabled: filterSensitive)
-            swipeSuggest = alts.isEmpty || !bridge.isSwipeWordOpen ? nil : (out.word, alts)
+            swipeSuggest = alts.isEmpty || !bridge.isSwipeWordOpen ? nil
+                : (out.word, alts, out.englishAlternatives)
             KeyboardView.clickLetter()
         }
         lastInsertWasSpace = false
@@ -1041,11 +1068,18 @@ extension KeyboardViewController {
         guard let s = swipeSuggest, s.alts.contains(item) else { return false }
         applyingEdit = true
         defer { applyingEdit = false }
-        guard bridge.replaceSwipeWord(with: item, proxy: Proxy(p: textDocumentProxy)) else {
+        let wasEnglish = bridge.isLiteralSwipeWordOpen
+        let itemEnglish = s.english.contains(item)
+        guard bridge.replaceSwipeWord(with: item, literal: itemEnglish,
+                                      proxy: Proxy(p: textDocumentProxy)) else {
             swipeSuggest = nil
             return false
         }
-        swipeSuggest = (item, [s.current] + s.alts.filter { $0 != item })
+        if itemEnglish { noteRecentEnglish(item) }
+        var english = s.english
+        english.remove(item)
+        if wasEnglish { english.insert(s.current) }
+        swipeSuggest = (item, [s.current] + s.alts.filter { $0 != item }, english)
         KeyboardView.clickModifier()
         suggestionGen += 1
         updateSuggestions()

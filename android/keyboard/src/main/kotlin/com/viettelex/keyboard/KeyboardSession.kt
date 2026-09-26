@@ -175,6 +175,14 @@ class KeyboardSession(
     /** Từ vừa vuốt, còn là composition đang mở (null khi phím/thao tác khác xen vào). */
     private var swipeWord: String? = null
     private var swipeAlts: List<String> = emptyList()
+    /** Từ vuốt đang mở là tiếng Anh chèn NGUYÊN VĂN (engine trống — không seed Telex). */
+    private var swipeLiteral = false
+    /** Phương án tiếng Anh trong [swipeAlts] (chèn nguyên văn khi chọn). */
+    private var swipeEnglishAlts: Set<String> = emptySet()
+    /** Vuốt ra từ tiếng Anh (công tắc con, [KeyboardSettings.swipeEnglish]). */
+    var swipeEnglish = true
+    /** Vài từ tiếng Anh vừa vuốt ra (chữ thường) — ngữ cảnh ngôn ngữ cho cú vuốt kế. */
+    private val recentEnglish = ArrayDeque<String>()
 
     init {
         langModel.isKnownWord = { VNSuggest.contains(it) }
@@ -196,6 +204,8 @@ class KeyboardSession(
         learnEnabled = settings.learnWords && !field.noLearning
         initialCapsPending = true
         filterSensitive = settings.filterSensitive
+        swipeEnglish = settings.swipeEnglish
+        recentEnglish.clear()
         suggestionsActive = settings.showSuggestions && field.suggestionsAllowed && !field.isSecure && !field.passthrough
         lastWord = null; lastWord2 = null
         lastInsertWasSpace = false
@@ -211,7 +221,18 @@ class KeyboardSession(
         if (!on) clearSwipe()
     }
 
-    private fun clearSwipe() { swipeWord = null; swipeAlts = emptyList() }
+    private fun clearSwipe() { swipeWord = null; swipeAlts = emptyList(); swipeLiteral = false; swipeEnglishAlts = emptySet() }
+
+    /** Từ vuốt còn mở: từ engine đang soạn, hoặc từ tiếng Anh nguyên văn. */
+    private fun openSwipeWord(): String? = swipeWord?.takeIf { swipeLiteral || it == bridge.composedWord }
+
+    /** Chốt từ tiếng Anh nguyên văn đang mở (học + ngữ cảnh), trước khi phím kế chèn gì. */
+    private fun settleLiteral(word: String) {
+        commitAndLearn(word)
+        bridge.noteExternalWord(true)
+        recentEnglish.addLast(word.lowercase())
+        while (recentEnglish.size > 4) recentEnglish.removeFirst()
+    }
 
     /** onFinishInputView (viewWillDisappear). */
     fun finishInput() { langModel.saveNow() }
@@ -250,8 +271,16 @@ class KeyboardSession(
 
     fun handle(key: Key, proxy: TextProxy): KeyOutcome {
         val t0 = if (TouchLog.enabled) System.nanoTime() else 0L
-        val swiped = swipeWord?.takeIf { it == bridge.composedWord }
+        val swiped = openSwipeWord()
+        val literal = if (swipeLiteral) swiped else null
         clearSwipe()
+        // Từ tiếng Anh vuốt ra đang mở: phím chữ/ranh giới chốt nó (học), phím chữ thêm dấu
+        // cách treo trước (không dính "mailx"; huỷ được nếu phím đó là đầu cú vuốt mới).
+        if (literal != null && (key is Key.Letter || key is Key.Text || key == Key.Space ||
+                key == Key.DoubleSpacePeriod || key == Key.Newline)) {
+            settleLiteral(literal)
+            if (key is Key.Letter) bridge.boundary(" ", proxy)
+        }
         when (key) {
             is Key.Letter -> { bridge.letter(key.ch, proxy); clearUndo() }
             is Key.Text -> {
@@ -266,7 +295,7 @@ class KeyboardSession(
                     restoreUndoRaw = committed; restoreUndoComposed = composedBefore
                 } else { restoreUndoRaw = null; restoreUndoComposed = null }
                 undoOfferActive = false
-                commitAndLearn(committed)
+                if (literal == null) commitAndLearn(committed)
             }
             Key.DoubleSpacePeriod -> {
                 val ctx = proxy.contextBeforeInput() ?: ""
@@ -348,10 +377,23 @@ class KeyboardSession(
 
     /** Điểm ngữ cảnh cho decoder: từ trước = từ đang soạn (sẽ được chốt) hoặc từ chốt gần nhất. */
     fun swipeContext(): SwipeSuggest.Context {
-        val pending = if (bridge.isComposing) bridge.predictedCommit.takeIf { UserLangModel.learnable(it) } else null
-        return if (bridge.isComposing) SwipeSuggest.context(langModel, pending, if (pending != null) lastWord else null)
-        else SwipeSuggest.context(langModel, lastWord, lastWord2)
+        val lit = if (swipeLiteral) swipeWord else null
+        val composing = bridge.isComposing || lit != null
+        val pending = when {
+            lit != null -> lit
+            bridge.isComposing -> bridge.predictedCommit.takeIf { UserLangModel.learnable(it) }
+            else -> null
+        }
+        val p1 = if (composing) pending else lastWord
+        val p2 = if (composing) (if (pending != null) lastWord else null) else lastWord2
+        // Ngôn ngữ theo 2 từ trước: từ Anh vừa vuốt (nhãn) chắc nhất, rồi bảng từ của engine.
+        val english = if (!swipeEnglish) null else SwipeLangContext.prior(
+            SwipeLangContext.classify(p1, lit != null || isRecentEnglish(p1)),
+            SwipeLangContext.classify(p2, isRecentEnglish(p2)))
+        return SwipeSuggest.context(langModel, p1, p2, english)
     }
+
+    private fun isRecentEnglish(w: String?) = w != null && w.lowercase() in recentEnglish
 
     /**
      * Nhấc tay khỏi đường vuốt: chốt từ đang soạn (nếu có, kèm dấu cách), dấu cách treo
@@ -359,16 +401,29 @@ class KeyboardSession(
      * (phím dấu Telex sửa được, ⌫ đầu xoá cả từ, thanh gợi ý hiện biến thể).
      */
     fun commitSwipe(choice: SwipeChoice, proxy: TextProxy): KeyOutcome {
+        val lit = if (swipeLiteral) swipeWord else null
         clearUndo(); clearSwipe()
-        if (bridge.isComposing) {
+        if (lit != null) {
+            // từ tiếng Anh vuốt trước còn mở: chốt nó + dấu cách
+            settleLiteral(lit)
+            bridge.boundary(" ", proxy)
+        } else if (bridge.isComposing) {
             commitAndLearn(bridge.boundary(" ", proxy))
         } else if (SwipeSuggest.needsLeadingSpace(proxy.contextBeforeInput())) {
             bridge.boundary(" ", proxy)
         }
         proxy.insertText(choice.word)
-        if (bridge.adoptWord(choice.word)) {
+        if (choice.english) {
+            // tiếng Anh: chèn nguyên văn, engine trống (không seed Telex, không bung dấu)
+            bridge.adoptLiteral()
+            swipeWord = choice.word
+            swipeLiteral = true
+            swipeAlts = choice.alternatives
+            swipeEnglishAlts = choice.englishAlternatives
+        } else if (bridge.adoptWord(choice.word)) {
             swipeWord = choice.word
             swipeAlts = choice.alternatives
+            swipeEnglishAlts = choice.englishAlternatives
         }
         lastInsertWasSpace = false
         lastKeyWasEmailTrigger = false
@@ -379,7 +434,10 @@ class KeyboardSession(
     }
 
     /** Đang hiện biến thể của từ vừa vuốt (test / IME). */
-    val swipeAlternatives: List<String>? get() = swipeWord?.takeIf { it == bridge.composedWord }?.let { swipeAlts }
+    val swipeAlternatives: List<String>? get() = openSwipeWord()?.let { swipeAlts }
+
+    /** Từ vuốt đang mở là tiếng Anh nguyên văn (test / IME). */
+    val swipeWordIsEnglish: Boolean get() = swipeLiteral && swipeWord != null
 
     /** Giữ ⌫ > 3 s: xoá theo TỪ (khoảng trắng đuôi rồi tới đầu từ). */
     fun deleteWordBackward(proxy: TextProxy) {
@@ -580,15 +638,21 @@ class KeyboardSession(
             bridge.reset(); lastWord = null; lastWord2 = null
             return
         }
-        val sw = swipeWord
-        if (sw != null && sw == bridge.composedWord && item in swipeAlts) {
+        val sw = openSwipeWord()
+        if (sw != null && item in swipeAlts) {
             // Chạm biến thể của từ vừa vuốt: thay từ, vẫn là composition mở (chưa học — học khi chốt).
             if (!proxy.confirmTail(sw)) { clearSwipe(); bridge.reset(); return }
             proxy.deleteCodePoints(Cp.count(sw))
             proxy.insertText(item)
-            if (bridge.adoptWord(item)) {
-                swipeAlts = swipeAlts.map { if (it == item) sw else it }
-                swipeWord = item
+            val itemEnglish = item in swipeEnglishAlts
+            // phương án chéo đổi chỗ với từ cũ (từ cũ tiếng Anh ⇒ vẫn là phương án tiếng Anh)
+            val eng = swipeEnglishAlts - item + (if (swipeLiteral) setOf(sw) else emptySet())
+            val alts = swipeAlts.map { if (it == item) sw else it }
+            if (itemEnglish) {
+                bridge.adoptLiteral()
+                swipeWord = item; swipeLiteral = true; swipeAlts = alts; swipeEnglishAlts = eng
+            } else if (bridge.adoptWord(item)) {
+                swipeWord = item; swipeLiteral = false; swipeAlts = alts; swipeEnglishAlts = eng
             } else clearSwipe()
             return
         }

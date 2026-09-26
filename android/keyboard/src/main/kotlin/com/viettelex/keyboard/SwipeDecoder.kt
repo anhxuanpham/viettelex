@@ -112,7 +112,8 @@ class SwipePath(val minDistance: Float, val capacity: Int = 256) {
     val duration: Double get() = if (count > 1) ts[count - 1] - ts[0] else 0.0
 }
 
-data class SwipeCandidate(val folded: String, val score: Float)
+/** [folded] = dạng không dấu (VI) hoặc từ tiếng Anh nguyên văn (EN, giai đoạn 3). */
+data class SwipeCandidate(val folded: String, val score: Float, val lang: SwipeLang = SwipeLang.VI)
 data class SwipeWord(val word: String, val score: Float)
 
 /** 1666 dạng không dấu rút từ vnlexicon.bin — mỗi dạng là một dải id liên tiếp. */
@@ -204,6 +205,14 @@ class SwipeDecoder(val params: Params = Params()) {
     private var topIdx = IntArray(0)
     private var filled = 0
     private val frame = FloatArray(3)
+    // template tiếng Anh dựng ngay lúc chấm (không giữ)
+    private val ekx = FloatArray(32)
+    private val eky = FloatArray(32)
+    private val erx: FloatArray
+    private val ery: FloatArray
+    private val eframe = FloatArray(3)
+    private val okFirst = BooleanArray(26)
+    private val okLast = BooleanArray(26)
 
     init {
         val n = params.points
@@ -217,6 +226,7 @@ class SwipeDecoder(val params: Params = Params()) {
         }
         alphaSum = s
         ux = FloatArray(n); uy = FloatArray(n); sx = FloatArray(n); sy = FloatArray(n)
+        erx = FloatArray(n); ery = FloatArray(n)
     }
 
     /** Đặt layout; khác layout cũ thì bỏ template (dựng lại lười). */
@@ -269,23 +279,48 @@ class SwipeDecoder(val params: Params = Params()) {
 
     /** Giải mã → top-K dạng không dấu (điểm giảm dần); [context] cộng điểm ngữ cảnh. */
     fun decode(path: SwipePath, topK: Int = 5, context: ((String) -> Float)? = null): List<SwipeCandidate> =
-        decode(path.xs, path.ys, path.count, topK, context)
+        decodeCore(path.xs, path.ys, path.count, topK, context, null, null)
 
     fun decode(
         xs: FloatArray, ys: FloatArray, count: Int, topK: Int = 5,
         context: ((String) -> Float)? = null,
+    ): List<SwipeCandidate> = decodeCore(xs, ys, count, topK, context, null, null)
+
+    /**
+     * Giai đoạn 3 — [english] != null: thêm từ tiếng Anh vào cùng không gian ứng viên
+     * (+bias), [englishContext] = điểm ngữ cảnh riêng của từ tiếng Anh; sau khi xếp áp
+     * [arbitrate]. null ⇒ y hệt [decode] thường. (Overload riêng để lambda đuôi
+     * `decode(p, k) { … }` vẫn là [context].)
+     */
+    fun decode(
+        path: SwipePath, topK: Int, context: ((String) -> Float)?,
+        english: SwipeEnglishPrior?, englishContext: ((String) -> Float)? = null,
+    ): List<SwipeCandidate> = decodeCore(path.xs, path.ys, path.count, topK, context, english, englishContext)
+
+    fun decode(
+        xs: FloatArray, ys: FloatArray, count: Int, topK: Int, context: ((String) -> Float)?,
+        english: SwipeEnglishPrior?, englishContext: ((String) -> Float)? = null,
+    ): List<SwipeCandidate> = decodeCore(xs, ys, count, topK, context, english, englishContext)
+
+    private fun decodeCore(
+        xs: FloatArray, ys: FloatArray, count: Int, topK: Int,
+        context: ((String) -> Float)?,
+        english: SwipeEnglishPrior?,
+        englishContext: ((String) -> Float)?,
     ): List<SwipeCandidate> {
         val l = layout
         if (count <= 0 || topK <= 0 || l == null) return emptyList()
         if (tpl.isEmpty()) buildTemplates(l)
         val forms = SwipeLexicon.forms
+        val en = if (english == null) null else SwipeEnglish.lexicon
+        val fc = forms.count
         val n = params.points; val w = l.keyWidth
         resample(xs, ys, count, n, ux, uy)
         shapeFrame(ux, uy, n, w, frame)
         val ucx = frame[0]; val ucy = frame[1]; val us = frame[2]
         for (i in 0 until n) { sx[i] = (ux[i] - ucx) * us; sy[i] = (uy[i] - ucy) * us }
 
-        val m = if (context == null) topK else max(topK, params.contextPool)
+        val m = if (context == null && english == null) topK else max(topK, params.contextPool)
         if (topScore.size < m) { topScore = FloatArray(m); topIdx = IntArray(m) }
         val tunnelW = params.tunnel * w
         val invS = 1f / (2f * params.sigmaShape * params.sigmaShape)
@@ -320,6 +355,7 @@ class SwipeDecoder(val params: Params = Params()) {
                 val score = -(ds * ds) * invS - (dl * dl) * invL + lam * forms.freq[f].toFloat() / 255f
                 insertTop(score, f, m)
             }
+            if (en != null && english != null) scoreEnglish(en, english.bias, l, r2, m, fc)
             if (filled >= topK) break
         }
 
@@ -327,12 +363,74 @@ class SwipeDecoder(val params: Params = Params()) {
         for (k in 0 until filled) {
             val f = topIdx[k]
             var s = topScore[k]
+            if (f >= fc && en != null) {
+                val word = en.words[f - fc]
+                if (englishContext != null) s += englishContext(word)
+                out.add(SwipeCandidate(word, s, SwipeLang.EN))
+                continue
+            }
             if (context != null) s += context(forms.folded[f])
             out.add(SwipeCandidate(forms.folded[f], s))
         }
         // sortedByDescending ổn định: bằng điểm giữ thứ tự hình học
-        val sorted = if (context != null) out.sortedByDescending { it.score } else out
+        val sorted = if (context != null || englishContext != null) out.sortedByDescending { it.score } else out
+        if (english != null) return arbitrate(sorted, topK, english.margin)
         return sorted.take(topK)
+    }
+
+    /** Chấm từ tiếng Anh lọt lọc phím đầu/cuối (theo cặp phím, thứ tự cố định — parity Swift). */
+    private fun scoreEnglish(en: SwipeEnglish.Lexicon, bias: Float, l: SwipeLayout, r2: Float, m: Int, fc: Int) {
+        val n = params.points; val w = l.keyWidth
+        val tunnelW = params.tunnel * w
+        val invS = 1f / (2f * params.sigmaShape * params.sigmaShape)
+        val invL = 1f / (2f * params.sigmaLoc * params.sigmaLoc)
+        val lam = params.lambdaFreq
+        val a = alpha
+        for (k in 0 until 26) {
+            val x = l.centers[k * 2]; val y = l.centers[k * 2 + 1]
+            if (!x.isFinite()) { okFirst[k] = false; okLast[k] = false; continue }
+            var dx = ux[0] - x; var dy = uy[0] - y
+            okFirst[k] = dx * dx + dy * dy <= r2
+            dx = ux[n - 1] - x; dy = uy[n - 1] - y
+            okLast[k] = dx * dx + dy * dy <= r2
+        }
+        for (fa in 0 until 26) {
+            if (!okFirst[fa]) continue
+            for (lb in 0 until 26) {
+                if (!okLast[lb]) continue
+                val bk = fa * 26 + lb
+                for (o in en.bucketStart[bk] until en.bucketStart[bk + 1]) {
+                    val i = en.order[o]
+                    val lo = en.keyStart[i]; val hi = en.keyStart[i + 1]
+                    if (hi - lo > ekx.size) continue
+                    var mk = 0; var ok = true
+                    for (j in lo until hi) {
+                        val k = en.keys[j].toInt()
+                        val x = l.centers[k * 2]
+                        if (!x.isFinite()) { ok = false; break }
+                        ekx[mk] = x; eky[mk] = l.centers[k * 2 + 1]; mk++
+                    }
+                    if (!ok) continue
+                    resample(ekx, eky, mk, n, erx, ery)
+                    shapeFrame(erx, ery, n, w, eframe)
+                    val cx = eframe[0]; val cy = eframe[1]; val sc = eframe[2]
+                    var ds = 0f; var dl = 0f
+                    for (p in 0 until n) {
+                        val tx = erx[p]; val ty = ery[p]
+                        val ex = sx[p] - (tx - cx) * sc; val ey = sy[p] - (ty - cy) * sc
+                        ds += sqrt(ex * ex + ey * ey)
+                        val lx = ux[p] - tx; val ly = uy[p] - ty
+                        val d = sqrt(lx * lx + ly * ly) - tunnelW
+                        if (d > 0f) dl += a[p] * d
+                    }
+                    ds = ds / n.toFloat()
+                    dl = dl / alphaSum / w
+                    val score = -(ds * ds) * invS - (dl * dl) * invL +
+                        lam * en.freq[i].toFloat() / 255f + bias
+                    insertTop(score, fc + i, m)
+                }
+            }
+        }
     }
 
     private fun insertTop(s: Float, idx: Int, m: Int) {
@@ -346,6 +444,28 @@ class SwipeDecoder(val params: Params = Params()) {
     }
 
     companion object {
+        /**
+         * Phân xử ngôn ngữ trên danh sách đã xếp (port Swift `arbitrate`): top-1 tiếng Anh
+         * mà có ứng viên Việt kém < [margin] ⇒ ứng viên Việt đó lên đầu; top-K thiếu ngôn
+         * ngữ kia mà pool có ⇒ NỐI THÊM ứng viên tốt nhất của ngôn ngữ kia (kết quả có thể
+         * dài topK+1 — không chiếm chỗ ứng viên cùng ngôn ngữ).
+         */
+        fun arbitrate(sorted: List<SwipeCandidate>, topK: Int, margin: Float): List<SwipeCandidate> {
+            val out = sorted.toMutableList()
+            val first = out.firstOrNull()
+            if (first != null && first.lang == SwipeLang.EN && margin > 0f) {
+                val j = out.indexOfFirst { it.lang == SwipeLang.VI && it.score > first.score - margin }
+                if (j >= 0) out.add(0, out.removeAt(j))
+            }
+            val top = out.take(topK).toMutableList()
+            val lead = top.firstOrNull()?.lang
+            if (topK >= 2 && lead != null && top.none { it.lang != lead }) {
+                val other = out.firstOrNull { it.lang != lead }
+                if (other != null) top.add(other)
+            }
+            return top
+        }
+
         /** Bung dạng không dấu → âm tiết có dấu, điểm = λ·tần suất/255 (+context), giảm dần. */
         fun expand(
             folded: String, limit: Int = 8, lambdaFreq: Float = Params().lambdaFreq,

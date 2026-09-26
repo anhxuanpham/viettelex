@@ -20,6 +20,18 @@ final class SwipeTyping {
         let word: String
         /// Phương án khác cho thanh gợi ý (đã áp chữ hoa), ≤ 3.
         let alternatives: [String]
+        /// Từ chèn là tiếng Anh (nguyên văn) — giai đoạn 3.
+        var english = false
+        /// Các phương án tiếng Anh trong `alternatives` (chọn ⇒ chèn nguyên văn).
+        var englishAlternatives: Set<String> = []
+    }
+
+    /// Kết quả thuần của pick/resolve.
+    struct Choice: Equatable {
+        let word: String
+        let alternatives: [String]
+        var english = false
+        var englishAlternatives: Set<String> = []
     }
 
     private let decoder = SwipeDecoder()
@@ -51,6 +63,11 @@ final class SwipeTyping {
         }
     }
 
+    /// Nạp từ điển tiếng Anh ở nền (lần vuốt đầu khỏi chờ ~vài chục ms). An toàn gọi lại.
+    func preloadEnglish() {
+        queue.async { _ = SwipeEnglish.lexicon }
+    }
+
     /// Cú vuốt bắt đầu: huỷ chữ đầu (đã chèn lúc chạm xuống). Không huỷ được (màn hình
     /// lệch) ⇒ ⌫ như iPad vuốt xuống.
     func begin(bridge: EngineBridge, proxy: TextProxyLike) {
@@ -63,8 +80,10 @@ final class SwipeTyping {
     /// Giải mã (đồng bộ trên hàng đợi decoder) → dạng thắng + phương án.
     /// `contextWords` = từ hay theo sau từ trước (UserLangModel.nextWords), có dấu;
     /// `count` = số lần user đã gõ một âm tiết (UserLangModel.count).
+    /// `english` (giai đoạn 3) = tham số tiếng Anh theo ngữ cảnh (SwipeLangContext.prior);
+    /// nil = chỉ tiếng Việt (công tắc "Vuốt từ tiếng Anh" tắt).
     func resolve(_ path: SwipePath, contextWords: [String], count: @escaping (String) -> Int = { _ in 0 },
-                 case sc: SwipeCase) -> (word: String, alternatives: [String])? {
+                 english: SwipeEnglishPrior? = nil, case sc: SwipeCase) -> Choice? {
         guard layout != nil, path.count >= 2 else { return nil }
         let next = Set(contextWords.map { $0.lowercased() })
         let d = decoder
@@ -76,23 +95,44 @@ final class SwipeTyping {
             }
             return best
         }
-        let cands = queue.sync { d.decode(path, topK: 5, context: folded) }
-        return Self.pick(cands.map(\.folded), contextWords: next, count: count, case: sc)
+        // từ tiếng Anh: điểm cá nhân/từ kế tiếp y như âm tiết Việt
+        let enCtx: ((String) -> Float)? = english == nil ? nil : { w in
+            Self.contextScore(w, next: next, count: count)
+        }
+        let cands = queue.sync {
+            d.decode(path, topK: 5, context: folded, english: english, englishContext: enCtx)
+        }
+        return Self.pick(cands, contextWords: next, count: count, case: sc)
     }
 
     /// Phần thuần: từ top-K dạng không dấu → từ chèn + phương án. Phương án = các biến
     /// thể dấu khác của dạng thắng xen với top-1 có dấu của dạng không dấu hạng 2/3
     /// (vd. vuốt "cho": chó · co · chờ).
     static func pick(_ folded: [String], contextWords: Set<String>,
-                     count: @escaping (String) -> Int = { _ in 0 }, case sc: SwipeCase)
-        -> (word: String, alternatives: [String])? {
+                     count: @escaping (String) -> Int = { _ in 0 }, case sc: SwipeCase) -> Choice? {
+        pick(folded.map { SwipeCandidate(folded: $0, score: 0) }, contextWords: contextWords,
+             count: count, case: sc)
+    }
+
+    /// Bản có nhãn ngôn ngữ (giai đoạn 3): ứng viên tiếng Anh hiển thị nguyên văn; top-1
+    /// tiếng Anh ⇒ chèn nguyên văn. Luôn giữ 1 phương án ngôn ngữ kia nếu decoder có
+    /// (the ↔ thế) — thay phương án cuối. GIỐNG Android SwipeSuggest.choose.
+    static func pick(_ cands: [SwipeCandidate], contextWords: Set<String>,
+                     count: @escaping (String) -> Int = { _ in 0 }, case sc: SwipeCase) -> Choice? {
         let ctx: (String) -> Float = { contextScore($0, next: contextWords, count: count) }
-        guard let top = folded.first else { return nil }
-        let expanded = SwipeDecoder.expand(top, limit: 6, context: ctx)
+        func words(_ c: SwipeCandidate, _ limit: Int) -> [String] {
+            c.lang == .en ? [c.folded] : SwipeDecoder.expand(c.folded, limit: limit, context: ctx).map(\.word)
+        }
+        guard let top = cands.first else { return nil }
+        let expanded = words(top, 6)
         guard let best = expanded.first else { return nil }
-        let variants = expanded.dropFirst().map(\.word)
-        let others = folded.dropFirst().prefix(2).compactMap {
-            SwipeDecoder.expand($0, limit: 1, context: ctx).first?.word
+        var english: Set<String> = top.lang == .en ? [best] : []
+        let variants = expanded.dropFirst()
+        var others: [String] = []
+        for c in cands.dropFirst().prefix(2) {
+            guard let w = words(c, 1).first else { continue }
+            others.append(w)
+            if c.lang == .en { english.insert(w) }
         }
         var alts: [String] = []
         var vi = variants.makeIterator(), oi = others.makeIterator()
@@ -101,27 +141,40 @@ final class SwipeTyping {
             for next in [vi.next(), oi.next()] {
                 guard let w = next else { continue }
                 added = true
-                if w != best.word, !alts.contains(w), alts.count < 3 { alts.append(w) }
+                if w != best, !alts.contains(w), alts.count < 3 { alts.append(w) }
             }
             if !added { break }
         }
-        return (sc.apply(best.word), alts.map(sc.apply))
+        let isOther: (String) -> Bool = { english.contains($0) != (top.lang == .en) }
+        if !alts.contains(where: isOther),
+           let c = cands.dropFirst().first(where: { $0.lang != top.lang && !words($0, 1).isEmpty }),
+           let w = words(c, 1).first, w != best {
+            if c.lang == .en { english.insert(w) } else { english.remove(w) }
+            alts.removeAll { $0 == w }
+            if alts.count >= 3 { alts.removeLast() }
+            alts.append(w)
+        }
+        return Choice(word: sc.apply(best), alternatives: alts.map(sc.apply), english: top.lang == .en,
+                      englishAlternatives: Set(alts.filter { english.contains($0) }.map(sc.apply)))
     }
 
     /// Nhấc tay: giải mã rồi chèn. nil = không nhận ra gì (không đụng màn hình).
     func finish(_ path: SwipePath, case sc: SwipeCase, contextWords: [String],
                 count: @escaping (String) -> Int = { _ in 0 },
+                english: SwipeEnglishPrior? = nil,
                 bridge: EngineBridge, proxy: TextProxyLike) -> Outcome? {
-        guard let r = resolve(path, contextWords: contextWords, count: count, case: sc) else {
+        guard let r = resolve(path, contextWords: contextWords, count: count, english: english,
+                              case: sc) else {
             TouchLog.write("swipe: không có ứng viên (pts=\(path.count))")
             return nil
         }
-        let committed = bridge.insertSwipeWord(r.word, proxy: proxy)
+        let committed = bridge.insertSwipeWord(r.word, literal: r.english, proxy: proxy)
         if TouchLog.enabled {
             TouchLog.write(String(format: "swipe: pts=%d len=%.0f ms=%.0f alts=%d",
                                   path.count, path.length, path.duration * 1000, r.alternatives.count))
         }
-        return Outcome(committed: committed, word: r.word, alternatives: r.alternatives)
+        return Outcome(committed: committed, word: r.word, alternatives: r.alternatives,
+                       english: r.english, englishAlternatives: r.englishAlternatives)
     }
 
     /// Bỏ dấu tiếng Việt (đ → d), chữ thường — khoá so với dạng không dấu của lexicon.

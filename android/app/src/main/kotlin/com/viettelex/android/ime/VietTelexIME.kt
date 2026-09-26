@@ -31,6 +31,7 @@ import com.viettelex.keyboard.Keys
 import com.viettelex.keyboard.MainThread
 import com.viettelex.keyboard.SuggestionPlan
 import com.viettelex.keyboard.SwipeDecoder
+import com.viettelex.keyboard.SwipeEnglish
 import com.viettelex.keyboard.SwipeLayout
 import com.viettelex.keyboard.SwipePath
 import com.viettelex.keyboard.SwipeSuggest
@@ -112,6 +113,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         if (key == Keys.USERLM_RESET_AT) model.reloadAfterExternalErase()
         // Bật/tắt gõ vuốt trong app khi bàn phím đang mở (ô Thử gõ).
         else if (key == Keys.SWIPE_TYPING) { swipeSetting = VTPrefs.settings(prefs).swipeTyping; updateSwipeTyping() }
+        else if (key == Keys.SWIPE_ENGLISH) session.swipeEnglish = VTPrefs.settings(prefs).swipeEnglish
         // Bật/tắt kiểu gõ trong app khi bàn phím đang mở (ô Thử gõ) → áp ngay, không đợi mở lại.
         else if (key in Keys.ENGINE_KEYS) session.bridge.applySettings(VTPrefs.settings(prefs))
     }
@@ -326,7 +328,10 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         val dec = swipeDecoder ?: return
         synchronized(swipeLock) { dec.setLayout(layout) }
         // Dựng template nền (~320 KB) — một luồng nhờ swipeLock; decode chờ nếu chưa xong.
-        worker().post { synchronized(swipeLock) { if (swipeDecoder === dec) dec.prepare() } }
+        worker().post {
+            synchronized(swipeLock) { if (swipeDecoder === dec) dec.prepare() }
+            if (session.swipeEnglish) SwipeEnglish.lexicon     // nạp từ điển Anh ở nền (lazy, thread-safe)
+        }
     }
 
     override fun onSwipeTypingStart(): Boolean {
@@ -343,7 +348,11 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         val dec = swipeDecoder ?: return
         val ctx = session.swipeContext()
         val t0 = if (TouchLog.enabled) System.nanoTime() else 0L
-        val cands = synchronized(swipeLock) { dec.decode(path, SwipeSuggest.TOP_K, ctx.folded) }
+        // ctx.english != null ⇒ thêm ứng viên tiếng Anh (công tắc "Vuốt từ tiếng Anh"); điểm
+        // cá nhân của từ tiếng Anh dùng chung ctx.word (từ hay gõ / từ hay theo sau).
+        val cands = synchronized(swipeLock) {
+            dec.decode(path, SwipeSuggest.TOP_K, ctx.folded, ctx.english, if (ctx.english != null) ctx.word else null)
+        }
         val choice = SwipeSuggest.choose(cands, ctx.word, case)
         if (TouchLog.enabled) TouchLog.write(String.format(java.util.Locale.ROOT, "swipe decode %.1fms pts=%d cands=%d",
             (System.nanoTime() - t0) / 1e6, path.count, cands.size))

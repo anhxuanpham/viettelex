@@ -809,6 +809,9 @@ struct TinhNangSections: View {
     private var reEditWord = true
     @AppStorage("swipeTyping", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var swipeTyping = false
+    /// Công tắc con (giai đoạn 3) — mặc định BẬT, xem KeyboardSettings.swipeEnglish.
+    @AppStorage("swipeEnglish", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var swipeEnglish = true
 
     var body: some View {
         Section {
@@ -854,6 +857,9 @@ struct TinhNangSections: View {
 
         Section {
             settingToggle("Gõ vuốt", "Vuốt qua các chữ không dấu rồi nhấc tay: v→i→e→t ra “việt”. Gõ tiếp phím dấu (s f r x j) để đổi dấu, ⌫ ngay sau đó xoá cả từ, thanh gợi ý có các cách viết khác. Chỉ trên iPhone; tắt khi dùng VoiceOver và ở ô email/mật khẩu/URL.", isOn: $swipeTyping)
+            if swipeTyping {
+                settingToggle("Vuốt từ tiếng Anh", "Vuốt ra cả từ tiếng Anh xen trong câu: check, mail, file, meeting… Khi một nét vuốt vừa là từ Việt vừa là từ Anh (the/thế, can/cần), bàn phím ưu tiên tiếng Việt — trừ khi đang gõ tiếng Anh — và luôn để phương án kia trên thanh gợi ý.", isOn: $swipeEnglish)
+            }
         } header: { Text("Thử nghiệm") } footer: {
             Text("Tính năng đang thử — áp dụng lần mở bàn phím kế tiếp.")
         }

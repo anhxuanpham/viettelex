@@ -91,6 +91,20 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
         return ok
     }
 
+    /**
+     * Từ vừa chèn NGUYÊN VĂN (vuốt ra từ tiếng Anh): engine không giữ gì (phím dấu Telex
+     * không đụng vào từ), ⌫ không mở lại từ chốt trước đó.
+     */
+    fun adoptLiteral() {
+        undo.valid = false
+        afterOwnBoundary = false
+        engine.reset()
+        engine.forgetLastCommit()
+    }
+
+    /** Từ nguyên văn vừa được chốt: ngữ cảnh tiếng Anh của engine ("check" rồi gõ "is" giữ "is"). */
+    fun noteExternalWord(english: Boolean) = engine.noteExternalWord(english)
+
     private fun configure(e: TelexEngine, contextual: Boolean) {
         e.freeMarking = settings.freeMarking
         e.simpleTelex = settings.simpleTelex

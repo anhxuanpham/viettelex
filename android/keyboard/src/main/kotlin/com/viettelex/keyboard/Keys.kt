@@ -21,6 +21,7 @@ object Keys {
     const val LIVE_SPELL_CHECK = "liveSpellCheck"
     /** Gõ vuốt (thử nghiệm, mặc định tắt). */
     const val SWIPE_TYPING = "swipeTyping"
+    const val SWIPE_ENGLISH = "swipeEnglish"
 
     /** Key ảnh hưởng engine/EngineBridge — đổi lúc bàn phím đang mở thì áp ngay. */
     val ENGINE_KEYS = setOf(SIMPLE_TELEX, FREE_MARKING, QUICK_TELEX, MODERN_TONE, CONTEXTUAL_ENGLISH,
@@ -48,6 +49,7 @@ object Keys {
 
     // assets
     const val ASSET_LEXICON = "vnlexicon.bin"
+    const val ASSET_EN_LEXICON = "enlexicon.bin"
     const val ASSET_EMOJI_SUGGEST = "emojisuggest.bin"
     const val ASSET_SEED = "seed.tsv"
     const val ASSET_EMOJI_DATA = "emojidata.tsv"

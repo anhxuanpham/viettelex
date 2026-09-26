@@ -117,7 +117,10 @@ targets:
       - Keyboard/SwipeDecoder.swift
       - Keyboard/SwipeGesture.swift
       - Keyboard/SwipeTyping.swift
+      - Keyboard/SwipeEnglish.swift
       - path: Keyboard/Resources/vnlexicon.bin
+        buildPhase: resources
+      - path: Keyboard/Resources/enlexicon.bin
         buildPhase: resources
     settings:
       base:
