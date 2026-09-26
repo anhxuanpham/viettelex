@@ -32,6 +32,8 @@ data class FieldConfig(
     val noLearning: Boolean = false,
     /** TYPE_TEXT_FLAG_MULTI_LINE (sau workaround Pixel Launcher): trackpad lên/xuống bằng DPAD. */
     val multiLine: Boolean = false,
+    /** Giữ lâu Enter = chèn "\n" thật ([FieldMapping.allowsHoldNewline]). */
+    val holdNewline: Boolean = false,
 )
 
 object FieldMapping {
@@ -124,6 +126,18 @@ object FieldMapping {
             numberDecimal = isNumber && (flags and InputType.TYPE_NUMBER_FLAG_DECIMAL) != 0,
             capWords = capWords, capCharacters = capCharacters,
             noLearning = (imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0,
-            multiLine = multiLine)
+            multiLine = multiLine,
+            holdNewline = allowsHoldNewline(multiLine, secure, rawKeys))
     }
+
+    /**
+     * Giữ lâu Enter chèn "\n" (commitText, không action) CHỈ ở ô chữ nhiều dòng
+     * (TYPE_TEXT_FLAG_MULTI_LINE, sau workaround Pixel Launcher) — ô chat Zalo/Messenger là
+     * multi-line nhưng app bắt KEYCODE_ENTER thành "Gửi". Ô một dòng (tìm, URL, form có
+     * action, kể cả IME_FLAG_NO_ENTER_ACTION) KHÔNG: "\n" trong ô một dòng bị lọc/biến
+     * thành dấu cách hoặc làm hỏng dữ liệu ⇒ giữ lâu = chạm thường. Mật khẩu và TYPE_NULL
+     * (terminal: chỉ hiểu phím) cũng không.
+     */
+    fun allowsHoldNewline(multiLine: Boolean, secure: Boolean, rawKeys: Boolean): Boolean =
+        multiLine && !secure && !rawKeys
 }

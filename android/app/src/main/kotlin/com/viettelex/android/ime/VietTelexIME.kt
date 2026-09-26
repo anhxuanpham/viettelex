@@ -189,6 +189,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         proxy.multiLine = field.multiLine
         proxy.writeMode = com.viettelex.keyboard.WriteMode.forPackage(info.packageName)
         proxy.actionId = field.actionId
+        kb.holdNewline = field.holdNewline
         proxy.uriField = (info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT &&
             (info.inputType and InputType.TYPE_MASK_VARIATION) == InputType.TYPE_TEXT_VARIATION_URI
         startTracking(info)

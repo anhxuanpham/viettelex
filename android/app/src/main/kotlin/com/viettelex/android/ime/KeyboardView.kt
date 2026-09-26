@@ -198,6 +198,19 @@ class KeyboardView(
     }
     private val globeLongRun = Runnable { globeFired = true; listener?.onGlobe(true) }
 
+    /** Ô cho giữ lâu Enter = xuống dòng thật (IME đặt theo [FieldConfig.holdNewline]). */
+    var holdNewline = false
+    private var returnPtr = -1
+    private val returnHoldRun = Runnable {
+        val k = ptrKey.getOrNull(returnPtr)
+        // Ngón khác chạm xuống đã flush (chốt) phím Enter ⇒ không còn là giữ lâu.
+        if (k == null || k.kind != KeyKind.RETURN || !commits.isArmed(k)) return@Runnable
+        commits.disarm(k)                 // nhả tay KHÔNG gửi action
+        feedback.longPress(this)
+        showBalloon(k, "↵")
+        listener?.onKey(Key.LineBreak)
+    }
+
     // --- badge "ViệtTelex" ---
     private var badgeAlpha = 0f
     private var badgeAnim: ValueAnimator? = null
@@ -525,6 +538,11 @@ class KeyboardView(
                 feedback.click(Feedback.RETURN, this)
                 press(k)
                 commits.arm(k, newlineFire)
+                if (holdNewline) {
+                    returnPtr = pid
+                    removeCallbacks(returnHoldRun)
+                    postDelayed(returnHoldRun, RETURN_HOLD_MS)
+                }
             }
             KeyKind.SHIFT -> {
                 feedback.click(Feedback.MODIFIER, this)
@@ -599,7 +617,11 @@ class KeyboardView(
         when (k.kind) {
             KeyKind.LETTER -> hideBalloon(k)
             KeyKind.CHAR -> { hideBalloon(k); commits.release(k) }
-            KeyKind.PUNCT, KeyKind.RETURN, KeyKind.PAD -> commits.release(k)
+            KeyKind.PUNCT, KeyKind.PAD -> commits.release(k)
+            KeyKind.RETURN -> {
+                if (pid == returnPtr) { removeCallbacks(returnHoldRun); returnPtr = -1; hideBalloon(k) }
+                commits.release(k)        // đã giữ lâu ⇒ đã disarm, không có gì để chốt
+            }
             KeyKind.SPACE -> {
                 if (pid == spacePtr) {
                     removeCallbacks(spaceHoldRun); spacePtr = -1
@@ -682,8 +704,8 @@ class KeyboardView(
         commits.flush()
         endSwipe(commit = false)
         removeCallbacks(spaceHoldRun); removeCallbacks(bsStartRun); removeCallbacks(bsTickRun)
-        removeCallbacks(globeLongRun)
-        spacePtr = -1; bsPtr = -1; globePtr = -1; bsRepeating = false
+        removeCallbacks(globeLongRun); removeCallbacks(returnHoldRun)
+        spacePtr = -1; bsPtr = -1; globePtr = -1; returnPtr = -1; bsRepeating = false
         if (trackpad) endTrackpad()
         balloon.hide(); balloonOwner = null
         invalidate()
@@ -857,5 +879,6 @@ class KeyboardView(
         const val BS_HOLD_MS = 500L
         const val BS_INTERVAL = 90L
         const val GLOBE_HOLD_MS = 500L
+        const val RETURN_HOLD_MS = 450L
     }
 }

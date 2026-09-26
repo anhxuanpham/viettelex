@@ -12,6 +12,11 @@ sealed class Key {
     /** Space thứ 2 trong < 0.35 s (IME đo nhịp). */
     object DoubleSpacePeriod : Key()
     object Newline : Key()
+    /**
+     * Giữ lâu Enter: chèn "\n" THẬT (commitText) — không performEditorAction, không
+     * KEYCODE_ENTER (Zalo/Messenger bắt phím Enter thành "Gửi"). Chốt/học từ như [Newline].
+     */
+    object LineBreak : Key()
     object Backspace : Key()
     /** Trackpad: session reset; IME tự dời con trỏ [delta] ký tự, hoặc [delta] dòng
      *  khi [vertical] (âm = trái/lên). */
@@ -277,7 +282,7 @@ class KeyboardSession(
         // Từ tiếng Anh vuốt ra đang mở: phím chữ/ranh giới chốt nó (học), phím chữ thêm dấu
         // cách treo trước (không dính "mailx"; huỷ được nếu phím đó là đầu cú vuốt mới).
         if (literal != null && (key is Key.Letter || key is Key.Text || key == Key.Space ||
-                key == Key.DoubleSpacePeriod || key == Key.Newline)) {
+                key == Key.DoubleSpacePeriod || key == Key.Newline || key == Key.LineBreak)) {
             settleLiteral(literal)
             if (key is Key.Letter) bridge.boundary(" ", proxy)
         }
@@ -316,8 +321,8 @@ class KeyboardSession(
             is Key.MoveCursor -> {
                 bridge.reset(); lastWord = null; lastWord2 = null; clearUndo()
             }
-            Key.Newline -> {
-                commitAndLearn(bridge.boundary("\n", proxy))
+            Key.Newline, Key.LineBreak -> {
+                commitAndLearn(bridge.boundary("\n", proxy, lineBreak = key == Key.LineBreak))
                 // Enter có thể là "gửi"/performEditorAction: ⌫ sau đó không mở lại từ cũ.
                 bridge.forgetLastCommit()
                 lastWord = null; lastWord2 = null; clearUndo()
@@ -342,7 +347,7 @@ class KeyboardSession(
         lastKeyWasEmailTrigger = key is Key.Text && (key.text == "@" || key.text == ".")
         initialCapsPending = false
         val needsAutoShift = when (key) {
-            Key.Space, Key.Newline, Key.DoubleSpacePeriod, Key.Backspace, is Key.MoveCursor, Key.ClearField -> true
+            Key.Space, Key.Newline, Key.LineBreak, Key.DoubleSpacePeriod, Key.Backspace, is Key.MoveCursor, Key.ClearField -> true
             // CAP_CHARACTERS: shift ON bị bàn phím hạ sau mỗi chữ → bật lại.
             else -> traits.capCharacters
         }
@@ -354,6 +359,7 @@ class KeyboardSession(
                 Key.DoubleSpacePeriod -> "doubleSpace" to null
                 Key.Backspace -> "backspace" to null
                 Key.Newline -> "newline" to null
+                Key.LineBreak -> "linebreak" to null
                 is Key.MoveCursor -> "cursor" to null
                 Key.ClearField -> "clear" to null
             }

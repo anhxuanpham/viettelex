@@ -155,9 +155,11 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
      * Space / return / dấu câu: boundary → auto-restore rồi chèn [text]. Trả từ ĐÃ
      * CHỐT (sau auto-restore) để model học đúng thứ nằm trên màn hình.
      */
-    fun boundary(text: String, proxy: TextProxy): String {
+    fun boundary(text: String, proxy: TextProxy, lineBreak: Boolean = false): String {
+        // [lineBreak]: [text] là "\n" chèn thật ([TextProxy.insertLineBreak]), không gửi action.
+        fun put(text: String) = if (lineBreak) proxy.insertLineBreak() else proxy.insertText(text)
         undo.valid = false
-        if (proxy.isSecure || passthrough) { proxy.insertText(text); return "" }
+        if (proxy.isSecure || passthrough) { put(text); return "" }
         afterOwnBoundary = text.isNotEmpty() && !Character.isLetterOrDigit(text.codePointBefore(text.length))
         val before = engine.composed
         val action = engine.commitBoundary(settings.autoRestore)
@@ -165,13 +167,13 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
             // Auto-restore cần xoá nhưng chữ trước con trỏ không khớp: bỏ restore, không học.
             TouchLog.write("tail mismatch (boundary) → reset")
             reset()
-            proxy.insertText(text)
+            put(text)
             return ""
         }
         var final = before
         if (action is TelexAction.Replace) final = Cp.dropLast(before, action.backspaces) + action.insert
         apply(action, "", proxy)
-        proxy.insertText(text)
+        put(text)
         return final
     }
 
