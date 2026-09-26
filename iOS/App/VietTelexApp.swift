@@ -855,7 +855,9 @@ struct TinhNangSections: View {
                     Text(rowHeightAdjust == 0
                          ? "Chuẩn"
                          : String(format: "%+d pt mỗi hàng (%+d pt cả bàn phím)",
-                                  rowHeightAdjust, rowHeightAdjust * 4))
+                                  // hàng số cao ¾ hàng chữ ⇒ tổng ×4,75 khi bật
+                                  rowHeightAdjust,
+                                  Int((Double(rowHeightAdjust) * (numberRow ? 4.75 : 4)).rounded())))
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
