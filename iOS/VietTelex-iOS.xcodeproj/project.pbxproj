@@ -9,8 +9,10 @@
 /* Begin PBXBuildFile section */
 		0222562F9A662E1780357942 /* EmojiPlane.swift in Sources */ = {isa = PBXBuildFile; fileRef = D705942B9BA084047E7A7EF1 /* EmojiPlane.swift */; };
 		03737E5339AC43A75D973144 /* EmojiSuggest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CCA79BB7903D0F4A2BC56B5 /* EmojiSuggest.swift */; };
+		060B8B664F48489405F8995E /* SyllableBigramTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ABA1285163DC62521EAB1BF /* SyllableBigramTests.swift */; };
 		09A81E2FCFEC3C9A20CE84AD /* FieldPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B68AFA53C7C54443DAB2DA2 /* FieldPolicyTests.swift */; };
 		0ADB3CE1AC55F916715D7B4C /* Trackpad.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58D98494210ACD4B0ED51A92 /* Trackpad.swift */; };
+		0D74B9E1C49AB9872006D893 /* bigram-heldout.txt in Resources */ = {isa = PBXBuildFile; fileRef = 874923DAE33DB7FA95441F18 /* bigram-heldout.txt */; };
 		0E4E1EDF98B16B37559DDCDD /* PlanePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2A6BDCAE323FDEA73473DB7 /* PlanePolicyTests.swift */; };
 		0F638DDA7C5DE1FC8DA03D46 /* KeyLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3125082F1A2E31162FC7045 /* KeyLayoutTests.swift */; };
 		0FC30ADCCD6DA0E278D59DD3 /* SeedData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 738732B955CD39C76B2484C7 /* SeedData.swift */; };
@@ -40,6 +42,7 @@
 		54B0665D29CB3187CEBF5157 /* KeyboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 941319FB73DCEB18DDE2E232 /* KeyboardView.swift */; };
 		59184856DB1424FEC29F3781 /* TouchLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A73661E1643A0CAA02517C00 /* TouchLog.swift */; };
 		593AA8DEA7AFB11D6005F173 /* EngineBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AD709650C25830CA926EBCF /* EngineBridge.swift */; };
+		594C69B2767FEB55CA5B9593 /* vnbigram.bin in Resources */ = {isa = PBXBuildFile; fileRef = 018FC059A185E6436CD415A9 /* vnbigram.bin */; };
 		5B52F74F525D2FE790784DEB /* AdjacentKeyFixer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08A25C830B85508BCD22F38A /* AdjacentKeyFixer.swift */; };
 		5C1E68D1CE795950C634F366 /* PlanePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C832E4FAF0818129299FF52 /* PlanePolicy.swift */; };
 		5CA3CB101E504E9B3DF8B3A9 /* VietTelexApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03B539001F2CE763F663710B /* VietTelexApp.swift */; };
@@ -49,6 +52,7 @@
 		6689B752583E4AE424F48573 /* EngineBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AD709650C25830CA926EBCF /* EngineBridge.swift */; };
 		6883E23E2D9C7A63C862B4AC /* KeyCommitQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F1F925F053BA5BF36C118C /* KeyCommitQueue.swift */; };
 		777DFD50684EBFD29E6F41C8 /* ios-mau-cau.yml in Resources */ = {isa = PBXBuildFile; fileRef = E07A3B8533DF185DE4EC05F4 /* ios-mau-cau.yml */; };
+		7886DADD48383509BF8847BB /* SyllableBigram.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61F03C2E16BDF6FA989C1D95 /* SyllableBigram.swift */; };
 		7933EDB9373812AE6B96C22A /* SwipeTyping.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5BA79FCDFB7209A8D1C65B0 /* SwipeTyping.swift */; };
 		7A17145A9CA2831379306335 /* AppearancePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62E14AD387BE2B1A54881E15 /* AppearancePolicy.swift */; };
 		7B129ED7F5EA736E7BF1C062 /* SwipeDecoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A6B5A4EF96EB6E3DFBA7109 /* SwipeDecoderTests.swift */; };
@@ -66,7 +70,9 @@
 		AD67BC077725334F09B0357B /* SwipeTyping.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5BA79FCDFB7209A8D1C65B0 /* SwipeTyping.swift */; };
 		B30B77CD7D2FF144AEBB0374 /* CompositionSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22BDEAB6EAD0F1EA689B388A /* CompositionSync.swift */; };
 		B3E210D56ED78C5EDD06E8FF /* SwipeGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 778ABAFB76C1046BD2E3A1AD /* SwipeGesture.swift */; };
+		BABFC784D2F53CDDE3DA3851 /* vnbigram.bin in Resources */ = {isa = PBXBuildFile; fileRef = 018FC059A185E6436CD415A9 /* vnbigram.bin */; };
 		BC7C55450CA36CBF6D0F8297 /* vnlexicon.bin in Resources */ = {isa = PBXBuildFile; fileRef = 915FC9A836F82E797FA0AEA1 /* vnlexicon.bin */; };
+		BDCBEB48FE8A7B02437E4020 /* SyllableBigram.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61F03C2E16BDF6FA989C1D95 /* SyllableBigram.swift */; };
 		C0F883065272FE06DAE56D0E /* WordDeleteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0599154D3A43772DC7456968 /* WordDeleteTests.swift */; };
 		C5CBA64509EDCDA0318FC6BF /* WordDelete.swift in Sources */ = {isa = PBXBuildFile; fileRef = 451B2112B13ABD917EEE3D9A /* WordDelete.swift */; };
 		C9C973EB878B8C06CDF7393A /* AdjacentKeyFixerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB8B0DA94C5E17697D6DE9E7 /* AdjacentKeyFixerTests.swift */; };
@@ -115,6 +121,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		018FC059A185E6436CD415A9 /* vnbigram.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = vnbigram.bin; sourceTree = "<group>"; };
 		03B539001F2CE763F663710B /* VietTelexApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VietTelexApp.swift; sourceTree = "<group>"; };
 		0599154D3A43772DC7456968 /* WordDeleteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordDeleteTests.swift; sourceTree = "<group>"; };
 		07973B1798B754A6DDA969C3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -137,6 +144,7 @@
 		58D98494210ACD4B0ED51A92 /* Trackpad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Trackpad.swift; sourceTree = "<group>"; };
 		5D0B60123ABBD5FE60D9234A /* KeyCommitQueueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyCommitQueueTests.swift; sourceTree = "<group>"; };
 		5E29815B4F2B0747B961A561 /* VNLexicon2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VNLexicon2.swift; sourceTree = "<group>"; };
+		61F03C2E16BDF6FA989C1D95 /* SyllableBigram.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyllableBigram.swift; sourceTree = "<group>"; };
 		62E14AD387BE2B1A54881E15 /* AppearancePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearancePolicy.swift; sourceTree = "<group>"; };
 		6B7D70220F7D14EBC3C3AACD /* DisplayCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayCase.swift; sourceTree = "<group>"; };
 		6EAFABBBF6544841D633BFD9 /* PlaneCacheLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaneCacheLayoutTests.swift; sourceTree = "<group>"; };
@@ -148,6 +156,8 @@
 		80CE2088FB873FD0D894A6C0 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		821BD7CBEE8349CC782C3E41 /* SwipeTypingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipeTypingTests.swift; sourceTree = "<group>"; };
 		853A101B912DF1524B01E1A2 /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
+		874923DAE33DB7FA95441F18 /* bigram-heldout.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "bigram-heldout.txt"; sourceTree = "<group>"; };
+		8ABA1285163DC62521EAB1BF /* SyllableBigramTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyllableBigramTests.swift; sourceTree = "<group>"; };
 		8AD709650C25830CA926EBCF /* EngineBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineBridge.swift; sourceTree = "<group>"; };
 		915FC9A836F82E797FA0AEA1 /* vnlexicon.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = vnlexicon.bin; sourceTree = "<group>"; };
 		941319FB73DCEB18DDE2E232 /* KeyboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardView.swift; sourceTree = "<group>"; };
@@ -210,6 +220,7 @@
 		1CF891C409E9F5C6BC92268A /* Fixtures */ = {
 			isa = PBXGroup;
 			children = (
+				874923DAE33DB7FA95441F18 /* bigram-heldout.txt */,
 				E7BF9D54E0DFCE9D7395F598 /* swipe-paths.txt */,
 			);
 			path = Fixtures;
@@ -218,6 +229,7 @@
 		386A21A07F2A4BABEBD7B24B /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				018FC059A185E6436CD415A9 /* vnbigram.bin */,
 				915FC9A836F82E797FA0AEA1 /* vnlexicon.bin */,
 			);
 			path = Resources;
@@ -240,6 +252,7 @@
 				75A9F065C3D6400280AE99D7 /* ReEditWordTests.swift */,
 				0A6B5A4EF96EB6E3DFBA7109 /* SwipeDecoderTests.swift */,
 				821BD7CBEE8349CC782C3E41 /* SwipeTypingTests.swift */,
+				8ABA1285163DC62521EAB1BF /* SyllableBigramTests.swift */,
 				C0D2E54E996214AA4F8CB065 /* TrackpadTests.swift */,
 				0599154D3A43772DC7456968 /* WordDeleteTests.swift */,
 				1CF891C409E9F5C6BC92268A /* Fixtures */,
@@ -295,6 +308,7 @@
 				705734FC03226DA179E14A71 /* SwipeDecoder.swift */,
 				778ABAFB76C1046BD2E3A1AD /* SwipeGesture.swift */,
 				E5BA79FCDFB7209A8D1C65B0 /* SwipeTyping.swift */,
+				61F03C2E16BDF6FA989C1D95 /* SyllableBigram.swift */,
 				359BC071F163E8255C943DA7 /* TouchGeometry.swift */,
 				A73661E1643A0CAA02517C00 /* TouchLog.swift */,
 				58D98494210ACD4B0ED51A92 /* Trackpad.swift */,
@@ -430,6 +444,7 @@
 				3D9FF1966D0667F67B245548 /* SpaceLogo@2x.png in Resources */,
 				D902A388BD011F37220F5C53 /* SpaceLogo@3x.png in Resources */,
 				4E60808450DA80CBC7DEF891 /* ios-mau-cau.yml in Resources */,
+				594C69B2767FEB55CA5B9593 /* vnbigram.bin in Resources */,
 				3D6C897D3E6A6D2A37325AD0 /* vnlexicon.bin in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -438,7 +453,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0D74B9E1C49AB9872006D893 /* bigram-heldout.txt in Resources */,
 				4C0088B0166B00B8536D2B75 /* swipe-paths.txt in Resources */,
+				BABFC784D2F53CDDE3DA3851 /* vnbigram.bin in Resources */,
 				BC7C55450CA36CBF6D0F8297 /* vnlexicon.bin in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -479,6 +496,7 @@
 				9260F02C1EE77FA0A069A54A /* SwipeDecoder.swift in Sources */,
 				B3E210D56ED78C5EDD06E8FF /* SwipeGesture.swift in Sources */,
 				AD67BC077725334F09B0357B /* SwipeTyping.swift in Sources */,
+				7886DADD48383509BF8847BB /* SyllableBigram.swift in Sources */,
 				86FFD0F2F1C505CCB71BBCB3 /* TouchGeometry.swift in Sources */,
 				665AA760B41DC86808F42E23 /* TouchLog.swift in Sources */,
 				8DE8F0376AD4F1CB2382F531 /* Trackpad.swift in Sources */,
@@ -534,6 +552,8 @@
 				D9B5AF814479AE68F463B5B6 /* SwipeGesture.swift in Sources */,
 				7933EDB9373812AE6B96C22A /* SwipeTyping.swift in Sources */,
 				CA1662D03BD4C629C3C2AB2C /* SwipeTypingTests.swift in Sources */,
+				BDCBEB48FE8A7B02437E4020 /* SyllableBigram.swift in Sources */,
+				060B8B664F48489405F8995E /* SyllableBigramTests.swift in Sources */,
 				886F6649C089D64E44E1C2FC /* TouchGeometry.swift in Sources */,
 				59184856DB1424FEC29F3781 /* TouchLog.swift in Sources */,
 				0ADB3CE1AC55F916715D7B4C /* Trackpad.swift in Sources */,

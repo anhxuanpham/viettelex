@@ -106,27 +106,61 @@ object SwipeSuggest {
     }
 
     /**
-     * Điểm ngữ cảnh: từ kế tiếp hay gặp sau (prev2, prev1) được cộng [NEXT_BONUS]; từ
-     * người dùng hay gõ cộng ln(1+count)·[PERSONAL_WEIGHT] (trần [PERSONAL_CAP]).
+     * Điểm ngữ cảnh (log-domain, GIỐNG bản iOS SwipeTyping.contextScore):
+     *  - cá nhân: từ kế tiếp hay gặp sau (prev2, prev1) +[NEXT_BONUS]; từ hay gõ
+     *    +ln(1+count)·[PERSONAL_WEIGHT] (trần [PERSONAL_CAP]);
+     *  - tĩnh: PMI bigram âm tiết (vnbigram.bin) sau [prev] ·[STATIC_WEIGHT], trần [STATIC_CAP]
+     *    (< NEXT_BONUS ⇒ dữ liệu cá nhân vẫn thắng); đã có nextWords thì nhân [STATIC_DAMP].
+     * [folded] (cho decoder) = điểm âm tiết tốt nhất của dạng không dấu (tần suất + ngữ cảnh)
+     * trừ phần tần suất decoder đã tính ⇒ decode và expand chấm cùng một thước.
      */
     class Context(private val next: Set<String>, private val nextFolded: Set<String>,
-                  private val count: (String) -> Int) {
-        val folded: ((String) -> Float)? = if (nextFolded.isEmpty()) null else { f -> if (f in nextFolded) NEXT_BONUS else 0f }
+                  private val count: (String) -> Int,
+                  prev: String? = null, bigram: SyllableBigram? = null) {
+        private val row: SyllableBigram.Row? =
+            if (prev == null || bigram == null) null
+            else bigram.row(SyllableBigram.idOf(prev)).takeIf { it.size > 0 }
+        private val staticWeight = if (next.isEmpty()) STATIC_WEIGHT else STATIC_WEIGHT * STATIC_DAMP
+
+        /** Điểm bigram tĩnh của âm tiết có dấu [w] (0 nếu không có dữ liệu). */
+        fun static(w: String): Float {
+            val r = row ?: return 0f
+            val id = SyllableBigram.idOf(w)
+            return if (id < 0) 0f else minOf(STATIC_CAP, staticWeight * r.score(id))
+        }
+
         val word: (String) -> Float = { w ->
             val c = count(w)
             val p = if (c > 0) minOf(PERSONAL_CAP, PERSONAL_WEIGHT * ln(1.0 + c).toFloat()) else 0f
-            p + if (w in next) NEXT_BONUS else 0f
+            p + (if (w in next) NEXT_BONUS else 0f) + static(w)
         }
+
+        val folded: ((String) -> Float)? =
+            if (nextFolded.isEmpty() && row == null) null else { f -> foldedScore(f, word) }
     }
+
+    /** max(tần suất + ngữ cảnh) trên các âm tiết của [f] − tần suất decoder đã cộng (≥ 0). */
+    fun foldedScore(f: String, word: (String) -> Float): Float {
+        val i = SwipeLexicon.indexOf(f)
+        if (i < 0) return 0f
+        val best = SwipeDecoder.expand(f, 1, context = word).firstOrNull() ?: return 0f
+        return maxOf(0f, best.score - LAMBDA_FREQ * SwipeLexicon.forms.freq[i].toFloat() / 255f)
+    }
+
+    private val LAMBDA_FREQ = SwipeDecoder.Params().lambdaFreq
 
     const val NEXT_BONUS = 1.5f
     const val PERSONAL_WEIGHT = 0.4f
     const val PERSONAL_CAP = 1.5f
+    const val STATIC_WEIGHT = 0.3f
+    const val STATIC_CAP = 1.2f
+    const val STATIC_DAMP = 0.5f
 
-    fun context(model: UserLangModel?, prev1: String?, prev2: String?): Context {
-        if (model == null) return Context(emptySet(), emptySet()) { 0 }
-        val next = if (prev1 != null) model.nextWords(prev1, prev2, 24).map { it.lowercase() }.toSet() else emptySet()
-        return Context(next, next.mapTo(HashSet()) { fold(it) }) { model.count(it) }
+    fun context(model: UserLangModel?, prev1: String?, prev2: String?,
+                bigram: SyllableBigram? = SyllableBigram.shared): Context {
+        val next = if (model != null && prev1 != null) model.nextWords(prev1, prev2, 24).map { it.lowercase() }.toSet() else emptySet()
+        val count: (String) -> Int = if (model == null) { _ -> 0 } else { w -> model.count(w) }
+        return Context(next, next.mapTo(HashSet()) { fold(it) }, count, prev1, bigram)
     }
 
     /**

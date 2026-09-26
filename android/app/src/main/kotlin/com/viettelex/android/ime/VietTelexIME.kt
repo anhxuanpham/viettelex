@@ -34,6 +34,7 @@ import com.viettelex.keyboard.SwipeDecoder
 import com.viettelex.keyboard.SwipeLayout
 import com.viettelex.keyboard.SwipePath
 import com.viettelex.keyboard.SwipeSuggest
+import com.viettelex.keyboard.SyllableBigram
 import com.viettelex.keyboard.WriteMode
 import com.viettelex.keyboard.TemplateItem
 import com.viettelex.keyboard.Templates
@@ -326,7 +327,10 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         val dec = swipeDecoder ?: return
         synchronized(swipeLock) { dec.setLayout(layout) }
         // Dựng template nền (~320 KB) — một luồng nhờ swipeLock; decode chờ nếu chưa xong.
-        worker().post { synchronized(swipeLock) { if (swipeDecoder === dec) dec.prepare() } }
+        worker().post {
+            synchronized(swipeLock) { if (swipeDecoder === dec) dec.prepare() }
+            SyllableBigram.shared   // map bảng bigram tĩnh (lazy, chỉ khi gõ vuốt bật)
+        }
     }
 
     override fun onSwipeTypingStart(): Boolean {

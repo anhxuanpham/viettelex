@@ -208,6 +208,12 @@ struct RootView: View {
             .font(.footnote).foregroundStyle(.secondary)
             Text("Không thu thập dữ liệu · Không theo dõi · Mã nguồn mở")
                 .font(.footnote).foregroundStyle(.secondary)
+            // Ghi công theo giấy phép dữ liệu bigram gõ vuốt (vnbigram.bin) — docs/DATA-SOURCES.md
+            Link(destination: URL(string: "https://github.com/ptrinh/viettelex/blob/main/docs/DATA-SOURCES.md")!) {
+                Text("Dữ liệu gõ vuốt: thống kê từ Wikipedia, Wikisource… tiếng Việt (CC BY-SA 4.0) và Tatoeba (CC BY 2.0 FR)")
+                    .multilineTextAlignment(.leading)
+            }
+            .font(.footnote).foregroundStyle(.secondary)
             Text("Toàn quyền Truy cập là tuỳ chọn — chỉ cần cho Rung phím và Mẫu câu động (https://); VietTelex không dùng quyền này cho bất kỳ việc gì khác.")
                 .font(.footnote).foregroundStyle(.secondary)
         } header: { Text("Giới thiệu") }

@@ -1020,7 +1020,7 @@ extension KeyboardViewController {
         let ctx = prev.map { langModel.nextWords(after: $0, prev2: prev2, limit: 24) } ?? []
         let lm = langModel
         let out = swipe.finish(path, case: sc, contextWords: ctx, count: { lm.count(of: $0) },
-                               bridge: bridge, proxy: Proxy(p: textDocumentProxy))
+                               prev: prev, bridge: bridge, proxy: Proxy(p: textDocumentProxy))
         if let out {
             if let c = out.committed { commitAndLearn(c.word, accepted: c.accepted) }
             let alts = SensitiveWords.filter(out.alternatives, enabled: filterSensitive)

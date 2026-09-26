@@ -419,6 +419,12 @@ fun GioiThieuTab() {
         RowDivider()
         VTRow { Text("Không thu thập dữ liệu · Không theo dõi · Mã nguồn mở", style = VTType.footnote, color = c.secondary) }
         RowDivider()
+        // Ghi công theo giấy phép dữ liệu bigram gõ vuốt (vnbigram.bin) — docs/DATA-SOURCES.md
+        VTRow(onClick = { openUrl(ctx, "https://github.com/ptrinh/viettelex/blob/main/docs/DATA-SOURCES.md") }) {
+            Text("Dữ liệu gõ vuốt: thống kê từ Wikipedia, Wikisource… tiếng Việt (CC BY-SA 4.0) và Tatoeba (CC BY 2.0 FR)",
+                style = VTType.footnote, color = c.secondary)
+        }
+        RowDivider()
         VTRow {
             Text("Android hiện cảnh báo \"có thể thu thập mọi văn bản bạn nhập\" khi bật bất kỳ bàn phím bên thứ ba nào. VietTelex chạy hoàn toàn trên máy, không gửi gì đi — quyền mạng chỉ dùng cho Mẫu câu động (https://) do bạn tạo.",
                 style = VTType.footnote, color = c.secondary)
