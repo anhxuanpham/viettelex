@@ -22,6 +22,8 @@ object Keys {
     /** Gõ vuốt (thử nghiệm, mặc định tắt). */
     const val SWIPE_TYPING = "swipeTyping"
     const val SWIPE_ENGLISH = "swipeEnglish"
+    /** Gõ Telex bằng bàn phím cứng (tablet, DeX, Chromebook, BT/USB) — mặc định BẬT. */
+    const val HARDWARE_TELEX = "hardwareTelex"
 
     /** Key ảnh hưởng engine/EngineBridge — đổi lúc bàn phím đang mở thì áp ngay. */
     val ENGINE_KEYS = setOf(SIMPLE_TELEX, FREE_MARKING, QUICK_TELEX, MODERN_TONE, CONTEXTUAL_ENGLISH,

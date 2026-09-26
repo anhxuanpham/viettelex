@@ -33,6 +33,8 @@ data class KeyboardSettings(
      * vuốt đang bật. Giống iOS.
      */
     var swipeEnglish: Boolean = true,
+    /** Telex cho bàn phím cứng — mặc định BẬT; tắt ⇒ IME không đụng KeyEvent. */
+    var hardwareTelex: Boolean = true,
     // Phần UI (iOS đọc rải rác trong KeyboardView) — gom về đây cho IME.
     var templatesEnabled: Boolean = true,
     var showSpaceLogo: Boolean = true,
@@ -62,6 +64,7 @@ data class KeyboardSettings(
             s.reEditWords = b(Keys.RE_EDIT_WORDS, s.reEditWords)
             s.swipeTyping = b(Keys.SWIPE_TYPING, s.swipeTyping)
             s.swipeEnglish = b(Keys.SWIPE_ENGLISH, s.swipeEnglish)
+            s.hardwareTelex = b(Keys.HARDWARE_TELEX, s.hardwareTelex)
             s.templatesEnabled = b(Keys.TEMPLATES_ENABLED, s.templatesEnabled)
             s.showSpaceLogo = b(Keys.SHOW_SPACE_LOGO, s.showSpaceLogo)
             s.debugTouchLog = b(Keys.DEBUG_TOUCH_LOG, s.debugTouchLog)
