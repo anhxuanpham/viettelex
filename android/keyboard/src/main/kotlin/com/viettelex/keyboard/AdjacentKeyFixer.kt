@@ -34,7 +34,8 @@ object AdjacentKeyFixer {
         hasCompletion: (String) -> Boolean,
     ): String? {
         val keys = raw.toCharArray()
-        if (keys.size !in 2..10 || !keys.all(::isAsciiLetter)) return null
+        // số chỉ có ở VNI (phím dấu 1–9/0): giữ nguyên chỗ, không có phím kề
+        if (keys.size !in 2..10 || !keys.all { isAsciiLetter(it) || it in '0'..'9' }) return null
         val lower = CharArray(keys.size) { keys[it].lowercaseChar() }
         val current = compose(String(lower))
         if (frequency(current) != null || hasCompletion(current)) return null

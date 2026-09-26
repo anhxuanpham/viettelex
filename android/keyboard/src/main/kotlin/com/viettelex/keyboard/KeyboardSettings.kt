@@ -13,6 +13,11 @@ data class KeyboardSettings(
     var modernTone: Boolean = false,
     /** Chính tả teencode — mặc định TẮT (issue #94). */
     var teencode: Boolean = false,
+    /**
+     * Kiểu gõ VNI — mặc định TẮT (Telex). Số 1–9/0 mang dấu KHI ĐANG SOẠN TỪ (hoặc sửa dấu
+     * từ ngay trước con trỏ); ngoài từ vẫn là số. Engine giống macOS (`vniMode`).
+     */
+    var vniMode: Boolean = false,
     var showSuggestions: Boolean = true,
     /** Đi theo showSuggestions (không có toggle riêng). */
     var learnWords: Boolean = true,
@@ -58,6 +63,7 @@ data class KeyboardSettings(
             s.quickTelex = b(Keys.QUICK_TELEX, s.quickTelex)
             s.modernTone = b(Keys.MODERN_TONE, s.modernTone)
             s.teencode = b(Keys.TEENCODE, s.teencode)
+            s.vniMode = b(Keys.VNI_MODE, s.vniMode)
             s.showSuggestions = b(Keys.SHOW_SUGGESTIONS, s.showSuggestions)
             s.filterSensitive = b(Keys.FILTER_SENSITIVE, s.filterSensitive)
             s.hapticFeedback = b(Keys.HAPTIC_FEEDBACK, s.hapticFeedback)

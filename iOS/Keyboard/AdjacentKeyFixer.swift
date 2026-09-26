@@ -31,7 +31,7 @@ enum AdjacentKeyFixer {
         return out
     }()
 
-    /// - raw: phím đã gõ của từ hiện tại (chữ ascii).
+    /// - raw: phím đã gõ của từ hiện tại (chữ ascii; VNI thêm số mang dấu).
     /// - compose: raw → dạng hiển thị engine sẽ ra (cùng setting với bàn phím).
     /// - frequency: tần suất trong lexicon, nil = không phải từ.
     /// - hasCompletion: dạng hiển thị còn là TIỀN TỐ của từ nào đó (đang gõ dở) → không sửa.
@@ -41,7 +41,8 @@ enum AdjacentKeyFixer {
                            hasCompletion: (String) -> Bool) -> String? {
         let keys = Array(raw)
         guard (2...10).contains(keys.count),
-              keys.allSatisfy({ $0.isASCII && $0.isLetter }) else { return nil }
+              // số chỉ có ở VNI (phím dấu 1–9/0): giữ nguyên chỗ, không có phím kề
+              keys.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else { return nil }
         let lower = keys.map { Character($0.lowercased()) }
         let current = compose(String(lower))
         if frequency(current) != nil || hasCompletion(current) { return nil }

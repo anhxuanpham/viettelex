@@ -16,6 +16,8 @@ object Keys {
     const val RE_EDIT_WORDS = "reEditWords"
     const val AUTO_FIX_ADJACENT = "autoFixAdjacent"
     const val TEENCODE = "teencode"
+    /** Kiểu gõ VNI (Bool, mặc định false = Telex) — tên như iOS App Group / macOS. */
+    const val VNI_MODE = "vniMode"
     // Tính Năng
     const val AUTO_RESTORE = "autoRestore"
     const val LIVE_SPELL_CHECK = "liveSpellCheck"
@@ -27,7 +29,7 @@ object Keys {
 
     /** Key ảnh hưởng engine/EngineBridge — đổi lúc bàn phím đang mở thì áp ngay. */
     val ENGINE_KEYS = setOf(SIMPLE_TELEX, FREE_MARKING, QUICK_TELEX, MODERN_TONE, CONTEXTUAL_ENGLISH,
-        AUTO_FIX_ADJACENT, TEENCODE, AUTO_RESTORE, LIVE_SPELL_CHECK)
+        AUTO_FIX_ADJACENT, TEENCODE, AUTO_RESTORE, LIVE_SPELL_CHECK, VNI_MODE)
     const val SHOW_SUGGESTIONS = "showSuggestions"
     const val FILTER_SENSITIVE = "filterSensitive"
     const val TEMPLATES_ENABLED = "templatesEnabled"

@@ -14,10 +14,15 @@ object ReEdit {
      * a/e/o/d (mũ/đ bằng phím lặp): con trỏ sau "to" gõ o thường là muốn "too", không phải
      * "tô" (user quyết 26/09/2026).
      */
-    fun isTransformKey(ch: Char): Boolean = when (ch.lowercaseChar()) {
-        's', 'f', 'r', 'x', 'j', 'z', 'w' -> true
-        else -> false
-    }
+    fun isTransformKey(ch: Char, vni: Boolean = false): Boolean =
+        if (vni) when (ch) {
+            // VNI ≙ Telex: 1–5 thanh, 0 huỷ thanh, 7/8 móc/trăng (≙ w). KHÔNG 6/9 (≙ a e o d).
+            '1', '2', '3', '4', '5', '0', '7', '8' -> true
+            else -> false
+        } else when (ch.lowercaseChar()) {
+            's', 'f', 'r', 'x', 'j', 'z', 'w' -> true
+            else -> false
+        }
 
     /**
      * Từ (toàn chữ cái) ngay trước con trỏ trong [before]; null nếu không có, dài quá

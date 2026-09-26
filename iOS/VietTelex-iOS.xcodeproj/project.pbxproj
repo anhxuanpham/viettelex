@@ -99,6 +99,7 @@
 		E29FDF78A65EA7E6F0F8EF8F /* SensitiveWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF9F4445707DBA22FE5219CD /* SensitiveWords.swift */; };
 		E74F85FA5D7275FFA0E8F759 /* NumberRowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE8993F83A60C653C26799EC /* NumberRowTests.swift */; };
 		E986D58B038F7EFC5C5803FB /* EmojiPlane.swift in Sources */ = {isa = PBXBuildFile; fileRef = D705942B9BA084047E7A7EF1 /* EmojiPlane.swift */; };
+		EDE33BDBBCE7875A6E52E1C9 /* VNIBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 031628D00865BDD8F533A0B7 /* VNIBridgeTests.swift */; };
 		EE9A7DE6325ECD8F87150CD3 /* KeyLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D77A862B4CBC51471E43C21 /* KeyLayout.swift */; };
 		F1691715B050F1B3A42B4C84 /* FeatureRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D93CDC9D2CEA8A91A576B183 /* FeatureRegressionTests.swift */; };
 		FE2B9309D2217292E28A9A44 /* VNLexicon2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E29815B4F2B0747B961A561 /* VNLexicon2.swift */; };
@@ -130,6 +131,7 @@
 
 /* Begin PBXFileReference section */
 		018FC059A185E6436CD415A9 /* vnbigram.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = vnbigram.bin; sourceTree = "<group>"; };
+		031628D00865BDD8F533A0B7 /* VNIBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VNIBridgeTests.swift; sourceTree = "<group>"; };
 		03B539001F2CE763F663710B /* VietTelexApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VietTelexApp.swift; sourceTree = "<group>"; };
 		0599154D3A43772DC7456968 /* WordDeleteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordDeleteTests.swift; sourceTree = "<group>"; };
 		07973B1798B754A6DDA969C3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -273,6 +275,7 @@
 				821BD7CBEE8349CC782C3E41 /* SwipeTypingTests.swift */,
 				8ABA1285163DC62521EAB1BF /* SyllableBigramTests.swift */,
 				C0D2E54E996214AA4F8CB065 /* TrackpadTests.swift */,
+				031628D00865BDD8F533A0B7 /* VNIBridgeTests.swift */,
 				0599154D3A43772DC7456968 /* WordDeleteTests.swift */,
 				1CF891C409E9F5C6BC92268A /* Fixtures */,
 			);
@@ -587,6 +590,7 @@
 				0ADB3CE1AC55F916715D7B4C /* Trackpad.swift in Sources */,
 				30F54CD6827BDA90BB2CAB53 /* TrackpadTests.swift in Sources */,
 				18EB5C9002EAD3991F709FD5 /* UserLangModel.swift in Sources */,
+				EDE33BDBBCE7875A6E52E1C9 /* VNIBridgeTests.swift in Sources */,
 				FE2B9309D2217292E28A9A44 /* VNLexicon2.swift in Sources */,
 				CE87DFF1AA26E9C3CF185681 /* VNSuggest.swift in Sources */,
 				DC996CC66C628B133BA2BCDD /* WordDelete.swift in Sources */,

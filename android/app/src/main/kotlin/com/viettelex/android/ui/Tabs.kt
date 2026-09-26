@@ -182,24 +182,64 @@ private fun BoolToggle(key: String, default: Boolean, title: String, caption: St
     SettingToggle(title, caption, v) { v = it }
 }
 
+/**
+ * Telex / VNI — hai kiểu gõ loại trừ nhau ⇒ segmented (như radio macOS / Picker iOS). Chọn
+ * VNI TỰ BẬT hàng phím số (số là phím dấu; không có hàng số thì mỗi dấu phải chuyển ?123),
+ * tắt lại được ở Tính năng → Giao diện.
+ */
+@Composable
+private fun InputMethodPicker(vni: Boolean, onChange: (Boolean) -> Unit) {
+    val c = LocalVT.current
+    VTRow {
+        Text("Kiểu gõ", style = VTType.body, color = c.label, modifier = Modifier.weight(1f))
+        Row(Modifier.clip(RoundedCornerShape(9.dp)).background(c.fill).padding(2.dp)) {
+            for ((label, isVni) in listOf("Telex" to false, "VNI" to true)) {
+                val sel = vni == isVni
+                Box(
+                    Modifier.clip(RoundedCornerShape(7.dp))
+                        .background(if (sel) c.card else Color.Transparent)
+                        .clickable { onChange(isVni) }
+                        .padding(horizontal = 18.dp, vertical = 6.dp),
+                ) { Text(label, style = VTType.body, color = c.label) }
+            }
+        }
+    }
+}
+
 @Composable
 private fun KieuGoSection() {
+    var vni by rememberBoolPref(Keys.VNI_MODE, Prefs.D.vniMode)
+    var numberRow by rememberBoolPref(Keys.NUMBER_ROW, Prefs.D.numberRow)
     VTSection(header = "Kiểu gõ", footer = APPLY_NOTE) {
-        BoolToggle(Keys.SIMPLE_TELEX, Prefs.D.simpleTelex, "Telex đơn giản", "Phím w đứng lẻ giữ nguyên là w, không thành ư.")
+        InputMethodPicker(vni) { v ->
+            if (v && !vni) numberRow = true
+            vni = v
+        }
         RowDivider()
-        BoolToggle(Keys.FREE_MARKING, Prefs.D.freeMarking, "Bỏ dấu tự do", "Phím dấu đặt đâu cũng được, không cần đúng thứ tự.")
-        RowDivider()
-        BoolToggle(Keys.QUICK_TELEX, Prefs.D.quickTelex, "Gõ nhanh (Quick Telex)", "Phụ âm đôi đầu từ thành phụ âm ghép: cc → ch, nn → ng, tt → th…")
-        RowDivider()
+        if (vni) {
+            VTRow {
+                Note("Gõ dấu bằng số khi đang gõ một từ: 1 sắc, 2 huyền, 3 hỏi, 4 ngã, 5 nặng, 6 mũ (â ê ô), 7 móc (ơ ư), 8 trăng (ă), 9 đ, 0 xoá dấu — tie6ng1 vie6t5 → tiếng việt. Ngoài từ, phím số vẫn gõ ra số (cả bàn phím cứng). Chọn VNI tự bật Hàng phím số (tắt được ở Tính năng → Giao diện).")
+            }
+            RowDivider()
+        } else {
+            BoolToggle(Keys.SIMPLE_TELEX, Prefs.D.simpleTelex, "Telex đơn giản", "Phím w đứng lẻ giữ nguyên là w, không thành ư.")
+            RowDivider()
+            BoolToggle(Keys.FREE_MARKING, Prefs.D.freeMarking, "Bỏ dấu tự do", "Phím dấu đặt đâu cũng được, không cần đúng thứ tự.")
+            RowDivider()
+            BoolToggle(Keys.QUICK_TELEX, Prefs.D.quickTelex, "Gõ nhanh (Quick Telex)", "Phụ âm đôi đầu từ thành phụ âm ghép: cc → ch, nn → ng, tt → th…")
+            RowDivider()
+        }
         BoolToggle(Keys.MODERN_TONE, Prefs.D.modernTone, "Bỏ dấu kiểu mới", "hoà, thuý thay vì hòa, thúy.")
         RowDivider()
         BoolToggle(Keys.CONTEXTUAL_ENGLISH, Prefs.D.contextualEnglish, "Quyết định theo ngữ cảnh", "Sau một từ tiếng Anh, từ nhập nhằng kế tiếp mà chuỗi phím tạo thành một từ tiếng Anh sẽ được giữ tiếng Anh thay vì tiếng Việt — “he is” → “he is”, không phải “he í”. Sau từ tiếng Việt hoặc không rõ thì để tiếng Việt — “sao í”.")
         RowDivider()
-        BoolToggle(Keys.RE_EDIT_WORDS, Prefs.D.reEditWords, "Sửa dấu từ đã gõ", "Bấm ⌫ ngay sau dấu cách để sửa tiếp từ vừa gõ (tháy ␣ ⌫ a → thấy), hoặc đặt con trỏ ngay sau một từ rồi gõ phím dấu thanh để thêm dấu (chao + f → chào).")
+        BoolToggle(Keys.RE_EDIT_WORDS, Prefs.D.reEditWords, "Sửa dấu từ đã gõ", "Bấm ⌫ ngay sau dấu cách để sửa tiếp từ vừa gõ (tháy ␣ ⌫ a → thấy), hoặc đặt con trỏ ngay sau một từ rồi gõ phím dấu thanh để thêm dấu (chao + f → chào; VNI: chao + 2).")
         RowDivider()
         BoolToggle(Keys.AUTO_FIX_ADJACENT, Prefs.D.autoFixAdjacent, "Gợi ý sửa lỗi chạm trượt", "Khi từ đang gõ không phải tiếng Việt, gợi ý từ đúng nếu bạn lỡ chạm phím bên cạnh: nbjeeuf → nhiều, ohims → phím, cahcs → cách. Chạm gợi ý để thay.")
-        RowDivider()
-        BoolToggle(Keys.TEENCODE, Prefs.D.teencode, "Chính tả teencode", "Chấp nhận cách viết khi chat: w/z/k thay cho qu/d/c (wá, zui zẻ, kó) và bíe, thík, gòy, ừk. Tắt = chỉ chính tả chuẩn, từ tiếng Anh như was, war, zoo giữ nguyên.")
+        if (!vni) {
+            RowDivider()
+            BoolToggle(Keys.TEENCODE, Prefs.D.teencode, "Chính tả teencode", "Chấp nhận cách viết khi chat: w/z/k thay cho qu/d/c (wá, zui zẻ, kó) và bíe, thík, gòy, ừk. Tắt = chỉ chính tả chuẩn, từ tiếng Anh như was, war, zoo giữ nguyên.")
+        }
     }
 }
 
@@ -229,7 +269,7 @@ fun TinhNangTab() {
     }
     VTSection(header = "Bàn phím cứng") {
         BoolToggle(Keys.HARDWARE_TELEX, Prefs.D.hardwareTelex, "Telex cho bàn phím cứng",
-            "Gõ Telex bằng bàn phím Bluetooth/USB, Samsung DeX, Chromebook. Phím tắt có Ctrl/Alt/⌘ vẫn đi thẳng tới app. Bàn phím ảo tự ẩn khi có bàn phím cứng (bật lại trong Cài đặt hệ thống → Bàn phím vật lý → Hiện bàn phím ảo).")
+            "Gõ Telex (hoặc VNI, theo kiểu gõ đang chọn) bằng bàn phím Bluetooth/USB, Samsung DeX, Chromebook. Phím tắt có Ctrl/Alt/⌘ vẫn đi thẳng tới app. Bàn phím ảo tự ẩn khi có bàn phím cứng (bật lại trong Cài đặt hệ thống → Bàn phím vật lý → Hiện bàn phím ảo).")
     }
     VTSection(header = "Thử nghiệm") {
         BoolToggle(Keys.SWIPE_TYPING, Prefs.D.swipeTyping, "Gõ vuốt",
