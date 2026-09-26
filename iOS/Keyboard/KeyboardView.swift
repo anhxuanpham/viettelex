@@ -466,6 +466,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         var paste = false               // thẻ Dán thay bar (vừa copy, xem controller)
         var pasteIsImage = false        // clipboard là ẢNH: bàn phím không chèn được → chỉ hướng dẫn
         var restoreLabel: String? = nil // ô "Khôi phục" sau vuốt ⌫ xoá theo từ (slot đầu)
+        var actionLabel: String? = nil  // chip hành động slot đầu ("Thêm dấu" / "Hoàn tác")…
+        var actionPayload: String? = nil // …và payload (addTonesToken / undoTonesToken)
         var isEmpty: Bool {
             literal == nil && word == nil && word2 == nil && emojis.isEmpty && nextWords.isEmpty
         }
@@ -600,6 +602,9 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     static let pasteImageToken = "\u{E000}pasteImage"
     /// Payload ô "Khôi phục" (chèn lại đoạn vừa vuốt ⌫ xoá).
     static let restoreToken = "\u{E000}restore"
+    /// Payload chip "Thêm dấu" / "Hoàn tác" (AddTones — chỉ khi người dùng bấm).
+    static let addTonesToken = "\u{E000}addTones"
+    static let undoTonesToken = "\u{E000}undoTones"
 
     func showSuggestions(_ set: SuggestionSet) {
         guard suggestionsEnabled, !barCollapsed else { return }
@@ -616,6 +621,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         }
         if let r = set.restoreLabel {
             texts = [(r, Self.restoreToken), texts[0], texts[1]]
+        } else if let a = set.actionLabel, let p = set.actionPayload {
+            texts = [(a, p), texts[0], texts[1]]
         }
         // Nội dung không đổi (nextWords thường ổn định giữa các phím) → bỏ qua
         // toàn bộ ghi UI: setTitle trên bar fillProportionally kéo theo một

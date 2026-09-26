@@ -1,0 +1,270 @@
+// AddTones.swift — THÊM DẤU CHO CÂU KHÔNG DẤU ("toi di hoc hom nay" → "tôi đi học hôm nay"),
+// phần THUẦN. Song sinh android/keyboard/src/main/kotlin/com/viettelex/keyboard/AddTones.kt —
+// sửa ở đây thì sửa y hệt bên kia (parity qua fixture chung KeyboardTests/Fixtures/add-tones.txt).
+//
+// Chỉ chạy khi người dùng BẤM chip "Thêm dấu" — không bao giờ tự thay chữ.
+//
+// Giải thuật: Viterbi trên lưới âm tiết. Mỗi token chữ ASCII là một dạng không dấu của
+// vnlexicon (SwipeLexicon) → ứng viên = mọi âm tiết có dấu của dạng đó. Điểm (log, nat):
+//   phát xạ = freqW·freq/255 (freq byte = 255·ln(count)/ln(max) ≈ log unigram)
+//             + personalUni·ln(1+count cá nhân)
+//   chuyển  = bigramW·PMI(âm tiết trước → này) (vnbigram.bin; thiếu cặp khi âm tiết trước CÓ
+//             dải ⇒ missing) + personalBi·ln(1+count cặp cá nhân)
+// Chuỗi bị cắt ở dấu câu / token giữ nguyên. GIỮ NGUYÊN: token không phải dạng Việt (tiếng
+// Anh, tên riêng lạ, số, URL, email, chữ lẫn số/ký hiệu, camelCase), token có dấu. Token vừa
+// là dạng Việt vừa là từ Anh (the, can…) giữ nguyên khi kề một từ chắc chắn Anh. Giữ
+// hoa/thường từng chữ, dấu câu, khoảng trắng: kết quả DÀI BẰNG bản gốc (tính theo Unicode
+// scalar — mỗi chữ ASCII ↔ một chữ Việt dựng sẵn NFC).
+import Foundation
+import TelexCore
+
+enum AddTones {
+    /// Trọng số — GIỮ Y HỆT bản Kotlin. Chọn bằng lưới trên heldout (android
+    /// AddTonesTests.tuneGrid / tunePersonal, 27/09/2026).
+    struct Params {
+        var freqW = 10.0
+        var bigramW = 1.0
+        var missing = -0.5
+        var personalUni = 0.1
+        var personalBi = 1.0
+    }
+
+    /// Trần count cá nhân.
+    static let personalCap = 50
+    /// Giới hạn độ dài xử lý (token chữ trong đoạn).
+    static let maxSyllables = 200
+
+    /// Dữ liệu cá nhân (UserLangModel) — nil ⇒ chỉ dữ liệu tĩnh.
+    struct Personal {
+        let count: (String) -> Int
+        let pair: (String, String) -> Int
+    }
+
+    struct Result {
+        let text: String
+        let vnTokens: Int
+        let enTokens: Int
+        let changed: Int
+    }
+
+    /// Kế hoạch thay: xoá `original` (đuôi văn bản trước con trỏ) rồi chèn `replacement`.
+    /// Hoàn tác = làm ngược lại.
+    struct Plan: Equatable {
+        let original: String
+        let replacement: String
+    }
+
+    private static let punct: Set<Unicode.Scalar> = Set(".,;:!?\"'()[]{}…“”‘’-–—«»".unicodeScalars)
+    private static func isWs(_ c: Unicode.Scalar) -> Bool {
+        c == " " || c == "\t" || c == "\n" || c == "\r" || c == "\u{00A0}"
+    }
+    private static func isNl(_ c: Unicode.Scalar) -> Bool { c == "\n" || c == "\r" }
+    private static func isAsciiLetter(_ c: Unicode.Scalar) -> Bool {
+        (c.value >= 97 && c.value <= 122) || (c.value >= 65 && c.value <= 90)
+    }
+    private static func isUpperAscii(_ c: Unicode.Scalar) -> Bool { c.value >= 65 && c.value <= 90 }
+    /// = Java Character.isLetter (Lu Ll Lt Lm Lo).
+    private static func isLetter(_ c: Unicode.Scalar) -> Bool {
+        switch c.properties.generalCategory {
+        case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter: return true
+        default: return false
+        }
+    }
+
+    /// Đoạn cuối văn bản trước con trỏ để thêm dấu: các chunk (cách nhau khoảng trắng) liên
+    /// tiếp tính từ cuối, dừng ở xuống dòng, ở chunk có chữ có dấu / ngoài ASCII, hoặc khi đủ
+    /// `maxSyllables` token chữ. "" nếu không có gì.
+    static func segment(_ before: String) -> String {
+        let s = Array(before.unicodeScalars)
+        var end = s.count, start = end, tokens = 0
+        func out(_ from: Int) -> String {
+            var a = from
+            while a < s.count && isWs(s[a]) { a += 1 }
+            var u = String.UnicodeScalarView(); u.append(contentsOf: s[a...])
+            return String(u)
+        }
+        while end > 0 {
+            var ws = end
+            while ws > 0 && isWs(s[ws - 1]) {
+                if isNl(s[ws - 1]) { return out(start) }
+                ws -= 1
+            }
+            if ws == 0 { break }
+            var cs = ws
+            while cs > 0 && !isWs(s[cs - 1]) { cs -= 1 }
+            let chunk = s[cs..<ws]
+            if chunk.contains(where: { $0.value > 127 && isLetter($0) }) { break }
+            if chunk.contains(where: isAsciiLetter) { tokens += 1 }
+            if tokens > maxSyllables { break }
+            start = cs
+            end = cs
+        }
+        return out(start)
+    }
+
+    private final class Tok {
+        let start: Int, end: Int
+        let word: String
+        let breakBefore: Bool, breakAfter: Bool
+        var form = -1
+        var english = false, ambiguous = false, keep = false
+        init(_ start: Int, _ end: Int, _ word: String, _ bb: Bool, _ ba: Bool) {
+            self.start = start; self.end = end; self.word = word; breakBefore = bb; breakAfter = ba
+        }
+    }
+
+    /// Token chữ ứng viên (nil = chunk giữ nguyên, cắt chuỗi bigram).
+    private static func tokenize(_ s: [Unicode.Scalar]) -> [Tok?] {
+        var out: [Tok?] = []
+        var i = 0
+        let n = s.count
+        while i < n {
+            if isWs(s[i]) { i += 1; continue }
+            var j = i
+            while j < n && !isWs(s[j]) { j += 1 }
+            var a = i, b = j
+            while a < b && !isAsciiLetter(s[a]) { a += 1 }
+            while b > a && !isAsciiLetter(s[b - 1]) { b -= 1 }
+            let ok = a < b && s[i..<a].allSatisfy { punct.contains($0) }
+                && s[b..<j].allSatisfy { punct.contains($0) } && s[a..<b].allSatisfy(isAsciiLetter)
+            if !ok { out.append(nil); i = j; continue }
+            let core = s[a..<b]
+            let upperInside = core.dropFirst().contains(where: isUpperAscii)
+            let allUpper = core.allSatisfy(isUpperAscii)
+            if upperInside && !allUpper { out.append(nil); i = j; continue }
+            var u = String.UnicodeScalarView(); u.append(contentsOf: core)
+            out.append(Tok(a, b, String(u).lowercased(), a > i, b < j))
+            i = j
+        }
+        return out
+    }
+
+    private static func classify(_ toks: [Tok?]) {
+        for case let t? in toks {
+            t.form = SwipeLexicon.index(of: t.word) ?? -1
+            let en = SwipeEnglish.contains(t.word) || EnglishContextLookup.opensEnglishRun(t.word)
+            if t.form < 0 {
+                t.keep = true
+                t.english = en && !EnglishContextLookup.isNeutralLoanword(t.word)
+            } else if en { t.ambiguous = true }
+        }
+        var changed = true
+        while changed {
+            changed = false
+            for k in toks.indices {
+                guard let t = toks[k], t.ambiguous, !t.keep else { continue }
+                let p = k > 0 && !t.breakBefore ? toks[k - 1].flatMap { $0.breakAfter ? nil : $0 } : nil
+                let q = k + 1 < toks.count && !t.breakAfter ? toks[k + 1].flatMap { $0.breakBefore ? nil : $0 } : nil
+                if p?.english == true || q?.english == true {
+                    t.keep = true; t.english = true; changed = true
+                }
+            }
+        }
+    }
+
+    /// Khôi phục dấu cho `text` (một đoạn — thường là `segment`). Độ dài (scalar) giữ nguyên.
+    static func restore(_ text: String, personal: Personal? = nil, _ p: Params = Params(),
+                        bigram: SyllableBigram? = SyllableBigram.shared) -> Result {
+        let s = Array(text.unicodeScalars)
+        let toks = tokenize(s)
+        classify(toks)
+        let forms = SwipeLexicon.forms
+        var chosen = [String?](repeating: nil, count: toks.count)
+        var vn = 0, en = 0
+        var k = 0
+        while k < toks.count {
+            guard let t = toks[k], !t.keep else {
+                if toks[k]?.english == true { en += 1 }
+                k += 1; continue
+            }
+            _ = t
+            var e = k + 1
+            while e < toks.count {
+                guard let u = toks[e], !u.keep, !u.breakBefore, !toks[e - 1]!.breakAfter else { break }
+                e += 1
+            }
+            vn += e - k
+            viterbi(toks, k, e, forms, personal, p, bigram, &chosen)
+            k = e
+        }
+        var outS = s
+        var changed = 0
+        for (i, t) in toks.enumerated() {
+            guard let t, let w = chosen[i], w != t.word else { continue }
+            changed += 1
+            let ws = Array(w.unicodeScalars)
+            for c in 0..<(t.end - t.start) {
+                let orig = s[t.start + c]
+                outS[t.start + c] = isUpperAscii(orig)
+                    ? (String(ws[c]).uppercased().unicodeScalars.first ?? ws[c]) : ws[c]
+            }
+        }
+        var u = String.UnicodeScalarView(); u.append(contentsOf: outS)
+        return Result(text: String(u), vnTokens: vn, enTokens: en, changed: changed)
+    }
+
+    private static func viterbi(_ toks: [Tok?], _ from: Int, _ to: Int, _ forms: SwipeLexicon.Forms,
+                                _ personal: Personal?, _ p: Params, _ bigram: SyllableBigram?,
+                                _ chosen: inout [String?]) {
+        let n = to - from
+        let ids: [[Int]] = (0..<n).map { i in
+            let f = toks[from + i]!.form
+            return Array(Int(forms.idStart[f])..<Int(forms.idStart[f + 1]))
+        }
+        let words: [[String]] = ids.map { $0.map { VNSuggest.display($0) } }
+        var score = ids.map { [Double](repeating: 0, count: $0.count) }
+        var back = ids.map { [Int](repeating: 0, count: $0.count) }
+        for i in 0..<n {
+            let rows = i > 0 ? bigram.map { b in ids[i - 1].map { b.row($0) } } : nil
+            for s in ids[i].indices {
+                var emit = p.freqW * Double(VNSuggest.freq(id: ids[i][s])) / 255.0
+                if let personal {
+                    let c = min(personal.count(words[i][s]), personalCap)
+                    if c > 0 { emit += p.personalUni * log(1.0 + Double(c)) }
+                }
+                if i == 0 { score[i][s] = emit; back[i][s] = -1; continue }
+                var best = -Double.infinity, arg = 0
+                for r in ids[i - 1].indices {
+                    var tr = 0.0
+                    if let rows {
+                        let row = rows[r]
+                        if row.size > 0 {
+                            let pmi = row.score(ids[i][s])
+                            tr = pmi > 0 ? p.bigramW * Double(pmi) : p.missing
+                        }
+                    }
+                    if let personal {
+                        let c = min(personal.pair(words[i - 1][r], words[i][s]), personalCap)
+                        if c > 0 { tr += p.personalBi * log(1.0 + Double(c)) }
+                    }
+                    let v = score[i - 1][r] + tr
+                    if v > best { best = v; arg = r }
+                }
+                score[i][s] = best + emit
+                back[i][s] = arg
+            }
+        }
+        var s = 0
+        for x in 1..<max(1, score[n - 1].count) where score[n - 1][x] > score[n - 1][s] { s = x }
+        for i in stride(from: n - 1, through: 0, by: -1) {
+            chosen[from + i] = words[i][s]
+            s = back[i][s]
+        }
+    }
+
+    /// Kế hoạch thêm dấu cho văn bản trước con trỏ; nil nếu không nên mời (< 2 token Việt,
+    /// nghiêng tiếng Anh, hoặc không đổi gì). Chỉ gồm phần đuôi từ ký tự khác đầu tiên.
+    static func plan(_ before: String, personal: Personal? = nil, _ p: Params = Params()) -> Plan? {
+        let seg = segment(before)
+        guard !seg.isEmpty else { return nil }
+        let r = restore(seg, personal: personal, p)
+        guard r.vnTokens >= 2, r.enTokens < r.vnTokens, r.changed > 0 else { return nil }
+        let a = Array(seg.unicodeScalars), b = Array(r.text.unicodeScalars)
+        var d = 0
+        while d < a.count && a[d] == b[d] { d += 1 }
+        var o = String.UnicodeScalarView(), rp = String.UnicodeScalarView()
+        o.append(contentsOf: a[d...]); rp.append(contentsOf: b[d...])
+        return Plan(original: String(o), replacement: String(rp))
+    }
+}
+

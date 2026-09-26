@@ -167,7 +167,13 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
         val disp = arrayOfNulls<String>(3)
         clearContent()
         lastSet = set
-        if (set.nextWords.isNotEmpty()) {
+        if (set.action != null && set.actionLabel != null) {
+            // Chip hành động (Thêm dấu / Hoàn tác) ở slot trái, gợi ý tốt nhất vẫn ở giữa.
+            disp[0] = set.actionLabel; slotPayload[0] = set.action
+            for (i in 0 until minOf(2, set.nextWords.size)) {
+                disp[i + 1] = set.nextWords[i]; slotPayload[i + 1] = set.nextWords[i]
+            }
+        } else if (set.nextWords.isNotEmpty()) {
             // Gboard: gợi ý tốt nhất ở GIỮA (slot 1), rồi trái, rồi phải.
             val order = intArrayOf(1, 0, 2)
             for (i in 0 until minOf(3, set.nextWords.size)) {

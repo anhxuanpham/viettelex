@@ -119,6 +119,7 @@ targets:
       - Keyboard/SwipeTyping.swift
       - Keyboard/SwipeEnglish.swift
       - Keyboard/SyllableBigram.swift
+      - Keyboard/AddTones.swift
       - path: Keyboard/Resources/vnlexicon.bin
         buildPhase: resources
       - path: Keyboard/Resources/enlexicon.bin
