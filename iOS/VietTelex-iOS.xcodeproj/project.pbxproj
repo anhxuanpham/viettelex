@@ -96,6 +96,7 @@
 		E16D46978F3A25EF2D8990ED /* AppearancePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62E14AD387BE2B1A54881E15 /* AppearancePolicy.swift */; };
 		E295B1FEA8D18A42FF77BD3A /* EmojiSuggest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CCA79BB7903D0F4A2BC56B5 /* EmojiSuggest.swift */; };
 		E29FDF78A65EA7E6F0F8EF8F /* SensitiveWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF9F4445707DBA22FE5219CD /* SensitiveWords.swift */; };
+		E74F85FA5D7275FFA0E8F759 /* NumberRowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE8993F83A60C653C26799EC /* NumberRowTests.swift */; };
 		E986D58B038F7EFC5C5803FB /* EmojiPlane.swift in Sources */ = {isa = PBXBuildFile; fileRef = D705942B9BA084047E7A7EF1 /* EmojiPlane.swift */; };
 		EE9A7DE6325ECD8F87150CD3 /* KeyLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D77A862B4CBC51471E43C21 /* KeyLayout.swift */; };
 		F1691715B050F1B3A42B4C84 /* FeatureRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D93CDC9D2CEA8A91A576B183 /* FeatureRegressionTests.swift */; };
@@ -187,6 +188,7 @@
 		E5AE58D76A8127D641A2AF62 /* EngineBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineBridgeTests.swift; sourceTree = "<group>"; };
 		E5BA79FCDFB7209A8D1C65B0 /* SwipeTyping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipeTyping.swift; sourceTree = "<group>"; };
 		E7BF9D54E0DFCE9D7395F598 /* swipe-paths.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "swipe-paths.txt"; sourceTree = "<group>"; };
+		EE8993F83A60C653C26799EC /* NumberRowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NumberRowTests.swift; sourceTree = "<group>"; };
 		F2C9781CE8B936C962B3EBA8 /* TelexCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TelexCore; path = ../TelexCore; sourceTree = SOURCE_ROOT; };
 		F316CA910C58A9377DC754A0 /* UserLangModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserLangModel.swift; sourceTree = "<group>"; };
 		F9A392056B54E623933F9CD3 /* SuggestionSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionSupport.swift; sourceTree = "<group>"; };
@@ -259,6 +261,7 @@
 				5D0B60123ABBD5FE60D9234A /* KeyCommitQueueTests.swift */,
 				A3125082F1A2E31162FC7045 /* KeyLayoutTests.swift */,
 				3B258DEED17434ED054B29D7 /* LetterUndoTests.swift */,
+				EE8993F83A60C653C26799EC /* NumberRowTests.swift */,
 				6EAFABBBF6544841D633BFD9 /* PlaneCacheLayoutTests.swift */,
 				E2A6BDCAE323FDEA73473DB7 /* PlanePolicyTests.swift */,
 				75A9F065C3D6400280AE99D7 /* ReEditWordTests.swift */,
@@ -558,6 +561,7 @@
 				0F638DDA7C5DE1FC8DA03D46 /* KeyLayoutTests.swift in Sources */,
 				1482D4C59B5BF2655556E516 /* KeyboardView.swift in Sources */,
 				175CED36E0C29E01403A284F /* LetterUndoTests.swift in Sources */,
+				E74F85FA5D7275FFA0E8F759 /* NumberRowTests.swift in Sources */,
 				4F177B14857E493A92E95B00 /* PlaneCacheLayoutTests.swift in Sources */,
 				5C1E68D1CE795950C634F366 /* PlanePolicy.swift in Sources */,
 				0E4E1EDF98B16B37559DDCDD /* PlanePolicyTests.swift in Sources */,

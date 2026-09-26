@@ -204,8 +204,8 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         val templates = if (settings.templatesEnabled) VTPrefs.templates(this, prefs) else emptyList()
         kb.configure(field.returnLabel, field.kind, needsGlobe(), settings.showSpaceLogo,
             settings.templatesEnabled, templates,
-            th.dp(KeyLayout.keyAreaDp(th.tablet, th.landscape, settings.rowHeightAdjust)),
-            field.numberSigned, field.numberDecimal)
+            th.dp(KeyLayout.keyAreaDp(th.tablet, th.landscape, settings.rowHeightAdjust, settings.numberRow)),
+            field.numberSigned, field.numberDecimal, settings.numberRow)
         st.setPlane(kb.plane)
         updateSwipeTyping()
         root?.refreshInsets()

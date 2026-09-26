@@ -809,6 +809,8 @@ struct TinhNangSections: View {
     private var templatesEnabled = true
     @AppStorage("rowHeightAdjust", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var rowHeightAdjust = 0
+    @AppStorage("numberRow", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var numberRow = false
     @AppStorage("hapticFeedback", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var hapticFeedback = false
     @AppStorage("reEditWord", store: UserDefaults(suiteName: "group.com.viettelex"))
@@ -857,6 +859,7 @@ struct TinhNangSections: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
+            settingToggle("Hàng phím số", "Thêm hàng 1 2 3 … 0 phía trên hàng chữ — gõ số không cần chuyển sang bàn phím 123. Bàn phím cao thêm khoảng ¾ hàng.", isOn: $numberRow)
         } header: { Text("Giao diện") } footer: {
             Text("Cài đặt áp dụng ngay lần mở bàn phím kế tiếp.")
         }
