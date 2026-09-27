@@ -42,7 +42,7 @@ Toàn bộ phần gõ luôn miễn phí. Plus dành cho ai muốn thêm tiện �
 • Thêm dấu cho cả câu gõ không dấu
 • Clipboard nâng cao: ghim không giới hạn, chip tách số tài khoản / số điện thoại / mã OTP
 • Đồng bộ iCloud
-• Công cụ văn bản: HOA/thường, xoá dấu, đổi bảng mã TCVN3/VNI
+• Công cụ văn bản: HOA/thường, Hoa Đầu Từ, hoa đầu câu, xoá dấu
 • Huy hiệu cảm ơn
 Không thuê bao, không quảng cáo. Có thể ủng hộ thêm tuỳ tâm (25.000đ / 49.000đ / 99.000đ) — không mở khoá gì thêm.
 
@@ -95,7 +95,7 @@ All typing features are free forever. Plus is for those who want extras and to s
 • Add diacritics to a whole sentence typed without tones
 • Advanced clipboard: unlimited pins, smart chips for bank account / phone / OTP
 • iCloud sync
-• Text tools: UPPER/lower case, remove diacritics, convert TCVN3/VNI encodings
+• Text tools: UPPER/lower/Title/Sentence case, remove Vietnamese diacritics
 • Thank-you badge
 No subscription, no ads. Optional tips are available — they don't unlock anything extra.
 

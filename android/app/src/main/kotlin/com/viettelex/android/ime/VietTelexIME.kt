@@ -42,6 +42,11 @@ import com.viettelex.keyboard.SwipeSuggest
 import com.viettelex.keyboard.SyllableBigram
 import com.viettelex.keyboard.WriteMode
 import com.viettelex.keyboard.TemplateItem
+import com.viettelex.keyboard.PlusFeature
+import com.viettelex.keyboard.PlusGate
+import com.viettelex.keyboard.TextTool
+import com.viettelex.keyboard.TextToolRunner
+import com.viettelex.keyboard.TextTools
 import com.viettelex.keyboard.Templates
 import com.viettelex.keyboard.TouchLog
 import com.viettelex.keyboard.UserLangModel
@@ -78,6 +83,8 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     private val swipe by lazy { SwipeDeleteController(proxy) }
     /** Đoạn vừa vuốt ⌫ xoá — ô "Khôi phục" một lượt; phím khác bất kỳ gỡ. */
     private var swipeUndo: String? = null
+    /** Công cụ văn bản vừa áp ⇒ ô "↩︎ Hoàn tác" / ⌫ ngay sau (một lượt). */
+    private var toolUndo: TextTools.Undo? = null
 
     /** Wrapper cache theo InputConnection hiện hành (không cấp phát mỗi phím). */
     private fun port(): EditorPort? {
@@ -222,6 +229,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
             settings.templatesEnabled, templates,
             th.dp(KeyLayout.keyAreaDp(th.tablet, th.landscape, settings.rowHeightAdjust, settings.numberRow)),
             field.numberSigned, field.numberDecimal, settings.numberRow)
+        kb.textToolsEnabled = PlusGate.isUnlocked(PlusFeature.TEXT_TOOLS) && !field.isSecure
         st.setPlane(kb.plane)
         updateSwipeTyping()
         root?.refreshInsets()
@@ -400,6 +408,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     // MARK: phím
 
     override fun onKey(key: Key) {
+        if (key == Key.Backspace && toolUndo != null) { undoTextTool(); return }   // ⌫ ngay sau = hoàn tác
         clearSwipeUndo()
         if (!proxy.begin()) return
         val out = try { session.handle(key, proxy) } finally { proxy.end() }
@@ -514,6 +523,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     }
 
     override fun onRestoreDeleted() {
+        if (toolUndo != null) { undoTextTool(); return }
         val text = swipeUndo ?: return
         clearSwipeUndo()
         if (!proxy.begin()) return
@@ -524,9 +534,50 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     }
 
     private fun clearSwipeUndo() {
-        if (swipeUndo == null) return
+        if (swipeUndo == null && toolUndo == null) return
         swipeUndo = null
+        toolUndo = null
         strip?.showRestore(false)
+    }
+
+    // MARK: công cụ văn bản (Plus) — logic thuần ở keyboard/TextTools.kt
+
+    /**
+     * Áp [tool] lên vùng chọn (getSelectedText) hoặc đoạn trước con trỏ (tới xuống dòng).
+     * Lối vào hiện tại: chip đầu lưới mẫu câu; bảng sửa văn bản gộp sau gọi thẳng hàm này.
+     */
+    override fun onTextTool(tool: TextTool) {
+        if (!PlusGate.isUnlocked(PlusFeature.TEXT_TOOLS)) return
+        clearSwipeUndo()
+        handler.removeCallbacks(suggestRun)
+        if (!proxy.begin()) return
+        val out = try {
+            session.commitComposing(proxy)          // từ đang soạn chốt trước (thuộc đoạn cần đổi)
+            TextToolRunner.apply(tool, proxy, IcProxy.CONTEXT_CAP)
+        } finally { proxy.end() }
+        resetIfEditFailed()
+        when (out) {
+            is TextToolRunner.Outcome.Applied -> {
+                toolUndo = out.undo
+                strip?.showRestore(true, getString(com.viettelex.android.R.string.ime_undo))
+            }
+            TextToolRunner.Outcome.FailSafe -> TouchLog.write("failsafe: text tool ${tool.id} tail mismatch → skip")
+            else -> {}
+        }
+        applyAutoShift()
+        refreshBar()
+    }
+
+    private fun undoTextTool() {
+        val u = toolUndo ?: return
+        clearSwipeUndo()
+        if (!proxy.begin()) return
+        val ok = try { TextToolRunner.undo(u, proxy) } finally { proxy.end() }
+        if (!ok) TouchLog.write("failsafe: text tool undo tail moved → skip")
+        resetIfEditFailed()
+        session.externalSelectionChange()
+        applyAutoShift()
+        refreshBar()
     }
 
     /** commitText/deleteSurroundingText trả false: màn hình không còn chắc khớp engine ⇒ quên từ. */
