@@ -282,7 +282,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         st.oneHandAvailable = !th.tablet
         kb.setOneHand(if (th.tablet) OneHandSide.OFF else OneHandSide.fromPref(settings.oneHandMode))
         kb.setEditHasSelection(info.initialSelStart >= 0 && info.initialSelStart != info.initialSelEnd)
-        st.setExtras(clipButton = settings.clipboardHistory, incognito = session.incognito, open = false)
+        st.setExtras(clipButton = settings.clipboardHistory, open = false)
         val templates = if (settings.templatesEnabled)
             templatesCache ?: VTPrefs.templates(this, prefs).also { templatesCache = it } else emptyList()
         kb.configure(field.returnLabel, field.kind, needsGlobe(), settings.showSpaceLogo,
@@ -895,7 +895,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     private fun syncClipHistory(enabled: Boolean) {
         if (!enabled) {
             if (session.clipHistory != null || clipFile.exists()) { session.clipHistory = null; clipFile.delete() }
-            strip?.setExtras(clipButton = false, incognito = session.incognito, open = false)
+            strip?.setExtras(clipButton = false, open = false)
             closeClipboardPane()
             return
         }
@@ -937,7 +937,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         pane.visibility = View.VISIBLE
         refreshClipboardPane()
         pane.scrollTop()
-        strip?.setExtras(clipButton = true, incognito = session.incognito, open = true)
+        strip?.setExtras(clipButton = true, open = true)
     }
 
     private fun refreshClipboardPane() {
@@ -949,7 +949,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         val p = clipPane ?: return
         if (p.visibility != View.VISIBLE) return
         p.visibility = View.GONE
-        strip?.setExtras(clipButton = session.clipHistory != null, incognito = session.incognito, open = false)
+        strip?.setExtras(clipButton = session.clipHistory != null, open = false)
     }
 
     override fun onClipPick(text: String) {

@@ -894,12 +894,11 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         setPasteCard(visible: pasteCardOn, image: set.pasteIsImage, ink: ink)
     }
 
-    // MARK: Clipboard (lịch sử + chip + chỉ báo ẩn danh)
+    // MARK: Clipboard (lịch sử + chip) — không có chỉ báo ẩn danh (Phil 27/09 bỏ icon mắt gạch)
     /// Payload chip tách số: prefix + giá trị cần chèn.
     static let clipTokenPrefix = "\u{E000}clip:"
     static let clipZoneWidth: CGFloat = 40
     private var clipboardButtonVisible = false
-    private var incognitoOn = false
     var onOpenClipboard: (() -> Void)?
     /// Panel phủ vùng phím: touch trong panel KHÔNG đi qua router phím chữ.
     weak var overlayPanel: UIView?
@@ -919,29 +918,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         addSubview(b)
         return b
     }()
-    private var incognitoBadgeMade = false
-    private lazy var incognitoBadge: UIImageView = {
-        incognitoBadgeMade = true
-        let v = UIImageView(image: UIImage(systemName: "eye.slash",
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)))
-        v.isUserInteractionEnabled = false
-        v.contentMode = .center
-        v.accessibilityLabel = "Chế độ ẩn danh đang bật"
-        v.isAccessibilityElement = true
-        addSubview(v)
-        return v
-    }()
-
     func setClipboardButton(visible: Bool) {
         guard visible != clipboardButtonVisible else { return }
         clipboardButtonVisible = visible
         setNeedsLayout()   // bề rộng bar (layoutSuggestionBar)
-    }
-
-    func setIncognito(_ on: Bool) {
-        guard on != incognitoOn else { return }
-        incognitoOn = on
-        setNeedsLayout()
     }
 
     private func layoutClipboardExtras(stripOpen: Bool) {
@@ -957,16 +937,6 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             let bottomInset = max(strip - 20 - Self.barTopPad, 0)
             clipZone.contentEdgeInsets = UIEdgeInsets(top: Self.barTopPad, left: 0, bottom: bottomInset, right: 0)
             bringSubviewToFront(clipZone)
-        }
-        // Chỉ báo ẩn danh: icon nhỏ ở mép trái phím cách (overlay, không đụng cache plane).
-        if incognitoOn, let space = spaceBar, space.window != nil {
-            let f = convert(space.bounds, from: space)
-            incognitoBadge.isHidden = false
-            incognitoBadge.tintColor = inkFaded(0.4)
-            incognitoBadge.frame = CGRect(x: f.minX + 6, y: f.midY - 9, width: 18, height: 18)
-            bringSubviewToFront(incognitoBadge)
-        } else if incognitoBadgeMade {
-            incognitoBadge.isHidden = true
         }
     }
 
