@@ -79,3 +79,16 @@ object SuggestionSlots {
         return BarLayout.Slots(slots.toList(), emojis)
     }
 }
+
+/**
+ * Chạm slot gợi ý: chốt payload lúc CHẠM XUỐNG. Gợi ý nền (VNSuggest) có thể về giữa
+ * down và up và thay nội dung ô — đọc payload lúc nhấc tay từng chèn từ MỚI thay vì từ
+ * người dùng nhắm (bug 27/09). Song sinh iOS KeyboardView (slot touchDown).
+ */
+class SlotTapLatch {
+    private var payload: String? = null
+    fun down(p: String?) { payload = p }
+    /** Payload chốt lúc down (null = không có / đã huỷ); dùng một lần. */
+    fun up(): String? = payload.also { payload = null }
+    fun cancel() { payload = null }
+}

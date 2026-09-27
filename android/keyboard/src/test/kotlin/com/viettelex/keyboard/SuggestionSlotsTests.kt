@@ -69,4 +69,16 @@ class SuggestionSlotsTests {
         assertEquals("$ADD|a|b", payloads(s, middle = true))
         assertEquals("$ADD|$N|a", payloads(s.copy(number = "x")))
     }
+
+    /** Bug 27/09: gợi ý nền về giữa chạm xuống và nhấc tay đổi ô — phải chèn từ lúc chạm xuống. */
+    @Test fun tapCommitsPayloadShownAtTouchDown() {
+        val latch = SlotTapLatch()
+        val slots = arrayOf<String?>("casn", "cánh", "cắn")
+        latch.down(slots[2])
+        slots[2] = "cân"                                // kết quả nền mới vẽ lại bar
+        assertEquals("cắn", latch.up())
+        assertEquals(null, latch.up())                   // dùng một lần
+        latch.down("x"); latch.cancel()
+        assertEquals(null, latch.up())
+    }
 }

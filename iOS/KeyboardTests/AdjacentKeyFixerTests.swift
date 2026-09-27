@@ -40,6 +40,35 @@ final class AdjacentKeyFixerTests: XCTestCase {
         XCTAssertNil(fix("x"))                      // quá ngắn
     }
 
+    private func slip(_ raw: String) -> String? {
+        AdjacentKeyFixer.toneSlipCorrection(raw: raw, compose: { self.bridge.composeTrial($0) },
+                                            frequency: { VNSuggest.frequency(of: $0) })
+    }
+
+    /// Bug 27/09/2026: "casn" (ý "caan", a trượt sang s) ra "cán" — từ hợp lệ nên fixer
+    /// cũ (chỉ chạy khi không khớp gì) bỏ qua, bar không có "cân".
+    func testToneKeySlipStillValidWord() {
+        XCTAssertEqual(bridge.composeTrial("casn"), "cán")
+        XCTAssertEqual(slip("casn"), "cân")          // nhân đôi a thắng "căn" (phổ biến hơn)
+        XCTAssertEqual(slip("Casn"), "Cân")
+        XCTAssertEqual(slip("besn"), "bên")
+    }
+
+    func testToneSlipLeavesNormalTypingAlone() {
+        XCTAssertNil(slip("bans"))                   // phím thanh cuối từ = cách gõ thường
+        XCTAssertNil(slip("cas"))
+        XCTAssertNil(slip("tre"))                    // "tr" là phụ âm, r không phải dấu
+        XCTAssertNil(slip("tieesng"))                // tiếng
+        XCTAssertNil(slip("lasm"))                   // lắm/lấm hiếm hơn nhiều ⇒ không gợi
+        XCTAssertNil(slip("ohims"))                  // không phải từ ⇒ việc của correction()
+    }
+
+    func testToneSlipOffInVni() {
+        var s = KeyboardSettings(); s.vniMode = true
+        XCTAssertNil(AdjacentKeyFixer.lexiconToneSlip(raw: "casn", bridge: EngineBridge(settings: s)))
+        XCTAssertEqual(AdjacentKeyFixer.lexiconToneSlip(raw: "casn", bridge: EngineBridge(settings: KeyboardSettings())), "cân")
+    }
+
     func testKeepsSentenceCase() {
         XCTAssertEqual(fix("Ohims"), "Phím")
     }
