@@ -106,6 +106,37 @@ final class UXFeedbackTests: XCTestCase {
         withExtendedLifetime(host) {}
     }
 
+    /// Issue #97 (bản phát hành): chạm ☰ khi đang có thẻ Dán ⇒ "Dán" vẽ ĐÈ lên slot giữa
+    /// ("Anh"), vạch ngăn lệch. Mọi trạng thái: chữ không chồng nhau, không chồng thẻ Dán, ô
+    /// bằng nhau — kể cả sau ☰ bật/tắt, chip số/emoji, chip "↩︎ từ cũ".
+    @MainActor func testBarNeverOverlapsAcrossStates() {
+        let (kb, host) = makeKeyboard()
+        var paste = KeyboardView.SuggestionSet(nextWords: ["Em", "Anh", "Tôi"]); paste.paste = true
+        var number = KeyboardView.SuggestionSet(literal: "12", word: "mười hai"); number.number = "12.000"
+        var revise = KeyboardView.SuggestionSet(nextWords: ["có", "cơ"])
+        revise.actionLabel = "\u{21A9}\u{FE0E} từ cũ"; revise.actionPayload = KeyboardView.undoReviseToken
+        let states: [(String, KeyboardView.SuggestionSet)] = [
+            ("paste", paste), ("words", sets[0]), ("paste", paste), ("emoji", sets[2]),
+            ("number", number), ("revise", revise), ("long", sets[3]), ("paste", paste),
+        ]
+        func check(_ name: String) {
+            let g = kb.debugSuggestionGeometry()
+            let cw = g.cells[0].width
+            for c in g.cells { XCTAssertEqual(c.width, cw, accuracy: 0.5, "\(name): ô lệch") }
+            for (i, a) in g.visibleTitles.enumerated() {
+                if let card = g.pasteCard { XCTAssertFalse(a.intersects(card), "\(name): chữ đè thẻ Dán") }
+                for b in g.visibleTitles[(i + 1)...] { XCTAssertFalse(a.intersects(b), "\(name): chữ chồng chữ") }
+            }
+            if g.pasteCard != nil { XCTAssertTrue(g.visibleTitles.isEmpty, "\(name): thẻ Dán phải thay cả bar") }
+        }
+        for (name, s) in states {
+            kb.showSuggestions(s); check(name)
+            kb.debugTapBurger(); kb.showSuggestions(s); check(name + "+☰")
+            kb.debugTapBurger(); kb.showSuggestions(s); check(name + "+☰☰")
+        }
+        withExtendedLifetime(host) {}
+    }
+
     /// Regression: thẻ Dán hiện thì KHÔNG còn chữ gợi ý nào vẽ chung (kể cả sau
     /// rebuild/đổi plane — đường từng đặt lại alpha bar = 1 làm "Đáp" đè "Dán").
     @MainActor func testPasteCardHidesSlotsCompletely() throws {

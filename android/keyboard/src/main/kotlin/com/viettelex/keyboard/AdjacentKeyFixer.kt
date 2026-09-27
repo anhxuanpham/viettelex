@@ -93,6 +93,43 @@ object AdjacentKeyFixer {
         return w
     }
 
+    /**
+     * Chạm trượt MÀ VẪN RA TỪ HỢP LỆ — [correction] chỉ chạy khi không khớp gì nên bỏ sót:
+     * "casn" (ý là "caan" → cân, a trượt sang s) ra "cán". Phím thanh Telex s/f/r/x/j nằm
+     * giữa hàng chữ, cạnh nguyên âm. Thử thay MỘT phím thanh giữa từ (không phải phím đầu/
+     * cuối) bằng phím kề; nhận ứng viên phổ biến ít nhất bằng từ đang ra; ưu tiên nhân đôi
+     * nguyên âm ("as" ⇐ "aa"), rồi tần suất. Chỉ gợi ý (slot 3), không tự thay. Port iOS.
+     */
+    fun toneSlipCorrection(raw: String, compose: (String) -> String, frequency: (String) -> Int?): String? {
+        if (raw.length !in 3..10 || !raw.all { isAsciiLetter(it) }) return null
+        val lower = raw.lowercase().toCharArray()
+        val current = compose(String(lower))
+        val curFreq = frequency(current) ?: return null
+        var best: String? = null
+        var bestKey = -1
+        for (i in 1 until lower.size - 1) {
+            // phím thanh phải đứng sau nguyên âm (hoặc w): "tr" trong "tre" là phụ âm, không phải dấu hỏi
+            if (lower[i] !in TONE_KEYS || lower[i - 1] !in "aeiouyw") continue
+            for (n in neighbors[lower[i]].orEmpty()) {
+                val c = lower.copyOf(); c[i] = n
+                val w = compose(String(c))
+                if (w == current) continue
+                val f = frequency(w) ?: continue
+                val doubled = n == lower[i - 1] && n in "aeo"
+                if (f < curFreq - (if (doubled) DOUBLED_SLACK else 0)) continue
+                val key = (if (doubled) 1 shl 16 else 0) + f
+                if (key > bestKey) { best = w; bestKey = key }
+            }
+        }
+        var w = best ?: return null
+        if (raw[0].isUpperCase()) w = Cp.capitalizeFirst(w)
+        return w
+    }
+
+    private const val TONE_KEYS = "sfrxj"
+    // nhân đôi nguyên âm là bằng chứng mạnh: nhận cả ứng viên kém phổ biến hơn chút (đo heldout: 75→76/85, không thêm gợi ý thừa)
+    private const val DOUBLED_SLACK = 10
+
     private val toneMarks = intArrayOf(0x300, 0x301, 0x303, 0x309, 0x323)
 
     /** Bỏ 5 dấu thanh, giữ dấu chữ: "cũm" → "cum". */
@@ -125,5 +162,11 @@ object AdjacentKeyFixer {
                 compose = { bridge.composeTrial(it) },
                 frequency = { VNSuggest.frequency(it) },
                 hasCompletion = { VNSuggest.matches(it, poolLimit = 1).isNotEmpty() })
+        }
+
+    /** [toneSlipCorrection] theo setting của [bridge] (Telex; VNI không có phím thanh chữ), cache chung (khoá tách). */
+    fun lexiconToneSlip(raw: String, bridge: EngineBridge): String? =
+        if (bridge.vniMode) null else bridge.adjacentFixCache.value("\u0001" + raw) {
+            toneSlipCorrection(raw, compose = { bridge.composeTrial(it) }, frequency = { VNSuggest.frequency(it) })
         }
 }

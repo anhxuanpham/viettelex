@@ -70,6 +70,18 @@ class SuggestionSlotsTests {
         assertEquals("$ADD|$N|a", payloads(s.copy(number = "x")))
     }
 
+    /** Bug 27/09: gợi ý nền về giữa chạm xuống và nhấc tay đổi ô — phải chèn từ lúc chạm xuống. */
+    @Test fun tapCommitsPayloadShownAtTouchDown() {
+        val latch = SlotTapLatch()
+        val slots = arrayOf<String?>("casn", "cánh", "cắn")
+        latch.down(slots[2])
+        slots[2] = "cân"                                // kết quả nền mới vẽ lại bar
+        assertEquals("cắn", latch.up())
+        assertEquals(null, latch.up())                   // dùng một lần
+        latch.down("x"); latch.cancel()
+        assertEquals(null, latch.up())
+    }
+
     /** "↩︎ từ cũ" sau khi vuốt sửa lại từ trước: slot đầu, biến thể vuốt dời phải — không thành pill. */
     @Test fun reviseUndoLeadsSwipeAlternatives() {
         val r = SuggestionSet.UNDO_REVISE_TOKEN

@@ -109,6 +109,41 @@ enum AdjacentKeyFixer {
         return w
     }
 
+    /// Chạm trượt MÀ VẪN RA TỪ HỢP LỆ — `correction` chỉ chạy khi không khớp gì nên bỏ
+    /// sót: "casn" (ý là "caan" → cân, a trượt sang s) ra "cán". Phím thanh Telex s/f/r/x/j
+    /// nằm giữa hàng chữ, cạnh nguyên âm. Thử thay MỘT phím thanh giữa từ (đứng sau nguyên
+    /// âm, không phải phím cuối) bằng phím kề; nhận ứng viên phổ biến ít nhất bằng từ đang
+    /// ra; ưu tiên nhân đôi nguyên âm ("as" ⇐ "aa"), rồi tần suất. Chỉ gợi ý (slot 3).
+    /// Đo heldout 13.9k từ: bắt 76/85 ca aa/ee→s; gợi ý thừa ~0.4% từ (chỉ khi gõ dấu giữa từ).
+    static func toneSlipCorrection(raw: String, compose: (String) -> String,
+                                   frequency: (String) -> Int?) -> String? {
+        let keys = Array(raw)
+        guard (3...10).contains(keys.count),
+              keys.allSatisfy({ $0.isASCII && $0.isLetter }) else { return nil }
+        let lower = keys.map { Character($0.lowercased()) }
+        let current = compose(String(lower))
+        guard let curFreq = frequency(current) else { return nil }
+        var best: String?
+        var bestKey = -1
+        for i in 1..<(lower.count - 1) {
+            // phím thanh phải đứng sau nguyên âm (hoặc w): "tr" trong "tre" là phụ âm
+            guard "sfrxj".contains(lower[i]), "aeiouyw".contains(lower[i - 1]) else { continue }
+            for n in neighbors[lower[i]] ?? [] {
+                var c = lower; c[i] = n
+                let w = compose(String(c))
+                guard w != current, let f = frequency(w) else { continue }
+                let doubled = n == lower[i - 1] && "aeo".contains(n)
+                // nhân đôi nguyên âm là bằng chứng mạnh: nhận cả ứng viên kém phổ biến hơn chút
+                guard f >= curFreq - (doubled ? 10 : 0) else { continue }
+                let key = (doubled ? 1 << 16 : 0) + f
+                if key > bestKey { best = w; bestKey = key }
+            }
+        }
+        guard var w = best else { return nil }
+        if keys[0].isUppercase, let f = w.first { w = f.uppercased() + w.dropFirst() }
+        return w
+    }
+
     /// Bỏ 5 dấu thanh, giữ dấu chữ (ư, â, đ…): "cũm" → "cum". VNSuggest coi thanh
     /// trống là tương thích mọi thanh.
     static func stripTones(_ s: String) -> String {
@@ -152,6 +187,16 @@ enum AdjacentKeyFixer {
                        compose: { bridge.composeTrial($0) },
                        frequency: { VNSuggest.frequency(of: $0) },
                        hasCompletion: { !VNSuggest.matches($0, poolLimit: 1).isEmpty })
+        }
+    }
+
+    /// `toneSlipCorrection` theo setting của `bridge` (Telex; VNI không có phím thanh chữ),
+    /// cache chung với `lexiconCorrection` (khoá tách bằng tiền tố).
+    static func lexiconToneSlip(raw: String, bridge: EngineBridge) -> String? {
+        guard !bridge.vniMode else { return nil }
+        return bridge.adjacentFixCache.value(for: "\u{1}" + raw) {
+            toneSlipCorrection(raw: raw, compose: { bridge.composeTrial($0) },
+                               frequency: { VNSuggest.frequency(of: $0) })
         }
     }
 }

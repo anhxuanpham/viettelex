@@ -70,6 +70,19 @@ class KeyboardSessionTests {
         assertEquals("phím", s.suggestionsNow(p)!!.word)
     }
 
+    /** Bug 27/09: gõ "casn" bar chỉ có "casn" | cánh | cắn — không có "cân" để chạm. */
+    @Test fun testToneSlipOffersIntendedWord() {
+        val s = session(traits = FieldTraits()); val p = MockProxy()
+        s.typeKeys(p, "casn")
+        val set = s.suggestionsNow(p)!!
+        assertEquals("cân", set.word2)
+        s.acceptSuggestion(set.word2!!, p)
+        assertEquals("cân ", p.text)
+        val off = session(KeyboardSettings(autoFixAdjacent = false), FieldTraits()); val p2 = MockProxy()
+        off.typeKeys(p2, "casn")
+        assertTrue(off.suggestionsNow(p2)!!.let { it.word != "cân" && it.word2 != "cân" })
+    }
+
     @Test fun testEmailAndTldRules() {
         val s = session(traits = FieldTraits()); val p = MockProxy()
         s.typeKeys(p, "phuc")
