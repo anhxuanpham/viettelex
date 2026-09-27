@@ -1325,6 +1325,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             shiftKeys = cached.shiftKeys
             spaceBar = cached.spaceBar
             spaceLogo = cached.spaceLogo
+            spaceLogo?.image = spaceLogoImage()      // ngôn ngữ có thể đã đổi khi plane nằm cache
             indentedRow = cached.indentedRow
             indentedRowInset = cached.indentedRowInset
             crossRowConstraints = cached.crossRow
@@ -1919,7 +1920,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let showLogo = UserDefaultsProvider.shared?.object(forKey: "showSpaceLogo") == nil
             || UserDefaultsProvider.shared?.bool(forKey: "showSpaceLogo") == true
         if showLogo {
-            let hint = UIImageView(image: UIImage(named: "SpaceLogo")?.withRenderingMode(.alwaysTemplate))
+            let hint = UIImageView(image: spaceLogoImage())
             hint.tintColor = ink.withAlphaComponent(0.16)
             hint.contentMode = .scaleAspectFit
             hint.translatesAutoresizingMaskIntoConstraints = false
@@ -1934,11 +1935,15 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         }
         space.addAction(UIAction { _ in Self.clickModifier() }, for: .touchDown)
         space.addTarget(self, action: #selector(spaceTouchDown(_:event:)), for: .touchDown)
+        // Vuốt đổi ngôn ngữ (SpaceFlick): theo dõi ngón — công tắc tắt ⇒ handler thoát ngay.
+        space.addTarget(self, action: #selector(spaceDrag(_:event:)),
+                        for: [.touchDragInside, .touchDragOutside, .touchUpInside, .touchUpOutside])
         // Chốt qua KeyCommitQueue: arm lúc chạm, chốt lúc nhấc / bị huỷ / khi ngón
         // khác chạm xuống trước (gõ chồng ngón). touchUpOutside CŨNG chốt: ngón trượt
         // khỏi mép lúc nhấc là chuyện thường. Trackpad (spaceHold) disarm.
         armCommit(space) { [weak self] in
             guard let self else { return }
+            if self.consumeSpaceFlick() { return }    // flick đổi ngôn ngữ: không ra dấu cách
             let now = CACurrentMediaTime()
             if now - self.lastSpaceTap < 0.35 {
                 self.tapped(.doubleSpacePeriod)
@@ -2217,6 +2222,12 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     static func clickLetter() { feedback() }
     static func clickDelete() { feedback() }
     static func clickModifier() { feedback() }
+    /// Đổi ngôn ngữ bằng vuốt phím cách: chỉ rung nhẹ (theo công tắc Rung phím).
+    static func flickFeedback() {
+        guard hapticsEnabled else { return }
+        haptic.impactOccurred()
+        haptic.prepare()
+    }
 
     private func letterButton(_ s: String) -> UIView {
         let title = (shift == .off) ? s : s.uppercased()
@@ -2586,6 +2597,13 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     }
 
     @objc private func spaceTouchDown(_ sender: UIControl, event: UIEvent) {
+        if spaceFlickEnabled, plane != .emojiSearch,
+           let touch = event.allTouches?.first(where: { $0.view === sender }) {
+            flickStart = (touch.location(in: self), CACurrentMediaTime())
+            flickLast = flickStart?.p
+        } else {
+            flickStart = nil
+        }
         guard TouchLog.enabled else { return }       // Debug mode tắt ⇒ 0 việc mỗi lần space
         TouchLog.buttonDown("space", touchTimestamp: event.allTouches?.first(where: { $0.view === sender })?.timestamp)
     }
@@ -2600,6 +2618,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             // Trackpad = không gõ: nhả ra KHÔNG có dấu cách (stock), kể cả khi
             // chưa di con trỏ. cancelsTouchesInView=false nên touchUpInside vẫn tới.
             if let v = g.view { commits.disarm(ObjectIdentifier(v)) }
+            if flickStart != nil { flickStart = nil; endFlickPreview(committed: false, animated: false) }
             trackpadBegan(p, t: t)
         case .changed:
             trackpadMoved(p, t: t)
@@ -2682,12 +2701,134 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         walk(rowsContainer)
     }
 
+    // MARK: vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh (SpaceFlick, kiểu HeliBoard)
+    // Kéo ngang: nhãn ngôn ngữ hiện tại trượt theo ngón + mờ dần, nhãn kia trượt vào từ
+    // phía đối diện. Nhấc nhanh (trước ngưỡng trackpad 0,3 s) đủ ~1 phím ⇒ đổi: nhãn mới
+    // vào giữa, sáng một nhịp rồi mờ đi, logo Vᴛ/E đổi theo. Không đủ ⇒ trượt về, mờ đi.
+    var onSpaceFlick: (() -> Void)?
+    private(set) var spaceFlickEnabled = false
+    var spaceLanguage: KeyboardLanguage = .vi {
+        didSet { if oldValue != spaceLanguage { spaceLogo?.image = spaceLogoImage() } }
+    }
+    private var flickStart: (p: CGPoint, t: CFTimeInterval)?
+    private var flickLast: CGPoint?
+    private var flickCarousel: (box: UIView, cur: UILabel, next: UILabel)?
+
+    func configureSpaceFlick(enabled: Bool, language: KeyboardLanguage) {
+        spaceFlickEnabled = enabled
+        if !enabled { flickStart = nil; endFlickPreview(committed: false, animated: false) }
+        spaceLanguage = language
+        spaceLogo?.image = spaceLogoImage()
+    }
+
+    private func spaceLogoImage() -> UIImage? {
+        UIImage(named: spaceLanguage == .en ? "SpaceLogoEN" : "SpaceLogo")?.withRenderingMode(.alwaysTemplate)
+    }
+
+    private var flickKeyWidth: CGFloat { bounds.width / 10 }
+
+    @objc private func spaceDrag(_ sender: UIControl, event: UIEvent) {
+        guard let start = flickStart,
+              let touch = event.allTouches?.first(where: { $0.view === sender }) else { return }
+        let p = touch.location(in: self)
+        flickLast = p
+        guard touch.phase == .moved, let space = spaceBar else { return }
+        let dx = p.x - start.p.x, dy = p.y - start.p.y
+        let q = SpaceFlick.progress(dx: dx, dy: dy, elapsed: CACurrentMediaTime() - start.t,
+                                    span: SpaceFlick.previewSpan(keyWidth: flickKeyWidth))
+        if q == 0 {
+            if flickCarousel != nil { endFlickPreview(committed: false, animated: true) }
+            return
+        }
+        let c = flickCarousel ?? makeFlickCarousel(in: space)
+        layoutFlickCarousel(c, q: q)
+    }
+
+    /// Lúc space chốt (nhấc tay): true = flick đổi ngôn ngữ (đã xử lý, không chèn dấu cách).
+    private func consumeSpaceFlick() -> Bool {
+        guard let start = flickStart else { return false }
+        flickStart = nil
+        let p = flickLast ?? start.p
+        let dir = SpaceFlick.classify(dx: p.x - start.p.x, dy: p.y - start.p.y,
+                                      duration: CACurrentMediaTime() - start.t, keyWidth: flickKeyWidth)
+        guard let dir, spaceFlickEnabled else {
+            if flickCarousel != nil { endFlickPreview(committed: false, animated: true) }
+            return false
+        }
+        Self.flickFeedback()
+        if flickCarousel == nil, let space = spaceBar {
+            layoutFlickCarousel(makeFlickCarousel(in: space), q: dir == .left ? -0.2 : 0.2)
+        }
+        onSpaceFlick?()
+        endFlickPreview(committed: true, animated: true, direction: dir)
+        return true
+    }
+
+    private func makeFlickCarousel(in space: UIView) -> (box: UIView, cur: UILabel, next: UILabel) {
+        let box = UIView(frame: space.bounds)
+        box.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        box.clipsToBounds = true
+        box.isUserInteractionEnabled = false
+        func label(_ l: KeyboardLanguage) -> UILabel {
+            let v = UILabel()
+            v.text = l.displayName
+            v.font = .systemFont(ofSize: 16, weight: .regular)
+            v.textColor = ink
+            v.sizeToFit()
+            box.addSubview(v)
+            return v
+        }
+        let c = (box, label(spaceLanguage), label(spaceLanguage.toggled))
+        space.addSubview(box)
+        spaceLogo?.alpha = 0
+        flickCarousel = c
+        return c
+    }
+
+    /// q ∈ [-1, 1]: nhãn hiện tại lệch q·W/2 theo ngón, nhãn kia theo sau một nửa bề ngang.
+    private func layoutFlickCarousel(_ c: (box: UIView, cur: UILabel, next: UILabel), q: CGFloat) {
+        let w = c.box.bounds.width, mid = CGPoint(x: w / 2, y: c.box.bounds.height / 2)
+        let off = q * w / 2
+        c.cur.center = CGPoint(x: mid.x + off, y: mid.y)
+        c.next.center = CGPoint(x: mid.x + off - (q < 0 ? -1 : 1) * w / 2, y: mid.y)
+        c.cur.alpha = 0.6 * (1 - abs(q))
+        c.next.alpha = 0.6 * abs(q)
+    }
+
+    private func endFlickPreview(committed: Bool, animated: Bool,
+                                 direction: SpaceFlick.Direction = .right) {
+        guard let c = flickCarousel else { return }
+        flickCarousel = nil
+        let restoreLogo = { [weak self] in
+            c.box.removeFromSuperview()
+            guard let self, self.flickCarousel == nil else { return }
+            UIView.animate(withDuration: 0.2) { self.spaceLogo?.alpha = 1 }
+        }
+        guard animated else { restoreLogo(); return }
+        if committed {
+            // nhãn mới vào giữa, sáng một nhịp (~0,5 s) rồi mờ — như HeliBoard
+            UIView.animate(withDuration: 0.18, delay: 0, options: [.curveEaseOut, .beginFromCurrentState]) {
+                self.layoutFlickCarousel(c, q: direction == .left ? -1 : 1)
+                c.next.alpha = 1
+            } completion: { _ in
+                UIView.animate(withDuration: 0.3, delay: 0.5, options: [.curveEaseOut]) {
+                    c.next.alpha = 0
+                } completion: { _ in restoreLogo() }
+            }
+        } else {
+            UIView.animate(withDuration: 0.15, delay: 0, options: [.curveEaseOut, .beginFromCurrentState]) {
+                self.layoutFlickCarousel(c, q: 0.0001)
+                c.cur.alpha = 0; c.next.alpha = 0
+            } completion: { _ in restoreLogo() }
+        }
+    }
+
     /// Stock iOS flashes the layout name ("English (US)") on the spacebar when
     /// the keyboard appears. Same here: "ViệtTelex" for ~700ms, then fade.
     func showLanguageBadge() {
         guard let space = spaceBar else { return }
         let l = UILabel()
-        l.text = "ViệtTelex"
+        l.text = spaceLanguage == .en ? KeyboardLanguage.en.displayName : "ViệtTelex"
         l.font = .systemFont(ofSize: 16, weight: .regular)
         l.textColor = ink
         l.translatesAutoresizingMaskIntoConstraints = false

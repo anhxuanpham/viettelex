@@ -323,6 +323,9 @@ fun TinhNangTab() {
         RowDivider()
         BoolToggle(Keys.SHOW_SPACE_LOGO, Prefs.D.showSpaceLogo, "Hiện logo Vᴛ", "Logo mờ ở góc phải phím space.")
         RowDivider()
+        BoolToggle(Keys.SPACE_SWIPE_LANGUAGE, Prefs.D.spaceSwipeLanguage, "Vuốt phím cách để đổi Tiếng Việt / Tiếng Anh",
+            "Vuốt nhanh phím cách sang trái hoặc phải để đổi. Tiếng Anh: gõ nguyên văn (không bỏ dấu), gợi ý và gõ vuốt theo từ điển tiếng Anh, logo phím cách thành E. Giữ phím cách rồi kéo vẫn là di con trỏ.")
+        RowDivider()
         BoolToggle(Keys.HAPTIC_FEEDBACK, Prefs.D.hapticFeedback, "Rung phím", "Rung nhẹ mỗi lần chạm phím.")
         RowDivider()
         BoolToggle(Keys.KEY_PREVIEW, Prefs.D.keyPreview, "Phóng to chữ khi bấm",

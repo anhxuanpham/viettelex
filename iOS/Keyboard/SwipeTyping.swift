@@ -196,7 +196,8 @@ final class SwipeTyping {
     func resolve(_ path: SwipePath, contextWords: [String], count: @escaping (String) -> Int = { _ in 0 },
                  prev: String? = nil, bigram: SyllableBigram? = SyllableBigram.shared,
                  prev2: String? = nil, lm: SyllableLM? = SyllableLM.shared,
-                 english: SwipeEnglishPrior? = nil, case sc: SwipeCase) -> Choice? {
+                 english: SwipeEnglishPrior? = nil, englishOnly: Bool = false,
+                 case sc: SwipeCase) -> Choice? {
         guard layout != nil, path.count >= 2 else { return nil }
         let ctx = Context(next: Set(contextWords.map { $0.lowercased() }), count: count,
                           prev: prev, bigram: bigram, prev2: prev2, lm: lm)
@@ -215,7 +216,13 @@ final class SwipeTyping {
             }
             return d.decode(path, topK: 5, context: ctx.folded, english: english, englishContext: enCtx)
         }
-        return Self.pick(cands, context: ctx, case: sc)
+        return Self.pick(englishOnly ? Self.englishOnly(cands) : cands, context: ctx, case: sc)
+    }
+
+    /// Chế độ Tiếng Anh (vuốt phím cách): chỉ giữ ứng viên tiếng Anh — decode chạy với
+    /// `SwipeLangContext.onlyEnglishPrior` để top-K không bị âm tiết Việt chiếm chỗ.
+    static func englishOnly(_ cands: [SwipeCandidate]) -> [SwipeCandidate] {
+        cands.filter { $0.lang == .en }
     }
 
     /// Phần thuần: từ top-K dạng không dấu → từ chèn + phương án. Phương án = các biến
@@ -280,10 +287,10 @@ final class SwipeTyping {
     /// Nhấc tay: giải mã rồi chèn. nil = không nhận ra gì (không đụng màn hình).
     func finish(_ path: SwipePath, case sc: SwipeCase, contextWords: [String],
                 count: @escaping (String) -> Int = { _ in 0 }, prev: String? = nil,
-                prev2: String? = nil, english: SwipeEnglishPrior? = nil,
+                prev2: String? = nil, english: SwipeEnglishPrior? = nil, englishOnly: Bool = false,
                 bridge: EngineBridge, proxy: TextProxyLike) -> Outcome? {
         guard let r = resolve(path, contextWords: contextWords, count: count, prev: prev,
-                              prev2: prev2, english: english, case: sc) else {
+                              prev2: prev2, english: english, englishOnly: englishOnly, case: sc) else {
             TouchLog.write("swipe: không có ứng viên (pts=\(path.count))")
             return nil
         }

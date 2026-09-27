@@ -82,6 +82,39 @@ object SwipeEnglish {
     }
 
     fun contains(word: String): Boolean = indexOf(word) >= 0
+
+    /**
+     * Chế độ Tiếng Anh (vuốt phím cách): từ bắt đầu bằng [typed] (a–z, không phân biệt hoa
+     * thường), tần suất giảm dần, tối đa [limit], bỏ chính từ đang gõ. Chữ hoa theo chữ đang
+     * gõ ("Hel" → "Hello", "HEL" → "HELLO"). Chữ ngoài a–z ⇒ rỗng. Giống iOS.
+     */
+    fun completions(typed: String, limit: Int = 24, lex: Lexicon = lexicon): List<VNSuggest.Match> {
+        val low = typed.lowercase()
+        if (low.isEmpty() || limit <= 0 || low.any { it !in 'a'..'z' }) return emptyList()
+        val a = lex.words
+        var lo = 0; var hi = a.size
+        while (lo < hi) { val mid = (lo + hi) / 2; if (a[mid] < low) lo = mid + 1 else hi = mid }
+        val hits = ArrayList<Int>()
+        var i = lo
+        while (i < a.size && a[i].startsWith(low)) { if (a[i] != low) hits.add(i); i++ }
+        hits.sortWith { x, y -> if (lex.freq[x] != lex.freq[y]) lex.freq[y] - lex.freq[x] else x - y }
+        return hits.take(limit).map { VNSuggest.Match(matchCase(a[it], typed), lex.freq[it]) }
+    }
+
+    /** Từ phổ biến nhất (đệm thanh gợi ý ở chế độ Tiếng Anh). */
+    fun topWords(limit: Int, lex: Lexicon = lexicon): List<String> {
+        if (limit <= 0) return emptyList()
+        return lex.freq.indices.sortedWith { x, y -> if (lex.freq[x] != lex.freq[y]) lex.freq[y] - lex.freq[x] else x - y }
+            .take(limit).map { lex.words[it] }
+    }
+    val top: List<String> by lazy { topWords(12) }
+
+    fun matchCase(w: String, typed: String): String {
+        val f = typed.firstOrNull() ?: return w
+        if (!f.isUpperCase()) return w
+        if (typed.length > 1 && typed.all { it.isUpperCase() }) return w.uppercase()
+        return w.replaceFirstChar { it.uppercaseChar() }
+    }
 }
 
 /** Tham số tiếng Anh cho một lần decode (xem [SwipeLangContext.prior]). */
@@ -100,6 +133,8 @@ object SwipeLangContext {
     val ENGLISH = SwipeEnglishPrior(bias = 0.2f, margin = 0f)
     val STRONG_ENGLISH = SwipeEnglishPrior(bias = 0.5f, margin = 0f)
     val WEAK_ENGLISH = SwipeEnglishPrior(bias = -0.3f, margin = 0.3f)
+    /** Chế độ Tiếng Anh: đẩy hẳn tiếng Anh lên (ứng viên Việt bị lọc sau decode). */
+    val ONLY_ENGLISH = SwipeEnglishPrior(bias = 4f, margin = 0f)
 
     /** Phân loại một từ đã có trên màn hình; [swipedEnglish] = vừa vuốt ra như từ tiếng Anh. */
     fun classify(word: String?, swipedEnglish: Boolean = false): Kind {

@@ -49,12 +49,36 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
         var inserted = ""     // chữ phím đó đã chèn
         var ownBoundary = false
         var valid = false
+        var enWord = ""
     }
     private val undo = LetterUndo()
+
+    /**
+     * Chế độ Tiếng Anh (vuốt phím cách): phím chữ chèn NGUYÊN VĂN (không Telex/VNI), từ đang gõ
+     * nằm ở [enWord] — gợi ý tiếng Anh, gõ tắt vẫn bung. Đổi giữa chừng qua [setEnglish]. Giống iOS.
+     */
+    var englishMode = false
+        private set
+    private var enWord = ""
+
+    /**
+     * Đổi Tiếng Việt ↔ Tiếng Anh: chốt từ đang gõ như ranh giới rỗng (auto-restore, không gõ
+     * tắt, không chèn ký tự nào) rồi đổi chế độ. Trả từ đã chốt (caller học).
+     */
+    fun setEnglish(on: Boolean, proxy: TextProxy): String {
+        if (on == englishMode) return ""
+        val final = if (isComposing) boundary("", proxy, expand = false) else ""
+        englishMode = on
+        engine.reset(); engine.forgetLastCommit()
+        // phím kế là đầu từ MỚI của ngôn ngữ kia — không nạp lại / nối vào từ vừa chốt
+        enWord = ""; undo.valid = false; afterOwnBoundary = true
+        return final
+    }
 
     private fun checkpoint(ownBoundary: Boolean) {
         if (!trackLetterUndo) return
         engine.copyInto(undo.engine)
+        undo.enWord = enWord
         undo.ownBoundary = ownBoundary
     }
 
@@ -85,6 +109,7 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
         if (n > 0) proxy.deleteCodePoints(n)
         if (undo.removed.isNotEmpty()) proxy.insertText(undo.removed)
         undo.engine.copyInto(engine)
+        enWord = undo.enWord
         afterOwnBoundary = undo.ownBoundary
         TouchLog.write("undo letter: -$n +${Cp.count(undo.removed)}")
         return true
@@ -98,6 +123,7 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
         undo.valid = false
         expansionUndo = null
         afterOwnBoundary = false
+        enWord = ""
         val ok = engine.seed(word)
         if (!ok) engine.reset()
         return ok
@@ -111,6 +137,7 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
         undo.valid = false
         expansionUndo = null
         afterOwnBoundary = false
+        enWord = ""
         engine.reset()
         engine.forgetLastCommit()
     }
@@ -141,6 +168,14 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
         expansionUndo = null
         if (proxy.isSecure || passthrough) {
             checkpoint(afterOwnBoundary)
+            proxy.insertText(ch.toString())
+            recordUndo(TelexAction.Passthrough, "", ch.toString())
+            return
+        }
+        if (englishMode) {
+            checkpoint(afterOwnBoundary)
+            afterOwnBoundary = false
+            enWord += ch
             proxy.insertText(ch.toString())
             recordUndo(TelexAction.Passthrough, "", ch.toString())
             return
@@ -176,7 +211,7 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
      * từ ⇒ caller chèn số như ký hiệu (boundary) — "2026" vẫn là số. Telex ⇒ luôn false.
      */
     fun vniDigit(ch: Char, proxy: TextProxy): Boolean {
-        if (!settings.vniMode || ch !in '0'..'9' || proxy.isSecure || passthrough) return false
+        if (!settings.vniMode || englishMode || ch !in '0'..'9' || proxy.isSecure || passthrough) return false
         if (!engine.isEmpty) { letter(ch, proxy); return true }
         if (!settings.reEditWords || afterOwnBoundary || !ReEdit.isTransformKey(ch, true)) return false
         undo.valid = false
@@ -199,6 +234,12 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
         afterOwnBoundary = text.isNotEmpty() && !Character.isLetterOrDigit(text.codePointBefore(text.length))
         // Gõ tắt TRƯỚC tự khôi phục tiếng Anh.
         if (expand) tryExpandShortcut(text, proxy, ::put)?.let { return it }
+        if (englishMode) {
+            val word = enWord
+            enWord = ""
+            put(text)
+            return word
+        }
         val before = engine.composed
         val action = engine.commitBoundary(settings.autoRestore)
         if (action is TelexAction.Replace && action.backspaces > 0 && !proxy.confirmTail(before)) {
@@ -253,6 +294,11 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
         }
         if (proxy.isSecure || passthrough) { proxy.deleteBackward(); return false }
         afterOwnBoundary = false
+        if (englishMode) {
+            if (enWord.isNotEmpty()) enWord = enWord.dropLast(1)
+            proxy.deleteBackward()
+            return false
+        }
         if (engine.isEmpty) {
             val reopened = settings.reEditWords && engine.canReopenLastCommit && tryReopen(proxy)
             if (!reopened) { engine.forgetLastCommit(); proxy.deleteBackward() }
@@ -295,7 +341,7 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
     fun forgetLastCommit() { engine.forgetLastCommit(); expansionUndo = null }
 
     /** Đổi ô / con trỏ dời / ẩn bàn phím → quên từ + ngữ cảnh tiếng Anh. */
-    fun reset() { engine.reset(); engine.resetContext(); afterOwnBoundary = false; undo.valid = false; expansionUndo = null }
+    fun reset() { engine.reset(); engine.resetContext(); afterOwnBoundary = false; undo.valid = false; expansionUndo = null; enWord = "" }
 
     // MARK: gõ tắt (port iOS EngineBridge.tryExpandShortcut)
 
@@ -307,9 +353,9 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
     private fun tryExpandShortcut(text: String, proxy: TextProxy, put: (String) -> Unit): String? {
         val table = settings.shortcuts
         if (!settings.shortcutsEnabled || !shortcutsAllowed || table.isEmpty) return null
-        if (!engine.isEmpty && ShortcutTable.triggersWord(text)) {
-            val composed = engine.composed
-            val e = table.wordExpansion(composed, engine.rawKeystrokes)
+        if (!typedEmpty && ShortcutTable.triggersWord(text)) {
+            val composed = typedWord
+            val e = table.wordExpansion(composed, typedRaw)
             if (e != null) {
                 val ctx = proxy.contextBeforeInput()
                 if (ShortcutTable.isGlued(composed, ctx) || !proxy.confirmTail(composed)) return null
@@ -319,7 +365,7 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
         if (table.hasTokenKeys && ShortcutTable.triggersToken(text) && !proxy.hasSelection) {
             val ctx = proxy.contextBeforeInput() ?: return null
             val (token, e) = table.tokenExpansion(ctx) ?: return null
-            if (!engine.isEmpty && !token.endsWith(engine.composed)) return null
+            if (!typedEmpty && !token.endsWith(typedWord)) return null
             return applyExpansion(token, e, text, proxy, put)
         }
         return null
@@ -328,6 +374,7 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
     private fun applyExpansion(typed: String, expansion: String, text: String, proxy: TextProxy,
                                put: (String) -> Unit): String {
         engine.reset()
+        enWord = ""
         engine.forgetLastCommit()                 // ⌫ không mở lại chữ tắt qua engine
         engine.noteExternalWord(false)
         val n = Cp.count(typed)
@@ -353,6 +400,7 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
         proxy.deleteCodePoints(Cp.count(tail))
         proxy.insertText(u.typed + u.boundary)
         engine.reset()
+        enWord = ""
         engine.forgetLastCommit()
         afterOwnBoundary = u.boundary.isNotEmpty() && !Character.isLetterOrDigit(u.boundary.codePointBefore(u.boundary.length))
         TouchLog.write("shortcut undo: -${Cp.count(u.expansion)} +${Cp.count(u.typed)}")
@@ -362,13 +410,18 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
     /** Nội dung sẽ bung nếu gõ ranh giới ngay bây giờ (thanh gợi ý). Chỉ khoá chữ. */
     val shortcutPreview: String?
         get() {
-            if (!settings.shortcutsEnabled || !shortcutsAllowed || passthrough || engine.isEmpty || settings.shortcuts.isEmpty) return null
-            return settings.shortcuts.wordExpansion(engine.composed, engine.rawKeystrokes)
+            if (!settings.shortcutsEnabled || !shortcutsAllowed || passthrough || typedEmpty || settings.shortcuts.isEmpty) return null
+            return settings.shortcuts.wordExpansion(typedWord, typedRaw)
         }
 
-    val isComposing: Boolean get() = !engine.isEmpty
-    val composedWord: String get() = engine.composed
-    val rawWord: String get() = engine.rawKeystrokes
+    /** Từ đang gõ tay (engine, hoặc nguyên văn ở chế độ Tiếng Anh) — cho gõ tắt. */
+    private val typedEmpty: Boolean get() = if (englishMode) enWord.isEmpty() else engine.isEmpty
+    private val typedWord: String get() = if (englishMode) enWord else engine.composed
+    private val typedRaw: String get() = if (englishMode) enWord else engine.rawKeystrokes
+
+    val isComposing: Boolean get() = !typedEmpty
+    val composedWord: String get() = typedWord
+    val rawWord: String get() = typedRaw
     val autoFixAdjacent: Boolean get() = settings.autoFixAdjacent
 
     /** Cache AdjacentKeyFixer theo raw — sống cùng bridge (cùng setting). */
@@ -386,7 +439,7 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
     }
 
     /** Từ boundary SẼ chốt (peek non-mutating). */
-    val predictedCommit: String get() = engine.peekCommitText(settings.autoRestore)
+    val predictedCommit: String get() = if (englishMode) enWord else engine.peekCommitText(settings.autoRestore)
 
     private fun apply(action: TelexAction, literal: String, proxy: TextProxy) {
         when (action) {

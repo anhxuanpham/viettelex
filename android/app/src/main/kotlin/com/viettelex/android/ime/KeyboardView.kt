@@ -16,6 +16,8 @@ import com.viettelex.keyboard.EmojiSearchSession
 import com.viettelex.keyboard.GestureClassifier
 import com.viettelex.keyboard.Key
 import com.viettelex.keyboard.KeyCommitQueue
+import com.viettelex.keyboard.KeyboardLanguage
+import com.viettelex.keyboard.SpaceFlick
 import com.viettelex.keyboard.SwipeLayout
 import com.viettelex.keyboard.SwipePath
 import com.viettelex.keyboard.SwipeSuggest
@@ -54,6 +56,8 @@ class KeyboardView(
         fun onTrackpadMove(delta: Int, vertical: Boolean) { onKey(Key.MoveCursor(delta, vertical)) }
         /** Nhả trackpad (sau bước cuối): IME cập nhật auto-shift + gợi ý một lần. */
         fun onTrackpadEnd() {}
+        /** Vuốt nhanh phím cách (chỉ khi [configureSpaceFlick] bật): đổi Tiếng Việt ↔ Tiếng Anh. */
+        fun onSpaceFlick() {}
         /** Giữ ⌫ > 3 s — xoá theo từ. */
         fun onDeleteWord()
         /** Vuốt trái trên ⌫ vừa vượt ngưỡng; false ⇒ không hỗ trợ ở ô này (bỏ lượt vuốt). */
@@ -184,6 +188,7 @@ class KeyboardView(
         colorFilter = android.graphics.PorterDuffColorFilter(theme.withAlpha(theme.ink, 0.16f), android.graphics.PorterDuff.Mode.SRC_IN)
     }
     private val logo: android.graphics.Bitmap? by lazy { android.graphics.BitmapFactory.decodeResource(resources, R.drawable.ime_space_logo) }
+    private val logoEn: android.graphics.Bitmap? by lazy { android.graphics.BitmapFactory.decodeResource(resources, R.drawable.ime_space_logo_en) }
     private val logoRect = android.graphics.RectF()
 
     /**
@@ -477,6 +482,7 @@ class KeyboardView(
     fun onHidden() {
         cancelAllTouches()
         badgeAnim?.cancel(); badgeAlpha = 0f
+        flickAnim?.cancel(); flickAnim = null; carouselOn = false
         emojiPane.onHidden()
         searchBar.reset()
         templatesPane.onHidden()
@@ -664,10 +670,12 @@ class KeyboardView(
                 // Badge "ViệtTelex" lúc hiện rồi mờ dần về logo Vᴛ (như iOS).
                 if (badgeAlpha > 0f) {
                     badgePaint.alpha = (badgeAlpha * contentAlpha).toInt()
-                    c.drawText(badgeText, cx, cy + badgeOff, badgePaint)
+                    c.drawText(if (spaceLanguage == KeyboardLanguage.EN) KeyboardLanguage.EN.displayName else badgeText,
+                        cx, cy + badgeOff, badgePaint)
                 }
+                if (carouselOn) { drawCarousel(c, k, contentAlpha); return }
                 if (showLogo && badgeAlpha < 1f) {
-                    val bmp = logo
+                    val bmp = if (spaceLanguage == KeyboardLanguage.EN) logoEn else logo
                     if (bmp != null) {
                         logoPaint.alpha = ((1f - badgeAlpha) * contentAlpha).toInt()
                         c.drawBitmap(bmp, null, logoRect, logoPaint)
@@ -678,6 +686,108 @@ class KeyboardView(
     }
 
     private val badgeOff = theme.centerOffset(badgePaint)
+
+    // MARK: vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh (SpaceFlick, kiểu HeliBoard)
+    // Kéo ngang: nhãn ngôn ngữ hiện tại trượt theo ngón + mờ dần, nhãn kia trượt vào từ phía
+    // đối diện. Nhấc nhanh (trước ngưỡng trackpad) đủ ~1 phím ⇒ đổi: nhãn mới vào giữa, sáng
+    // một nhịp rồi mờ đi, logo Vᴛ/E đổi theo. Không đủ ⇒ trượt về, mờ đi. Giống iOS.
+    private var spaceFlickEnabled = false
+    var spaceLanguage = KeyboardLanguage.VI
+        set(v) { if (field != v) { field = v; invalidateSpace() } }
+    private var flickDownT = 0L
+    private var carouselOn = false
+    private var carouselFrom = KeyboardLanguage.VI
+    private var carQ = 0f
+    private var carCurA = 0f
+    private var carNextA = 0f
+    private var flickAnim: android.animation.Animator? = null
+    private val flickPaint = theme.text(16f)
+    private val flickOff = theme.centerOffset(flickPaint)
+
+    fun configureSpaceFlick(enabled: Boolean, language: KeyboardLanguage) {
+        spaceFlickEnabled = enabled
+        if (!enabled && carouselOn) { flickAnim?.cancel(); carouselOn = false }
+        spaceLanguage = language
+        invalidateSpace()
+    }
+
+    /** Bề rộng phím chữ (dp) — thước ngưỡng flick. */
+    private fun flickKeyWidthDp(): Float =
+        (keys.firstOrNull { it.kind == KeyKind.LETTER || it.kind == KeyKind.CHAR }?.width ?: (width / 10f)) / d
+
+    private fun moveFlick(dx: Float, dy: Float) {
+        val q = SpaceFlick.progress(dx / d, dy / d, SystemClock.uptimeMillis() - flickDownT,
+            SpaceFlick.previewSpan(flickKeyWidthDp()))
+        if (q == 0f) { if (carouselOn && flickAnim == null) retractCarousel(); return }
+        if (!carouselOn || flickAnim != null) { flickAnim?.cancel(); flickAnim = null; carouselOn = true; carouselFrom = spaceLanguage }
+        setCarousel(q)
+    }
+
+    private fun setCarousel(q: Float) {
+        carQ = q; carCurA = 0.6f * (1 - abs(q)); carNextA = 0.6f * abs(q)
+        invalidateSpace()
+    }
+
+    private fun endFlick(k: LaidKey, dx: Float, dy: Float, t: Long, cancelled: Boolean) {
+        val dir = if (cancelled || !commits.isArmed(k) || plane == Plane.EMOJI_SEARCH) null
+            else SpaceFlick.classify(dx / d, dy / d, t - flickDownT, flickKeyWidthDp())
+        if (dir == null) { if (carouselOn) retractCarousel(); return }
+        commits.disarm(k)                 // flick không ra dấu cách
+        feedback.tick(this)
+        if (!carouselOn) { carouselOn = true; carouselFrom = spaceLanguage; setCarousel(if (dir == SpaceFlick.Direction.LEFT) -0.2f else 0.2f) }
+        listener?.onSpaceFlick()
+        // nhãn mới vào giữa, sáng một nhịp (~0,5 s) rồi mờ — như HeliBoard
+        val q0 = carQ; val n0 = carNextA; val c0 = carCurA
+        val target = if (dir == SpaceFlick.Direction.LEFT) -1f else 1f
+        val slide = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 180; interpolator = DecelerateInterpolator()
+            addUpdateListener { val f = it.animatedValue as Float
+                carQ = q0 + (target - q0) * f; carNextA = n0 + (1 - n0) * f; carCurA = c0 * (1 - f); invalidateSpace() }
+        }
+        val fade = ValueAnimator.ofFloat(1f, 0f).apply {
+            startDelay = 500; duration = 300
+            addUpdateListener { carNextA = it.animatedValue as Float; invalidateSpace() }
+        }
+        runCarousel(android.animation.AnimatorSet().apply { playSequentially(slide, fade) })
+    }
+
+    private fun retractCarousel() {
+        val q0 = carQ; val n0 = carNextA; val c0 = carCurA
+        runCarousel(ValueAnimator.ofFloat(1f, 0f).apply {
+            duration = 150
+            addUpdateListener { val f = it.animatedValue as Float
+                carQ = q0 * f; carNextA = n0 * f; carCurA = c0 * f; invalidateSpace() }
+        })
+    }
+
+    private fun runCarousel(a: android.animation.Animator) {
+        flickAnim?.cancel()
+        flickAnim = a
+        a.addListener(object : android.animation.AnimatorListenerAdapter() {
+            private var canceled = false
+            override fun onAnimationCancel(animation: android.animation.Animator) { canceled = true }
+            override fun onAnimationEnd(animation: android.animation.Animator) {
+                if (flickAnim === a) flickAnim = null
+                if (!canceled) { carouselOn = false; invalidateSpace() }
+            }
+        })
+        a.start()
+    }
+
+    /** q ∈ [-1, 1]: nhãn hiện tại lệch q·W/2 theo ngón, nhãn kia theo sau một nửa bề ngang. */
+    private fun drawCarousel(c: Canvas, k: LaidKey, contentAlpha: Int) {
+        val w = k.width
+        val off = carQ * w / 2
+        val y = k.centerY + flickOff
+        c.save()
+        c.clipRect(k.left, k.top, k.right, k.bottom)
+        flickPaint.alpha = (carCurA * contentAlpha).toInt()
+        if (flickPaint.alpha > 0) c.drawText(carouselFrom.displayName, k.centerX + off, y, flickPaint)
+        flickPaint.alpha = (carNextA * contentAlpha).toInt()
+        if (flickPaint.alpha > 0)
+            c.drawText(carouselFrom.toggled.displayName, k.centerX + off - (if (carQ < 0) -1 else 1) * w / 2, y, flickPaint)
+        c.restore()
+    }
 
     private fun drawLabel(c: Canvas, s: String, cx: Float, cy: Float, p: Paint, off: Float, alpha: Int) {
         p.alpha = alpha
@@ -787,6 +897,7 @@ class KeyboardView(
                 press(k)
                 commits.arm(k, spaceFire)
                 spacePtr = pid
+                flickDownT = e.eventTime
                 removeCallbacks(spaceHoldRun)
                 postDelayed(spaceHoldRun, SPACE_HOLD_MS)
             }
@@ -868,7 +979,10 @@ class KeyboardView(
                             Choreographer.getInstance().postFrameCallback(trackpadFrame)
                         }
                     }
-                } else if (movedFar) removeCallbacks(spaceHoldRun)
+                } else {
+                    if (movedFar) removeCallbacks(spaceHoldRun)
+                    if (spaceFlickEnabled && plane != Plane.EMOJI_SEARCH) moveFlick(x - ptrDownX[pid], y - ptrDownY[pid])
+                }
             }
             k.kind == KeyKind.BACKSPACE && pid == bsPtr -> moveBackspace(k, x - ptrDownX[pid], y - ptrDownY[pid], movedFar)
             pid == commaPtr && movedFar -> cancelVoiceHold()
@@ -914,6 +1028,7 @@ class KeyboardView(
             KeyKind.SPACE -> {
                 if (pid == spacePtr) {
                     removeCallbacks(spaceHoldRun); spacePtr = -1
+                    if (spaceFlickEnabled && !trackpad) endFlick(k, x - ptrDownX[pid], y - ptrDownY[pid], t, cancelled)
                     // Cancel VẪN chốt (KeyCommitQueue); trackpad đã disarm nên không có space.
                     commits.release(k)
                     if (trackpad) endTrackpad()
@@ -1108,6 +1223,7 @@ class KeyboardView(
         val k = spaceKey ?: return
         if (spacePtr < 0) return
         trackpad = true
+        if (carouselOn) { flickAnim?.cancel(); carouselOn = false }
         trackpadBatch.clear()
         trackpadGesture.begin(lastX[spacePtr] / d, lastY[spacePtr] / d, SystemClock.uptimeMillis())
         balloon.hide(); balloonOwner = null

@@ -225,6 +225,9 @@ object SwipeSuggest {
         return Context(next, next.mapTo(HashSet()) { fold(it) }, count, prev1, bigram, english, prev2, lm)
     }
 
+    /** Chế độ Tiếng Anh (vuốt phím cách): chỉ giữ ứng viên tiếng Anh. Giống iOS SwipeTyping.englishOnly. */
+    fun englishOnly(cands: List<SwipeCandidate>): List<SwipeCandidate> = cands.filter { it.lang == SwipeLang.EN }
+
     /** Từ hiển thị của một ứng viên: tiếng Anh = chính nó; Việt = bung dấu. */
     private fun wordsFor(c: SwipeCandidate, limit: Int, wordCtx: ((String) -> Float)?,
                          lambdaFreq: Float = LAMBDA_FREQ): List<String> =

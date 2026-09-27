@@ -862,6 +862,9 @@ struct TinhNangSections: View {
     /// Chọn phím theo ngữ cảnh (thử nghiệm) — mặc định BẬT, xem KeyboardSettings.smartTouch.
     @AppStorage("smartTouch", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var smartTouch = true
+    /// Vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh — mặc định TẮT (KeyboardSettings.spaceSwipeLanguage).
+    @AppStorage("spaceSwipeLanguage", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var spaceSwipeLanguage = false
 
     var body: some View {
         Section {
@@ -908,6 +911,7 @@ struct TinhNangSections: View {
                 Label("Theme & ảnh nền", systemImage: "paintpalette")
             }
             settingToggle("Hiện logo Vᴛ", "Logo mờ ở góc phải phím space.", isOn: $showSpaceLogo)
+            settingToggle("Vuốt phím cách để đổi Tiếng Việt / Tiếng Anh", "Vuốt nhanh phím cách sang trái hoặc phải để đổi. Tiếng Anh: gõ nguyên văn (không bỏ dấu), gợi ý và gõ vuốt theo từ điển tiếng Anh, logo phím cách thành E. Giữ phím cách rồi kéo vẫn là di con trỏ.", isOn: $spaceSwipeLanguage)
             settingToggle("Phóng to chữ khi bấm", "Ô chữ lớn nổi lên trên phím vừa chạm (như iPhone). Tắt cho gọn và nhẹ máy hơn.", isOn: $keyPreview)
             settingToggle("Rung phím", "Rung nhẹ mỗi lần chạm phím.", isOn: $hapticFeedback)
             if hapticFeedback {

@@ -95,6 +95,43 @@ enum SwipeEnglish {
     }
 
     static func contains(_ word: String) -> Bool { index(of: word) != nil }
+
+    /// Chế độ Tiếng Anh (vuốt phím cách): từ bắt đầu bằng `typed` (a–z, không phân biệt
+    /// hoa thường), tần suất giảm dần, tối đa `limit`, bỏ chính từ đang gõ. Chữ hoa theo
+    /// chữ đang gõ ("Hel" → "Hello", "HEL" → "HELLO"). Chữ ngoài a–z ⇒ [].
+    static func completions(_ typed: String, limit: Int = 24, in lex: Lexicon = lexicon) -> [VNSuggest.Match] {
+        let low = typed.lowercased()
+        guard !low.isEmpty, limit > 0,
+              low.unicodeScalars.allSatisfy({ $0.value >= 97 && $0.value <= 122 }) else { return [] }
+        let a = lex.words
+        var lo = 0, hi = a.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if a[mid] < low { lo = mid + 1 } else { hi = mid }
+        }
+        var hits: [(f: UInt8, i: Int)] = []
+        var i = lo
+        while i < a.count, a[i].hasPrefix(low) {
+            if a[i] != low { hits.append((lex.freq[i], i)) }
+            i += 1
+        }
+        hits.sort { $0.f != $1.f ? $0.f > $1.f : $0.i < $1.i }
+        return hits.prefix(limit).map { VNSuggest.Match(word: matchCase(a[$0.i], typed), freq: Int($0.f)) }
+    }
+
+    /// Từ phổ biến nhất (đệm thanh gợi ý ở chế độ Tiếng Anh khi chưa gõ gì).
+    static func topWords(limit: Int, in lex: Lexicon = lexicon) -> [String] {
+        guard limit > 0 else { return [] }
+        return lex.freq.indices.sorted { lex.freq[$0] != lex.freq[$1] ? lex.freq[$0] > lex.freq[$1] : $0 < $1 }
+            .prefix(limit).map { lex.words[$0] }
+    }
+    static let top: [String] = topWords(limit: 12)
+
+    static func matchCase(_ w: String, _ typed: String) -> String {
+        guard let f = typed.first, f.isUppercase else { return w }
+        if typed.count > 1, typed.allSatisfy({ $0.isUppercase }) { return w.uppercased() }
+        return w.prefix(1).uppercased() + w.dropFirst()
+    }
 }
 
 /// Tham số tiếng Anh cho một lần decode (xem SwipeLangContext.prior).
@@ -119,6 +156,8 @@ enum SwipeLangContext {
     static let englishPrior = SwipeEnglishPrior(bias: 0.2, margin: 0)
     static let strongEnglishPrior = SwipeEnglishPrior(bias: 0.5, margin: 0)
     static let weakEnglishPrior = SwipeEnglishPrior(bias: -0.3, margin: 0.3)
+    /// Chế độ Tiếng Anh: đẩy hẳn tiếng Anh lên (ứng viên Việt bị lọc bỏ sau decode).
+    static let onlyEnglishPrior = SwipeEnglishPrior(bias: 4, margin: 0)
 
     /// Phân loại một từ đã có trên màn hình. `swipedEnglish` = từ đó vừa được vuốt ra
     /// như từ tiếng Anh (nhãn decoder) — chắc chắn nhất.

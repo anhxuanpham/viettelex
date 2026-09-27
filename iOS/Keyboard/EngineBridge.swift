@@ -78,6 +78,8 @@ struct KeyboardSettings {
     /// Nút "Dán" nội dung vừa copy trên thanh gợi ý — mặc định BẬT; tắt ⇒ không hỏi
     /// UIPasteboard (XPC) ở đầu từ.
     var pasteButton = true
+    /// Vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh (mặc định TẮT ⇒ luôn Tiếng Việt).
+    var spaceSwipeLanguage = false
 
     static func load() -> KeyboardSettings {
         var s = KeyboardSettings()
@@ -106,7 +108,8 @@ struct KeyboardSettings {
         }
         let flags: [(String, WritableKeyPath<KeyboardSettings, Bool>)] = [
             ("addTonesChip", \.addTonesChip), ("numberChips", \.numberChips),
-            ("emojiSuggest", \.emojiSuggest), ("pasteButton", \.pasteButton)]
+            ("emojiSuggest", \.emojiSuggest), ("pasteButton", \.pasteButton),
+            ("spaceSwipeLanguage", \.spaceSwipeLanguage)]
         for (k, kp) in flags where d.object(forKey: k) != nil { s[keyPath: kp] = d.bool(forKey: k) }
         s.learnWords = s.showSuggestions   // bật gợi ý = bật học (quyết định 2026-07-24)
         return s
@@ -163,6 +166,7 @@ final class EngineBridge {
         let ownBoundary: Bool
         var swipe: SwipeOpen? = nil
         var settled: SettledCommit? = nil
+        var enWord = ""
     }
     private var letterUndo: LetterUndo?
     /// Có ghi checkpoint huỷ phím chữ không. Controller chỉ bật khi có người dùng nó
@@ -190,6 +194,11 @@ final class EngineBridge {
     /// vuốt mở lại, học sớm là học hai lần. Caller lấy bằng `takeSettledCommit()` ở
     /// thao tác kế tiếp (lúc đó phím chữ kia không còn huỷ được).
     private var settledCommit: SettledCommit?
+
+    /// Chế độ Tiếng Anh (vuốt phím cách): phím chữ chèn NGUYÊN VĂN (không Telex/VNI), từ đang
+    /// gõ nằm ở `enWord` — gợi ý tiếng Anh, gõ tắt vẫn bung. Đổi giữa chừng qua `setEnglish`.
+    private(set) var englishMode = false
+    private var enWord = ""
 
     init(settings: KeyboardSettings = .load()) {
         self.settings = settings
@@ -221,6 +230,19 @@ final class EngineBridge {
         letterUndo?.settled = settledCommit
     }
 
+    /// Đổi Tiếng Việt ↔ Tiếng Anh: chốt từ đang gõ như ranh giới rỗng (auto-restore, không
+    /// gõ tắt, không chèn ký tự nào) rồi đổi chế độ. Trả từ đã chốt (caller học).
+    @discardableResult
+    func setEnglish(_ on: Bool, proxy: TextProxyLike) -> String {
+        guard on != englishMode else { return "" }
+        let final = isComposing ? boundary("", proxy: proxy, expand: false) : ""
+        englishMode = on
+        engine.reset(); engine.forgetLastCommit()
+        // phím kế là đầu từ MỚI của ngôn ngữ kia — không nạp lại / nối vào từ vừa chốt
+        enWord = ""; letterUndo = nil; swipeOpen = nil; lastWasOwnBoundary = true
+        return final
+    }
+
     /// Kiểu gõ đang là VNI (controller định tuyến phím số qua `vniDigit`).
     var vniMode: Bool { settings.vniMode }
 
@@ -229,7 +251,7 @@ final class EngineBridge {
     /// như macOS); engine trống ⇒ chỉ thử sửa dấu từ ngay trước con trỏ (1–5/0/7/8).
     /// false = ngoài từ ⇒ caller chèn số như ký hiệu (boundary) — "2026" vẫn là số.
     func vniDigit(_ ch: Character, proxy: TextProxyLike) -> Bool {
-        guard settings.vniMode, ch.isASCII, ch.isNumber, !proxy.isSecure, !passthrough else { return false }
+        guard settings.vniMode, !englishMode, ch.isASCII, ch.isNumber, !proxy.isSecure, !passthrough else { return false }
         if let open = swipeOpen {
             // Từ vuốt đang mở: số chỉ SỬA từ (dấu) — không sửa được ⇒ ranh giới (chốt từ +
             // số liền sau, không chèn dấu cách treo như phím chữ).
@@ -320,7 +342,7 @@ final class EngineBridge {
         expansionUndo = nil
         var committed = settledCommit
         settledCommit = nil
-        if !engine.isEmpty || swipeOpen?.literal != nil {
+        if !engine.isEmpty || swipeOpen?.literal != nil || !enWord.isEmpty {
             let wasAccepted = swipeOpen?.accepted ?? false
             // dấu cách tự chèn trước từ vuốt: không phải ranh giới người dùng gõ → không gõ tắt
             let final = boundary(" ", proxy: proxy, expand: false)
@@ -371,6 +393,13 @@ final class EngineBridge {
     private func letterCore(_ ch: Character, proxy: TextProxyLike) {
         let ownBoundary = lastWasOwnBoundary
         lastWasOwnBoundary = false
+        if englishMode {
+            letterUndo = letterUndoEnabled ? LetterUndo(engine: engine, removed: "", inserted: String(ch),
+                                                        ownBoundary: ownBoundary, enWord: enWord) : nil
+            enWord.append(ch)
+            proxy.insertText(String(ch))
+            return
+        }
         if engine.isEmpty, !ownBoundary, settings.reEditWord, reachBackAllowed {
             if isReEditKey(ch), seedWordBeforeCaret(then: ch, proxy: proxy) {
                 return                                // sửa từ trên màn hình: không huỷ được
@@ -417,6 +446,7 @@ final class EngineBridge {
         lastWasOwnBoundary = u.ownBoundary
         swipeOpen = u.swipe
         settledCommit = u.settled
+        enWord = u.enWord
         return true
     }
 
@@ -431,13 +461,21 @@ final class EngineBridge {
         let literal = swipeOpen?.literal
         let wasSwipe = swipeOpen != nil
         swipeOpen = nil
-        guard !proxy.isSecure, !passthrough else { proxy.insertText(text); return "" }
+        guard !proxy.isSecure, !passthrough else { if !text.isEmpty { proxy.insertText(text) }; return "" }
         if let literal, engine.isEmpty {
             // từ tiếng Anh nguyên văn: chốt như đã gõ, ngữ cảnh Anh cho từ gõ tiếp
             engine.noteExternalWord(english: true)
-            proxy.insertText(text)
+            if !text.isEmpty { proxy.insertText(text) }
             lastWasOwnBoundary = text.last.map { !$0.isLetter } ?? false
             return literal
+        }
+        if englishMode {
+            if expand, !wasSwipe, let expanded = tryExpandShortcut(text, proxy: proxy) { return expanded }
+            let word = enWord
+            enWord = ""
+            if !text.isEmpty { proxy.insertText(text) }
+            lastWasOwnBoundary = text.last.map { !$0.isLetter } ?? false
+            return word
         }
         // Gõ tắt TRƯỚC tự khôi phục tiếng Anh. Không bung từ vuốt (từ vuốt là từ từ điển).
         if expand, !wasSwipe, let expanded = tryExpandShortcut(text, proxy: proxy) { return expanded }
@@ -453,7 +491,7 @@ final class EngineBridge {
             final = String(before.dropLast(bs)) + insert
         }
         apply(action, literal: "", proxy: proxy)
-        proxy.insertText(text)
+        if !text.isEmpty { proxy.insertText(text) }
         lastWasOwnBoundary = text.last.map { !$0.isLetter } ?? false
         return final
     }
@@ -493,6 +531,11 @@ final class EngineBridge {
             }
             return false
         }
+        if englishMode {
+            if !enWord.isEmpty { enWord.removeLast() }
+            proxy.deleteBackward()
+            return false
+        }
         guard !engine.isEmpty else {
             if engine.canReopenLastCommit { return reopenLastCommit(proxy: proxy) }
             proxy.deleteBackward()
@@ -523,9 +566,9 @@ final class EngineBridge {
     private func tryExpandShortcut(_ text: String, proxy: TextProxyLike) -> String? {
         let table = settings.shortcuts
         guard settings.shortcutsEnabled, shortcutsAllowed, !table.isEmpty else { return nil }
-        if !engine.isEmpty, ShortcutTable.triggersWord(text),
-           let e = table.wordExpansion(composed: engine.composed, raw: engine.rawKeystrokes) {
-            let composed = engine.composed
+        if !typedEmpty, ShortcutTable.triggersWord(text),
+           let e = table.wordExpansion(composed: typedWord, raw: typedRaw) {
+            let composed = typedWord
             let ctx = proxy.contextBeforeInput
             if !ShortcutTable.isGlued(word: composed, context: ctx),
                CompositionSync.canDelete(composed.count, expected: composed, context: { ctx }) {
@@ -536,7 +579,7 @@ final class EngineBridge {
         if table.hasTokenKeys, ShortcutTable.triggersToken(text),
            let ctx = proxy.contextBeforeInput, !proxy.hasSelection,
            let m = table.tokenExpansion(context: ctx),
-           engine.isEmpty || m.token.hasSuffix(engine.composed) {
+           typedEmpty || m.token.hasSuffix(typedWord) {
             return applyExpansion(typed: m.token, expansion: m.expansion, boundary: text, proxy: proxy)
         }
         return nil
@@ -545,6 +588,7 @@ final class EngineBridge {
     private func applyExpansion(typed: String, expansion: String, boundary text: String,
                                 proxy: TextProxyLike) -> String {
         engine.reset()
+        enWord = ""
         engine.forgetLastCommit()                    // ⌫ không mở lại chữ tắt qua engine
         engine.noteExternalWord(english: false)
         TouchLog.edit(bs: typed.count, insertLen: expansion.count, insert: expansion)
@@ -573,6 +617,7 @@ final class EngineBridge {
         engine.reset()
         engine.forgetLastCommit()
         swipeOpen = nil
+        enWord = ""
         lastWasOwnBoundary = u.boundary.last.map { !$0.isLetter } ?? false
         TouchLog.write("shortcut undo: -\(u.expansion.count) +\(u.typed.count)")
         return true
@@ -581,9 +626,14 @@ final class EngineBridge {
     /// Nội dung sẽ bung nếu gõ ranh giới ngay bây giờ (thanh gợi ý hiện trước). Chỉ khoá chữ.
     var shortcutPreview: String? {
         guard settings.shortcutsEnabled, shortcutsAllowed, !passthrough, swipeOpen == nil,
-              !engine.isEmpty, !settings.shortcuts.isEmpty else { return nil }
-        return settings.shortcuts.wordExpansion(composed: engine.composed, raw: engine.rawKeystrokes)
+              !typedEmpty, !settings.shortcuts.isEmpty else { return nil }
+        return settings.shortcuts.wordExpansion(composed: typedWord, raw: typedRaw)
     }
+
+    /// Từ đang gõ tay (engine, hoặc nguyên văn ở chế độ Tiếng Anh) — cho gõ tắt.
+    private var typedEmpty: Bool { englishMode ? enWord.isEmpty : engine.isEmpty }
+    private var typedWord: String { englishMode ? enWord : engine.composed }
+    private var typedRaw: String { englishMode ? enWord : engine.rawKeystrokes }
 
     // MARK: - Sửa dấu từ đã gõ xong (như macOS: reopenLastCommit + seed)
 
@@ -713,15 +763,15 @@ final class EngineBridge {
     /// "từ ngay trước" nữa (macOS làm y hệt khi activateServer / đổi field).
     func reset() {
         engine.reset(); engine.resetContext(); lastWasOwnBoundary = false; letterUndo = nil
-        swipeOpen = nil; expansionUndo = nil
+        swipeOpen = nil; expansionUndo = nil; enWord = ""
     }
 
-    var isComposing: Bool { !engine.isEmpty || swipeOpen?.literal != nil }
+    var isComposing: Bool { !engine.isEmpty || swipeOpen?.literal != nil || !enWord.isEmpty }
 
     /// Current word for the suggestion bar: on-screen composed form + raw keys. Từ tiếng
     /// Anh vuốt ra (nguyên văn, engine trống) cũng tính là từ đang mở.
-    var composedWord: String { swipeOpen?.literal ?? engine.composed }
-    var rawWord: String { swipeOpen?.literal ?? engine.rawKeystrokes }
+    var composedWord: String { swipeOpen?.literal ?? (englishMode ? enWord : engine.composed) }
+    var rawWord: String { swipeOpen?.literal ?? (englishMode ? enWord : engine.rawKeystrokes) }
     /// Từ đang mở là từ tiếng Anh nguyên văn vừa vuốt.
     var isLiteralSwipeWordOpen: Bool { swipeOpen?.literal != nil }
     var autoFixAdjacent: Bool { settings.autoFixAdjacent }
@@ -748,7 +798,7 @@ final class EngineBridge {
     /// tiếp trên engine. KHÔNG copy struct: bản copy cũ kích hoạt COW copy ~10
     /// buffer cố định mỗi phím khi commitText mutate (reset + scratch).
     var predictedCommit: String {
-        swipeOpen?.literal ?? engine.peekCommitText(autoRestore: settings.autoRestore)
+        swipeOpen?.literal ?? (englishMode ? enWord : engine.peekCommitText(autoRestore: settings.autoRestore))
     }
 
     /// Fail-safe trước khi xoá: action định xoá `bs` ký tự của `expected` (từ đang gõ

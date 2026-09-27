@@ -137,6 +137,7 @@ targets:
       - Keyboard/SwipeLexicon.swift
       - Keyboard/SwipeGesture.swift
       - Keyboard/SwipeTyping.swift
+      - Keyboard/SpaceFlick.swift
       - App/Backup/BackupFormat.swift
       - App/TemplateEdit.swift
       - App/Backup/SyncMerge.swift

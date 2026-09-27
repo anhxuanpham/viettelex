@@ -28,6 +28,10 @@ object Keys {
     const val SWIPE_FUTO = "swipeFuto"
     /** Chọn phím theo ngữ cảnh lúc chạm (thử nghiệm, mặc định BẬT) — TouchTarget. */
     const val SMART_TOUCH = "smartTouch"
+    /** Vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh — mặc định TẮT (tắt ⇒ luôn Tiếng Việt). */
+    const val SPACE_SWIPE_LANGUAGE = "spaceSwipeLanguage"
+    /** Ngôn ngữ đang gõ ("vi" | "en") — trạng thái bàn phím, KHÔNG sao lưu. */
+    const val KEYBOARD_LANGUAGE = "keyboardLanguage"
     /** Gõ Telex bằng bàn phím cứng (tablet, DeX, Chromebook, BT/USB) — mặc định BẬT. */
     const val HARDWARE_TELEX = "hardwareTelex"
 
