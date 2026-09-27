@@ -54,6 +54,8 @@ object BackupSettings {
         Spec(Keys.SMART_TOUCH, SettingKind.Bool(true)),
         Spec(Keys.AUTO_CAPITALIZE, SettingKind.Bool(true)),
         Spec(Keys.SPACE_SWIPE_LANGUAGE, SettingKind.Bool(false)),
+        Spec(Keys.LONG_PRESS_NUMBERS, SettingKind.Bool(true)),
+        Spec(Keys.LONG_PRESS_SYMBOLS, SettingKind.Bool(false)),
     )
     val byKey: Map<String, Spec> = all.associateBy { it.key }
 }

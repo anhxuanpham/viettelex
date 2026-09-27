@@ -39,6 +39,8 @@ final class UXSnapshotTests: XCTestCase {
                 kb.debugRefreshChrome()
             }
             try shot("emoji-\(s)", dark: dark) { $0.debugShowEmojiPlane() }
+            // Giữ phím ra số / ký hiệu (issue #98): nhãn nhỏ góc trên-phải.
+            try shot("alternates-\(s)", dark: dark) { $0.configureKeyAlternates(numbers: true, symbols: true) }
         }
     }
 }

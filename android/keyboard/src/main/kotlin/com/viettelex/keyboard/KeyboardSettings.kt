@@ -64,6 +64,10 @@ data class KeyboardSettings(
     var rowHeightAdjust: Int = 0,
     /** Hàng phím số 1…0 trên hàng chữ — mặc định TẮT. */
     var numberRow: Boolean = false,
+    /** Giữ q…p ra 1…0 (chỉ khi hàng số tắt) — mặc định BẬT. Giống iOS. */
+    var longPressNumbers: Boolean = true,
+    /** Giữ a–l, z–m ra ký hiệu — mặc định TẮT. Giống iOS. */
+    var longPressSymbols: Boolean = false,
     /** Chế độ một tay: "off" | "left" | "right" — mặc định tắt (tablet bỏ qua). */
     var oneHandMode: String = "off",
     var debugTouchLog: Boolean = false,
@@ -109,6 +113,8 @@ data class KeyboardSettings(
             s.keyPreview = b(Keys.KEY_PREVIEW, s.keyPreview)
             s.debugTouchLog = b(Keys.DEBUG_TOUCH_LOG, s.debugTouchLog)
             s.numberRow = b(Keys.NUMBER_ROW, s.numberRow)
+            s.longPressNumbers = b(Keys.LONG_PRESS_NUMBERS, s.longPressNumbers)
+            s.longPressSymbols = b(Keys.LONG_PRESS_SYMBOLS, s.longPressSymbols)
             s.oneHandMode = (get(Keys.ONE_HAND_MODE) as? String)?.takeIf { it == "left" || it == "right" } ?: "off"
             s.clipboardHistory = b(Keys.CLIPBOARD_HISTORY, s.clipboardHistory)
             s.incognito = b(Keys.INCOGNITO, s.incognito)
