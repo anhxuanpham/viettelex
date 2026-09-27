@@ -48,6 +48,10 @@ data class KeyboardSettings(
     /** Chế độ một tay: "off" | "left" | "right" — mặc định tắt (tablet bỏ qua). */
     var oneHandMode: String = "off",
     var debugTouchLog: Boolean = false,
+    /** Lịch sử clipboard — mặc định TẮT. */
+    var clipboardHistory: Boolean = false,
+    /** Ẩn danh thủ công: không học từ, không lưu clipboard. */
+    var incognito: Boolean = false,
     /** Giá trị Keys.USERLM_RESET_AT (0 = chưa từng xoá). */
     var userlmResetAt: Long = 0,
 ) {
@@ -79,6 +83,8 @@ data class KeyboardSettings(
             s.debugTouchLog = b(Keys.DEBUG_TOUCH_LOG, s.debugTouchLog)
             s.numberRow = b(Keys.NUMBER_ROW, s.numberRow)
             s.oneHandMode = (get(Keys.ONE_HAND_MODE) as? String)?.takeIf { it == "left" || it == "right" } ?: "off"
+            s.clipboardHistory = b(Keys.CLIPBOARD_HISTORY, s.clipboardHistory)
+            s.incognito = b(Keys.INCOGNITO, s.incognito)
             s.rowHeightAdjust = ((get(Keys.ROW_HEIGHT_ADJUST) as? Number)?.toInt() ?: 0).coerceIn(-10, 10)
             s.userlmResetAt = (get(Keys.USERLM_RESET_AT) as? Number)?.toLong() ?: 0
             s.learnWords = s.showSuggestions   // bật gợi ý = bật học (quyết định 2026-07-24)

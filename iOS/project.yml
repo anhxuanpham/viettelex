@@ -149,6 +149,9 @@ targets:
       - App/Plus/PlusStoreModel.swift
       - path: StoreKit/VietTelex.storekit
         buildPhase: resources
+      - Keyboard/ClipDetect.swift
+      - Keyboard/ClipboardHistory.swift
+      - Keyboard/ClipboardFeature.swift
       - path: Keyboard/Resources/vnlexicon.bin
         buildPhase: resources
       - path: Keyboard/Resources/emoji.bin

@@ -67,8 +67,10 @@ interface ClipboardSource {
     val changeCount: Int
     /** Clip hiện tại là text (chỉ đọc ClipDescription, không đọc nội dung). */
     fun hasText(): Boolean
-    /** Nội dung — chỉ gọi khi user chạm Dán. */
+    /** Nội dung — khi user chạm Dán, hoặc để tách chip số / ghi lịch sử clipboard. */
     fun readText(): String?
+    /** Clip đánh dấu nhạy cảm (Android 13+ ClipDescription.EXTRA_IS_SENSITIVE). */
+    fun isSensitive(): Boolean = false
 }
 
 internal object Cp {

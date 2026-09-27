@@ -185,10 +185,12 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // strip phía trên phím do rowsTopConstraint quyết định, bar chỉ nằm đó.
         // Thụt 2 mép chừa chỗ cho burgerZone/chevronZone (ghim cố định) — gợi ý
         // nằm giữa, không bao giờ chồng lên 2 nút mép.
+        let barRight = suggestionBar.rightAnchor.constraint(equalTo: rightAnchor, constant: -Self.stripZoneWidth)
+        suggestionBarRight = barRight
         NSLayoutConstraint.activate([
             suggestionBar.leftAnchor.constraint(equalTo: leftAnchor,
                                                 constant: Self.stripZoneWidth + Self.editZoneWidth),
-            suggestionBar.rightAnchor.constraint(equalTo: rightAnchor, constant: -Self.stripZoneWidth),
+            barRight,
             suggestionBar.topAnchor.constraint(equalTo: topAnchor, constant: Self.barTopPad),
             suggestionBar.heightAnchor.constraint(equalToConstant: 20),
         ])
@@ -352,6 +354,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         burgerZone.isHidden = !open || !templatesEnabled
         chevronZone.isHidden = !open
         editZone.isHidden = !open
+        layoutClipboardExtras(stripOpen: open)
         guard open, bounds.width > 0 else { return }
         let strip = max(rowsTopConstraint?.constant ?? Self.openStrip, Self.openStrip)
         let w = Self.stripZoneWidth
@@ -521,6 +524,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         var restoreLabel: String? = nil // ô "Khôi phục" sau vuốt ⌫ xoá theo từ (slot đầu)
         var restorePayload: String? = nil // payload ô restoreLabel (nil = restoreToken; toolUndoToken = hoàn tác công cụ văn bản)
         var number: String? = nil       // chip số (NumberChips) — luôn ở slot GIỮA, payload numberToken
+        /// Chip tách số từ nội dung vừa copy ("Dán STK 0123…") — thay thẻ Dán.
+        var clipChips: [(display: String, insert: String)] = []
         var isEmpty: Bool {
             literal == nil && word == nil && word2 == nil && emojis.isEmpty && nextWords.isEmpty
                 && number == nil
@@ -709,14 +714,19 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         }
         if let r = set.restoreLabel {
             texts = [(r, set.restorePayload ?? Self.restoreToken), texts[0], texts[1]]
+        } else if !set.clipChips.isEmpty {
+            texts = [nil, nil, nil]
+            for (i, c) in set.clipChips.prefix(3).enumerated() { texts[i] = c }
         }
         // Nội dung không đổi (nextWords thường ổn định giữa các phím) → bỏ qua
         // toàn bộ ghi UI: setTitle trên bar fillProportionally kéo theo một
         // lượt đo text/Auto Layout mỗi keystroke.
-        let sig = (dark ? "D" : "L") + themeSettings.theme.rawValue
+        var sig = (dark ? "D" : "L") + themeSettings.theme.rawValue
             + texts.map { $0.map { $0.display + "\u{1}" + $0.insert } ?? "\u{2}" }.joined(separator: "\u{3}")
             + "\u{4}" + (set.nextWords.isEmpty ? set.emojis.prefix(3).joined() : "")
             + (set.paste ? (set.pasteIsImage ? "\u{5}pasteImg" : "\u{5}paste") : "")
+        let chipSig: String = set.clipChips.isEmpty ? "" : "\u{6}chips"
+        sig += chipSig
         if sig == lastSuggestionSig { return }
         lastSuggestionSig = sig
 
@@ -728,7 +738,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             if let t = texts[i] {
                 b.setTitle(t.display, for: .normal)
                 b.setTitleColor(ink, for: .normal)
-                b.titleLabel?.font = .systemFont(ofSize: 17, weight: .regular)
+                let chip = t.insert.hasPrefix(Self.clipTokenPrefix) || (t.insert == Self.pasteToken)
+                b.titleLabel?.font = .systemFont(ofSize: chip ? 14 : 17, weight: .regular)
+                b.titleLabel?.adjustsFontSizeToFitWidth = chip
+                b.titleLabel?.minimumScaleFactor = 0.7
                 b.payload = t.insert
                 b.isHidden = false
             } else {
@@ -754,7 +767,86 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         slotDividers[0].isHidden = !(vis0 && (vis1 || vis2))
         slotDividers[1].isHidden = !(vis1 && vis2)
         // Nút Dán kiểu iOS 27: MỘT ô rộng giữa bar, 2 dòng, thay cả 3 slot.
-        setPasteCard(visible: set.paste && set.restoreLabel == nil, image: set.pasteIsImage, ink: ink)
+        setPasteCard(visible: set.paste && set.restoreLabel == nil && set.clipChips.isEmpty,
+                     image: set.pasteIsImage, ink: ink)
+    }
+
+    // MARK: Clipboard (lịch sử + chip + chỉ báo ẩn danh)
+    /// Payload chip tách số: prefix + giá trị cần chèn.
+    static let clipTokenPrefix = "\u{E000}clip:"
+    static let clipZoneWidth: CGFloat = 40
+    private var suggestionBarRight: NSLayoutConstraint?
+    private var clipboardButtonVisible = false
+    private var incognitoOn = false
+    var onOpenClipboard: (() -> Void)?
+    /// Panel phủ vùng phím: touch trong panel KHÔNG đi qua router phím chữ.
+    weak var overlayPanel: UIView?
+    var isDarkAppearance: Bool { dark }
+    /// Vùng phím (dưới strip) — nơi đặt panel clipboard.
+    var keyAreaFrame: CGRect { rowsContainer.frame }
+
+    private var clipZoneMade = false
+    private lazy var clipZone: UIButton = {
+        clipZoneMade = true
+        let b = UIButton(type: .custom)
+        b.accessibilityLabel = "Lịch sử clipboard"
+        b.addAction(UIAction { [weak self] _ in
+            Self.clickModifier()
+            self?.onOpenClipboard?()
+        }, for: .touchUpInside)
+        addSubview(b)
+        return b
+    }()
+    private var incognitoBadgeMade = false
+    private lazy var incognitoBadge: UIImageView = {
+        incognitoBadgeMade = true
+        let v = UIImageView(image: UIImage(systemName: "eye.slash",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)))
+        v.isUserInteractionEnabled = false
+        v.contentMode = .center
+        v.accessibilityLabel = "Chế độ ẩn danh đang bật"
+        v.isAccessibilityElement = true
+        addSubview(v)
+        return v
+    }()
+
+    func setClipboardButton(visible: Bool) {
+        guard visible != clipboardButtonVisible else { return }
+        clipboardButtonVisible = visible
+        suggestionBarRight?.constant = -Self.stripZoneWidth - (visible ? Self.clipZoneWidth : 0)
+        setNeedsLayout()
+    }
+
+    func setIncognito(_ on: Bool) {
+        guard on != incognitoOn else { return }
+        incognitoOn = on
+        setNeedsLayout()
+    }
+
+    private func layoutClipboardExtras(stripOpen: Bool) {
+        let showClip = stripOpen && clipboardButtonVisible
+        if clipboardButtonVisible || clipZoneMade { clipZone.isHidden = !showClip }
+        if showClip, bounds.width > 0 {
+            let strip = max(rowsTopConstraint?.constant ?? Self.openStrip, Self.openStrip)
+            let w = Self.stripZoneWidth, cw = Self.clipZoneWidth
+            clipZone.frame = CGRect(x: bounds.width - w - cw, y: 0, width: cw, height: strip)
+            clipZone.setImage(UIImage(systemName: "doc.on.clipboard",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .regular)), for: .normal)
+            clipZone.tintColor = palette.barInk.ui.withAlphaComponent(overlayPanel == nil ? 0.45 : 0.9)
+            let bottomInset = max(strip - 20 - Self.barTopPad, 0)
+            clipZone.contentEdgeInsets = UIEdgeInsets(top: Self.barTopPad, left: 0, bottom: bottomInset, right: 0)
+            bringSubviewToFront(clipZone)
+        }
+        // Chỉ báo ẩn danh: icon nhỏ ở mép trái phím cách (overlay, không đụng cache plane).
+        if incognitoOn, let space = spaceBar, space.window != nil {
+            let f = convert(space.bounds, from: space)
+            incognitoBadge.isHidden = false
+            incognitoBadge.tintColor = ink.withAlphaComponent(0.4)
+            incognitoBadge.frame = CGRect(x: f.minX + 6, y: f.midY - 9, width: 18, height: 18)
+            bringSubviewToFront(incognitoBadge)
+        } else if incognitoBadgeMade {
+            incognitoBadge.isHidden = true
+        }
     }
 
     // MARK: Debug — hình học cửa sổ (25/09/2026)
@@ -2556,6 +2648,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
 
     private func routedHitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         let v = super.hitTest(point, with: event)
+        if let p = overlayPanel, !p.isHidden, p.frame.contains(point) { return v }
         // Phím chữ ưu tiên trong FOOTPRINT thật của nó, kể cả khi hit-area nở của
         // shift/backspace kề bên "cướp" điểm chạm — nếu không, chạm mép z/m thành
         // toggle shift / xoá thay vì ra chữ (nguồn rớt phím ở hàng 3, 2026-07-26).

@@ -54,6 +54,10 @@ object Keys {
     const val WALLPAPER_DIM = "wallpaperDim"
     const val WALLPAPER_BLUR = "wallpaperBlur"
     const val WALLPAPER_VERSION = "wallpaperVersion"
+    /** Lịch sử clipboard (mặc định TẮT — riêng tư). */
+    const val CLIPBOARD_HISTORY = "clipboardHistory"
+    /** Chế độ ẩn danh thủ công: không học từ, không lưu clipboard. */
+    const val INCOGNITO = "incognitoMode"
     // nội bộ IME
     const val SUGGESTION_BAR_COLLAPSED = "suggestionBarCollapsed"
     /** String, emoji nối bằng '\n' (xem [EmojiRecents]). */
@@ -73,6 +77,7 @@ object Keys {
     /** Ảnh nền đã thu nhỏ/mờ/nén cho IME; bản chưa mờ để đổi độ mờ không cần chọn lại. */
     const val WALLPAPER_FILE = "wallpaper.jpg"
     const val WALLPAPER_SRC_FILE = "wallpaper-src.jpg"
+    const val CLIPBOARD_FILE = "clipboard-history.txt"
 
     // assets
     const val ASSET_LEXICON = "vnlexicon.bin"

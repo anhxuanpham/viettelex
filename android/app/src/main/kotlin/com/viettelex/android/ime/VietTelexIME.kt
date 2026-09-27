@@ -25,6 +25,7 @@ import com.viettelex.android.shared.VTPrefs
 import com.viettelex.keyboard.ThemeSettings
 import com.viettelex.keyboard.Cancellable
 import com.viettelex.keyboard.EmojiData
+import com.viettelex.keyboard.ClipboardHistory
 import com.viettelex.keyboard.EmojiRecents
 import com.viettelex.keyboard.FieldTraits
 import com.viettelex.keyboard.Key
@@ -64,7 +65,7 @@ import java.net.URL
  * AdjacentKeyFixer) trên HandlerThread "vt-suggest" → kết quả áp nếu còn hiện hành.
  * Không Handler nào được đặt khi không gõ.
  */
-class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.Listener {
+class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.Listener, ClipboardPane.Listener {
 
     private val handler = Handler(Looper.getMainLooper())
     private val mainThread = object : MainThread {
@@ -130,6 +131,8 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         else if (key == Keys.HARDWARE_TELEX) hwSetting = VTPrefs.settings(prefs).hardwareTelex
         // Bật/tắt kiểu gõ trong app khi bàn phím đang mở (ô Thử gõ) → áp ngay, không đợi mở lại.
         else if (key in Keys.ENGINE_KEYS) session.bridge.applySettings(VTPrefs.settings(prefs))
+        // Tắt lịch sử clipboard trong app: bỏ bản RAM (app đã xoá file).
+        else if (key == Keys.CLIPBOARD_HISTORY) syncClipHistory(VTPrefs.settings(prefs).clipboardHistory)
     }
 
     override fun onCreate() {
@@ -146,6 +149,8 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         model = UserLangModel(File(filesDir, Keys.USERLM_FILE), mainThread)
         clipboard = AndroidClipboard(this)
         session = KeyboardSession(model, clipboard)
+        syncClipHistory(prefs.getBoolean(Keys.CLIPBOARD_HISTORY, false))
+        clipboard.onChanged = { onClipChanged() }
         model.onReady = { refreshBar() }
         prefs.registerOnSharedPreferenceChangeListener(prefListener)
         accessibility = (getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager)?.also {
@@ -214,12 +219,17 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         kb.holdNewline = field.holdNewline   // giữ lâu Enter = xuống dòng (ô nhiều dòng)
         feedback.hapticsEnabled = settings.hapticFeedback
         kb.searchSettings = settings
+        syncClipHistory(settings.clipboardHistory)
+        // Copy lúc process IME chưa sống (listener không thấy) → bù khi hiện, không làm mới mục cũ.
+        if (session.recordClip(field.isSecure, onlyIfNew = true)) saveClipHistory()
+        closeClipboardPane()
         swipeSetting = settings.swipeTyping
         // Chỉ ô chữ ghi COMMIT thường: không secure/passthrough (URI, email, mật khẩu hiện,
         // filter), không TYPE_NULL, không ô URL, không app phải ghi bằng key event.
         swipeFieldOk = !field.isSecure && !field.passthrough && !field.rawKeys && !proxy.uriField &&
             proxy.writeMode == WriteMode.COMMIT
 
+        inputShown = true
         collapsed = prefs.getBoolean(Keys.SUGGESTION_BAR_COLLAPSED, false)
         session.barCollapsed = collapsed
         val barOn = session.suggestionsActive
@@ -227,6 +237,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         st.oneHandAvailable = !th.tablet
         kb.setOneHand(if (th.tablet) OneHandSide.OFF else OneHandSide.fromPref(settings.oneHandMode))
         kb.setEditHasSelection(info.initialSelStart >= 0 && info.initialSelStart != info.initialSelEnd)
+        st.setExtras(clipButton = settings.clipboardHistory, incognito = session.incognito, open = false)
         val templates = if (settings.templatesEnabled) VTPrefs.templates(this, prefs) else emptyList()
         kb.configure(field.returnLabel, field.kind, needsGlobe(), settings.showSpaceLogo,
             settings.templatesEnabled, templates,
@@ -297,6 +308,8 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         swipeFieldOk = false
         handler.removeCallbacks(autoShiftRun); handler.removeCallbacks(suggestRun)
         keyboard?.onHidden()
+        closeClipboardPane()
+        inputShown = false
         clearSwipeUndo()
         strip?.onHidden()
         root?.balloon?.hide()
@@ -680,7 +693,105 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         refreshBar()
     }
 
-    override fun onToggleTemplates() { keyboard?.toggleTemplates() }
+    override fun onToggleTemplates() { closeClipboardPane(); keyboard?.toggleTemplates() }
+
+    // MARK: lịch sử clipboard
+
+    /** Bàn phím đang hiện (ô hiện tại có ý nghĩa cho luật "ô mật khẩu"). */
+    private var inputShown = false
+    private var clipPane: ClipboardPane? = null
+    private val clipFile by lazy { File(filesDir, Keys.CLIPBOARD_FILE) }
+
+    /** Bật ⇒ nạp file (một lần); tắt ⇒ bỏ RAM + xoá file. */
+    private fun syncClipHistory(enabled: Boolean) {
+        if (!enabled) {
+            if (session.clipHistory != null || clipFile.exists()) { session.clipHistory = null; clipFile.delete() }
+            strip?.setExtras(clipButton = false, incognito = session.incognito, open = false)
+            closeClipboardPane()
+            return
+        }
+        if (session.clipHistory != null) return
+        val text = try { if (clipFile.exists()) clipFile.readText() else null } catch (_: Exception) { null }
+        session.clipHistory = ClipboardHistory.deserialize(text).also {
+            if (it.prune(System.currentTimeMillis())) saveClipHistory(it)
+        }
+    }
+
+    /** Ghi nền (file nhỏ ≤ 20 mục × 4000 ký tự); chụp chuỗi trên main trước. */
+    private fun saveClipHistory(h: ClipboardHistory? = session.clipHistory) {
+        val data = h?.serialize() ?: return
+        val f = clipFile
+        worker().post {
+            try {
+                val tmp = File(f.parentFile, f.name + ".tmp")
+                tmp.writeText(data)
+                if (!tmp.renameTo(f)) { f.writeText(data); tmp.delete() }
+            } catch (e: Exception) { Log.w(TAG, "clip save: $e") }
+        }
+    }
+
+    private fun onClipChanged() {
+        // Ô mật khẩu chỉ tính khi bàn phím đang hiện ở ô đó; ẩn ⇒ copy ở app khác.
+        if (session.recordClip(inputShown && field.isSecure)) {
+            saveClipHistory()
+            if (clipPane?.visibility == View.VISIBLE) refreshClipboardPane()
+        }
+        if (inputShown) { session.invalidatePasteCache(); refreshBar() }
+    }
+
+    override fun onToggleClipboard() {
+        if (clipPane?.visibility == View.VISIBLE) { closeClipboardPane(); return }
+        val th = theme ?: return
+        val r = root ?: return
+        if (keyboard?.plane == Plane.TEMPLATES) keyboard?.toggleTemplates()
+        val pane = clipPane ?: ClipboardPane(this, th).also { it.listener = this; clipPane = it; r.overlay = it }
+        pane.visibility = View.VISIBLE
+        refreshClipboardPane()
+        pane.scrollTop()
+        strip?.setExtras(clipButton = true, incognito = session.incognito, open = true)
+    }
+
+    private fun refreshClipboardPane() {
+        val h = session.clipHistory
+        clipPane?.show(h?.items(System.currentTimeMillis()) ?: emptyList(), h != null, session.incognito)
+    }
+
+    private fun closeClipboardPane() {
+        val p = clipPane ?: return
+        if (p.visibility != View.VISIBLE) return
+        p.visibility = View.GONE
+        strip?.setExtras(clipButton = session.clipHistory != null, incognito = session.incognito, open = false)
+    }
+
+    override fun onClipPick(text: String) {
+        closeClipboardPane()
+        clearSwipeUndo()
+        if (!proxy.begin()) return
+        try { session.insertClip(text, proxy) } finally { proxy.end() }
+        resetIfEditFailed()
+        applyAutoShift()
+        refreshBar()
+    }
+
+    override fun onClipTogglePin(text: String) {
+        val h = session.clipHistory ?: return
+        val limit = PlusGate.pinnedClipLimit
+        if (h.togglePin(text, limit)) { saveClipHistory(); refreshClipboardPane() }
+        else if (limit != null && h.contains(text)) {
+            clipPane?.showNotice("Tối đa $limit mục ghim — VietTelex Plus ghim không giới hạn.")
+        }
+    }
+
+    override fun onClipRemove(text: String) {
+        if (session.clipHistory?.remove(text) == true) { saveClipHistory(); refreshClipboardPane() }
+    }
+
+    override fun onClipClearAll() {
+        session.clipHistory?.clear()
+        saveClipHistory(); refreshClipboardPane()
+    }
+
+    override fun onClipClose() = closeClipboardPane()
 
     // MARK: bảng sửa văn bản + một tay
 

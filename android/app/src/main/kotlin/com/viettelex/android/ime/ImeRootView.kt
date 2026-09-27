@@ -71,6 +71,14 @@ class ImeRootView(
         canvas.drawBitmap(b, wallMatrix, wallPaint)
         canvas.drawColor(dimColor)
     }
+    /** Bảng phủ đúng vùng phím (lịch sử clipboard); null = không có. Thêm lười khi mở lần đầu. */
+    var overlay: android.view.View? = null
+        set(v) {
+            if (field === v) return
+            field?.let { removeView(it) }
+            field = v
+            if (v != null) addView(v, indexOfChild(balloon))
+        }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
@@ -81,6 +89,7 @@ class ImeRootView(
         strip.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(strip.viewHeightPx(), MeasureSpec.EXACTLY))
         trail.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(keyH, MeasureSpec.EXACTLY))
+        overlay?.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(keyH, MeasureSpec.EXACTLY))
         balloon.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(s + keyH, MeasureSpec.EXACTLY))
         setMeasuredDimension(w, h)
@@ -93,6 +102,7 @@ class ImeRootView(
         keyboard.layout(0, s, w, s + keyH)
         strip.layout(0, 0, w, strip.measuredHeight)
         trail.layout(0, s, w, s + keyH)
+        overlay?.layout(0, s, w, s + keyH)
         balloon.layout(0, 0, w, s + keyH)
     }
 

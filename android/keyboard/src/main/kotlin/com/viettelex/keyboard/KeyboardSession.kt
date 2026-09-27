@@ -103,12 +103,15 @@ data class SuggestionSet(
     val pasteIsImage: Boolean = false,
     /** Chip số (NumberChips) — luôn ở slot GIỮA; chạm gửi [NUMBER_TOKEN]. */
     val number: String? = null,
+    /** Chip tách số (OTP/SĐT/STK) từ nội dung vừa copy — thay thẻ Dán. */
+    val clipChips: List<ClipChip> = emptyList(),
 ) {
     val isEmpty: Boolean get() = literal == null && word == null && word2 == null && emojis.isEmpty() &&
         nextWords.isEmpty() && number == null
     /** So để bỏ vẽ lại khi không đổi. */
     fun signature(): String = listOf(literal, word, word2, emojis.joinToString("\u0002"),
-        nextWords.joinToString("\u0002"), paste.toString(), number).joinToString("\u0001")
+        nextWords.joinToString("\u0002"), paste.toString(), number,
+        clipChips.joinToString("\u0002") { it.label + "\u0003" + it.value }).joinToString("\u0001")
 
     companion object {
         /** Payload chạm thẻ Dán → truyền vào acceptSuggestion. */
@@ -116,6 +119,8 @@ data class SuggestionSet(
         const val PASTE_IMAGE_TOKEN = "pasteImage"
         /** Payload chạm chip số (session giữ NumberChip: đuôi cần thay + chữ chèn). */
         const val NUMBER_TOKEN = "\uE000number"
+        /** Payload chip tách số clipboard: tiền tố + giá trị cần dán (không space, không học). */
+        const val CLIP_CHIP_PREFIX = "\uE000clip:"
     }
 }
 
@@ -157,6 +162,10 @@ class KeyboardSession(
     private var lastWord: String? = null
     private var lastWord2: String? = null
     private var learnEnabled = true
+    /** Ẩn danh (thủ công HOẶC IME_FLAG_NO_PERSONALIZED_LEARNING): không học, không lưu clipboard. */
+    var incognito = false; private set
+    /** Lịch sử clipboard — null khi tắt (IME set theo setting, lo đọc/ghi file). */
+    var clipHistory: ClipboardHistory? = null
     private var filterSensitive = true
     private var traits = FieldTraits()
     private var lastResetAt: Long? = null
@@ -220,7 +229,8 @@ class KeyboardSession(
         traits = field
         lastKeyWasEmailTrigger = false
         clearUndo()
-        learnEnabled = settings.learnWords && !field.noLearning
+        incognito = settings.incognito || field.noLearning
+        learnEnabled = settings.learnWords && !incognito
         initialCapsPending = true
         filterSensitive = settings.filterSensitive
         swipeEnglish = settings.swipeEnglish
@@ -593,7 +603,10 @@ class KeyboardSession(
         }
         val number = refreshNumberChip(proxy)
         val paste = pasteOffer(proxy)
-        return SuggestionPlan.Ready(SuggestionSet(literal = literal, nextWords = next, paste = paste, number = number))
+        // Chip tách STK/SĐT/OTP = Clipboard nâng cao (Plus; paywall tắt ⇒ mở cho mọi người).
+        val chips = if (paste && PlusGate.isUnlocked(PlusFeature.ADVANCED_CLIPBOARD)) clipChips() else emptyList()
+        return SuggestionPlan.Ready(SuggestionSet(literal = literal, nextWords = next, paste = paste,
+            number = number, clipChips = chips))
     }
 
     /** Chip số cho token trước con trỏ (đọc chữ / định dạng tiền / máy tính nhanh). */
@@ -686,6 +699,46 @@ class KeyboardSession(
         return pasteCached
     }
 
+    // MARK: chip số + lịch sử clipboard
+
+    private var chipsForChange = -1
+    private var chipsCached: List<ClipChip> = emptyList()
+
+    /** Chip của clip hiện tại (đọc nội dung 1 lần mỗi changeCount); clip nhạy cảm → không chip. */
+    internal fun clipChips(): List<ClipChip> {
+        val cb = clipboard ?: return emptyList()
+        val cc = cb.changeCount
+        if (cc != chipsForChange) {
+            chipsForChange = cc
+            chipsCached = if (cb.isSensitive()) emptyList()
+                else cb.readText()?.let { ClipDetect.detect(it) } ?: emptyList()
+        }
+        return chipsCached
+    }
+
+    /**
+     * Clip vừa đổi (listener) hoặc bàn phím vừa hiện: ghi vào lịch sử nếu được phép —
+     * lịch sử bật, không ẩn danh, ô đang hiện không phải mật khẩu ([fieldSecure]), clip
+     * không đánh dấu nhạy cảm. [onlyIfNew]: bỏ qua nếu nội dung đã có (lúc hiện bàn phím,
+     * không làm mới hạn của mục cũ). Trả true nếu lịch sử đổi (IME ghi file).
+     */
+    fun recordClip(fieldSecure: Boolean, onlyIfNew: Boolean = false): Boolean {
+        val h = clipHistory ?: return false
+        val cb = clipboard ?: return false
+        if (incognito || fieldSecure || cb.isSensitive()) return false
+        val text = cb.readText() ?: return false
+        if (onlyIfNew && h.contains(text)) return false
+        return h.add(text, clock())
+    }
+
+    /** Chạm một mục trong bảng lịch sử: chèn nguyên văn, không học, không space. */
+    fun insertClip(text: String, proxy: TextProxy) {
+        clearSwipe(); clearUndo()
+        if (text.isNotEmpty()) proxy.insertText(text)
+        bridge.reset(); lastWord = null; lastWord2 = null
+        lastCommit = null
+    }
+
     // MARK: chạm gợi ý
 
     /**
@@ -696,6 +749,13 @@ class KeyboardSession(
     fun acceptSuggestion(item: String, proxy: TextProxy) {
         if (item == SuggestionSet.PASTE_IMAGE_TOKEN) {
             pasteUsedChange = clipboard?.changeCount ?: -1; pasteCached = false
+            return
+        }
+        if (item.startsWith(SuggestionSet.CLIP_CHIP_PREFIX)) {
+            proxy.insertText(item.substring(SuggestionSet.CLIP_CHIP_PREFIX.length))
+            pasteUsedChange = clipboard?.changeCount ?: -1
+            pasteCached = false
+            bridge.reset(); lastWord = null; lastWord2 = null
             return
         }
         if (item == SuggestionSet.PASTE_TOKEN) {
