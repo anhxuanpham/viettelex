@@ -138,6 +138,7 @@ targets:
       - Keyboard/SwipeGesture.swift
       - Keyboard/SwipeTyping.swift
       - App/Backup/BackupFormat.swift
+      - App/TemplateEdit.swift
       - App/Backup/SyncMerge.swift
       - App/Backup/BackupStore.swift
       - Keyboard/SwipeEnglish.swift
