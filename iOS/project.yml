@@ -35,6 +35,19 @@ targets:
       - Shared
       # Từ điển cá nhân: app đọc/sửa userlm.plist bằng chính model của bàn phím.
       - Keyboard/UserLangModel.swift
+      # Luyện vuốt (App/Practice): CÙNG decoder + hình học phím với bàn phím.
+      - Keyboard/SwipeDecoder.swift
+      - Keyboard/SwipeLexicon.swift
+      - Keyboard/SwipeEnglish.swift
+      - Keyboard/VNLexicon2.swift
+      - Keyboard/VNSuggest.swift
+      - Keyboard/SyllableBigram.swift
+      - Keyboard/KeyGeometry.swift
+      - Keyboard/TouchGeometry.swift
+      - path: Keyboard/Resources/vnlexicon.bin
+        buildPhase: resources
+      - path: Keyboard/Resources/enlexicon.bin
+        buildPhase: resources
       - path: ios-mau-cau.yml
         buildPhase: resources
     settings:
@@ -64,6 +77,8 @@ targets:
     dependencies:
       - target: VietTelexKeyboard
         embed: true
+      # SwipeEnglish (Luyện vuốt) dùng bảng từ tiếng Anh của engine.
+      - package: TelexCore
   VietTelexKeyboard:
     type: app-extension
     platform: iOS
@@ -137,6 +152,8 @@ targets:
       - Keyboard/SwipeLexicon.swift
       - Keyboard/SwipeGesture.swift
       - Keyboard/SwipeTyping.swift
+      - Keyboard/SwipeRevise.swift
+      - App/Practice/SwipePractice.swift
       - App/Backup/BackupFormat.swift
       - App/TemplateEdit.swift
       - App/Backup/SyncMerge.swift
@@ -221,6 +238,7 @@ schemes:
             - SwipeEnglishTests/testBenchmarkWithEnglish
             - SyllableLMTests/testHeldoutAccuracy
             - SyllableLMTests/testHeldoutAccuracyWithEnglish
+            - SwipeReviseTests/testHeldoutRevisionGain
             - SyllableBigramTests/testHeldoutAccuracy
             - SyllableBigramTests/testHeldoutAccuracyWithEnglish
             - SuggestBigramTests/testHeldoutNewUser

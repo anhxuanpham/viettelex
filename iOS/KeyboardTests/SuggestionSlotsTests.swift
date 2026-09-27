@@ -78,6 +78,14 @@ final class SuggestionSlotsTests: XCTestCase {
         XCTAssertEqual(payloads(s), "\(ADD)|\(N)|a")
     }
 
+    /// "↩︎ từ cũ" sau khi vuốt sửa lại từ trước: slot đầu, biến thể vuốt dời phải.
+    func testReviseUndoLeadsSwipeAlternatives() {
+        let r = KeyboardView.undoReviseToken
+        var s = S(); s.nextWords = ["a", "b", "c"]; s.actionLabel = "↩︎ có"; s.actionPayload = r
+        XCTAssertEqual(payloads(s), "\(r)|a|b")
+        XCTAssertEqual(payloads(s, pill: true), "\(r)|a|b")
+    }
+
     /// Đường thật trên KeyboardView: chip số giữa + "Thêm dấu" đầu; clipboard thay bar.
     @MainActor func testKeyboardViewRendersArrangement() throws {
         let kb = KeyboardView(needsGlobe: false, inputController: nil, onKey: { _ in })
