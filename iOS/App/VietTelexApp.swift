@@ -194,6 +194,9 @@ struct RootView: View {
         }
         Section { PlusEntryRow() }
         Section {
+            Link(destination: URL(string: "https://viettelex.com/hdsd")!) {
+                Label("Hướng dẫn sử dụng", systemImage: "book")
+            }
             Link(destination: URL(string: "https://ptrinh.github.io/viettelex/")!) {
                 Label("Website", systemImage: "globe")
             }
@@ -954,6 +957,15 @@ struct TinhNangSections: View {
             if swipeTyping {
                 settingToggle("Vuốt từ tiếng Anh", "Vuốt ra cả từ tiếng Anh xen trong câu: check, mail, file, meeting… Khi một nét vuốt vừa là từ Việt vừa là từ Anh (the/thế, can/cần), bàn phím ưu tiên tiếng Việt — trừ khi đang gõ tiếng Anh — và luôn để phương án kia trên thanh gợi ý.", isOn: $swipeEnglish)
                 settingToggle("Mô hình nơ-ron gõ vuốt", "Thêm mạng nơ-ron nhận dạng nét vuốt (chạy hoàn toàn trên máy) để chấm cùng bộ giải mã hiện có. Tốn thêm khoảng 3 MB bộ nhớ khi bàn phím mở.", isOn: $swipeFuto)
+                NavigationLink {
+                    SwipePracticeView()
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Luyện vuốt")
+                        Text("Vuốt thử từng từ trên bàn phím mẫu, xem bàn phím đọc đúng bao nhiêu.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 // Ghi công BẮT BUỘC theo FUTO Model Weights License 1.0 ("visible notice …
                 // within the product's settings") — Phil 27/09/2026: chỉ hiện ở đây (dưới công
                 // tắc, khi đã bật Gõ vuốt), chữ nhỏ mờ. KHÔNG xoá. Xem docs/DATA-SOURCES.md.

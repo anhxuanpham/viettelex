@@ -26,6 +26,8 @@ object Keys {
     const val SWIPE_ENGLISH = "swipeEnglish"
     /** Giải mã vuốt bằng mô hình FUTO Swipe (thử nghiệm, mặc định TẮT — FutoSwipe). */
     const val SWIPE_FUTO = "swipeFuto"
+    /** Luyện vuốt (app): đồng ý LƯU nét vuốt trên máy để xuất (mặc định TẮT, không gửi mạng). */
+    const val SWIPE_PRACTICE_SAVE = "swipePracticeSave"
     /** Chọn phím theo ngữ cảnh lúc chạm (thử nghiệm, mặc định BẬT) — TouchTarget. */
     const val SMART_TOUCH = "smartTouch"
     /** Vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh — mặc định TẮT (tắt ⇒ luôn Tiếng Việt). */

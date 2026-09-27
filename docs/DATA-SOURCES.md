@@ -135,6 +135,24 @@ LM), simulator Debug 1,91 vs 1,85 ms/vuốt (bigram) — LM gần như không t�
 quy: `SyllableLMTests` (iOS + Android) — top-1 ≥ 87,7 %, top-3 ≥ 95 %, hơn bigram ≥ 2,5
 điểm, bật tiếng Anh không tụt quá 1 điểm, câu trộn Việt–Anh không kém bigram.
 
+### Sửa lại từ vuốt trước — ngữ cảnh hai phía (27/09/2026, `SwipeRevise`)
+
+Cú vuốt w2 chấm lại ứng viên của từ vuốt liền trước w1 (≤ 8 âm tiết: 3 dạng × 4 dấu) bằng
+điểm cũ + 0.1·s(w2 | w0, c) kẹp [−1, 1]; thắng ≥ 0.1 ⇒ thay w1 (đuôi màn hình phải khớp),
+rồi chọn lại w2 theo ngữ cảnh trái mới. Chip "↩︎ từ cũ" hoàn tác. Chọn trọng số/lề trên dev
+(`SwipeReviseTests.sweep`: 0.1/0.1 ít sửa sai nhất ở gần mức tăng tối đa — 214 sửa đúng /
+12 sửa sai), đo MỘT lần trên tập kiểm thử (1/3 chuỗi heldout, vuốt TUẦN TỰ — ngữ cảnh trái
+là từ đã giải mã, không phải đáp án, nên thấp hơn bảng trên): JVM 80,9 % → **85,5 %**
+(+4,6 điểm, 204 sửa đúng / 12 sửa sai); iOS qua EngineBridge thật 78,0 % → **83,0 %** (+5,0).
+Chi phí: vài lần bung dấu + tra LM sau nhấc tay (JVM không đo được khác biệt, ~0,1 ms/vuốt).
+
+### Nét vuốt thật — Luyện vuốt
+
+App (Cài đặt → Gõ vuốt → Luyện vuốt) thu nét vuốt thật trên bàn phím mẫu cùng hình học,
+chỉ khi người dùng bật lưu; kho nằm trên máy (không sao lưu, không gửi mạng), xuất JSON
+(`viettelex-swipe-traces` v1, xem `SwipePractice.kt`). Đánh giá decoder trên file xuất:
+`Scripts/eval-swipe-traces.sh file.json` (top-1/top-3 hiện tại, lúc ghi, tách Việt/Anh).
+
 ## enlexicon.bin — từ điển tiếng Anh cho gõ vuốt (giai đoạn 3)
 
 - File: `iOS/Keyboard/Resources/enlexicon.bin`, `android/app/src/main/assets/enlexicon.bin`

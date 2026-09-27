@@ -20,6 +20,34 @@ final class KeyGeometryTests: XCTestCase {
         XCTAssertEqual(KeyGeometry.bottomRowTrim(pad: false, landscape: false), 4)
         XCTAssertEqual(KeyGeometry.bottomRowTrim(pad: false, landscape: true), 0)
         XCTAssertEqual(KeyGeometry.bottomRowTrim(pad: true, landscape: false), 0)
+        // Phím đáy 43 (stock) trong vùng 50: khe trên 7 — trước 6 + 44 trông cao hơn stock.
+        XCTAssertEqual(KeyGeometry.bottomRowTopMargin(pad: false, landscape: false), 7)
+        XCTAssertEqual(KeyGeometry.bottomRowTopMargin(pad: false, landscape: true), KeyGeometry.rowGap)
+        XCTAssertEqual(KeyGeometry.bottomRowTopMargin(pad: true, landscape: false), KeyGeometry.rowGap)
+    }
+
+    /// Chữ phím khớp stock (đo ảnh @3x 27/09): SF Compact, thường 24.5 / hoa-số 22.7, cùng
+    /// baseline 28pt dưới đỉnh phím 43. Trước: SF Pro 23 căn giữa → chữ thường nhỏ + thấp.
+    func testTypographyMatchesStock() {
+        typealias T = KeyGeometry.Typography
+        XCTAssertEqual(T.lowercaseSize, 24.5)
+        XCTAssertEqual(T.keycapSize, 22.7)
+        XCTAssertEqual(T.planeKeySize, 18.9)
+        XCTAssertEqual(T.fallbackKeycapSize, 21.3)
+        for s in ["a", "q", "đ", "ư", "ấ"] { XCTAssertTrue(T.isLowercase(s), s) }
+        for s in ["A", "Đ", "1", ",", "#+=", "", "@"] { XCTAssertFalse(T.isLowercase(s), s) }
+        XCTAssertEqual(T.size(for: "q", compact: true), 24.5)
+        XCTAssertEqual(T.size(for: "Q", compact: true), 22.7)
+        XCTAssertEqual(T.size(for: "7", compact: true), 22.7)
+        XCTAssertEqual(T.size(for: "Q", compact: false), 21.3)
+        // Baseline: phím 43 → 28 từ đỉnh; phím 44 (hàng chữ, nhô 1pt trên) → 29 (đáy trùng stock).
+        XCTAssertEqual(T.baselineFromTop(keyHeight: 43), 28)
+        XCTAssertEqual(T.baselineFromTop(keyHeight: 44), 29)
+        XCTAssertEqual(T.baselineFromTop(keyHeight: 30.5), 28 * 30.5 / 43, accuracy: 0.001)
+        // SF metrics (asc 0.952, desc −0.241) 24.5pt trên phím 44: căn giữa → baseline 30.7,
+        // phải dời lên 1.7pt.
+        let dy = T.titleOffsetY(keyHeight: 44, ascender: 0.952 * 24.5, descender: -0.241 * 24.5)
+        XCTAssertEqual(dy, -1.71, accuracy: 0.02)
     }
 
     func testNearestSplitsGapByDistance() {
@@ -69,7 +97,7 @@ final class KeyGeometryTests: XCTestCase {
         let num = try XCTUnwrap(kb.debugControl("Số"))
         let nf = frame(kb, num)
         XCTAssertEqual(nf.maxY, h, accuracy: 0.5, "hàng đáy sát đáy view")
-        XCTAssertEqual(nf.height, 44, accuracy: 0.5, "phím đáy vẫn cao 44")
+        XCTAssertEqual(nf.height, KeyGeometry.Stock.keyHeight, accuracy: 0.3, "phím đáy cao 43 như stock")
         XCTAssertEqual(h - nf.midY, stock[3], accuracy: 5, "đáy view cao hơn đáy phím stock 4pt")
     }
 
@@ -173,6 +201,35 @@ final class KeyGeometryTests: XCTestCase {
         let (kb, _) = makeKeyboard()
         try XCTUnwrap(kb.debugControl("Emoji")).sendActions(for: .touchCancel)
         XCTAssertEqual(kb.debugPlaneName, "emoji")
+    }
+
+    /// Nhãn phím chữ thật: font Compact (nếu có) đúng cỡ theo hoa/thường, baseline cách đáy
+    /// phím 15pt như stock — cả sau khi bật/tắt shift (retitle tại chỗ).
+    @MainActor func testLetterLabelsSitOnStockBaseline() throws {
+        try XCTSkipIf(isPad)
+        let (kb, _) = makeKeyboard()
+        func check(_ title: String, size: CGFloat, _ note: String) throws {
+            let b = try XCTUnwrap(kb.debugKeyButton(title), note)
+            b.layoutIfNeeded()
+            let l = try XCTUnwrap(b.titleLabel), f = try XCTUnwrap(l.font)
+            XCTAssertEqual(f.pointSize, size, accuracy: 0.01, note)
+            if KeyboardView.hasCompactFont {
+                XCTAssertTrue(f.fontName.localizedCaseInsensitiveContains("compact"), f.fontName)
+            }
+            let baseline = l.frame.midY + (f.ascender + f.descender) / 2
+            XCTAssertEqual(b.bounds.height - baseline, 15, accuracy: 0.5, "\(note) h=\(b.bounds.height)")
+        }
+        let T = KeyGeometry.Typography.self
+        let c = KeyboardView.hasCompactFont
+        let lowerFirst = kb.debugKeyButton("q") != nil
+        try check(lowerFirst ? "q" : "Q", size: T.size(for: lowerFirst ? "q" : "Q", compact: c), "ban đầu")
+        try XCTUnwrap(kb.debugControl("Shift")).sendActions(for: .touchDown)
+        kb.layoutIfNeeded()
+        try check(lowerFirst ? "Q" : "q", size: T.size(for: lowerFirst ? "Q" : "q", compact: c), "sau shift")
+        // Plane số: chữ số cỡ keycap, cùng baseline.
+        kb.debugSetPlane(numbers: true)
+        kb.setNeedsLayout(); kb.layoutIfNeeded()
+        try check("7", size: T.size(for: "7", compact: c), "plane số")
     }
 
     /// Chạm sát đỉnh vùng phím (khe trên q) vẫn ra q (trước: dời lên 4pt → ra ngoài → mất).

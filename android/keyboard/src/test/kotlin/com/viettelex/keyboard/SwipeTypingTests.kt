@@ -246,6 +246,90 @@ class SwipeTypingTests {
         assertNull(s.swipeAlternatives)
     }
 
+    // ---- sửa lại từ vuốt trước (ngữ cảnh hai phía, SwipeRevise) ----
+
+    /** Như [swipe] nhưng đi đường IME thật: resolveSwipe (có sửa lại từ trước) → commitSwipe. */
+    private fun KeyboardSession.swipeR(p: TextProxy, word: String, case: SwipeSuggest.Case = SwipeSuggest.Case.LOWER): SwipeChoice {
+        handle(Key.Letter(if (case == SwipeSuggest.Case.LOWER) word[0] else word[0].uppercaseChar()), p)
+        assertTrue("huỷ chữ đầu", undoLastLetter(p))
+        val path = SwipeSim(7).path(word, layout, sigma = 0.0, jitter = 0.0)
+        val ctx = swipeContext()
+        val cands = decoder.decode(path, SwipeSuggest.TOP_K, ctx.folded, ctx.english, if (ctx.english != null) ctx.englishWord else null)
+        val r = resolveSwipe(cands, ctx, case)!!
+        commitSwipe(r, p)
+        return r.choice
+    }
+
+    @Test fun nextSwipeRevisesPreviousAndOffersUndo() {
+        val s = session(); val p = MockProxy()
+        s.swipeR(p, "co")
+        assertEquals("có", p.text)                    // một mình: "có"
+        s.swipeR(p, "gang")
+        assertEquals("cố gắng", p.text)               // biết từ kế ⇒ sửa "cố", từ kế chọn lại theo "cố"
+        assertTrue(s.langModel.count("cố") > 0)
+        val set = s.suggestionsNow(p)!!
+        assertEquals("↩\uFE0E có", set.actionLabel)
+        assertEquals(SuggestionSet.UNDO_REVISE_TOKEN, set.action)
+        val before = s.langModel.count("cố")
+        s.acceptSuggestion(SuggestionSet.UNDO_REVISE_TOKEN, p)
+        assertEquals("có gắng", p.text)
+        assertTrue(s.langModel.count("cố") < before)  // rút lượt học từ mới
+        assertNull(s.suggestionsNow(p)!!.action)      // hoàn tác một lần
+        s.type(p, " ")
+        assertEquals("có gắng ", p.text)
+    }
+
+    @Test fun revisionKeepsCaseAndOnlyOnce() {
+        val s = session(); val p = MockProxy()
+        s.swipeR(p, "co", SwipeSuggest.Case.FIRST)
+        s.swipeR(p, "gang")
+        assertEquals("Cố gắng", p.text)
+        s.swipeR(p, "len")                             // "Cố" đã chốt: không bị sửa lần nữa
+        assertTrue(p.text, p.text.startsWith("Cố gắng "))
+    }
+
+    @Test fun noRevisionAfterUserEditOrChoice() {
+        // phím dấu Telex sửa từ vuốt ⇒ không còn nguyên ⇒ không sửa lại
+        run {
+            val s = session(); val p = MockProxy()
+            s.swipeR(p, "co")
+            s.handle(Key.Letter('f'), p)               // có → cò
+            assertEquals("cò", p.text)
+            s.swipeR(p, "gang")
+            assertTrue(p.text, p.text.startsWith("cò "))
+        }
+        // chọn phương án trên thanh gợi ý ⇒ user đã quyết
+        run {
+            val s = session(); val p = MockProxy()
+            s.swipeR(p, "co")
+            val alt = s.swipeAlternatives!!.first { it != "cố" }
+            s.acceptSuggestion(alt, p)
+            s.swipeR(p, "gang")
+            assertTrue(p.text, p.text.startsWith("$alt "))
+        }
+        // con trỏ dời (selection đổi từ ngoài) ⇒ quên
+        run {
+            val s = session(); val p = MockProxy()
+            s.swipeR(p, "co")
+            s.externalSelectionChange()
+            s.swipeR(p, "gang")
+            assertTrue(p.text, p.text.startsWith("có "))
+        }
+    }
+
+    @Test fun revisionFailSafeWhenScreenDiffers() {
+        val s = session(); val p = MockProxy()
+        s.swipeR(p, "co")
+        s.handle(Key.Letter('g'), p); assertTrue(s.undoLastLetter(p))
+        val path = SwipeSim(7).path("gang", layout, sigma = 0.0, jitter = 0.0)
+        val ctx = s.swipeContext()
+        val r = s.resolveSwipe(decoder.decode(path, SwipeSuggest.TOP_K, ctx.folded, ctx.english, ctx.englishWord), ctx)!!
+        assertEquals("cố", r.revisedPrev)
+        p.sb.setLength(0); p.sb.append("xco")          // host sửa chữ sau lưng
+        s.commitSwipe(r, p)
+        assertFalse(p.text, p.text.contains("cố"))     // đuôi lệch ⇒ không đụng
+    }
+
     @Test fun swipeAfterSwipeCommitsAndLearnsFirst() {
         val s = session(); val p = MockProxy()
         s.swipe(p, "viet")
