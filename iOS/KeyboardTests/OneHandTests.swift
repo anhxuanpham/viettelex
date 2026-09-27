@@ -181,10 +181,10 @@ final class OneHandTests: XCTestCase {
         XCTAssertLessThanOrEqual(f.maxX, span(.left).width + 0.5)
     }
 
-    /// Tổ hợp tích hợp: hàng số (VNI tự bật) + một tay + tìm emoji + bảng sửa có hàng công cụ.
-    /// Chữ thu hẹp 5 hàng → tìm emoji đầy bề ngang (ô tìm + 5 hàng) → bảng sửa thu hẹp →
-    /// về chữ vẫn thu hẹp đúng (planeCache + ràng buộc chéo hàng còn).
-    @MainActor func testNumberRowOneHandEmojiSearchEditPanel() throws {
+    /// Tổ hợp tích hợp: hàng số (VNI tự bật) + một tay + tìm emoji.
+    /// Chữ thu hẹp 5 hàng → tìm emoji đầy bề ngang (ô tìm + 5 hàng) → về chữ vẫn thu hẹp
+    /// đúng (planeCache + ràng buộc chéo hàng còn).
+    @MainActor func testNumberRowOneHandEmojiSearch() throws {
         guard !isPad else { return }
         let (kb, _) = makeKeyboard(.right, numberRow: true)
         kb.textToolsEnabled = true
@@ -197,14 +197,7 @@ final class OneHandTests: XCTestCase {
         let rows = kb.debugRowFrames()
         XCTAssertEqual(rows[0].height, rows[2].height, accuracy: 0.5)  // ô tìm cao bằng hàng chữ
         XCTAssertTrue(kb.debugRailFrames().isEmpty)
-        kb.toggleEditPanel()
-        kb.setNeedsLayout(); kb.layoutIfNeeded()
-        let panel = try XCTUnwrap(kb.debugEditPanel)
-        XCTAssertEqual(panel.debugTools, TextTool.allCases)
-        let f = kb.convert(panel.bounds, from: panel)
-        XCTAssertEqual(f.width, span(.right).width, accuracy: 0.5)
-        XCTAssertEqual(kb.debugRailFrames().count, 2)
-        kb.toggleEditPanel()
+        kb.debugSetPlane(numbers: false)
         kb.setNeedsLayout(); kb.layoutIfNeeded()
         XCTAssertEqual(kb.debugRowFrames().count, 5)
         try assertNarrowed(kb, .right)
@@ -235,12 +228,13 @@ final class OneHandTests: XCTestCase {
         XCTAssertEqual(kb.debugRailFrames().count, 2)
     }
 
-    @MainActor func testHoldEditZoneTogglesAndIPadIgnores() {
+    /// Bảng sửa văn bản đã bỏ — giữ lâu burger là lối bật/tắt một tay trên bàn phím.
+    @MainActor func testHoldBurgerTogglesAndIPadIgnores() {
         let (kb, _) = makeKeyboard(.off)
         kb.lastOneHandSide = .left
-        kb.debugHoldEditZone()
+        kb.debugHoldBurger()
         XCTAssertEqual(kb.oneHand, isPad ? .off : .left)
-        kb.debugHoldEditZone()
+        kb.debugHoldBurger()
         XCTAssertEqual(kb.oneHand, .off)
     }
 }

@@ -59,7 +59,8 @@ final class UserLangModel {
     // tính hợp lệ của một từ không đổi trong đời keyboard.
     private var knownCache: [String: Bool] = [:]
     // Cache topWords — invalidate khi record/decay/prune/seed thay đổi uni.
-    private var topCache: (k: Int, words: [String])?
+    /// `keys` = khoá chữ thường, `words` = dạng hiển thị, cùng thứ tự (count giảm, khoá tăng).
+    private var topCache: (k: Int, keys: [String], words: [String])?
 
     private static let uniCap = 3000
     private static let biCap = 6000
@@ -151,7 +152,7 @@ final class UserLangModel {
         let w = word.lowercased()
         uni[w, default: 0] += weight
         uniTotal += weight
-        topCache = nil
+        bumpTopCache(w)
         if let p1 = prev1?.lowercased(), Self.learnable(p1) {
             if bi[p1]?[w] == nil { biPairs += 1 }
             bi[p1, default: [:]][w, default: 0] += weight
@@ -293,14 +294,43 @@ final class UserLangModel {
     func topWords(limit: Int) -> [String] {
         if let c = topCache, c.k >= limit { return Array(c.words.prefix(limit)) }
         let sorted = uni.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
-        var out: [String] = []
+        var keys: [String] = [], out: [String] = []
         out.reserveCapacity(limit)
         for (w, _) in sorted where suggestable(w) {
+            keys.append(w)
             out.append(manual[w] ?? w)
             if out.count >= limit { break }
         }
-        topCache = (limit, out)
+        topCache = (limit, keys, out)
         return out
+    }
+
+    #if DEBUG
+    /// Test hook: bảng unigram (khoá chữ thường → count).
+    func debugUnigrams() -> [String: Int] { uni }
+    #endif
+
+    /// `w` vừa tăng count: cập nhật top-K TẠI CHỖ (K ≤ ~20) thay vì bỏ cache — trước đây
+    /// mỗi dấu cách sort lại tới 3000 từ trên main (topWords ở padWords sau mỗi từ).
+    /// Thứ tự giống hệt sort đầy đủ: count giảm dần, hoà theo khoá tăng dần.
+    private func bumpTopCache(_ w: String) {
+        guard var c = topCache else { return }
+        let n = uni[w] ?? 0
+        func before(_ a: String, _ ca: Int, _ b: String) -> Bool {
+            let cb = uni[b] ?? 0
+            return ca != cb ? ca > cb : a < b
+        }
+        if let i = c.keys.firstIndex(of: w) {
+            c.keys.remove(at: i); c.words.remove(at: i)
+        } else if !suggestable(w) {
+            return
+        } else if c.keys.count >= c.k, let last = c.keys.last, !before(w, n, last) {
+            return                                  // vẫn không lọt top-K
+        }
+        let j = c.keys.firstIndex { !before($0, uni[$0] ?? 0, w) } ?? c.keys.count
+        c.keys.insert(w, at: j); c.words.insert(manual[w] ?? w, at: j)
+        if c.keys.count > c.k { c.keys.removeLast(); c.words.removeLast() }
+        topCache = c
     }
 
     /// Từ kế tiếp sau (prev2, prev1): interpolation trigram ⊕ bigram ⊕ unigram

@@ -837,6 +837,15 @@ struct TinhNangSections: View {
     private var showSuggestions = true
     @AppStorage("filterSensitive", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var filterSensitive = true
+    // Công tắc phụ của thanh gợi ý (KeyboardSettings) — tắt = bàn phím không làm việc đó.
+    @AppStorage("emojiSuggest", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var emojiSuggest = true
+    @AppStorage("numberChips", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var numberChips = true
+    @AppStorage("pasteButton", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var pasteButton = true
+    @AppStorage("addTonesChip", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var addTonesChip = false
     @AppStorage("templatesEnabled", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var templatesEnabled = true
     @AppStorage("rowHeightAdjust", store: UserDefaults(suiteName: "group.com.viettelex"))
@@ -873,6 +882,14 @@ struct TinhNangSections: View {
             // còn toggle riêng — quyết định 2026-07-24)
             settingToggle("Thanh gợi ý", "Gợi ý từ + emoji, tự học từ bạn hay dùng (chỉ trên máy).", isOn: $showSuggestions)
             settingToggle("Lọc từ nhạy cảm khỏi gợi ý", "Không chủ động gợi ý từ tục — gõ tay và học vẫn bình thường.", isOn: $filterSensitive)
+            if showSuggestions {
+                settingToggle("Gợi ý emoji", "Emoji hợp với từ đang gõ (yêu → ❤️).", isOn: $emojiSuggest)
+                settingToggle("Chip số", "Sau khi gõ số: đọc thành chữ, định dạng tiền, tính phép tính (2+3 → 5).", isOn: $numberChips)
+                settingToggle("Nút Dán", "Vừa copy xong thì thanh gợi ý hiện nút Dán (cần Toàn quyền).", isOn: $pasteButton)
+                if PlusGate.isUnlocked(.sentenceDiacritics) {
+                    settingToggle("Chip “Thêm dấu”", "Sau dấu cách, nếu câu vừa gõ không dấu thì hiện chip “Thêm dấu” — một chạm thêm dấu cả câu. Tắt mặc định: bàn phím phải đọc lại câu ở mỗi dấu cách.", isOn: $addTonesChip)
+                }
+            }
             settingToggle("Mẫu câu", "Nút ☰ trên bàn phím chèn nhanh câu soạn sẵn — quản lý ở tab Mẫu Câu.", isOn: $templatesEnabled)
             NavigationLink {
                 UserDictView()
@@ -923,7 +940,7 @@ struct TinhNangSections: View {
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
-                    Text("Thu hẹp bàn phím về một bên. Trên bàn phím: giữ lâu icon con trỏ trên thanh gợi ý để bật/tắt nhanh; nút ở dải trống để đổi bên hoặc thoát.")
+                    Text("Thu hẹp bàn phím về một bên. Trên bàn phím: giữ lâu nút ☰ (mẫu câu) trên thanh gợi ý để bật/tắt nhanh; nút ở dải trống để đổi bên hoặc thoát.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }

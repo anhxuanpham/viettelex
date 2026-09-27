@@ -409,6 +409,21 @@ enum NumberChips {
     /// • số trơn / có phân cách → chữ (không "đồng"). Số trơn mở đầu bằng 0 (điện thoại,
     ///   mã) hoặc dài >12 chữ số → không gợi ý.
     /// Chuỗi chip: "1tr2" → "1.200.000 ₫" → "một triệu hai trăm nghìn đồng".
+    /// Có chữ số trong 2 token cuối trước con trỏ ("2 tỷ", "1250000 ")? Không ⇒ chip số chắc
+    /// chắn không có tới khi gõ số / ký hiệu mới — controller thôi đọc context mỗi phím.
+    static func digitNearCaret(_ before: String) -> Bool {
+        var tokens = 0, inToken = false
+        for ch in before.reversed() {
+            if ch.isNumber { return true }
+            if ch.isWhitespace {
+                if inToken { tokens += 1; inToken = false; if tokens >= 2 { return false } }
+            } else {
+                inToken = true
+            }
+        }
+        return false
+    }
+
     static func chip(before: String, le: Bool = false) -> NumberChip? {
         if before.hasSuffix("=") { return calcChip(before: before) }
         var ctx = Substring(before)

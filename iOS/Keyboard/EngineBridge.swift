@@ -63,6 +63,18 @@ struct KeyboardSettings {
     /// "Thêm bộ gợi ý" trong app). Bảng lưu App Group key "shortcuts" ([khoá: nội dung]).
     var shortcutsEnabled = true
     var shortcuts = ShortcutTable()
+    /// Chip "Thêm dấu" tự hiện sau dấu cách khi câu trước con trỏ gõ không dấu (Plus) —
+    /// mặc định TẮT (27/09/2026, ưu tiên hiệu năng): tắt ⇒ không đọc context / không chạy
+    /// AddTones ở mỗi dấu cách.
+    var addTonesChip = false
+    /// Chip số (đọc số thành chữ / định dạng tiền / máy tính) — mặc định BẬT; tắt ⇒ không
+    /// đọc context sau chữ số.
+    var numberChips = true
+    /// Emoji trên thanh gợi ý khi đang gõ — mặc định BẬT; tắt ⇒ không tra bảng emoji mỗi phím.
+    var emojiSuggest = true
+    /// Nút "Dán" nội dung vừa copy trên thanh gợi ý — mặc định BẬT; tắt ⇒ không hỏi
+    /// UIPasteboard (XPC) ở đầu từ.
+    var pasteButton = true
 
     static func load() -> KeyboardSettings {
         var s = KeyboardSettings()
@@ -88,6 +100,10 @@ struct KeyboardSettings {
         if s.shortcutsEnabled, let dict = d.dictionary(forKey: ShortcutFile.storeKey) as? [String: String] {
             s.shortcuts = ShortcutTable(dict)
         }
+        let flags: [(String, WritableKeyPath<KeyboardSettings, Bool>)] = [
+            ("addTonesChip", \.addTonesChip), ("numberChips", \.numberChips),
+            ("emojiSuggest", \.emojiSuggest), ("pasteButton", \.pasteButton)]
+        for (k, kp) in flags where d.object(forKey: k) != nil { s[keyPath: kp] = d.bool(forKey: k) }
         s.learnWords = s.showSuggestions   // bật gợi ý = bật học (quyết định 2026-07-24)
         return s
     }
@@ -145,6 +161,9 @@ final class EngineBridge {
         var settled: SettledCommit? = nil
     }
     private var letterUndo: LetterUndo?
+    /// Có ghi checkpoint huỷ phím chữ không. Controller chỉ bật khi có người dùng nó
+    /// (iPad vuốt xuống ra ký tự phụ, gõ vuốt); tắt ⇒ 0 copy engine mỗi phím.
+    var letterUndoEnabled = true
 
     // MARK: gõ vuốt — từ vuốt là composition ĐANG MỞ (seed)
     /// Từ vuốt vừa chèn vẫn đang mở trong engine: phím dấu Telex sửa được, gợi ý thay
@@ -353,7 +372,9 @@ final class EngineBridge {
             return                                    // sửa từ trên màn hình: không huỷ được
         }
         let before = engine.composed
-        let snapshot = engine
+        // Chụp engine CHỈ khi cần huỷ phím (iPad vuốt xuống / gõ vuốt): giữ bản copy qua
+        // feed() làm COW nhân đôi buffer engine MỖI PHÍM (cấp phát trên đường nóng).
+        let snapshot: TelexEngine? = letterUndoEnabled ? engine : nil
         let action = engine.feed(ch)
         guard safeToApply(action, expected: before, proxy: proxy) else {
             // Chữ trước con trỏ không còn là từ đang gõ → bỏ từ cũ, phím này mở từ MỚI
@@ -363,6 +384,7 @@ final class EngineBridge {
             return
         }
         apply(action, literal: String(ch), proxy: proxy)
+        guard let snapshot else { letterUndo = nil; return }
         switch action {
         case .replace(let bs, let insert):
             letterUndo = LetterUndo(engine: snapshot, removed: String(before.suffix(bs)),

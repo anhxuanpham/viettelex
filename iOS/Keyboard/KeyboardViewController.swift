@@ -9,7 +9,22 @@ final class KeyboardViewController: UIInputViewController {
 
     private var bridge = EngineBridge()
     private var keyboard: KeyboardView!
-    private let langModel = UserLangModel()
+    /// Model học từ cá nhân — tạo LƯỜI khi tính năng cần (thanh gợi ý / gõ vuốt / Thêm dấu).
+    /// Tắt hết ⇒ không đọc userlm.plist, không seed, không giữ bảng trong RAM.
+    private var langModelStorage: UserLangModel?
+    private var langModel: UserLangModel {
+        if let m = langModelStorage { return m }
+        let m = UserLangModel()
+        m.isKnownWord = { VNSuggest.contains($0) }
+        // Datastore trống (lần đầu / vừa reset) → mồi bằng seed corpus để
+        // ngày đầu tiên đã có gợi ý hợp lý; dữ liệu học thật vượt seed sau
+        // vài ngày (weight seed ≤50, gõ thật +1/lần, decay tuần).
+        m.seedIfEmpty(unigrams: SeedData.unigrams, bigrams: SeedData.bigrams)
+        // Load plist chạy nền — bar mở-đầu refresh khi dữ liệu sẵn sàng.
+        m.onReady = { [weak self] in self?.updateSuggestions() }
+        langModelStorage = m
+        return m
+    }
     private var lastWord: String?         // từ liền trước trong câu (context bigram)
     private var lastWord2: String?        // từ trước nữa (context trigram)
     private var learnEnabled = true
@@ -59,26 +74,13 @@ final class KeyboardViewController: UIInputViewController {
             inputController: self,     // globe key addTarget thẳng vào handleInputModeList
             onKey: { [weak self] key in self?.handle(key) }
         )
-        langModel.isKnownWord = { VNSuggest.contains($0) }
-        // Datastore trống (lần đầu / vừa reset) → mồi bằng seed corpus để
-        // ngày đầu tiên đã có gợi ý hợp lý; dữ liệu học thật vượt seed sau
-        // vài ngày (weight seed ≤50, gõ thật +1/lần, decay tuần).
-        langModel.seedIfEmpty(unigrams: SeedData.unigrams, bigrams: SeedData.bigrams)
-        // Load plist chạy nền — bar mở-đầu refresh khi dữ liệu sẵn sàng.
-        langModel.onReady = { [weak self] in self?.updateSuggestions() }
-        // Map bảng bigram âm tiết (dùng chung gõ vuốt + thanh gợi ý) ở NỀN: lần chạm đầu
-        // hash vnlexicon (~150KB) để kiểm khớp — đừng để rơi vào main ở gợi ý từ kế tiếp.
-        Self.suggestQueue.async { _ = SyllableBigram.shared; _ = SwipeLexicon.forms }
         keyboard.onDeleteWord = { [weak self] in self?.deleteWordBackward() }
         wireWordSwipe()
         wireSwipeTyping()
-        keyboard.letterPrior = { [weak self] in self?.smartTouchPrior() }
         keyboard.onBarToggle = { [weak self] in self?.updateSuggestions() }
         keyboard.onTemplate = { [weak self] in self?.insertTemplate($0) }
         keyboard.onOpenTemplates = { [weak self] in self?.openTemplatesInApp() }
         keyboard.onTextTool = { [weak self] in self?.applyTextTool($0) }
-        keyboard.onEditAction = { [weak self] in self?.performEdit($0) }
-        keyboard.editCapabilities = { [weak self] in self?.editCaps() ?? TextEditing.Caps() }
         keyboard.onOneHandChange = { side in
             // Bàn phím tự lưu (không Full Access thì không ghi được App Group).
             UserDefaults.standard.set(side.rawValue, forKey: OneHand.key)
@@ -96,6 +98,13 @@ final class KeyboardViewController: UIInputViewController {
             keyboard.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
     }
+
+    #if DEBUG
+    /// Test/bench (KeyboardBenchTests, CompositionSync…): proxy giả thay host. Release không có.
+    var debugProxy: UITextDocumentProxy?
+    override var textDocumentProxy: UITextDocumentProxy { debugProxy ?? super.textDocumentProxy }
+    var debugKeyboard: KeyboardView { keyboard }
+    #endif
 
     #if DEBUG
     // Đo chi phí hiện bàn phím (Console filter "VTKB perf"): thân viewWillAppear,
@@ -132,8 +141,15 @@ final class KeyboardViewController: UIInputViewController {
         swipeSetting = settings.swipeTyping
         swipeEnglishSetting = settings.swipeEnglish
         smartTouchSetting = settings.smartTouch
+        // Tắt ⇒ router không gọi prior (không closure, không cấp phát ở vùng biên phím).
+        keyboard.letterPrior = smartTouchSetting ? { [weak self] in self?.smartTouchPrior() } : nil
         if smartTouchSetting { TelexKeyPrior.warmUpInBackground() }
         if !swipeSetting { swipe = nil }              // tắt ⇒ bỏ template (RAM)
+        addTonesSetting = settings.addTonesChip && PlusGate.isUnlocked(.sentenceDiacritics)
+        numberChipsSetting = settings.numberChips
+        emojiSuggestSetting = settings.emojiSuggest
+        pasteButtonSetting = settings.pasteButton
+        warmUpData()
         swipeSuggest = nil
         recentEnglish = []
         addTonesUndo = nil; addTonesDismissed = nil; addTonesCache = nil
@@ -180,7 +196,7 @@ final class KeyboardViewController: UIInputViewController {
     private func checkExternalDictEdit() {
         let v = UserDefaults(suiteName: "group.com.viettelex")?.double(forKey: "userlmResetAt") ?? 0
         if let seen = seenDictResetAt, seen != v {
-            langModel.reloadAfterExternalEdit()
+            langModelStorage?.reloadAfterExternalEdit()
             ctxCacheKey = nil
         }
         seenDictResetAt = v
@@ -218,7 +234,38 @@ final class KeyboardViewController: UIInputViewController {
         super.viewWillDisappear(animated)
         closeClipboardPanel()
         learnSettledSwipe()
-        langModel.saveNow()   // extension có thể bị kill ngay sau disappear
+        langModelStorage?.saveNow()   // extension có thể bị kill ngay sau disappear
+    }
+
+    /// Nạp NỀN dữ liệu tính năng đang BẬT (tắt ⇒ không nạp gì): model cá nhân + bảng bigram
+    /// âm tiết cho thanh gợi ý / gõ vuốt; dạng không dấu (SwipeLexicon) chỉ cho gõ vuốt.
+    /// Bigram: lần chạm đầu hash vnlexicon (~150KB) — đừng để rơi vào main.
+    private func warmUpData() {
+        let wantsLM = showSuggestionsSetting || swipeSetting || addTonesSetting
+        if wantsLM { _ = langModel }
+        let swipeOn = swipeSetting
+        if showSuggestionsSetting || swipeOn {
+            Self.suggestQueue.async {
+                _ = SyllableBigram.shared
+                if swipeOn { _ = SwipeLexicon.forms }
+            }
+        }
+    }
+
+    /// Ẩn hẳn: bỏ cache/đề xuất tạm (template gõ vuốt GIỮ — dựng lại mỗi lần hiện tốn CPU
+    /// hơn; nhả khi hệ thống báo thiếu RAM).
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        swipeSuggest = nil
+        addTonesCache = nil
+    }
+
+    override func didReceiveMemoryWarning() {
+        super.didReceiveMemoryWarning()
+        langModelStorage?.saveNow()
+        closeClipboardPanel()
+        addTonesCache = nil
+        if view.window == nil { swipe = nil }
     }
 
     // Host truyền .default là thường — dark/light thật nằm ở trait hệ thống,
@@ -346,10 +393,9 @@ final class KeyboardViewController: UIInputViewController {
             if externalChangePending { syncComposition("selectionDidChange") }
             refreshFieldTraits()
         }
-        keyboard?.refreshEditPanel()     // Sao chép / Cắt sáng khi người dùng vừa chọn chữ
     }
 
-    // MARK: chế độ một tay + bảng sửa văn bản
+    // MARK: chế độ một tay
 
     /// App (App Group) vừa đổi lựa chọn ⇒ theo app; không thì theo trạng thái bàn phím tự lưu.
     private func applyOneHandSetting() {
@@ -365,51 +411,6 @@ final class KeyboardViewController: UIInputViewController {
             keyboard.lastOneHandSide = last
         }
         keyboard.configureOneHand(side)
-    }
-
-    /// Sao chép / cắt cần phần ĐANG CHỌN (selectedText, iOS 16+) + Full Access; dán cần
-    /// Full Access + clipboard có chữ (hasStrings không bật hỏi quyền dán).
-    private func editCaps() -> TextEditing.Caps {
-        guard hasFullAccess else { return TextEditing.Caps() }
-        let sel = textDocumentProxy.selectedText?.isEmpty == false
-        return TextEditing.Caps(canCopyCut: sel, canPaste: UIPasteboard.general.hasStrings)
-    }
-
-    /// Thực thi nút bảng sửa (xem giới hạn iOS ở TextEditing.swift). Di con trỏ tái dùng
-    /// đường trackpad (.moveCursor / .moveLine) — engine reset, auto-shift, gợi ý như cũ.
-    private func performEdit(_ a: TextEditAction) {
-        switch a {
-        case .left: handle(.moveCursor(-1))
-        case .right: handle(.moveCursor(1))
-        case .up: handle(.moveLine(-1))
-        case .down: handle(.moveLine(1))
-        case .lineStart:
-            let off = TextEditing.lineStartOffset(before: textDocumentProxy.documentContextBeforeInput ?? "")
-            if off != 0 { handle(.moveCursor(off)) }
-        case .lineEnd:
-            let off = TextEditing.lineEndOffset(after: textDocumentProxy.documentContextAfterInput ?? "")
-            if off != 0 { handle(.moveCursor(off)) }
-        case .delete: handle(.backspace)
-        case .copy, .cut:
-            guard hasFullAccess, let s = textDocumentProxy.selectedText, !s.isEmpty else { return }
-            let pb = UIPasteboard.general
-            pb.string = s
-            pasteUsedChange = pb.changeCount          // chữ của chính mình: khỏi mời "Dán" lại
-            pasteCached = false
-            guard a == .cut else { return }
-            applyingEdit = true
-            textDocumentProxy.deleteBackward()        // có vùng chọn ⇒ xoá đúng vùng chọn
-            applyingEdit = false
-            bridge.reset(); lastWord = nil; lastWord2 = nil
-            restoreUndo = nil; undoOfferActive = false
-            updateAutoShift()
-            updateSuggestions()
-        case .paste:
-            guard hasFullAccess else { return }
-            acceptSuggestion(KeyboardView.pasteToken)  // cùng đường với thẻ Dán
-        case .close, .oneHand, .select, .selectWord, .selectAll, .undo, .redo:
-            break                                      // view tự lo / iOS không làm được
-        }
     }
 
     private var applyingEdit = false
@@ -608,6 +609,8 @@ final class KeyboardViewController: UIInputViewController {
         // Gợi ý hoãn ~30ms (gen bỏ lượt cũ nếu phím mới tới trước). Thực tế phím
         // cách nhau 100–200ms nên hiếm khi gộp — phần nặng (VNSuggest + sửa chạm
         // trượt) giờ chạy nền trong updateSuggestions, main chỉ re-rank + vẽ bar.
+        // Bar tắt / thu gọn ⇒ không lên lịch gì (0 closure, 0 timer mỗi phím).
+        guard suggestionsActive, keyboard?.isBarCollapsed != true else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
             guard let self, gen == self.suggestionGen else { return }
             self.updateSuggestions()
@@ -621,6 +624,11 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private var suggestionGen = 0
+    /// Công tắc phụ của thanh gợi ý (KeyboardSettings) — đọc mỗi lần hiện.
+    private var addTonesSetting = false
+    private var numberChipsSetting = true
+    private var emojiSuggestSetting = true
+    private var pasteButtonSetting = true
     /// Số lượt updateSuggestions — kết quả nền chỉ áp nếu là lượt mới nhất.
     private var suggestReq = 0
     private static let suggestQueue = DispatchQueue(label: "com.viettelex.suggest",
@@ -966,7 +974,8 @@ final class KeyboardViewController: UIInputViewController {
         }
         set.number = refreshNumberChip()
         if composed.isEmpty, pasteOffer() {
-            set.paste = true; set.pasteIsImage = pasteIsImage
+            // Nút Dán tắt: vẫn ghi lịch sử + chip tách số (thuộc Lịch sử clipboard).
+            set.paste = pasteButtonSetting; set.pasteIsImage = pasteIsImage
             let chips = clip.chips(currentChange: pasteSeenChange, usedChange: pasteUsedChange)
             // Chip tách số (≤2) + ô "Dán" nguyên văn ở cuối: SuggestionSlots.arrange.
             set.clipChips = chips.map { ($0.label, KeyboardView.clipTokenPrefix + $0.value) }
@@ -987,9 +996,12 @@ final class KeyboardViewController: UIInputViewController {
     /// Chip số cho token trước con trỏ (NumberChips — đọc chữ / định dạng tiền / máy tính).
     private func refreshNumberChip() -> String? {
         numberChip = nil
-        guard numberSpaces <= 1,
+        guard numberChipsSetting, numberSpaces <= 1,
               let before = textDocumentProxy.documentContextBeforeInput else { return nil }
         numberChip = NumberChips.chip(before: before)
+        // Không còn chữ số gần con trỏ (vd ⌫ chỉ xoá chữ) ⇒ ngưng đọc context mỗi phím
+        // tới khi gõ số / ký hiệu mới (trước đây: sau ⌫ mọi phím chữ tới 2 dấu cách).
+        if numberChip == nil, !NumberChips.digitNearCaret(before) { numberSpaces = 99 }
         return numberChip?.display
     }
 
@@ -1041,12 +1053,13 @@ final class KeyboardViewController: UIInputViewController {
         // Emoji KHÔNG bị lọc nhạy cảm (user 2026-07-24: gõ "cứt"/"shit"
         // phải ra 💩) — filter chỉ chặn gợi ý TỪ, emoji là cách nói giảm.
         var emojis: [String] = []
-        let cLow = composed.lowercased()
-        if let prev = lastWord {
-            emojis = EmojiSuggest.emojis(for: prev.lowercased() + " " + cLow)
+        if emojiSuggestSetting {
+            if let prev = lastWord {
+                emojis = EmojiSuggest.emojis(for: prev.lowercased() + " " + composed.lowercased())
+            }
+            if emojis.isEmpty { emojis = EmojiSuggest.emojis(for: composed) }
+            if emojis.isEmpty { emojis = EmojiSuggest.emojis(for: raw.lowercased()) }
         }
-        if emojis.isEmpty { emojis = EmojiSuggest.emojis(for: composed) }
-        if emojis.isEmpty { emojis = EmojiSuggest.emojis(for: raw.lowercased()) }
         set.emojis = emojis
         // Không có emoji lấp slot 3 → đệm word/word2 cho đủ (literal + 2 từ).
         if emojis.isEmpty {
@@ -1075,6 +1088,7 @@ final class KeyboardViewController: UIInputViewController {
     private var pasteCached = false
     private var pasteIsImage = false
     private func pasteOffer() -> Bool {
+        guard pasteButtonSetting || clip.historyEnabled else { return false }
         guard hasFullAccess else { TouchLog.write("paste: no Full Access"); return false }
         // Chỉ ở "đầu chỗ gõ": ô trống, hoặc ngay trước con trỏ là khoảng trắng/xuống dòng.
         // Bàn phím vừa hiện lại sau "Đang viết" thì engine rỗng nhưng vẫn là gõ dở chữ
@@ -1323,6 +1337,8 @@ extension KeyboardViewController {
                                      traits: fieldTraits,
                                      voiceOver: UIAccessibility.isVoiceOverRunning)
         keyboard.swipeEnabled = on
+        // Checkpoint huỷ phím chữ chỉ có người dùng khi gõ vuốt / iPad vuốt xuống.
+        bridge.letterUndoEnabled = on || UIDevice.current.userInterfaceIdiom == .pad
         if on, swipe == nil { swipe = SwipeTyping() }
         if on { pushSwipeLayout(prepare: true) }
         if on, swipeEnglishSetting { swipe?.preloadEnglish() }
@@ -1542,7 +1558,7 @@ extension KeyboardViewController {
     /// Kế hoạch thêm dấu cho chữ trước con trỏ (cache theo văn bản); nil = không mời.
     /// documentContextBeforeInput là bản host đẩy sẵn — đọc rẻ (xem pasteOffer).
     fileprivate func addTonesPlan() -> AddTones.Plan? {
-        guard PlusGate.isUnlocked(.sentenceDiacritics), bridge.composedWord.isEmpty,
+        guard addTonesSetting, bridge.composedWord.isEmpty,
               let before = textDocumentProxy.documentContextBeforeInput, !before.isEmpty else { return nil }
         if let c = addTonesCache, c.before == before { return c.plan }
         let lm = langModel
@@ -1592,3 +1608,4 @@ extension KeyboardViewController {
         updateAutoShift(); updateSuggestions()
     }
 }
+
