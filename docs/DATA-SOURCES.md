@@ -322,8 +322,8 @@ tắt: không tạo đối tượng, không đọc file — đường gõ vuốt
 Có từ trước (không đổi trong đợt bigram); nguồn ghi ở `Scripts/gen-vnlexicon.py`:
 danh sách 7.184 âm tiết của hieuthi (gist GitHub) và tần suất từ
 [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords) (nội dung
-CC BY-SA 4.0 theo README dự án; số liệu suy ra từ OpenSubtitles). Cần rà soát giấy phép
-gist hieuthi nếu phát hành lại vnlexicon.bin độc lập.
+CC BY-SA 4.0 theo README dự án; số liệu suy ra từ OpenSubtitles). Danh sách âm tiết
+gist hieuthi: maintainer đã rà soát 27/09/2026 — được sử dụng tự do.
 
 ## emoji.bin — bàn phím emoji: bộ emoji, tìm kiếm tiếng Việt, kaomoji
 
