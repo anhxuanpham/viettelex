@@ -46,6 +46,8 @@ data class KeyboardSettings(
     var swipeFuto: Boolean = false,
     /** Chọn phím theo ngữ cảnh lúc chạm vùng biên 2 phím (TouchTarget) — thử nghiệm, mặc định BẬT. */
     var smartTouch: Boolean = true,
+    /** Tự sửa từ gõ sai ở dấu cách ([AutoCorrect]) — thử nghiệm, mặc định TẮT. Giống iOS. */
+    var autoCorrect: Boolean = false,
     /** Vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh — mặc định TẮT. Giống iOS. */
     var spaceSwipeLanguage: Boolean = false,
     /** Telex cho bàn phím cứng — mặc định BẬT; tắt ⇒ IME không đụng KeyEvent. */
@@ -97,6 +99,7 @@ data class KeyboardSettings(
             s.swipeEnglish = b(Keys.SWIPE_ENGLISH, s.swipeEnglish)
             s.swipeFuto = b(Keys.SWIPE_FUTO, s.swipeFuto)
             s.smartTouch = b(Keys.SMART_TOUCH, s.smartTouch)
+            s.autoCorrect = b(Keys.AUTO_CORRECT, s.autoCorrect)
             s.spaceSwipeLanguage = b(Keys.SPACE_SWIPE_LANGUAGE, s.spaceSwipeLanguage)
             s.hardwareTelex = b(Keys.HARDWARE_TELEX, s.hardwareTelex)
             s.shortcutsEnabled = b(Keys.SHORTCUTS_ENABLED, s.shortcutsEnabled)

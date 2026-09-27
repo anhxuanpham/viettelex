@@ -18,11 +18,21 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
     var shortcutsAllowed = true
 
     /** Lần bung gõ tắt gần nhất — ⌫ NGAY SAU đó trả lại đúng chữ đã gõ (một lần). */
-    private class ExpansionUndo(val typed: String, val expansion: String, val boundary: String)
+    private class ExpansionUndo(val typed: String, val expansion: String, val boundary: String, val autoCorrect: Boolean = false)
     private var expansionUndo: ExpansionUndo? = null
-    /** boundary() vừa rồi đã bung gõ tắt (session: không mời hoàn tác khôi phục, học nội dung). */
+    /** boundary() vừa rồi đã bung gõ tắt / tự sửa (session: không mời hoàn tác khôi phục, học nội dung). */
     var expandedAtLastBoundary = false
         private set
+
+    /**
+     * Tự sửa từ gõ sai ([AutoCorrect]): phím thô của từ vừa gõ → từ sửa hoặc null. Session chỉ
+     * gắn khi công tắc BẬT và ô cho phép; null ⇒ boundary không tốn thêm gì.
+     */
+    var autoCorrector: ((String) -> String?)? = null
+    /** ⌫ / chip vừa trả lại chữ gốc của một lần tự sửa: chữ gốc (một lần — session đọc rồi xoá). */
+    var revertedAutoCorrect: String? = null
+    /** Lần tự sửa còn hoàn tác được (chữ gốc, từ đã sửa) — chip "↩︎ chữ gốc" trên thanh gợi ý. */
+    val autoCorrectUndo: Pair<String, String>? get() = expansionUndo?.takeIf { it.autoCorrect }?.let { it.typed to it.expansion }
 
     /**
      * Ký tự ngay trước con trỏ là ranh giới CHÍNH MÌNH vừa chèn ⇒ không có từ nào để nạp
@@ -240,6 +250,7 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
             put(text)
             return word
         }
+        if (expand) autoCorrector?.let { ac -> tryAutoCorrect(ac, text, proxy, ::put)?.let { return it } }
         val before = engine.composed
         val action = engine.commitBoundary(settings.autoRestore)
         if (action is TelexAction.Replace && action.backspaces > 0 && !proxy.confirmTail(before)) {
@@ -388,6 +399,40 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
         return expansion
     }
 
+    /**
+     * Tự sửa ở ranh giới [text]: chỉ khi ô đọc/sửa được, chữ trước con trỏ đúng là từ đang soạn
+     * (không dính URL/email/số — [ShortcutTable.isGlued]), chữ hoa hợp lệ ([AutoCorrect.caseAllows]).
+     * Thay từ + ranh giới; ⌫ ngay sau trả lại đúng chữ boundary lẽ ra đã chốt (như hoàn tác gõ tắt).
+     */
+    private fun tryAutoCorrect(ac: (String) -> String?, text: String, proxy: TextProxy, put: (String) -> Unit): String? {
+        if (engine.isEmpty || !AutoCorrect.triggers(text) || !proxy.canReEdit || proxy.hasSelection) return null
+        val raw = engine.rawKeystrokes
+        val fix = ac(raw) ?: return null
+        val shown = engine.composed
+        val ctx = proxy.contextBeforeInput() ?: return null
+        if (ShortcutTable.isGlued(shown, ctx) || !proxy.confirmTail(shown)) return null
+        if (!AutoCorrect.caseAllows(raw, AutoCorrect.isSentenceStart(Cp.dropLast(ctx, Cp.count(shown))))) return null
+        val original = engine.peekCommitText(settings.autoRestore)
+        if (fix == original) return null
+        engine.reset()
+        engine.forgetLastCommit()
+        engine.noteExternalWord(false)
+        TouchLog.write("autocorrect: -${Cp.count(shown)} +${Cp.count(fix)}")
+        proxy.deleteCodePoints(Cp.count(shown))
+        proxy.insertText(fix)
+        put(text)
+        expandedAtLastBoundary = true
+        expansionUndo = ExpansionUndo(original, fix, text, autoCorrect = true)
+        return fix
+    }
+
+    /** Chip "↩︎ chữ gốc": trả lại chữ gốc của lần tự sửa vừa rồi (như ⌫ ngay sau). */
+    fun revertAutoCorrect(proxy: TextProxy): Boolean {
+        val u = expansionUndo?.takeIf { it.autoCorrect } ?: return false
+        expansionUndo = null
+        return undoExpansion(u, proxy)
+    }
+
     /** ⌫ ngay sau khi bung: màn hình phải kết thúc ĐÚNG bằng nội dung + ranh giới. */
     private fun undoExpansion(u: ExpansionUndo, proxy: TextProxy): Boolean {
         if (proxy.isSecure || passthrough || proxy.hasSelection) return false
@@ -404,6 +449,7 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
         engine.forgetLastCommit()
         afterOwnBoundary = u.boundary.isNotEmpty() && !Character.isLetterOrDigit(u.boundary.codePointBefore(u.boundary.length))
         TouchLog.write("shortcut undo: -${Cp.count(u.expansion)} +${Cp.count(u.typed)}")
+        if (u.autoCorrect) revertedAutoCorrect = u.typed
         return true
     }
 

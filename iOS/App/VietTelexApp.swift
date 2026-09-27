@@ -865,6 +865,9 @@ struct TinhNangSections: View {
     /// Chọn phím theo ngữ cảnh (thử nghiệm) — mặc định BẬT, xem KeyboardSettings.smartTouch.
     @AppStorage("smartTouch", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var smartTouch = true
+    /// Tự sửa từ gõ sai (thử nghiệm) — mặc định TẮT, xem KeyboardSettings.autoCorrect.
+    @AppStorage("autoCorrect", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var autoCorrect = false
     /// Vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh — mặc định TẮT (KeyboardSettings.spaceSwipeLanguage).
     @AppStorage("spaceSwipeLanguage", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var spaceSwipeLanguage = false
@@ -953,6 +956,7 @@ struct TinhNangSections: View {
 
         Section {
             settingToggle("Chọn phím thông minh", "Chạm lệch sát mép giữa hai phím thì bàn phím chọn phím hợp với chữ đang gõ (như bàn phím iPhone) — bớt gõ trượt sang phím bên cạnh. Chạm giữa phím luôn ra đúng phím đó; chữ đã gõ không bao giờ bị tự sửa.", isOn: $smartTouch)
+            settingToggle("Tự sửa từ gõ sai", "Sửa khi gõ dấu cách nếu chữ vừa gõ không phải từ hợp lệ (chạm trượt sang phím kề: tpoi → tôi). Chỉ sửa khi chắc chắn; không đụng từ tiếng Anh, từ bạn hay dùng, Thay thế văn bản, ô mật khẩu/email/web. ⌫ ngay sau đó để trả lại chữ gốc — từ đó sẽ không bị sửa nữa.", isOn: $autoCorrect)
             settingToggle("Gõ vuốt", "Vuốt qua các chữ không dấu rồi nhấc tay: v→i→e→t ra “việt”. Gõ tiếp phím dấu (s f r x j) để đổi dấu, ⌫ ngay sau đó xoá cả từ, thanh gợi ý có các cách viết khác. Chỉ trên iPhone; tắt khi dùng VoiceOver và ở ô email/mật khẩu/URL.", isOn: $swipeTyping)
             if swipeTyping {
                 settingToggle("Vuốt từ tiếng Anh", "Vuốt ra cả từ tiếng Anh xen trong câu: check, mail, file, meeting… Khi một nét vuốt vừa là từ Việt vừa là từ Anh (the/thế, can/cần), bàn phím ưu tiên tiếng Việt — trừ khi đang gõ tiếng Anh — và luôn để phương án kia trên thanh gợi ý.", isOn: $swipeEnglish)

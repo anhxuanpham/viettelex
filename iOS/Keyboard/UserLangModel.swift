@@ -141,31 +141,68 @@ final class UserLangModel {
     /// Một từ vừa chốt. `prev1`/`prev2` = 1-2 từ đứng trước trong cùng câu.
     /// `weight`: 1 cho từ gõ thường, 2 cho suggestion được user bấm nhận
     /// (tín hiệu chất lượng cao hơn).
-    func record(word: String, after prev1: String?, prev2: String? = nil, weight: Int = 1) {
+    /// Biên nhận một lần `record` — `retract` rút lại đúng lượt đó (vd hoàn tác tự sửa).
+    struct Learned: Equatable {
+        let word: String
+        let prev1: String?
+        let triKey: String?
+        let weight: Int
+    }
+
+    @discardableResult
+    func record(word: String, after prev1: String?, prev2: String? = nil, weight: Int = 1) -> Learned? {
         guard isLoaded else {
             if pendingRecords.count < Self.pendingRecordCap {
                 pendingRecords.append((word, prev1, prev2, weight))
             }
-            return
+            return nil
         }
-        guard Self.learnable(word) else { return }
+        guard Self.learnable(word) else { return nil }
         let w = word.lowercased()
         uni[w, default: 0] += weight
         uniTotal += weight
         bumpTopCache(w)
+        var biKey: String?, triKey: String?
         if let p1 = prev1?.lowercased(), Self.learnable(p1) {
             if bi[p1]?[w] == nil { biPairs += 1 }
             bi[p1, default: [:]][w, default: 0] += weight
+            biKey = p1
             // trigram chỉ ghi khi cặp (p2,p1) đã có nền — giảm noise/chỗ
             if let p2 = prev2?.lowercased(), Self.learnable(p2),
                (bi[p2]?[p1] ?? 0) >= 2 {
                 let key = p2 + Self.sep + p1
                 if tri[key]?[w] == nil { triPairs += 1 }
                 tri[key, default: [:]][w, default: 0] += weight
+                triKey = key
             }
         }
         pruneIfNeeded()
         scheduleSave()
+        return Learned(word: w, prev1: biKey, triKey: triKey, weight: weight)
+    }
+
+    /// Rút lại một lần `record`. Không âm, bỏ mục về 0. Giống Android `retract`.
+    func retract(_ l: Learned) {
+        guard let had = uni[l.word] else { return }
+        if had <= l.weight { uni.removeValue(forKey: l.word) } else { uni[l.word] = had - l.weight }
+        uniTotal -= min(had, l.weight)
+        topCache = nil
+        func dec(_ m: inout [String: [String: Int]], _ k: String) -> Bool {
+            guard let c = m[k]?[l.word] else { return false }
+            if c > l.weight { m[k]?[l.word] = c - l.weight; return false }
+            m[k]?.removeValue(forKey: l.word)
+            if m[k]?.isEmpty == true { m.removeValue(forKey: k) }
+            return true
+        }
+        if let k = l.prev1, dec(&bi, k) { biPairs -= 1 }
+        if let k = l.triKey, dec(&tri, k) { triPairs -= 1 }
+        scheduleSave()
+    }
+
+    /// Từ của người dùng: thêm tay, hoặc đã gõ đủ nhiều để được gợi ý — tự sửa không đụng.
+    func isUserWord(_ w: String) -> Bool {
+        let k = w.lowercased()
+        return manual[k] != nil || (uni[k] ?? 0) >= Self.unknownSuggestThreshold
     }
 
     /// Từ "học được": chữ cái thuần, ngắn, không chuỗi lặp kiểu "heeeyyy".

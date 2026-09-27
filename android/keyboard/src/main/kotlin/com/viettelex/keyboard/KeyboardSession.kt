@@ -129,6 +129,8 @@ data class SuggestionSet(
         const val UNDO_TONES_TOKEN = "\uE000undoTones"
         /** Chip "↩︎ từ cũ": hoàn tác lần vuốt vừa sửa lại từ vuốt trước (SwipeRevise). */
         const val UNDO_REVISE_TOKEN = "\uE000undoRevise"
+        /** Chip "↩︎ chữ gốc": trả lại chữ đã gõ của lần tự sửa vừa rồi ([AutoCorrect]). */
+        const val UNDO_AUTOCORRECT_TOKEN = "\uE000undoAutoCorrect"
     }
 }
 
@@ -247,6 +249,21 @@ class KeyboardSession(
     /** Ngôn ngữ đang gõ; công tắc tắt ⇒ luôn VI. */
     var language = KeyboardLanguage.VI; private set
 
+    /**
+     * Tự sửa (Thử nghiệm): điểm chạm từng phím của từ đang gõ ([AutoCorrect.Touch]). Hỏng
+     * ([wordTouchesOk] = false) khi có phím không kèm điểm chạm, ⌫ giữa từ, từ nạp lại… ⇒ từ đó
+     * không tự sửa. Chỉ ghi khi công tắc bật ([autoCorrectOn]).
+     */
+    private val wordTouches = ArrayList<AutoCorrect.Touch>(12)
+    private var wordTouchesOk = false
+    private var autoCorrectOn = false
+    /** IME chỉ cần gửi điểm chạm phím chữ khi tự sửa đang bật ở ô này (tắt ⇒ 0 cấp phát). */
+    val wantsTouches: Boolean get() = autoCorrectOn
+    /** Từ từng hoàn tác tự sửa — không bao giờ sửa lại (IME nạp/lưu, [onAutoCorrectRejected]). */
+    var autoCorrectRejected = AutoCorrect.Rejected()
+    /** Vừa thêm một từ vào [autoCorrectRejected] — IME lưu [AutoCorrect.Rejected.encode]. */
+    var onAutoCorrectRejected: (() -> Unit)? = null
+
     init {
         langModel.isKnownWord = { VNSuggest.contains(it) }
         langModel.seedIfEmpty(SeedData::load)
@@ -282,6 +299,32 @@ class KeyboardSession(
         numberChipsOn = settings.numberChips
         spaceFlickEnabled = settings.spaceSwipeLanguage
         language = KeyboardLanguage.VI
+        // Tự sửa: không ở ô mật khẩu/email/URL/không-gợi-ý, ô tên (viết hoa mỗi từ), VNI.
+        autoCorrectOn = settings.autoCorrect && !settings.vniMode && AutoCorrect.fieldAllows(field)
+        wordTouches.clear(); wordTouchesOk = false
+        bridge.autoCorrector = if (autoCorrectOn) ::autoCorrection else null
+    }
+
+    /** [EngineBridge.autoCorrector]: chỉ khi có đủ điểm chạm cho đúng các phím của từ. */
+    private fun autoCorrection(raw: String): String? {
+        if (!wordTouchesOk || wordTouches.size != raw.length) return null
+        val b = bridge
+        return AutoCorrect.correction(raw, wordTouches, compose = { b.composeTrial(it) },
+            frequency = { VNSuggest.frequency(it) },
+            hasCompletion = { VNSuggest.matches(it, poolLimit = 1).isNotEmpty() },
+            isKnown = { w -> w in autoCorrectRejected || langModel.isUserWord(w) || AutoCorrect.isEnglish(w) })
+    }
+
+    /** ⌫ / chip vừa trả lại chữ gốc: nhớ để không sửa lại, học chữ gốc thay từ đã sửa. */
+    private fun onAutoCorrectReverted(original: String, fixed: String?) {
+        if (autoCorrectRejected.add(original)) onAutoCorrectRejected?.invoke()
+        val lc = lastCommit
+        lastCommit = null
+        if (lc != null && lc.word == fixed) {
+            lc.learned?.let { langModel.retract(it) }
+            lastWord = lc.prev1; lastWord2 = lc.prev2
+        }
+        commitAndLearn(original)
     }
 
     /** Sau [startInput]: khôi phục ngôn ngữ đã lưu ([Keys.KEYBOARD_LANGUAGE]). */
@@ -359,6 +402,13 @@ class KeyboardSession(
         generation++
     }
 
+    /** Ghi điểm chạm phím chữ vừa gõ; [fresh] = phím đầu của từ mới. */
+    private fun noteTouch(fresh: Boolean, touch: AutoCorrect.Touch?) {
+        if (fresh) { wordTouches.clear(); wordTouchesOk = true }
+        if (touch == null) wordTouchesOk = false else if (wordTouchesOk) wordTouches.add(touch)
+        if (wordTouches.size != bridge.rawWord.length) wordTouchesOk = false   // nạp lại từ cũ, phím ngoài engine…
+    }
+
     private fun clearUndo() { restoreUndoRaw = null; restoreUndoComposed = null; undoOfferActive = false }
 
     /**
@@ -382,7 +432,8 @@ class KeyboardSession(
 
     // MARK: phím
 
-    fun handle(key: Key, proxy: TextProxy): KeyOutcome {
+    /** [touch]: điểm chạm của phím chữ (bàn phím cảm ứng) — cho tự sửa; null = không biết. */
+    fun handle(key: Key, proxy: TextProxy, touch: AutoCorrect.Touch? = null): KeyOutcome {
         val t0 = if (TouchLog.enabled) System.nanoTime() else 0L
         // ⌫ NGAY SAU khi thêm dấu = hoàn tác (một lần); phím khác bỏ lời mời hoàn tác.
         if (key == Key.Backspace && tonesUndo != null && !bridge.isComposing && openSwipeWord() == null) {
@@ -405,7 +456,11 @@ class KeyboardSession(
         // Từ vuốt không bao giờ là chữ tắt.
         val expand = swiped == null
         when (key) {
-            is Key.Letter -> { bridge.letter(key.ch, proxy); clearUndo() }
+            is Key.Letter -> {
+                val fresh = !bridge.isComposing
+                bridge.letter(key.ch, proxy); clearUndo()
+                if (autoCorrectOn) noteTouch(fresh, touch)
+            }
             is Key.Text -> {
                 // VNI: số trong lúc soạn từ (hàng số / plane 123 / phím cứng) mang dấu — phím
                 // của từ. Sau từ tiếng Anh vuốt nguyên văn thì số chỉ là số.
@@ -465,8 +520,11 @@ class KeyboardSession(
             } else {
                 if (!bridge.isComposing && lastInsertWasSpace && restoreUndoRaw != null) undoOfferActive = true
                 else clearUndo()
+                wordTouchesOk = false
+                val acUndo = bridge.autoCorrectUndo
                 if (bridge.backspace(proxy)) onReopened()
                 else if (!bridge.isComposing) { lastWord = null; lastWord2 = null }
+                bridge.revertedAutoCorrect?.let { bridge.revertedAutoCorrect = null; onAutoCorrectReverted(it, acUndo?.second) }
             }
         }
         // Chip số: chỉ đọc context khi token này / token ngay trước có chữ số/phép tính.
@@ -511,6 +569,7 @@ class KeyboardSession(
      */
     fun undoLastLetter(proxy: TextProxy): Boolean {
         val ok = bridge.undoLastLetter(proxy)
+        wordTouchesOk = false
         revisable = if (ok) revisableAfterLetter else null
         revisableAfterLetter = null
         generation++
@@ -749,6 +808,10 @@ class KeyboardSession(
         // Chip tách STK/SĐT/OTP = Clipboard nâng cao (Plus; paywall tắt ⇒ mở cho mọi người).
         val chips = if (paste && !incognito && PlusGate.isUnlocked(PlusFeature.ADVANCED_CLIPBOARD)) clipChips() else emptyList()
         // "Hoàn tác" thêm dấu (vừa bấm) thắng thẻ Dán; "Thêm dấu" nhường thẻ Dán (StripView/SuggestionSlots).
+        bridge.autoCorrectUndo?.let { (orig, _) ->
+            return SuggestionPlan.Ready(SuggestionSet(nextWords = next, number = number,
+                actionLabel = "\u21A9\uFE0E $orig", action = SuggestionSet.UNDO_AUTOCORRECT_TOKEN))
+        }
         if (tonesUndo != null) return SuggestionPlan.Ready(SuggestionSet(literal = literal, nextWords = next,
             number = number, actionLabel = UNDO_TONES_LABEL, action = SuggestionSet.UNDO_TONES_TOKEN))
         val offer = literal == null && !bridge.englishMode && addTonesPlan(proxy) != null
@@ -911,6 +974,11 @@ class KeyboardSession(
         if (item == SuggestionSet.ADD_TONES_TOKEN) { applyAddTones(proxy); return }
         if (item == SuggestionSet.UNDO_TONES_TOKEN) { undoAddTones(proxy); return }
         if (item == SuggestionSet.UNDO_REVISE_TOKEN) { undoRevise(proxy); return }
+        if (item == SuggestionSet.UNDO_AUTOCORRECT_TOKEN) {
+            val fixed = bridge.autoCorrectUndo?.second
+            if (bridge.revertAutoCorrect(proxy)) bridge.revertedAutoCorrect?.let { bridge.revertedAutoCorrect = null; onAutoCorrectReverted(it, fixed) }
+            return
+        }
         tonesUndo = null
         if (item.startsWith(SuggestionSet.CLIP_CHIP_PREFIX)) {
             proxy.insertText(item.substring(SuggestionSet.CLIP_CHIP_PREFIX.length))

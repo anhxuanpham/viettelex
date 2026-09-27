@@ -64,10 +64,11 @@ enum SuggestionSlots {
             if let w = set.word { slots[1] = BarChip(label: w, payload: w) }
             if emojis.isEmpty, let w2 = set.word2 { slots[2] = BarChip(label: w2, payload: w2) }
         }
-        // 1 (slot) / 3. hoàn tác, "Thêm dấu" hoặc "↩︎ từ cũ" (vuốt vừa sửa từ trước) chiếm slot
-        // đầu, chữ dời phải theo thứ tự đọc.
+        // 1 (slot) / 3. hoàn tác, "Thêm dấu", "↩︎ từ cũ" (vuốt vừa sửa từ trước) hoặc "↩︎ chữ
+        // gốc" (vừa tự sửa) chiếm slot đầu, chữ dời phải theo thứ tự đọc.
         let lead = undo ?? action.flatMap {
-            $0.payload == KeyboardView.addTonesToken || $0.payload == KeyboardView.undoReviseToken ? $0 : nil
+            [KeyboardView.addTonesToken, KeyboardView.undoReviseToken,
+             KeyboardView.undoAutoCorrectToken].contains($0.payload) ? $0 : nil
         }
         if let lead {
             let words = set.nextWords.isEmpty ? slots.compactMap { $0 }

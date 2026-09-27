@@ -53,6 +53,7 @@ enum BackupSettings {
         Spec(key: "emojiSuggest", kind: .bool(true)),    // chỉ iOS dùng
         Spec(key: "pasteButton", kind: .bool(true)),     // chỉ iOS dùng
         Spec(key: "smartTouch", kind: .bool(true)),
+        Spec(key: "autoCorrect", kind: .bool(false)),
         Spec(key: "spaceSwipeLanguage", kind: .bool(false)),
     ]
     static let byKey: [String: Spec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })

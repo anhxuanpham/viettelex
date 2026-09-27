@@ -126,6 +126,45 @@ object AdjacentKeyFixer {
         return w
     }
 
+    /** Ứng viên MỘT sửa: thay phím thứ [pos] bằng phím kề [key] ra từ [word]. */
+    data class Candidate(val word: String, val freq: Int, val pos: Int, val key: Char)
+
+    /**
+     * MỌI cách thay đúng MỘT phím của [lower] (chữ thường) bằng phím kề ra từ hợp lệ (một từ có thể
+     * xuất hiện nhiều lần, khác vị trí). Không xét đảo phím: mô phỏng không có bằng chứng chạm cho
+     * nó và sửa oan tiếng lóng (nma → nam). Cắt tỉa tiền tố chết như [correction]. Dùng cho
+     * [AutoCorrect] (cần cả ứng viên thứ hai để đo độ chắc).
+     */
+    fun oneEditCandidates(
+        lower: String,
+        compose: (String) -> String,
+        frequency: (String) -> Int?,
+        hasCompletion: (String) -> Boolean,
+    ): List<Candidate> {
+        val c0 = lower.toCharArray()
+        val current = compose(lower)
+        val out = ArrayList<Candidate>()
+        fun consider(c: CharArray, pos: Int, key: Char) {
+            val w = compose(String(c))
+            if (w == current) return
+            val f = frequency(w) ?: return
+            out.add(Candidate(w, f, pos, key))
+        }
+        var k = 0
+        while (k < c0.size && hasCompletion(stripTones(compose(String(c0, 0, k + 1))))) k++
+        for (i in c0.indices) {
+            if (i > k) break
+            for (n in neighbors[c0[i]].orEmpty()) { val c = c0.copyOf(); c[i] = n; consider(c, i, n) }
+        }
+        return out
+    }
+
+    /** Toạ độ tâm phím trên lưới QWERTY (cột theo bước phím, hàng) — cho [AutoCorrect.evidence]. */
+    fun keyPosition(c: Char): Pair<Int, Double>? {
+        rows.forEachIndexed { r, (keys, off) -> val i = keys.indexOf(c); if (i >= 0) return r to off + i }
+        return null
+    }
+
     private const val TONE_KEYS = "sfrxj"
     // nhân đôi nguyên âm là bằng chứng mạnh: nhận cả ứng viên kém phổ biến hơn chút (đo heldout: 75→76/85, không thêm gợi ý thừa)
     private const val DOUBLED_SLACK = 10

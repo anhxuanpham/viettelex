@@ -23,6 +23,7 @@ import com.viettelex.android.BuildConfig
 import com.viettelex.android.shared.DebugLog
 import com.viettelex.android.shared.VTPrefs
 import com.viettelex.keyboard.ThemeSettings
+import com.viettelex.keyboard.AutoCorrect
 import com.viettelex.keyboard.Cancellable
 import com.viettelex.keyboard.EmojiData
 import com.viettelex.keyboard.ClipboardHistory
@@ -175,6 +176,11 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         model = UserLangModel(File(filesDir, Keys.USERLM_FILE), mainThread)
         clipboard = AndroidClipboard(this)
         session = KeyboardSession(model, clipboard)
+        // Tự sửa: từ từng hoàn tác (không sửa lại) — trạng thái bàn phím, không sao lưu.
+        session.autoCorrectRejected = AutoCorrect.Rejected.decode(stateStore().getString(Keys.AUTO_CORRECT_REJECTED, null))
+        session.onAutoCorrectRejected = {
+            stateStore().edit().putString(Keys.AUTO_CORRECT_REJECTED, session.autoCorrectRejected.encode()).apply()
+        }
         syncClipHistory(prefs.getBoolean(Keys.CLIPBOARD_HISTORY, false))
         clipboard.onChanged = { onClipChanged() }
         model.onReady = { refreshBar() }
@@ -512,11 +518,20 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         refreshBar()
     }
 
+    /** Điểm chạm phím chữ sắp emit (chỉ giữ khi tự sửa bật) — [onKey] chuyển cho session. */
+    private var pendingTouch: AutoCorrect.Touch? = null
+
+    override fun onLetterTouch(dx: Float, dy: Float) {
+        pendingTouch = if (session.wantsTouches) AutoCorrect.Touch(dx, dy) else null
+    }
+
     override fun onKey(key: Key) {
+        val touch = if (key is Key.Letter) pendingTouch else null
+        pendingTouch = null
         if (key == Key.Backspace && toolUndo != null) { undoTextTool(); return }   // ⌫ ngay sau = hoàn tác
         clearSwipeUndo()
         if (!proxy.begin()) return
-        val out = try { session.handle(key, proxy) } finally { proxy.end() }
+        val out = try { session.handle(key, proxy, touch) } finally { proxy.end() }
         if (key is Key.MoveCursor) {
             if (key.vertical) proxy.moveCursorVertical(key.delta) else proxy.moveCursor(key.delta)
         }

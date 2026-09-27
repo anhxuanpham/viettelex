@@ -50,6 +50,24 @@ final class KeyboardViewController: UIInputViewController {
     private var swipeFutoSetting = false
     /// Chọn phím theo ngữ cảnh lúc chạm (thử nghiệm, mặc định BẬT) — TouchTarget.
     private var smartTouchSetting = true
+    /// Tự sửa từ gõ sai (thử nghiệm, mặc định TẮT; VNI không sửa) — AutoCorrect.
+    private var autoCorrectSetting = false
+    /// Tự sửa đang chạy ở ô này (công tắc + AutoCorrect.fieldAllows) — tắt ⇒ 0 việc mỗi phím.
+    private var autoCorrectActive = false
+    /// Điểm chạm từng phím của từ đang gõ; hỏng (ok = false) khi có phím không kèm điểm
+    /// chạm, ⌫ giữa từ, từ nạp lại… ⇒ từ đó không tự sửa.
+    private var wordTouches: [AutoCorrect.Touch] = []
+    private var wordTouchesOk = false
+    private var pendingTouch: AutoCorrect.Touch?
+    /// Từ từng hoàn tác tự sửa — không bao giờ sửa lại (UserDefaults của bàn phím, không sao lưu).
+    private static let rejectedKey = "autoCorrectRejected"
+    private lazy var autoCorrectRejected = AutoCorrect.Rejected.decode(
+        UserDefaults.standard.string(forKey: Self.rejectedKey))
+    /// Thay thế văn bản + tên danh bạ của người dùng (requestSupplementaryLexicon, nạp một
+    /// lần mỗi lần hiện khi tự sửa bật) — coi là từ hợp lệ, không sửa.
+    private var lexiconWords: Set<String> = []
+    /// Biên nhận học của từ vừa chốt — hoàn tác tự sửa rút lại đúng lượt học từ đã sửa.
+    private var lastLearned: (word: String, receipt: UserLangModel.Learned?, prev1: String?, prev2: String?)?
     /// Vài từ tiếng Anh vừa vuốt ra (chữ thường) — ngữ cảnh ngôn ngữ cho cú vuốt kế
     /// (từ trùng chuỗi như "the" vuốt ra dạng Anh vẫn mở mạch Anh).
     private var recentEnglish: [String] = []
@@ -152,6 +170,9 @@ final class KeyboardViewController: UIInputViewController {
         swipeEnglishSetting = settings.swipeEnglish
         swipeFutoSetting = settings.swipeFuto
         smartTouchSetting = settings.smartTouch
+        autoCorrectSetting = settings.autoCorrect && !settings.vniMode
+        wordTouches.removeAll(); wordTouchesOk = false; pendingTouch = nil
+        if autoCorrectSetting { loadSupplementaryLexicon() }
         // Tắt ⇒ router không gọi prior (không closure, không cấp phát ở vùng biên phím).
         keyboard.letterPrior = smartTouchSetting ? { [weak self] in self?.smartTouchPrior() } : nil
         if smartTouchSetting { TelexKeyPrior.warmUpInBackground() }
@@ -193,6 +214,7 @@ final class KeyboardViewController: UIInputViewController {
             else if item == KeyboardView.addTonesToken { self.applyAddTones() }
             else if item == KeyboardView.undoTonesToken { self.undoAddTones() }
             else if item == KeyboardView.undoReviseToken { self.undoSwipeRevision() }
+            else if item == KeyboardView.undoAutoCorrectToken { self.revertAutoCorrect() }
             else if self.acceptSwipeAlternative(item) { return }
             else { self.acceptSuggestion(item) }
         }
@@ -336,6 +358,13 @@ final class KeyboardViewController: UIInputViewController {
         // Omnibox (inline autocomplete tự viết lại chữ): không với lại từ đã chốt.
         bridge.reachBackAllowed = t.keyboardType != .webSearch
         bridge.shortcutsAllowed = t.keyboardType != .webSearch   // omnibox: không gõ tắt
+        // Tự sửa: công tắc + loại ô (mật khẩu/email/URL/số/omnibox/ô tên ⇒ không).
+        let ac = autoCorrectSetting && AutoCorrect.fieldAllows(t)
+        if force || ac != autoCorrectActive {
+            autoCorrectActive = ac
+            bridge.autoCorrector = ac ? { [weak self] raw in self?.autoCorrection(raw) } : nil
+            keyboard.onLetterTouch = ac ? { [weak self] dx, dy in self?.pendingTouch = AutoCorrect.Touch(dx: dx, dy: dy) } : nil
+        }
         // Một lần rebuild cho cả 3 (và 0 lần nếu field giống lần trước).
         keyboard.batchConfigure {
             keyboard.configureReturnKey(type: t.returnKeyType)
@@ -457,6 +486,8 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func handle(_ key: KeyboardView.Key) {
+        let touch = pendingTouch           // điểm chạm của phím chữ này (tự sửa), dùng một lần
+        pendingTouch = nil
         // ⌫ NGAY SAU khi thêm dấu = hoàn tác (một lần); phím khác bỏ lời mời hoàn tác.
         if case .backspace = key, addTonesUndo != nil, !bridge.isComposing, swipeSuggest == nil {
             undoAddTones()
@@ -505,8 +536,10 @@ final class KeyboardViewController: UIInputViewController {
         }
         switch key {
         case .letter(let ch):
+            let fresh = !bridge.isComposing
             bridge.letter(ch, proxy: proxy)
             restoreUndo = nil; undoOfferActive = false
+            if autoCorrectActive { noteTouch(fresh: fresh, touch) }
         case .replaceLastLetter(let s):
             // Huỷ đúng phím chữ vừa gõ (không được thì ⌫ như cũ) rồi chèn như ký hiệu.
             if !bridge.undoLastLetter(proxy: proxy) { bridge.backspace(proxy: proxy) }
@@ -582,11 +615,17 @@ final class KeyboardViewController: UIInputViewController {
             } else {
                 restoreUndo = nil; undoOfferActive = false
             }
+            wordTouchesOk = false
+            let acUndo = bridge.autoCorrectUndo
             if bridge.backspace(proxy: proxy) {
                 // ⌫ mở lại từ vừa chốt: từ đó không còn là "từ trước" trong câu.
                 lastWord = lastWord2; lastWord2 = nil
             }
             if !bridge.isComposing { lastWord = nil; lastWord2 = nil }  // xoá lấn vào chữ cũ → context mờ
+            if let orig = bridge.revertedAutoCorrect {
+                bridge.revertedAutoCorrect = nil
+                autoCorrectReverted(orig, fixed: acUndo?.fixed)
+            }
         }
         // Chip số: chỉ đọc context khi vừa có chữ số/phép tính trong token này hoặc
         // token ngay trước ("2 tỷ", "1250000 ") — không trả XPC cho mọi phím chữ.
@@ -635,6 +674,73 @@ final class KeyboardViewController: UIInputViewController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
             guard let self, gen == self.suggestionGen else { return }
             self.updateSuggestions()
+        }
+    }
+
+    // MARK: tự sửa (AutoCorrect)
+
+    /// Ghi điểm chạm phím chữ vừa gõ; `fresh` = phím đầu của từ mới.
+    private func noteTouch(fresh: Bool, _ touch: AutoCorrect.Touch?) {
+        if fresh { wordTouches.removeAll(keepingCapacity: true); wordTouchesOk = true }
+        if let touch { if wordTouchesOk { wordTouches.append(touch) } } else { wordTouchesOk = false }
+        if wordTouches.count != bridge.rawWord.count { wordTouchesOk = false }   // nạp lại từ cũ, phím ngoài engine…
+    }
+
+    /// `EngineBridge.autoCorrector`: chỉ khi có đủ điểm chạm cho đúng các phím của từ.
+    private func autoCorrection(_ raw: String) -> String? {
+        guard wordTouchesOk, wordTouches.count == raw.count else { return nil }
+        let b = bridge
+        return AutoCorrect.correction(
+            raw: raw, touches: wordTouches, compose: { b.composeTrial($0) },
+            frequency: { VNSuggest.frequency(of: $0) },
+            hasCompletion: { !VNSuggest.matches($0, poolLimit: 1).isEmpty },
+            isKnown: { [self] w in
+                autoCorrectRejected.contains(w) || lexiconWords.contains(w)
+                    || langModel.isUserWord(w) || AutoCorrect.isEnglish(w)
+            })
+    }
+
+    /// Chip "↩︎ chữ gốc".
+    private func revertAutoCorrect() {
+        let fixed = bridge.autoCorrectUndo?.fixed
+        applyingEdit = true
+        let ok = bridge.revertAutoCorrect(proxy: Proxy(p: textDocumentProxy))
+        applyingEdit = false
+        if ok, let orig = bridge.revertedAutoCorrect {
+            bridge.revertedAutoCorrect = nil
+            autoCorrectReverted(orig, fixed: fixed)
+        }
+        KeyboardView.clickModifier()
+        updateAutoShift()
+        updateSuggestions()
+    }
+
+    /// Vừa trả lại chữ gốc: nhớ để không sửa lại, rút lượt học từ đã sửa, học chữ gốc.
+    private func autoCorrectReverted(_ original: String, fixed: String?) {
+        if autoCorrectRejected.add(original) {
+            UserDefaults.standard.set(autoCorrectRejected.encode(), forKey: Self.rejectedKey)
+        }
+        if let l = lastLearned, l.word == fixed {
+            if let r = l.receipt { langModel.retract(r) }
+            lastWord = l.prev1; lastWord2 = l.prev2
+        }
+        lastLearned = nil
+        commitAndLearn(original)
+    }
+
+    /// Thay thế văn bản (Cài đặt → Bàn phím) + tên danh bạ: không cần Toàn quyền truy cập;
+    /// iOS trả bất đồng bộ — nạp một lần mỗi lần hiện, chỉ khi tự sửa bật.
+    private func loadSupplementaryLexicon() {
+        requestSupplementaryLexicon { [weak self] lex in
+            var words: Set<String> = []
+            for e in lex.entries.prefix(5000) {
+                for s in [e.userInput, e.documentText] {
+                    for w in s.lowercased().split(whereSeparator: { !$0.isLetter }) where w.count >= 2 {
+                        words.insert(String(w))
+                    }
+                }
+            }
+            DispatchQueue.main.async { self?.lexiconWords = words }
         }
     }
 
@@ -871,10 +977,9 @@ final class KeyboardViewController: UIInputViewController {
             if parts.isEmpty { lastWord = nil; lastWord2 = nil }
             return
         }
-        if learnEnabled {
-            langModel.record(word: word, after: lastWord, prev2: lastWord2,
-                             weight: accepted ? 2 : 1)
-        }
+        let receipt = learnEnabled ? langModel.record(word: word, after: lastWord, prev2: lastWord2,
+                                                      weight: accepted ? 2 : 1) : nil
+        lastLearned = (word, receipt, lastWord, lastWord2)
         if UserLangModel.learnable(word) {
             lastWord2 = lastWord
             lastWord = word
@@ -1026,6 +1131,11 @@ final class KeyboardViewController: UIInputViewController {
             } else if addTonesPlan() != nil {
                 set.actionLabel = "Thêm dấu"; set.actionPayload = KeyboardView.addTonesToken
             }
+        }
+        // Vừa tự sửa: chip "↩︎ chữ gốc" (một chạm trả lại) thắng mọi chip khác tới phím kế.
+        if composed.isEmpty, let u = bridge.autoCorrectUndo {
+            set.actionLabel = "\u{21A9}\u{FE0E} \(u.original)"; set.actionPayload = KeyboardView.undoAutoCorrectToken
+            set.literal = nil; set.paste = false; set.clipChips = []
         }
         keyboard.showSuggestions(set)
     }

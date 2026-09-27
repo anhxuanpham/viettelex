@@ -49,6 +49,8 @@ class KeyboardView(
 
     interface Listener {
         fun onKey(key: Key)
+        /** Điểm chạm của phím chữ sắp [onKey] (lệch so với tâm phím, theo cỡ phím) — cho tự sửa. */
+        fun onLetterTouch(dx: Float, dy: Float) {}
         /**
          * Trackpad: bước đã gom theo frame (≤ 1 lần/frame). Mặc định = phím MoveCursor;
          * IME dời con trỏ NHẸ (không auto-shift/gợi ý mỗi bước) tới [onTrackpadEnd].
@@ -866,6 +868,9 @@ class KeyboardView(
                 if (keyPreview) showBalloon(k, if (shift == Shift.OFF) k.label else k.upper)
                 val ch = (if (shift == Shift.OFF) k.label else k.upper)[0]
                 val shiftWas = shift
+                if (plane == Plane.LETTERS) listener?.onLetterTouch(
+                    (x - (k.left + k.right) / 2) / (k.right - k.left),
+                    (y - TouchGeometry.yOffset * d - (k.top + k.bottom) / 2) / (k.bottom - k.top))
                 emit(Key.Letter(ch))
                 if (shift == Shift.ON) { shift = Shift.OFF; invalidate() }
                 val since = e.eventTime - lastLetterDownT

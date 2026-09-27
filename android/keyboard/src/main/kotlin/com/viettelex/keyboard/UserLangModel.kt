@@ -485,6 +485,12 @@ class UserLangModel(
     /** Điểm cá nhân của một từ. */
     fun count(of: String): Int = uni[of] ?: uni[of.lowercase()] ?: 0
 
+    /** Từ của người dùng: thêm tay, hoặc đã gõ đủ nhiều để được gợi ý — tự sửa không đụng. */
+    fun isUserWord(w: String): Boolean {
+        val k = w.lowercase()
+        return k in manual || (uni[k] ?: 0) >= UNKNOWN_SUGGEST_THRESHOLD
+    }
+
     /** Số lần cặp (prev → word) đã gặp (bigram cá nhân + seed) — AddTones chấm lưới âm tiết. */
     fun bigramCount(prev: String, word: String): Int = bi[prev.lowercase()]?.get(word) ?: 0
 

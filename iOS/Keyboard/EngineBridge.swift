@@ -80,6 +80,8 @@ struct KeyboardSettings {
     var pasteButton = true
     /// Vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh (mặc định TẮT ⇒ luôn Tiếng Việt).
     var spaceSwipeLanguage = false
+    /// Tự sửa từ gõ sai ở dấu cách (AutoCorrect) — thử nghiệm, mặc định TẮT. Giống Android.
+    var autoCorrect = false
 
     static func load() -> KeyboardSettings {
         var s = KeyboardSettings()
@@ -109,7 +111,7 @@ struct KeyboardSettings {
         let flags: [(String, WritableKeyPath<KeyboardSettings, Bool>)] = [
             ("addTonesChip", \.addTonesChip), ("numberChips", \.numberChips),
             ("emojiSuggest", \.emojiSuggest), ("pasteButton", \.pasteButton),
-            ("spaceSwipeLanguage", \.spaceSwipeLanguage)]
+            ("spaceSwipeLanguage", \.spaceSwipeLanguage), ("autoCorrect", \.autoCorrect)]
         for (k, kp) in flags where d.object(forKey: k) != nil { s[keyPath: kp] = d.bool(forKey: k) }
         s.learnWords = s.showSuggestions   // bật gợi ý = bật học (quyết định 2026-07-24)
         return s
@@ -145,11 +147,23 @@ final class EngineBridge {
         let typed: String
         let expansion: String
         let boundary: String
+        var autoCorrect = false
     }
     private var expansionUndo: ExpansionUndo?
-    /// boundary() vừa rồi đã bung gõ tắt (controller: không mời "hoàn tác khôi phục",
-    /// học nội dung đã bung thay vì chữ tắt).
+    /// boundary() vừa rồi đã bung gõ tắt / tự sửa (controller: không mời "hoàn tác khôi
+    /// phục", học nội dung đã bung thay vì chữ tắt).
     private(set) var expandedAtLastBoundary = false
+
+    /// Tự sửa từ gõ sai (AutoCorrect): phím thô của từ vừa gõ → từ sửa hoặc nil. Controller
+    /// chỉ gắn khi công tắc BẬT và ô cho phép; nil ⇒ boundary không tốn thêm gì.
+    var autoCorrector: ((String) -> String?)?
+    /// ⌫ / chip vừa trả lại chữ gốc của một lần tự sửa: chữ gốc (một lần — controller đọc rồi xoá).
+    var revertedAutoCorrect: String?
+    /// Lần tự sửa còn hoàn tác được (chữ gốc, từ đã sửa) — chip "↩︎ chữ gốc" trên thanh gợi ý.
+    var autoCorrectUndo: (original: String, fixed: String)? {
+        guard let u = expansionUndo, u.autoCorrect else { return nil }
+        return (u.typed, u.expansion)
+    }
 
     /// Thao tác cuối của bridge là chèn ký tự ranh giới → chắc chắn ký tự trước con
     /// trỏ KHÔNG phải chữ: phím đầu từ mới khỏi phải đọc context (XPC) để thử seed.
@@ -496,6 +510,7 @@ final class EngineBridge {
         }
         // Gõ tắt TRƯỚC tự khôi phục tiếng Anh. Không bung từ vuốt (từ vuốt là từ từ điển).
         if expand, !wasSwipe, let expanded = tryExpandShortcut(text, proxy: proxy) { return expanded }
+        if expand, !wasSwipe, let ac = autoCorrector, let fixed = tryAutoCorrect(ac, text, proxy: proxy) { return fixed }
         let before = engine.composed
         var action = engine.commitBoundary(autoRestore: settings.autoRestore)
         if !safeToApply(action, expected: before, proxy: proxy) {
@@ -621,6 +636,41 @@ final class EngineBridge {
         return expansion
     }
 
+    /// Tự sửa ở ranh giới `text`: chỉ khi ô sửa lại được, chữ trước con trỏ đúng là từ đang
+    /// soạn (không dính URL/email/số — ShortcutTable.isGlued), chữ hoa hợp lệ
+    /// (AutoCorrect.caseAllows). Thay từ + ranh giới; ⌫ ngay sau trả lại đúng chữ boundary
+    /// lẽ ra đã chốt (như hoàn tác gõ tắt).
+    private func tryAutoCorrect(_ ac: (String) -> String?, _ text: String, proxy: TextProxyLike) -> String? {
+        guard !engine.isEmpty, AutoCorrect.triggers(text), reachBackAllowed, !proxy.hasSelection else { return nil }
+        let raw = engine.rawKeystrokes
+        guard let fix = ac(raw) else { return nil }
+        let shown = engine.composed
+        guard let ctx = proxy.contextBeforeInput, !ShortcutTable.isGlued(word: shown, context: ctx),
+              CompositionSync.canDelete(shown.count, expected: shown, context: { ctx }),
+              AutoCorrect.caseAllows(raw, sentenceStart: AutoCorrect.isSentenceStart(String(ctx.dropLast(shown.count))))
+        else { return nil }
+        let original = engine.peekCommitText(autoRestore: settings.autoRestore)
+        guard fix != original else { return nil }
+        engine.reset()
+        engine.forgetLastCommit()
+        engine.noteExternalWord(english: false)
+        TouchLog.write("autocorrect: -\(shown.count) +\(fix.count)")
+        for _ in 0..<shown.count { proxy.deleteBackward() }
+        proxy.insertText(fix)
+        proxy.insertText(text)
+        lastWasOwnBoundary = text.last.map { !$0.isLetter } ?? false
+        expandedAtLastBoundary = true
+        expansionUndo = ExpansionUndo(typed: original, expansion: fix, boundary: text, autoCorrect: true)
+        return fix
+    }
+
+    /// Chip "↩︎ chữ gốc": trả lại chữ gốc của lần tự sửa vừa rồi (như ⌫ ngay sau).
+    func revertAutoCorrect(proxy: TextProxyLike) -> Bool {
+        guard let u = expansionUndo, u.autoCorrect else { return false }
+        expansionUndo = nil
+        return undoExpansion(u, proxy: proxy)
+    }
+
     /// ⌫ ngay sau khi bung: màn hình phải kết thúc ĐÚNG bằng nội dung + ranh giới (đọc
     /// context, nil ⇒ không làm) → thay bằng chữ đã gõ + ranh giới. false ⇒ ⌫ thường.
     private func undoExpansion(_ u: ExpansionUndo, proxy: TextProxyLike) -> Bool {
@@ -637,6 +687,7 @@ final class EngineBridge {
         enWord = ""
         lastWasOwnBoundary = u.boundary.last.map { !$0.isLetter } ?? false
         TouchLog.write("shortcut undo: -\(u.expansion.count) +\(u.typed.count)")
+        if u.autoCorrect { revertedAutoCorrect = u.typed }
         return true
     }
 

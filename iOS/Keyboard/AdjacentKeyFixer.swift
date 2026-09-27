@@ -144,6 +144,45 @@ enum AdjacentKeyFixer {
         return w
     }
 
+    /// Ứng viên MỘT sửa: thay phím thứ `pos` bằng phím kề `key` ra từ `word`.
+    struct Candidate: Equatable {
+        let word: String
+        let freq: Int
+        let pos: Int
+        let key: Character
+    }
+
+    /// MỌI cách thay đúng MỘT phím của `lower` (chữ thường) bằng phím kề ra từ hợp lệ (một từ có
+    /// thể xuất hiện nhiều lần, khác vị trí). Không xét đảo phím: mô phỏng không có bằng chứng
+    /// chạm cho nó và sửa oan tiếng lóng ("nma" → nam). Cắt tỉa tiền tố chết như `correction`.
+    /// Dùng cho AutoCorrect (cần cả ứng viên thứ hai để đo độ chắc).
+    static func oneEditCandidates(_ lower: String, compose: (String) -> String,
+                                  frequency: (String) -> Int?,
+                                  hasCompletion: (String) -> Bool) -> [Candidate] {
+        let c0 = Array(lower)
+        let current = compose(lower)
+        var out: [Candidate] = []
+        var k = 0
+        while k < c0.count, hasCompletion(stripTones(compose(String(c0[...k])))) { k += 1 }
+        for i in c0.indices where i <= k {
+            for n in neighbors[c0[i]] ?? [] {
+                var c = c0; c[i] = n
+                let w = compose(String(c))
+                guard w != current, let f = frequency(w) else { continue }
+                out.append(Candidate(word: w, freq: f, pos: i, key: n))
+            }
+        }
+        return out
+    }
+
+    /// Toạ độ tâm phím trên lưới QWERTY (hàng, cột theo bước phím) — cho AutoCorrect.evidence.
+    static func keyPosition(_ c: Character) -> (row: Int, x: Double)? {
+        for (r, row) in rows.enumerated() {
+            if let i = row.keys.firstIndex(of: c) { return (r, row.offset + Double(i)) }
+        }
+        return nil
+    }
+
     /// Bỏ 5 dấu thanh, giữ dấu chữ (ư, â, đ…): "cũm" → "cum". VNSuggest coi thanh
     /// trống là tương thích mọi thanh.
     static func stripTones(_ s: String) -> String {
