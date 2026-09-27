@@ -194,6 +194,9 @@ struct RootView: View {
         }
         Section { PlusEntryRow() }
         Section {
+            Link(destination: URL(string: "https://viettelex.com/hdsd")!) {
+                Label("Hướng dẫn sử dụng", systemImage: "book")
+            }
             Link(destination: URL(string: "https://ptrinh.github.io/viettelex/")!) {
                 Label("Website", systemImage: "globe")
             }
