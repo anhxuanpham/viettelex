@@ -88,7 +88,7 @@
                   Identifier = "KeyboardThemeTests/testKeyboardDecodeMemoryFootprint">
                </Test>
                <Test
-                  Identifier = "PlusTests/testStoreKitTestSessionLoadsProducts">
+                  Identifier = "PlusStoreKitConfigTests/testStoreKitTestSessionLoadsProducts">
                </Test>
             </SelectedTests>
          </TestableReference>

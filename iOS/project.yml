@@ -219,4 +219,4 @@ schemes:
             - SwipeDecoderTests/testBenchmark
             - TouchTargetTests/testLatency
             - KeyboardThemeTests/testKeyboardDecodeMemoryFootprint
-            - PlusTests/testStoreKitTestSessionLoadsProducts
+            - PlusStoreKitConfigTests/testStoreKitTestSessionLoadsProducts
