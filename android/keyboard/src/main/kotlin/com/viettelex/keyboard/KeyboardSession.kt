@@ -147,13 +147,16 @@ class SuggestJob internal constructor(
     private val prev: String? = null,
     internal val number: String? = null,
 ) {
-    class Result(val pool: List<VNSuggest.Match>, val fix: String?, val pmi: FloatArray? = null)
+    class Result(val pool: List<VNSuggest.Match>, val fix: String?, val pmi: FloatArray? = null,
+                 /** Trượt vào phím thanh mà vẫn ra từ ("casn" → cân) — slot 3. */
+                 val slip: String? = null)
     fun compute(): Result {
         // Chế độ Tiếng Anh: hoàn thành từ enlexicon, không sửa chạm trượt / bigram Việt.
         if (bridge.englishMode) return Result(SwipeEnglish.completions(composed, 24), null)
         val pool = VNSuggest.matches(composed, poolLimit = 24, excluding = composed.lowercase())
         val fix = if (pool.isEmpty() && wantFix) AdjacentKeyFixer.lexiconCorrection(raw, bridge) else null
-        return Result(pool, fix, SuggestRank.inlinePmi(pool, prev))
+        val slip = if (fix == null && wantFix) AdjacentKeyFixer.lexiconToneSlip(raw, bridge) else null
+        return Result(pool, fix, SuggestRank.inlinePmi(pool, prev), slip)
     }
 }
 
@@ -767,7 +770,7 @@ class KeyboardSession(
     fun completeSuggestions(job: SuggestJob, result: SuggestJob.Result): SuggestionSet? {
         if (job.req != suggestReq || job.gen != generation || bridge !== job.bridge ||
             job.bridge.composedWord != job.composed || !suggestionsActive || barCollapsed) return null
-        return composingSuggestions(job.composed, job.raw, job.predicted, result.pool, result.fix, result.pmi)
+        return composingSuggestions(job.composed, job.raw, job.predicted, result.pool, result.fix, result.pmi, result.slip)
             .copy(number = job.number)
     }
 
@@ -779,7 +782,7 @@ class KeyboardSession(
 
     private fun composingSuggestions(composed: String, raw: String, predicted: String,
                                      pool: List<VNSuggest.Match>, fix: String?,
-                                     pmi: FloatArray? = null): SuggestionSet {
+                                     pmi: FloatArray? = null, slip: String? = null): SuggestionSet {
         val literal = if (predicted == composed) raw else composed
         var word: String? = null
         var word2: String? = null
@@ -804,6 +807,8 @@ class KeyboardSession(
         } else if (fix != null) {
             word = fix
         }
+        // Trượt vào phím thanh mà vẫn ra từ ("casn" → cán, ý là cân): bản sửa vào slot 3.
+        if (slip != null && slip != word) { if (word == null) word = slip else word2 = slip }
         var emojis: List<String> = emptyList()
         val cLow = composed.lowercase()
         lastWord?.let { emojis = EmojiSuggest.emojis(it.lowercase() + " " + cLow) }

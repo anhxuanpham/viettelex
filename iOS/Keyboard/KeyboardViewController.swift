@@ -970,6 +970,8 @@ final class KeyboardViewController: UIInputViewController {
                     : VNSuggest.matches(composed, poolLimit: 24, excluding: composed.lowercased())
                 let fix = !english && pool.isEmpty && wantFix
                     ? AdjacentKeyFixer.lexiconCorrection(raw: raw, bridge: b) : nil
+                // trượt vào phím thanh mà vẫn ra từ ("casn" → cán, ý là cân)
+                let slip = fix == nil && wantFix ? AdjacentKeyFixer.lexiconToneSlip(raw: raw, bridge: b) : nil
                 // bigram âm tiết tĩnh theo từ trước (mmap dùng chung với gõ vuốt; tra ~µs)
                 let pmi = english ? nil : SuggestRank.inlinePmi(pool, prev: prev)
                 DispatchQueue.main.async {
@@ -978,7 +980,7 @@ final class KeyboardViewController: UIInputViewController {
                           self.suggestionsActive, self.keyboard?.isBarCollapsed != true
                     else { return }
                     self.showComposingSuggestions(composed: composed, raw: raw, predicted: predicted,
-                                                  pool: pool, pmi: pmi, fix: fix)
+                                                  pool: pool, pmi: pmi, fix: fix, slip: slip)
                 }
             }
             return
@@ -1042,7 +1044,8 @@ final class KeyboardViewController: UIInputViewController {
 
     /// Phần main của gợi ý khi đang gõ dở: pool (VNSuggest) + fix đã tính nền.
     private func showComposingSuggestions(composed: String, raw: String, predicted: String,
-                                          pool: [VNSuggest.Match], pmi: [Float]?, fix: String?) {
+                                          pool: [VNSuggest.Match], pmi: [Float]?, fix: String?,
+                                          slip: String? = nil) {
         var set = KeyboardView.SuggestionSet()
         // Slot "nguyên văn" = phương án mà boundary SẼ KHÔNG cho ra —
         // lối thoát cho cả hai chiều collision (user chốt 2026-07-24):
@@ -1082,6 +1085,10 @@ final class KeyboardViewController: UIInputViewController {
             // Thử nghiệm: không từ nào khớp → nghi chạm trượt phím kề; đưa bản sửa
             // lên slot chính (tap để thay, không tự thay).
             set.word = fix
+        }
+        // Trượt vào phím thanh mà vẫn ra từ ("casn" → cán, ý là cân): bản sửa vào slot 3.
+        if let slip, slip != set.word {
+            if set.word == nil { set.word = slip } else { set.word2 = slip }
         }
         set.number = refreshNumberChip()
         // thử cụm 2 từ trước ("hoàn thành", "sinh nhật") rồi mới tới từ đơn.
