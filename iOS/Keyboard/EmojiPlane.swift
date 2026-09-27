@@ -3,6 +3,8 @@
 // cuộn NGANG column-major liên tục theo category, hàng dưới
 // [ABC][icon 9 category][⌫] với category đang xem được highlight tròn.
 // Recents (🕐) lưu App Group, tối đa 30. (Search bar đã bỏ — user 2026-07-24.)
+// 27/09/2026: hàng dưới thêm 🔍 (tìm emoji bằng tiếng Việt — KeyboardView dựng ô tìm
+// + phím chữ) và tab kaomoji / ký tự đặc biệt (^‿^) ở cuối dãy category.
 import UIKit
 
 final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
@@ -10,11 +12,17 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
     var onEmoji: ((String) -> Void)?
     var onABC: (() -> Void)?
     var onBackspace: (() -> Void)?
+    /// Bấm 🔍 — KeyboardView chuyển sang chế độ tìm emoji.
+    var onSearch: (() -> Void)?
+    /// Chạm một kaomoji / ký tự đặc biệt — chèn nguyên văn (không vào Recents).
+    var onKaomoji: ((String) -> Void)?
 
     private var dark = false
     private var sections: [(name: String, emoji: [String])] = []
     private var collection: UICollectionView!
     private var categoryButtons: [UIButton] = []
+    private var kaomojiButton: UIButton?
+    private var kaomojiView: KaomojiView?
     private var repeatTimer: Timer?
 
     private static let recentsKey = "emojiRecents"
@@ -63,8 +71,9 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
 
     // UserDefaults.standard: không Full Access → iOS cấm GHI App Group từ
     // extension (ghi group fail âm thầm — recents từng mất qua phiên vì vậy).
-    private var recents: [String] {
-        UserDefaults.standard.stringArray(forKey: Self.recentsKey) ?? []
+    private var recents: [String] { Self.recents }
+    static var recents: [String] {
+        UserDefaults.standard.stringArray(forKey: recentsKey) ?? []
     }
 
     private func reloadSections() {
@@ -75,11 +84,13 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         sections = s
     }
 
-    private func noteUsed(_ e: String) {
+    private func noteUsed(_ e: String) { Self.noteUsed(e) }
+    /// Dùng chung với kết quả tìm emoji (KeyboardView).
+    static func noteUsed(_ e: String) {
         var r = recents.filter { $0 != e }
         r.insert(e, at: 0)
         if r.count > 30 { r.removeLast(r.count - 30) }
-        UserDefaults.standard.set(r, forKey: Self.recentsKey)
+        UserDefaults.standard.set(r, forKey: recentsKey)
     }
 
     // MARK: UI
@@ -151,6 +162,16 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         let iconsStack = UIStackView()
         iconsStack.axis = .horizontal
         iconsStack.distribution = .fillEqually
+        let search = UIButton(type: .custom)
+        search.setImage(UIImage(systemName: "magnifyingglass",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium)), for: .normal)
+        search.tintColor = ink.withAlphaComponent(0.55)
+        search.accessibilityLabel = "Tìm emoji"
+        search.addAction(UIAction { [weak self] _ in
+            KeyboardView.clickModifier()
+            self?.onSearch?()
+        }, for: .touchUpInside)
+        iconsStack.addArrangedSubview(search)
         for (i, name) in Self.categoryIcons.enumerated() {
             let b = UIButton(type: .custom)
             b.setImage(UIImage(systemName: name,
@@ -161,6 +182,16 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
             categoryButtons.append(b)
             iconsStack.addArrangedSubview(b)
         }
+        let kao = UIButton(type: .custom)
+        kao.setTitle("^‿^", for: .normal)
+        kao.titleLabel?.font = .systemFont(ofSize: 12, weight: .semibold)
+        kao.titleLabel?.adjustsFontSizeToFitWidth = true
+        kao.setTitleColor(ink.withAlphaComponent(0.55), for: .normal)
+        kao.layer.cornerRadius = 13
+        kao.accessibilityLabel = "Kaomoji và ký tự đặc biệt"
+        kao.addAction(UIAction { [weak self] _ in self?.showKaomoji() }, for: .touchUpInside)
+        kaomojiButton = kao
+        iconsStack.addArrangedSubview(kao)
         row.addArrangedSubview(iconsStack)
 
         let del = UIButton(type: .custom)
@@ -219,6 +250,7 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
     private var pendingIcon: Int?
 
     private func jumpToCategory(_ i: Int) {
+        hideKaomoji()
         guard let s = sectionIndex(forIcon: i), collection.numberOfItems(inSection: s) > 0 else { return }
         // Giữ highlight ở icon vừa bấm: các section cuối (tim, cờ) không thể
         // cuộn tới mép trái (clamp contentSize) nên leftmost-visible sẽ báo
@@ -233,6 +265,7 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         return visible.first?.section ?? 0
     }
 
+    /// icon = -1 → không category nào (đang ở tab kaomoji).
     private func highlightCategory(_ icon: Int) {
         let ink: UIColor = dark ? .white : .black
         for (i, b) in categoryButtons.enumerated() {
@@ -240,9 +273,45 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
             b.backgroundColor = on ? ink.withAlphaComponent(0.18) : .clear
             b.tintColor = on ? ink : ink.withAlphaComponent(0.55)
         }
+        let kao = kaomojiView != nil
+        kaomojiButton?.backgroundColor = kao ? ink.withAlphaComponent(0.18) : .clear
+        kaomojiButton?.setTitleColor(kao ? ink : ink.withAlphaComponent(0.55), for: .normal)
+    }
+
+    // MARK: kaomoji
+
+    private func showKaomoji() {
+        KeyboardView.clickModifier()
+        dismissTonePopup()
+        if kaomojiView == nil {
+            let v = KaomojiView(groups: EmojiData.kaomoji, dark: dark)
+            v.onPick = { [weak self] s in
+                KeyboardView.clickLetter()
+                self?.onKaomoji?(s)
+            }
+            v.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(v)
+            NSLayoutConstraint.activate([
+                v.topAnchor.constraint(equalTo: collection.topAnchor),
+                v.bottomAnchor.constraint(equalTo: collection.bottomAnchor),
+                v.leftAnchor.constraint(equalTo: collection.leftAnchor),
+                v.rightAnchor.constraint(equalTo: collection.rightAnchor),
+            ])
+            kaomojiView = v
+        }
+        collection.isHidden = true
+        highlightCategory(-1)
+    }
+
+    private func hideKaomoji() {
+        guard let v = kaomojiView else { return }
+        v.removeFromSuperview()
+        kaomojiView = nil
+        collection.isHidden = false
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView === collection, kaomojiView == nil else { return }
         guard pendingIcon == nil else { return }
         highlightCategory(iconIndex(forSection: sectionOnScreen()))
     }
@@ -406,6 +475,70 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
             // không phải đợi mở lại plane
             reloadSections()
             collection.reloadData()
+        }
+    }
+
+    /// Tab kaomoji: cuộn dọc, mỗi nhóm một tiêu đề xám + các "viên" chữ dàn dòng.
+    final class KaomojiView: UIScrollView {
+        var onPick: ((String) -> Void)?
+        private(set) var chips: [(button: UIButton, text: String)] = []
+        private var headers: [UILabel] = []
+        private var groupStarts: [Int] = []
+        private var lastW: CGFloat = 0
+
+        init(groups: [(name: String, items: [String])], dark: Bool) {
+            super.init(frame: .zero)
+            showsVerticalScrollIndicator = false
+            alwaysBounceVertical = true
+            let ink: UIColor = dark ? .white : .black
+            let fill = dark ? UIColor(white: 0.32, alpha: 1) : UIColor(white: 1, alpha: 0.9)
+            for g in groups {
+                let h = UILabel()
+                h.text = g.name.uppercased()
+                h.font = .systemFont(ofSize: 11, weight: .semibold)
+                h.textColor = ink.withAlphaComponent(0.5)
+                addSubview(h)
+                headers.append(h)
+                groupStarts.append(chips.count)
+                for item in g.items {
+                    let b = UIButton(type: .custom)
+                    b.setTitle(item, for: .normal)
+                    b.setTitleColor(ink, for: .normal)
+                    b.titleLabel?.font = .systemFont(ofSize: 17)
+                    b.backgroundColor = fill
+                    b.layer.cornerRadius = 8
+                    b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
+                    b.accessibilityLabel = item
+                    b.addAction(UIAction { [weak self] _ in self?.onPick?(item) }, for: .touchUpInside)
+                    addSubview(b)
+                    chips.append((b, item))
+                }
+            }
+        }
+
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            guard bounds.width != lastW else { return }
+            lastW = bounds.width
+            let side: CGFloat = 8, gap: CGFloat = 6, h: CGFloat = 34
+            var y: CGFloat = 2
+            for (gi, header) in headers.enumerated() {
+                header.frame = CGRect(x: side + 2, y: y, width: bounds.width - 2 * side, height: 14)
+                y += 18
+                var x = side
+                let end = gi + 1 < groupStarts.count ? groupStarts[gi + 1] : chips.count
+                for ci in groupStarts[gi]..<end {
+                    let b = chips[ci].button
+                    let w = min(max(b.intrinsicContentSize.width, h), bounds.width - 2 * side)
+                    if x + w > bounds.width - side, x > side { x = side; y += h + gap }
+                    b.frame = CGRect(x: x, y: y, width: w, height: h)
+                    x += w + gap
+                }
+                y += h + 12
+            }
+            contentSize = CGSize(width: bounds.width, height: y)
         }
     }
 

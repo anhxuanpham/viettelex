@@ -2,13 +2,14 @@
 """Xuất dữ liệu GENERATED của bàn phím iOS sang assets Android (blob đọc tại chỗ).
 
 Usage: export-ios-data.py <repo-root>
-Đọc iOS/Keyboard/{EmojiSuggest,SeedData,EmojiData}.swift + Resources/vnlexicon.bin +
+Đọc iOS/Keyboard/{EmojiSuggest,SeedData}.swift + Resources/vnlexicon.bin +
 iOS/ios-mau-cau.yml, ghi android/app/src/main/assets/:
   vnlexicon.bin      — copy nguyên (layout VNL2, xem VNLexicon2.kt)
   emojisuggest.bin   — "EMS1" | count u32 | keyOff u16[count+1] | valOff u16[count+1]
                        | keyBlob | valBlob  (little-endian; offset tính trong từng blob)
   seed.tsv           — "u\tword\tweight" / "b\tprev\tnext\tweight" (chỉ parse khi seed)
-  emojidata.tsv      — "name\te1 e2 …" theo thứ tự category
+  (emoji.bin — emoji + tìm kiếm + kaomoji — do Scripts/gen-emoji-data.py ghi thẳng cho
+   cả iOS lẫn Android, không qua script này.)
   ios-mau-cau.yml    — copy
 Chạy lại mỗi khi dữ liệu iOS đổi.
 """
@@ -57,16 +58,6 @@ with open(os.path.join(out, "seed.tsv"), "w", encoding="utf-8") as f:
     for w, c in uni: f.write(f"u\t{unesc(w)}\t{c}\n")
     for a, b, c in bi: f.write(f"b\t{unesc(a)}\t{unesc(b)}\t{c}\n")
 print("seed", len(uni), len(bi))
-
-# --- EmojiData
-src = open(os.path.join(kb, "EmojiData.swift"), encoding="utf-8").read()
-cats = re.findall(r'\("(\w+)", \[(.*?)\]\)', src, re.S)
-with open(os.path.join(out, "emojidata.tsv"), "w", encoding="utf-8") as f:
-    for name, body in cats:
-        es = [unesc(e) for e in re.findall(r'"((?:[^"\\]|\\.)*)"', body)]
-        assert all(" " not in e and "\t" not in e for e in es)
-        f.write(name + "\t" + " ".join(es) + "\n")
-print("emojidata", [(n, len(re.findall(r'"', b)) // 2) for n, b in cats])
 
 shutil.copy(os.path.join(kb, "Resources/vnlexicon.bin"), os.path.join(out, "vnlexicon.bin"))
 shutil.copy(os.path.join(root, "iOS/ios-mau-cau.yml"), os.path.join(out, "ios-mau-cau.yml"))

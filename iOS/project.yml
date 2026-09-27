@@ -105,6 +105,8 @@ targets:
       - Keyboard/KeyboardView.swift
       - Keyboard/EmojiPlane.swift
       - Keyboard/EmojiData.swift
+      - Keyboard/EmojiSearch.swift
+      - Keyboard/EmojiSearchBar.swift
       - Keyboard/AppearancePolicy.swift
       - Keyboard/KeyCommitQueue.swift
       - Keyboard/AdjacentKeyFixer.swift
@@ -139,6 +141,8 @@ targets:
       - path: StoreKit/VietTelex.storekit
         buildPhase: resources
       - path: Keyboard/Resources/vnlexicon.bin
+        buildPhase: resources
+      - path: Keyboard/Resources/emoji.bin
         buildPhase: resources
       - path: Keyboard/Resources/enlexicon.bin
         buildPhase: resources

@@ -135,3 +135,21 @@ danh sách 7.184 âm tiết của hieuthi (gist GitHub) và tần suất từ
 [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords) (nội dung
 CC BY-SA 4.0 theo README dự án; số liệu suy ra từ OpenSubtitles). Cần rà soát giấy phép
 gist hieuthi nếu phát hành lại vnlexicon.bin độc lập.
+
+## emoji.bin — bàn phím emoji: bộ emoji, tìm kiếm tiếng Việt, kaomoji
+
+`iOS/Keyboard/Resources/emoji.bin` = `android/app/src/main/assets/emoji.bin` (~258 KB:
+1.914 emoji Emoji 17.0, 6.493 khoá tìm, 136 kaomoji). Sinh bởi `Scripts/gen-emoji-data.py`
+(python3 stdlib, tự tải nguồn về `~/.cache/viettelex-emoji/`); không sửa tay.
+
+| Nguồn | Bản dùng | Giấy phép | Dùng cho |
+|---|---|---|---|
+| [Unicode emoji-test.txt](https://unicode.org/Public/17.0.0/emoji/emoji-test.txt) | Emoji 17.0 (2025-08-04) | [Unicode License v3](https://www.unicode.org/license.txt) | danh sách, thứ tự, phiên bản emoji |
+| [CLDR annotations vi](https://github.com/unicode-org/cldr/tree/release-48/common/annotations) + annotationsDerived vi | CLDR release-48 | Unicode License v3 | tên / từ khoá tiếng Việt để tìm |
+| EmojiSuggest (khoá gợi ý emoji sẵn có, `emojisuggest.bin`) | trong repo | MIT (dự án) | từ khoá tiếng Việt biên soạn |
+| Kaomoji / bảng ký hiệu | biên soạn tay trong script | MIT (dự án) | tab ^‿^ |
+
+Unicode License v3 cho phép dùng, sửa, phân phối (kể cả thương mại) miễn kèm thông báo
+bản quyền "Copyright © 1991-2025 Unicode, Inc." và điều khoản giấy phép
+(https://www.unicode.org/license.txt). emoji.bin là dữ liệu biến đổi (lọc, gộp, fold không
+dấu, đóng gói nhị phân) từ các file trên.

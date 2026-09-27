@@ -67,7 +67,8 @@ object Keys {
     const val ASSET_BIGRAM = "vnbigram.bin"
     const val ASSET_EMOJI_SUGGEST = "emojisuggest.bin"
     const val ASSET_SEED = "seed.tsv"
-    const val ASSET_EMOJI_DATA = "emojidata.tsv"
+    /** Emoji + khoá tìm tiếng Việt + kaomoji (Scripts/gen-emoji-data.py, chung iOS). */
+    const val ASSET_EMOJI_DATA = "emoji.bin"
     const val ASSET_TEMPLATES_YAML = "ios-mau-cau.yml"
     const val ASSET_SPACE_LOGO = "spacelogo.png"
 }
