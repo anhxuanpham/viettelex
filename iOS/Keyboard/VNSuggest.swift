@@ -10,6 +10,13 @@ import Foundation
 
 enum VNSuggest {
 
+    /// Một ứng viên + tần suất tĩnh 0-255 + id lexicon (bigram tĩnh; -1 = không rõ).
+    struct Match: Equatable {
+        let word: String
+        let freq: Int
+        var id: Int = -1
+    }
+
     // MARK: bảng decompose runtime (~190 ký tự Việt) — O(1)/char, không alloc
 
     /// char → (base ascii, attr = quality<<3 | tone). Build một lần.
@@ -79,7 +86,7 @@ enum VNSuggest {
     /// sắp theo tần suất giảm dần, tối đa `poolLimit` (caller re-rank với
     /// điểm cá nhân/ngữ cảnh rồi lấy top-n).
     static func matches(_ typed: String, poolLimit: Int = 24,
-                        excluding: String = "") -> [(word: String, freq: Int)] {
+                        excluding: String = "") -> [Match] {
         guard let dec = decompose(typed) else { return [] }
         let prefix = dec.map { $0.base }
         let excludingLower = excluding.lowercased()
@@ -111,11 +118,11 @@ enum VNSuggest {
             pool.append((Int(VNLexicon2Data.freq(id)), id))
         }
         pool.sort { $0.0 != $1.0 ? $0.0 > $1.0 : $0.1 < $1.1 }
-        var out: [(String, Int)] = []
+        var out: [Match] = []
         for (f, id) in pool {
             let w = display(id)
             if w == excludingLower { continue }
-            out.append((w, f))
+            out.append(Match(word: w, freq: f, id: id))
             if out.count >= poolLimit { break }
         }
         return out
@@ -133,6 +140,22 @@ enum VNSuggest {
         }
         return false
     }
+
+    /// id lexicon của đúng âm tiết `word` (chữ thường, NFC, dấu kiểu cũ như vnlexicon:
+    /// hoà → hòa), nil nếu không có. Không đụng SwipeLexicon (thanh gợi ý chạy cả khi tắt vuốt).
+    static func lexiconId(of word: String) -> Int? {
+        let w = SyllableBigram.normalize(word)
+        guard let dec = decompose(w) else { return nil }
+        let prefix = dec.map { $0.base }
+        for id in range(ofFoldedPrefix: prefix) {
+            guard foldedEntry(id).count == prefix.count else { continue }
+            if display(id) == w { return id }
+        }
+        return nil
+    }
+
+    /// Tần suất tĩnh (0-255) của id lexicon.
+    static func freq(id: Int) -> Int { Int(VNLexicon2Data.freq(id)) }
 
     /// Tần suất của đúng âm tiết `word` trong lexicon, nil nếu không có
     /// (AdjacentKeyFixer chấm điểm ứng viên sửa lỗi chạm trượt).

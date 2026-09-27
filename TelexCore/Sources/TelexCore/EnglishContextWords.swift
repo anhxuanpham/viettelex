@@ -173,3 +173,15 @@ enum EnglishContextWords {
         cool wonderful awesome amazing
         """
 }
+
+/// API công khai (bàn phím iOS — gõ vuốt, giai đoạn 3): phân loại MỘT từ đã chốt theo
+/// cùng bảng với `contextualEnglish`, để P(ngôn ngữ | từ trước) của decoder vuốt khớp
+/// quyết định của engine. Chữ thường ASCII.
+public enum EnglishContextLookup {
+    /// Từ tiếng Anh MỞ mạch tiếng Anh (the, is, you, check…).
+    public static func opensEnglishRun(_ w: String) -> Bool { EnglishContextWords.words.contains(w) }
+    /// Từ mượn trung tính (email, app, file…): giữ nguyên mạch hiện tại.
+    public static func isNeutralLoanword(_ w: String) -> Bool {
+        EnglishContextWords.neutralLoanwords.contains(w)
+    }
+}

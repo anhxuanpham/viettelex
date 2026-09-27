@@ -206,6 +206,19 @@ class KeyboardView(
     }
     private val globeLongRun = Runnable { globeFired = true; listener?.onGlobe(true) }
 
+    /** Ô cho giữ lâu Enter = xuống dòng thật (IME đặt theo [FieldConfig.holdNewline]). */
+    var holdNewline = false
+    private var returnPtr = -1
+    private val returnHoldRun = Runnable {
+        val k = ptrKey.getOrNull(returnPtr)
+        // Ngón khác chạm xuống đã flush (chốt) phím Enter ⇒ không còn là giữ lâu.
+        if (k == null || k.kind != KeyKind.RETURN || !commits.isArmed(k)) return@Runnable
+        commits.disarm(k)                 // nhả tay KHÔNG gửi action
+        feedback.longPress(this)
+        showBalloon(k, "↵")
+        emit(Key.LineBreak)
+    }
+
     // --- badge "ViệtTelex" ---
     private var badgeAlpha = 0f
     private var badgeAnim: ValueAnimator? = null
@@ -230,7 +243,7 @@ class KeyboardView(
             is Key.Text -> search.insert(k.text)
             Key.Space, Key.DoubleSpacePeriod -> search.space()
             Key.Backspace -> search.backspace()
-            Key.Newline -> { setPlane(Plane.EMOJI); return }
+            Key.Newline, Key.LineBreak -> { setPlane(Plane.EMOJI); return }
             else -> return
         }
         refreshSearch()
@@ -260,7 +273,8 @@ class KeyboardView(
 
     fun configure(returnLabel: String, kind: InputKind, needsGlobe: Boolean, showLogo: Boolean,
                   templatesEnabled: Boolean, templates: List<TemplateItem>, keyAreaPx: Float,
-                  numberSigned: Boolean = false, numberDecimal: Boolean = false) {
+                  numberSigned: Boolean = false, numberDecimal: Boolean = false, numberRow: Boolean = false) {
+        this.numberRow = numberRow
         this.numberSigned = numberSigned
         this.numberDecimal = numberDecimal
         this.returnLabel = returnLabel
@@ -314,7 +328,8 @@ class KeyboardView(
 
     private var numberSigned = false
     private var numberDecimal = false
-    private fun signature() = "$returnLabel|$inputKind|$needsGlobe|$width|$keyAreaPx|$numberSigned|$numberDecimal"
+    private var numberRow = false
+    private fun signature() = "$returnLabel|$inputKind|$needsGlobe|$width|$keyAreaPx|$numberSigned|$numberDecimal|$numberRow"
 
     private fun rebuild() {
         if (width == 0) return
@@ -322,14 +337,14 @@ class KeyboardView(
         if (sig != builtSig) { planeCache.clear(); builtSig = sig }
         keys = planeCache.getOrPut(plane) {
             KeyLayout.build(LayoutConfig(plane, width.toFloat(), keyAreaPx, d, inputKind, needsGlobe,
-                theme.tablet, returnLabel, numberSigned, numberDecimal))
+                theme.tablet, returnLabel, numberSigned, numberDecimal, numberRow))
         }
         spaceKey = keys.firstOrNull { it.kind == KeyKind.SPACE }
         spaceKey?.let {
             val sz = theme.dp(22f)
             logoRect.set(it.right - theme.dp(10f) - sz, it.centerY - sz / 2, it.right - theme.dp(10f), it.centerY + sz / 2)
         }
-        val paneBottom = if (plane == Plane.TEMPLATES) keyAreaPx - keyAreaPx / 4f else keyAreaPx
+        val paneBottom = if (plane == Plane.TEMPLATES) keyAreaPx - KeyLayout.rowUnit(keyAreaPx, numberRow) else keyAreaPx
         templatesPane.layout(width.toFloat(), paneBottom)
         emojiPane.layout(width.toFloat(), keyAreaPx)
         searchBar.layout(width.toFloat(), KeyLayout.searchHeaderPx(keyAreaPx))
@@ -574,6 +589,11 @@ class KeyboardView(
                 feedback.click(Feedback.RETURN, this)
                 press(k)
                 commits.arm(k, newlineFire)
+                if (holdNewline) {
+                    returnPtr = pid
+                    removeCallbacks(returnHoldRun)
+                    postDelayed(returnHoldRun, RETURN_HOLD_MS)
+                }
             }
             KeyKind.SHIFT -> {
                 feedback.click(Feedback.MODIFIER, this)
@@ -653,7 +673,11 @@ class KeyboardView(
         when (k.kind) {
             KeyKind.LETTER -> hideBalloon(k)
             KeyKind.CHAR -> { hideBalloon(k); commits.release(k) }
-            KeyKind.PUNCT, KeyKind.RETURN, KeyKind.PAD -> commits.release(k)
+            KeyKind.PUNCT, KeyKind.PAD -> commits.release(k)
+            KeyKind.RETURN -> {
+                if (pid == returnPtr) { removeCallbacks(returnHoldRun); returnPtr = -1; hideBalloon(k) }
+                commits.release(k)        // đã giữ lâu ⇒ đã disarm, không có gì để chốt
+            }
             KeyKind.SPACE -> {
                 if (pid == spacePtr) {
                     removeCallbacks(spaceHoldRun); spacePtr = -1
@@ -737,8 +761,8 @@ class KeyboardView(
         commits.flush()
         endSwipe(commit = false)
         removeCallbacks(spaceHoldRun); removeCallbacks(bsStartRun); removeCallbacks(bsTickRun)
-        removeCallbacks(globeLongRun)
-        spacePtr = -1; bsPtr = -1; globePtr = -1; bsRepeating = false
+        removeCallbacks(globeLongRun); removeCallbacks(returnHoldRun)
+        spacePtr = -1; bsPtr = -1; globePtr = -1; returnPtr = -1; bsRepeating = false
         if (trackpad) endTrackpad()
         balloon.hide(); balloonOwner = null
         invalidate()
@@ -914,5 +938,6 @@ class KeyboardView(
         const val BS_HOLD_MS = 500L
         const val BS_INTERVAL = 90L
         const val GLOBE_HOLD_MS = 500L
+        const val RETURN_HOLD_MS = 450L
     }
 }

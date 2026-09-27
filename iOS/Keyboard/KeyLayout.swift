@@ -18,6 +18,24 @@ enum KeyLayout {
     ]
     static let padAnchorRow = 0
 
+    /// Hàng phím số tuỳ chọn (Settings → "Hàng phím số"), nằm TRÊN hàng tab.
+    /// Cùng 12 phím như hàng neo nên số 1…0 thẳng cột q…p: "-" rộng như tab,
+    /// "=" co giãn (= đúng phần của ⌫). Không có ký tự phụ vuốt xuống.
+    static let padNumberRow: [Key] =
+        [Key(id: "-", units: 1.31)] + letters("1234567890") + [Key(id: "=", units: nil)]
+    static let digits = "1234567890".map { String($0) }
+
+    /// Hàng số thấp hơn hàng chữ như Gboard — tổng bàn phím tăng ít.
+    static let numberRowRatio: CGFloat = 0.75
+
+    /// Tổng chiều cao vùng phím. `base` = 4 hàng chuẩn, `adjust` = ±pt MỖI hàng
+    /// (Settings). Hàng số bật → thêm 0.75 hàng, cho MỌI plane (bàn phím không đổi
+    /// chiều cao khi chuyển 123/emoji — host relayout dở dang, xem updateSuggestionChrome).
+    static func keyAreaHeight(base: CGFloat, adjust: CGFloat, numberRow: Bool) -> CGFloat {
+        let unit = (base + adjust * 4) / 4
+        return unit * (numberRow ? 4 + numberRowRatio : 4)
+    }
+
     /// Hàng đáy — units = PHẦN của bề rộng hàng (multiplier theo stack width).
     static let padBottom: [Key] = [
         Key(id: "globe", units: 0.068), Key(id: "plane", units: 0.068),
@@ -52,8 +70,10 @@ enum KeyLayout {
 
     /// Bề rộng phím co giãn của hàng `i` (≤ 0 = tràn hàng).
     static func padFlexWidth(row i: Int, rowWidth w: CGFloat, gap: CGFloat, margin: CGFloat) -> CGFloat {
+        padFlexWidth(padRows[i], rowWidth: w, gap: gap, margin: margin)
+    }
+    static func padFlexWidth(_ row: [Key], rowWidth w: CGFloat, gap: CGFloat, margin: CGFloat) -> CGFloat {
         let q = padLetterWidth(rowWidth: w, gap: gap, margin: margin)
-        let row = padRows[i]
         let fixed = row.compactMap(\.units).reduce(0, +) * q
         return w - 2 * margin - gap * CGFloat(row.count - 1) - fixed
     }

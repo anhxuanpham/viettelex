@@ -59,4 +59,17 @@ class KeyCommitQueueTests {
         q.release(space)
         assertEquals(" ", out)
     }
+
+    @Test fun testIsArmedTracksHoldState() {
+        q.arm(ret) { out += "⏎" }
+        assertTrue(q.isArmed(ret))
+        q.disarm(ret)                 // giữ lâu Enter đã chèn "\n" ⇒ nhả tay không chốt
+        assertTrue(!q.isArmed(ret))
+        q.release(ret)
+        assertEquals("", out)
+        q.arm(ret) { out += "⏎" }
+        q.flush()                     // ngón khác chạm ⇒ đã chốt, không còn giữ lâu
+        assertTrue(!q.isArmed(ret))
+        assertEquals("⏎", out)
+    }
 }

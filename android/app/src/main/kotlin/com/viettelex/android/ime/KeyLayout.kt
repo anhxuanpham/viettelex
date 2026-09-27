@@ -85,6 +85,8 @@ data class LayoutConfig(
     /** TYPE_NUMBER_FLAG_SIGNED / DECIMAL (bàn NUMPAD). */
     val numberSigned: Boolean = false,
     val numberDecimal: Boolean = false,
+    /** Hàng phím số 1…0 trên plane chữ (Settings, mặc định tắt) — [keyAreaPx] đã gồm nó. */
+    val numberRow: Boolean = false,
 )
 
 object KeyLayout {
@@ -101,14 +103,26 @@ object KeyLayout {
     const val BAR_TOP_PAD = 4f
     const val STRIP_ZONE_W = 52f
 
-    /** Gboard: điện thoại 224 dọc (4 × 56) / 168 ngang; tablet 256 / 300; + rowHeightAdjust × 4 hàng. */
-    fun keyAreaDp(tablet: Boolean, landscape: Boolean, rowHeightAdjust: Int): Float {
+    /** Hàng số thấp hơn hàng chữ như Gboard — bàn phím cao thêm ít. */
+    const val NUMBER_ROW_RATIO = 0.75f
+
+    /**
+     * Gboard: điện thoại 224 dọc (4 × 56) / 168 ngang; tablet 256 / 300; + rowHeightAdjust × 4 hàng.
+     * Hàng số bật ⇒ + 0.75 hàng, cho MỌI plane (chuyển 123/emoji không đổi chiều cao bàn phím;
+     * plane số/ký hiệu giữ 4 hàng, mỗi hàng cao hơn chút).
+     */
+    fun keyAreaDp(tablet: Boolean, landscape: Boolean, rowHeightAdjust: Int, numberRow: Boolean = false): Float {
         val base = if (tablet) (if (landscape) 300f else 256f) else (if (landscape) 168f else 224f)
-        return base + rowHeightAdjust.coerceIn(-10, 10) * 4f
+        val four = base + rowHeightAdjust.coerceIn(-10, 10) * 4f
+        return if (numberRow) four / 4f * (4f + NUMBER_ROW_RATIO) else four
     }
 
     /** Chiều cao hàng ô tìm emoji (plane EMOJI_SEARCH): 1/5 vùng phím. */
     fun searchHeaderPx(keyAreaPx: Float) = keyAreaPx / 5f
+
+    /** Chiều cao một hàng phím chuẩn trong vùng phím [keyAreaPx]. */
+    fun rowUnit(keyAreaPx: Float, numberRow: Boolean): Float =
+        keyAreaPx / (if (numberRow) 4f + NUMBER_ROW_RATIO else 4f)
 
     fun stripDp(suggestionsEnabled: Boolean, collapsed: Boolean): Float =
         if (!suggestionsEnabled) 0f else if (collapsed) COLLAPSED_STRIP else OPEN_STRIP
@@ -127,10 +141,15 @@ object KeyLayout {
         val rowH = c.keyAreaPx / 4f
         when (c.plane) {
             Plane.LETTERS -> {
-                equalRow(out, ROW1.map { it.toString() }, KeyKind.LETTER, c, 0, rowH, 0f)
-                equalRow(out, ROW2.map { it.toString() }, KeyKind.LETTER, c, 1, rowH, 0.5f)
-                thirdRow(out, c, rowH, letters = true)
-                bottomRow(out, c, 3 * rowH, rowH, planeKey = "?123", clearInsteadOfEmoji = false)
+                // Hàng số (tuỳ chọn): phím CHAR như plane 123 (arm DOWN, chốt UP, balloon),
+                // cao 0.75 hàng; 4 hàng chữ dời xuống y0. Không hàng số ⇒ y0 = 0, như cũ.
+                val u = rowUnit(c.keyAreaPx, c.numberRow)
+                val y0 = if (c.numberRow) NUMBER_ROW_RATIO * u else 0f
+                if (c.numberRow) equalRow(out, NUM1, KeyKind.CHAR, c, 0, y0, 0f)
+                equalRow(out, ROW1.map { it.toString() }, KeyKind.LETTER, c, 0, u, 0f, y0)
+                equalRow(out, ROW2.map { it.toString() }, KeyKind.LETTER, c, 1, u, 0.5f, y0)
+                thirdRow(out, c, u, letters = true, y0 = y0)
+                bottomRow(out, c, y0 + 3 * u, u, planeKey = "?123", clearInsteadOfEmoji = false)
             }
             Plane.NUMBERS, Plane.SYMBOLS -> {
                 val num = c.plane == Plane.NUMBERS
@@ -141,8 +160,9 @@ object KeyLayout {
                     clearInsteadOfEmoji = false)
             }
             Plane.TEMPLATES -> {
-                // Chips giãn phần trên; hàng đáy cao ĐÚNG 1 hàng phím (keyArea/4).
-                bottomRow(out, c, c.keyAreaPx - rowH, rowH, planeKey = "ABC", clearInsteadOfEmoji = true)
+                // Chips giãn phần trên; hàng đáy cao ĐÚNG 1 hàng phím chuẩn.
+                val u = rowUnit(c.keyAreaPx, c.numberRow)
+                bottomRow(out, c, c.keyAreaPx - u, u, planeKey = "ABC", clearInsteadOfEmoji = true)
             }
             Plane.EMOJI -> Unit   // EmojiPane tự vẽ
             Plane.EMOJI_SEARCH -> {
@@ -159,12 +179,12 @@ object KeyLayout {
         return out
     }
 
-    private fun keyTop(rowIndex: Int, rowH: Float, d: Float) = rowIndex * rowH + ROW_MARGIN_V * d
-    private fun keyBottom(rowIndex: Int, rowH: Float, d: Float) = (rowIndex + 1) * rowH - ROW_MARGIN_V * d
+    private fun keyTop(rowIndex: Int, rowH: Float, d: Float, y0: Float = 0f) = y0 + rowIndex * rowH + ROW_MARGIN_V * d
+    private fun keyBottom(rowIndex: Int, rowH: Float, d: Float, y0: Float = 0f) = y0 + (rowIndex + 1) * rowH - ROW_MARGIN_V * d
 
     /** Hàng phím bằng nhau; sideInset tính theo "phím" = W/10 như iOS (hàng 2 thụt 0.5). */
     private fun equalRow(out: MutableList<LaidKey>, labels: List<String>, kind: Int,
-                         c: LayoutConfig, rowIndex: Int, rowH: Float, sideInset: Float) {
+                         c: LayoutConfig, rowIndex: Int, rowH: Float, sideInset: Float, y0: Float = 0f) {
         val d = c.density
         val gap0 = KEY_SPACING * d
         // Thụt theo BƯỚC phím hàng 10 (phím + khe) ⇒ phím hàng 2 đúng bằng hàng 1.
@@ -173,7 +193,7 @@ object KeyLayout {
         val n = labels.size
         val gap = KEY_SPACING * d
         val w = (c.widthPx - 2 * inset - gap * (n - 1)) / n
-        val t = keyTop(rowIndex, rowH, d); val b = keyBottom(rowIndex, rowH, d)
+        val t = keyTop(rowIndex, rowH, d, y0); val b = keyBottom(rowIndex, rowH, d, y0)
         var x = inset
         for (s in labels) {
             val up = if (kind == KeyKind.LETTER) s.uppercase() else s
@@ -187,14 +207,14 @@ object KeyLayout {
      * [=\\</?123](1.5) . , ? ! ' ⌫(1.5) — 5 dấu chia đều phần còn lại (iOS
      * fillProportionally; stock đo được ≈ 1.45 phím chữ).
      */
-    private fun thirdRow(out: MutableList<LaidKey>, c: LayoutConfig, rowH: Float, letters: Boolean) {
+    private fun thirdRow(out: MutableList<LaidKey>, c: LayoutConfig, rowH: Float, letters: Boolean, y0: Float = 0f) {
         val d = c.density
         val m = ROW_MARGIN_H * d
         val gap = KEY_SPACING * d
         val inner = c.widthPx - 2 * m
         val k = (inner - 8 * gap) / 10f            // phím chữ hàng 3 (1.5+7+1.5 = 10)
         val side = 1.5f * k
-        val t = keyTop(2, rowH, d); val b = keyBottom(2, rowH, d)
+        val t = keyTop(2, rowH, d, y0); val b = keyBottom(2, rowH, d, y0)
         var x = m
         if (letters) {
             out += LaidKey(KeyKind.SHIFT, "", "", "", x, t, x + side, b); x += side + gap

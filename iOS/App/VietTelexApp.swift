@@ -129,6 +129,11 @@ struct RootView: View {
             if phase == .active {
                 keyboardEnabled = isKeyboardEnabled()
                 pasteReady = Self.readPasteReady()
+                // Plus: đọc entitlement đã verify → cờ App Group cho bàn phím.
+                Task { await PlusShared.model.refreshEntitlements() }
+                ICloudSync.shared.start()          // tắt ⇒ không làm gì
+            } else if phase == .background {
+                ICloudSync.shared.syncNow()        // đẩy thay đổi vừa sửa lên iCloud
             }
         }
         .onChange(of: templatesEnabled) { on in
@@ -164,6 +169,7 @@ struct RootView: View {
     }
 
     @ViewBuilder private var gioiThieuTab: some View {
+        SaoLuuSection()
         DebugSection()
         // Logo + tên app trên đầu tab (user 2026-07-24), như About của macOS.
         Section {
@@ -186,6 +192,7 @@ struct RootView: View {
             .padding(.vertical, 8)
             .listRowBackground(Color.clear)
         }
+        Section { PlusEntryRow() }
         Section {
             Link(destination: URL(string: "https://ptrinh.github.io/viettelex/")!) {
                 Label("Website", systemImage: "globe")
@@ -208,6 +215,12 @@ struct RootView: View {
             .font(.footnote).foregroundStyle(.secondary)
             Text("Không thu thập dữ liệu · Không theo dõi · Mã nguồn mở")
                 .font(.footnote).foregroundStyle(.secondary)
+            // Ghi công theo giấy phép dữ liệu bigram gõ vuốt (vnbigram.bin) — docs/DATA-SOURCES.md
+            Link(destination: URL(string: "https://github.com/ptrinh/viettelex/blob/main/docs/DATA-SOURCES.md")!) {
+                Text("Dữ liệu gõ vuốt: thống kê từ Wikipedia, Wikisource… tiếng Việt (CC BY-SA 4.0) và Tatoeba (CC BY 2.0 FR)")
+                    .multilineTextAlignment(.leading)
+            }
+            .font(.footnote).foregroundStyle(.secondary)
             Text("Toàn quyền Truy cập là tuỳ chọn — chỉ cần cho Rung phím và Mẫu câu động (https://); VietTelex không dùng quyền này cho bất kỳ việc gì khác.")
                 .font(.footnote).foregroundStyle(.secondary)
         } header: { Text("Giới thiệu") }
@@ -347,7 +360,7 @@ struct TemplateItem: Equatable, Identifiable {
 struct MauCauSections: View {
     private static let store = UserDefaults(suiteName: "group.com.viettelex")
     /// Mặc định từ ios-mau-cau.yml bundle theo build — cùng file với keyboard.
-    private static let defaults: [TemplateItem] = {
+    static let bundledDefaults: [TemplateItem] = {
         guard let url = Bundle.main.url(forResource: "ios-mau-cau", withExtension: "yml"),
               let text = try? String(contentsOf: url, encoding: .utf8)
         else { return [TemplateItem(label: "👋", text: "Chào buổi sáng")] }
@@ -356,7 +369,7 @@ struct MauCauSections: View {
 
     static func load() -> [TemplateItem] {
         guard let raw = store?.array(forKey: "userTemplates") as? [[String: String]] else {
-            return defaults
+            return bundledDefaults
         }
         return raw.compactMap { e in
             guard let t = e["text"], !t.isEmpty else { return nil }
@@ -745,7 +758,7 @@ struct FullAccessNotice: View {
 }
 
 /// Toggle kèm chú giải nhỏ bên dưới tiêu đề — dùng chung cho 2 tab settings.
-private func settingToggle(_ title: String, _ caption: String, isOn: Binding<Bool>) -> some View {
+func settingToggle(_ title: String, _ caption: String, isOn: Binding<Bool>) -> some View {
     Toggle(isOn: isOn) {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
@@ -803,12 +816,17 @@ struct TinhNangSections: View {
     private var templatesEnabled = true
     @AppStorage("rowHeightAdjust", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var rowHeightAdjust = 0
+    @AppStorage("numberRow", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var numberRow = false
     @AppStorage("hapticFeedback", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var hapticFeedback = false
     @AppStorage("reEditWord", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var reEditWord = true
     @AppStorage("swipeTyping", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var swipeTyping = false
+    /// Công tắc con (giai đoạn 3) — mặc định BẬT, xem KeyboardSettings.swipeEnglish.
+    @AppStorage("swipeEnglish", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var swipeEnglish = true
 
     var body: some View {
         Section {
@@ -816,6 +834,8 @@ struct TinhNangSections: View {
             settingToggle("Kiểm tra chính tả khi gõ", "Ngừng bỏ dấu ngay khi từ không thể là tiếng Việt.", isOn: $liveSpellCheck)
             settingToggle("Sửa dấu từ đã gõ", "Xoá dấu cách ngay sau một từ để gõ tiếp dấu cho từ đó (tháy ␣ ⌫ a → thấy); hoặc đặt con trỏ ngay sau từ rồi gõ phím dấu s f r x j: viêt + j → việt.", isOn: $reEditWord)
         } header: { Text("Chính tả") }
+
+        ShortcutsSection()
 
         Section {
             // Thanh gợi ý bật = tự học từ hay dùng (learnWords đi theo, không
@@ -844,16 +864,22 @@ struct TinhNangSections: View {
                     Text(rowHeightAdjust == 0
                          ? "Chuẩn"
                          : String(format: "%+d pt mỗi hàng (%+d pt cả bàn phím)",
-                                  rowHeightAdjust, rowHeightAdjust * 4))
+                                  // hàng số cao ¾ hàng chữ ⇒ tổng ×4,75 khi bật
+                                  rowHeightAdjust,
+                                  Int((Double(rowHeightAdjust) * (numberRow ? 4.75 : 4)).rounded())))
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
+            settingToggle("Hàng phím số", "Thêm hàng 1 2 3 … 0 phía trên hàng chữ — gõ số không cần chuyển sang bàn phím 123. Bàn phím cao thêm khoảng ¾ hàng.", isOn: $numberRow)
         } header: { Text("Giao diện") } footer: {
             Text("Cài đặt áp dụng ngay lần mở bàn phím kế tiếp.")
         }
 
         Section {
             settingToggle("Gõ vuốt", "Vuốt qua các chữ không dấu rồi nhấc tay: v→i→e→t ra “việt”. Gõ tiếp phím dấu (s f r x j) để đổi dấu, ⌫ ngay sau đó xoá cả từ, thanh gợi ý có các cách viết khác. Chỉ trên iPhone; tắt khi dùng VoiceOver và ở ô email/mật khẩu/URL.", isOn: $swipeTyping)
+            if swipeTyping {
+                settingToggle("Vuốt từ tiếng Anh", "Vuốt ra cả từ tiếng Anh xen trong câu: check, mail, file, meeting… Khi một nét vuốt vừa là từ Việt vừa là từ Anh (the/thế, can/cần), bàn phím ưu tiên tiếng Việt — trừ khi đang gõ tiếng Anh — và luôn để phương án kia trên thanh gợi ý.", isOn: $swipeEnglish)
+            }
         } header: { Text("Thử nghiệm") } footer: {
             Text("Tính năng đang thử — áp dụng lần mở bàn phím kế tiếp.")
         }

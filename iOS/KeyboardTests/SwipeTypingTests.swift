@@ -256,6 +256,74 @@ final class SwipeTypingTests: XCTestCase {
         XCTAssertEqual(p.text, "xin ")
     }
 
+    // MARK: giai đoạn 3 — từ tiếng Anh
+
+    /// Vuốt với ngữ cảnh ngôn ngữ như controller (prev1/prev2 = từ trên màn hình).
+    @discardableResult
+    private func swipeEn(_ word: String, _ s: SwipeTyping, _ b: EngineBridge, _ p: MockProxy,
+                         prev1: String?, prev1English: Bool = false, prev2: String? = nil,
+                         case sc: SwipeCase = .lower) -> SwipeTyping.Outcome? {
+        b.letter(word.first!, proxy: p)
+        s.begin(bridge: b, proxy: p)
+        let prior = SwipeLangContext.prior(
+            prev1: SwipeLangContext.classify(prev1, swipedEnglish: prev1English),
+            prev2: SwipeLangContext.classify(prev2))
+        return s.finish(path(word), case: sc, contextWords: [], english: prior, bridge: b, proxy: p)
+    }
+
+    func testCollisionAfterVietnameseStaysVietnamese() {
+        let (s, b, p) = make()
+        typed("tooi ", b, p)
+        let out = swipeEn("the", s, b, p, prev1: "tôi")
+        XCTAssertEqual(out?.english, false)
+        // dạng Việt "the" (dấu nào do tần suất/ngữ cảnh: thể/thế — xem bigram giai đoạn 2)
+        let vi = out?.word ?? ""
+        XCTAssertEqual(SwipeTyping.fold(vi), "the")
+        XCTAssertNotEqual(vi, "the")
+        XCTAssertTrue(out?.englishAlternatives.contains("the") == true, "\(String(describing: out))")
+        XCTAssertEqual(p.text, "tôi " + vi)
+        // chọn "the" trên thanh gợi ý ⇒ tiếng Anh nguyên văn (engine trống)
+        XCTAssertTrue(b.replaceSwipeWord(with: "the", literal: true, proxy: p))
+        XCTAssertEqual(p.text, "tôi the")
+        XCTAssertTrue(b.isLiteralSwipeWordOpen)
+        XCTAssertEqual(b.composedWord, "the")
+    }
+
+    func testEnglishRunCheckMail() {
+        let (s, b, p) = make()
+        typed("minhf ddang ", b, p)
+        let o1 = swipeEn("check", s, b, p, prev1: "đang", prev2: "mình")
+        XCTAssertEqual(o1?.english, true, "\(String(describing: o1))")
+        XCTAssertEqual(p.text, "mình đang check")
+        XCTAssertTrue(o1?.alternatives.contains { !(o1?.englishAlternatives.contains($0) ?? true) } == true)
+        let o2 = swipeEn("mail", s, b, p, prev1: b.predictedCommit, prev1English: true, prev2: "đang")
+        XCTAssertEqual(o2?.english, true)
+        XCTAssertEqual(o2?.committed?.word, "check")        // từ trước được chốt để học
+        XCTAssertEqual(p.text, "mình đang check mail")
+        XCTAssertEqual(b.boundary(" ", proxy: p), "mail")   // space chốt từ Anh nguyên văn
+        XCTAssertEqual(p.text, "mình đang check mail ")
+    }
+
+    func testEnglishWordBackspaceLetterUndoAndCase() {
+        let (s, b, p) = make()
+        typed("guiwr ", b, p)
+        XCTAssertEqual(swipeEn("file", s, b, p, prev1: "gửi")?.english, true)
+        XCTAssertEqual(p.text, "gửi file")
+        b.backspace(proxy: p)                                // ⌫ đầu xoá cả từ
+        XCTAssertEqual(p.text, "gửi ")
+        swipeEn("file", s, b, p, prev1: "gửi")
+        b.letter("s", proxy: p)                              // phím dấu KHÔNG sửa từ Anh
+        XCTAssertEqual(p.text, "gửi file s")
+        s.begin(bridge: b, proxy: p)                         // "s" hoá ra đầu cú vuốt ⇒ huỷ sạch
+        XCTAssertEqual(p.text, "gửi file")
+        XCTAssertTrue(b.isLiteralSwipeWordOpen)
+        b.letter("a", proxy: p)
+        XCTAssertEqual(b.takeSettledCommit()?.word, "file")
+        let (s2, b2, p2) = make()
+        XCTAssertEqual(swipeEn("check", s2, b2, p2, prev1: nil, case: .capitalized)?.word, "Check")
+        XCTAssertEqual(p2.text, "Check")
+    }
+
     func testPickAlternativesMixVariantsAndOtherForms() {
         let r = SwipeTyping.pick(["cho", "co", "chi"], contextWords: [], case: .lower)
         XCTAssertNotNil(r)

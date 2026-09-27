@@ -1,0 +1,372 @@
+package com.viettelex.keyboard
+
+import java.time.Instant
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
+
+/**
+ * File sao lưu một tệp khi đổi máy — định dạng JSON GIỐNG HỆT iOS
+ * (iOS/App/Backup/BackupFormat.swift). Fixture chung iOS/KeyboardTests/Fixtures/backup-*.json
+ * được test ở cả hai nền tảng.
+ *
+ * ```
+ * { "format": "viettelex-backup", "version": 1, "minReaderVersion": 1,
+ *   "createdAt": "2026-09-27T08:00:00Z", "platform": "android",
+ *   "settings": {"simpleTelex": true, …, "rowHeightAdjust": 0},
+ *   "shortcuts": {"ko": "không"},                          // gõ tắt
+ *   "templates": [{"label": "👋", "text": "Chào buổi sáng"}],
+ *   "learnedWords": {"uni": {…}, "bi": {…}, "tri": {…}} }  // tuỳ chọn
+ * ```
+ * Thiếu mục = không đụng khi nhập; key/trường lạ bỏ qua; setting sai kiểu bỏ qua;
+ * `minReaderVersion` > [BackupCodec.VERSION] ⇒ từ chối.
+ */
+sealed class SettingKind {
+    data class Bool(val default: Boolean) : SettingKind()
+    data class IntRange(val default: Int, val range: kotlin.ranges.IntRange) : SettingKind()
+}
+
+object BackupSettings {
+    class Spec(val key: String, val kind: SettingKind)
+    val all: List<Spec> = listOf(
+        Spec(Keys.SIMPLE_TELEX, SettingKind.Bool(true)),
+        Spec(Keys.FREE_MARKING, SettingKind.Bool(true)),
+        Spec(Keys.QUICK_TELEX, SettingKind.Bool(false)),
+        Spec(Keys.MODERN_TONE, SettingKind.Bool(false)),
+        Spec(Keys.CONTEXTUAL_ENGLISH, SettingKind.Bool(true)),
+        Spec(Keys.RE_EDIT_WORDS, SettingKind.Bool(true)),
+        Spec(Keys.AUTO_FIX_ADJACENT, SettingKind.Bool(true)),
+        Spec(Keys.TEENCODE, SettingKind.Bool(false)),
+        Spec(Keys.AUTO_RESTORE, SettingKind.Bool(true)),
+        Spec(Keys.LIVE_SPELL_CHECK, SettingKind.Bool(true)),
+        Spec(Keys.SWIPE_TYPING, SettingKind.Bool(false)),
+        Spec(Keys.SWIPE_ENGLISH, SettingKind.Bool(true)),
+        Spec(Keys.HARDWARE_TELEX, SettingKind.Bool(true)),
+        Spec(Keys.SHOW_SUGGESTIONS, SettingKind.Bool(true)),
+        Spec(Keys.FILTER_SENSITIVE, SettingKind.Bool(true)),
+        Spec(Keys.TEMPLATES_ENABLED, SettingKind.Bool(true)),
+        Spec(Keys.SHOW_SPACE_LOGO, SettingKind.Bool(true)),
+        Spec(Keys.HAPTIC_FEEDBACK, SettingKind.Bool(false)),
+        Spec(Keys.NUMBER_ROW, SettingKind.Bool(false)),
+        Spec(Keys.ROW_HEIGHT_ADJUST, SettingKind.IntRange(0, -10..10)),
+        Spec(Keys.SHORTCUTS_ENABLED, SettingKind.Bool(true)),
+    )
+    val byKey: Map<String, Spec> = all.associateBy { it.key }
+}
+
+/** Giá trị setting: Boolean hoặc Int (đã kẹp phạm vi). */
+typealias BackupSettingsMap = Map<String, Any>
+
+/** Từ đã học — cùng cấu trúc [UserLangModel] (tri key = "p2\u0001p1"). */
+data class LearnedWords(
+    val uni: Map<String, Int> = emptyMap(),
+    val bi: Map<String, Map<String, Int>> = emptyMap(),
+    val tri: Map<String, Map<String, Int>> = emptyMap(),
+) {
+    val isEmpty get() = uni.isEmpty() && bi.isEmpty() && tri.isEmpty()
+
+    /** Gộp khi nhập: count lớn hơn mỗi mục (nhập lại cùng file không nhân đôi). */
+    fun merged(o: LearnedWords): LearnedWords {
+        fun m1(a: Map<String, Int>, b: Map<String, Int>) =
+            HashMap(a).apply { for ((k, v) in b) merge(k, v) { x, y -> maxOf(x, y) } }
+        fun m2(a: Map<String, Map<String, Int>>, b: Map<String, Map<String, Int>>): Map<String, Map<String, Int>> {
+            val out = HashMap<String, Map<String, Int>>(a)
+            for ((k, v) in b) out[k] = m1(out[k] ?: emptyMap(), v)
+            return out
+        }
+        return LearnedWords(m1(uni, o.uni), m2(bi, o.bi), m2(tri, o.tri))
+    }
+}
+
+data class BackupPayload(
+    val createdAt: Instant? = null,
+    val platform: String? = null,
+    /** null = file không có mục này (nhập thì không đụng). */
+    val settings: BackupSettingsMap? = null,
+    val shortcuts: Map<String, String>? = null,
+    val templates: List<TemplateItem>? = null,
+    val learnedWords: LearnedWords? = null,
+)
+
+class BackupException(val reason: Reason, val fileVersion: Int = 0) : Exception(reason.name) {
+    enum class Reason { NOT_JSON, NOT_BACKUP, TOO_NEW }
+    val userMessage: String get() = when (reason) {
+        Reason.NOT_JSON -> "File không phải JSON hợp lệ."
+        Reason.NOT_BACKUP -> "Không phải file sao lưu VietTelex."
+        Reason.TOO_NEW -> "File sao lưu từ phiên bản mới hơn (định dạng $fileVersion) — hãy cập nhật VietTelex."
+    }
+}
+
+object BackupCodec {
+    const val FORMAT = "viettelex-backup"
+    const val VERSION = 1
+    const val MAX_CHARS = 8 * 1024 * 1024
+
+    fun encode(p: BackupPayload): String {
+        val root = LinkedHashMap<String, Any?>()
+        root["format"] = FORMAT; root["version"] = VERSION; root["minReaderVersion"] = 1
+        p.createdAt?.let { root["createdAt"] = DateTimeFormatter.ISO_INSTANT.format(it.truncatedTo(ChronoUnit.SECONDS)) }
+        p.platform?.let { root["platform"] = it }
+        p.settings?.let { root["settings"] = it }
+        p.shortcuts?.let { root["shortcuts"] = it }
+        p.templates?.let { t -> root["templates"] = t.map { mapOf("label" to it.label, "text" to it.text) } }
+        p.learnedWords?.let { root["learnedWords"] = mapOf("uni" to it.uni, "bi" to it.bi, "tri" to it.tri) }
+        return MiniJson.write(root, pretty = true) + "\n"
+    }
+
+    fun decode(text: String): BackupPayload {
+        if (text.length > MAX_CHARS) throw BackupException(BackupException.Reason.NOT_BACKUP)
+        val root = try { MiniJson.parse(text.removePrefix("﻿")) } catch (e: IllegalArgumentException) { null }
+            as? Map<*, *> ?: throw BackupException(BackupException.Reason.NOT_JSON)
+        if (root["format"] != FORMAT) throw BackupException(BackupException.Reason.NOT_BACKUP)
+        val min = intValue(root["minReaderVersion"])
+        if (min != null && min > VERSION) {
+            throw BackupException(BackupException.Reason.TOO_NEW, intValue(root["version"]) ?: min)
+        }
+        val settings = (root["settings"] as? Map<*, *>)?.let { s ->
+            val out = LinkedHashMap<String, Any>()
+            for ((k, raw) in s) {
+                val spec = BackupSettings.byKey[k as String] ?: continue   // key lạ: bỏ
+                when (val kind = spec.kind) {
+                    is SettingKind.Bool -> (raw as? Boolean)?.let { out[k] = it }
+                    is SettingKind.IntRange -> intValue(raw)?.let { out[k] = it.coerceIn(kind.range) }
+                }
+            }
+            out
+        }
+        val shortcuts = (root["shortcuts"] as? Map<*, *>)?.let { m ->
+            val out = LinkedHashMap<String, String>()
+            for ((k, v) in m) {
+                val key = (k as String).trim(' ', '\t')
+                if (key.isNotEmpty() && v is String && v.isNotEmpty()) out[key] = v
+            }
+            out
+        }
+        val templates = (root["templates"] as? List<*>)?.let { arr ->
+            val out = ArrayList<TemplateItem>()
+            for (e in arr) {
+                val o = e as? Map<*, *> ?: continue
+                val t = o["text"] as? String ?: continue
+                if (t.isEmpty() || out.any { it.text == t }) continue
+                out.add(TemplateItem(o["label"] as? String ?: "", t))
+            }
+            out
+        }
+        val learned = (root["learnedWords"] as? Map<*, *>)?.let {
+            LearnedWords(counts(it["uni"]), nested(it["bi"]), nested(it["tri"]))
+        }
+        val createdAt = (root["createdAt"] as? String)?.let { runCatching { Instant.parse(it) }.getOrNull() }
+        return BackupPayload(createdAt, root["platform"] as? String, settings, shortcuts, templates, learned)
+    }
+
+    /** Số nguyên JSON (không nhận bool/chuỗi/số lẻ). */
+    private fun intValue(v: Any?): Int? = when (v) {
+        is Long -> if (v in Int.MIN_VALUE..Int.MAX_VALUE) v.toInt() else null
+        is Double -> if (v.isFinite() && v == Math.rint(v) && kotlin.math.abs(v) < 1e9) v.toInt() else null
+        else -> null
+    }
+    private fun counts(v: Any?): Map<String, Int> {
+        val o = v as? Map<*, *> ?: return emptyMap()
+        val out = HashMap<String, Int>()
+        for ((k, raw) in o) { val c = intValue(raw); if (c != null && c > 0 && (k as String).isNotEmpty()) out[k] = c }
+        return out
+    }
+    private fun nested(v: Any?): Map<String, Map<String, Int>> {
+        val o = v as? Map<*, *> ?: return emptyMap()
+        val out = HashMap<String, Map<String, Int>>()
+        for ((k, raw) in o) { val c = counts(raw); if (c.isNotEmpty()) out[k as String] = c }
+        return out
+    }
+}
+
+/**
+ * Chính sách nhập (giống iOS BackupMerge): settings theo file; gõ tắt gộp, cùng trigger
+ * thì file thắng; mẫu câu gộp bỏ trùng theo câu; từ đã học lấy count lớn hơn.
+ */
+object BackupMerge {
+    fun shortcuts(current: Map<String, String>, imported: Map<String, String>): Map<String, String> =
+        LinkedHashMap(current).apply { putAll(imported) }
+
+    fun templates(current: List<TemplateItem>, imported: List<TemplateItem>): List<TemplateItem> {
+        val out = current.toMutableList()
+        for (t in imported) if (out.none { it.text == t.text }) out.add(t)
+        return out
+    }
+
+    fun summary(p: BackupPayload, templatesAdded: Int, shortcutsChanged: Int): String {
+        val parts = ArrayList<String>()
+        p.settings?.takeIf { it.isNotEmpty() }?.let { parts.add("${it.size} cài đặt") }
+        if (p.shortcuts != null) parts.add("$shortcutsChanged gõ tắt")
+        if (p.templates != null) parts.add("$templatesAdded mẫu câu mới")
+        p.learnedWords?.takeIf { !it.isEmpty }?.let { parts.add("${it.uni.size} từ đã học") }
+        return if (parts.isEmpty()) "File không có dữ liệu để nhập." else "Đã nhập " + parts.joinToString(", ") + "."
+    }
+}
+
+/**
+ * Nối file sao lưu với kho key-value của Android (SharedPreferences [Keys.PREFS]) mà
+ * không phụ thuộc Android: [read] = giá trị thô của key (vd `prefs.all[key]`).
+ */
+object BackupPrefs {
+    /** Gõ tắt: pref [Keys.SHORTCUTS] lưu CHUỖI YAML ([ShortcutFile]) — đúng chỗ IME đọc. */
+    const val SHORTCUTS_KEY = Keys.SHORTCUTS
+    /** Tuỳ chọn "Kèm từ đã học khi xuất file" (không sao lưu chính nó). */
+    const val INCLUDE_LEARNED_KEY = "backupIncludeLearned"
+
+    fun settings(read: (String) -> Any?): Map<String, Any> {
+        val out = LinkedHashMap<String, Any>()
+        for (spec in BackupSettings.all) when (val k = spec.kind) {
+            is SettingKind.Bool -> out[spec.key] = (read(spec.key) as? Boolean) ?: k.default
+            is SettingKind.IntRange -> out[spec.key] = ((read(spec.key) as? Number)?.toInt() ?: k.default).coerceIn(k.range)
+        }
+        return out
+    }
+
+    fun shortcutsFromPref(raw: Any?): Map<String, String> = ShortcutFile.parse(raw as? String)
+    fun shortcutsToPref(m: Map<String, String>): String = ShortcutFile.exportYAML(m)
+
+    fun snapshot(read: (String) -> Any?, templates: List<TemplateItem>, learned: LearnedWords?, now: Instant = Instant.now()) =
+        BackupPayload(now, "android", settings(read), shortcutsFromPref(read(SHORTCUTS_KEY)), templates, learned)
+
+    /** Kết quả nhập: các pref cần ghi (Boolean/Int/String), danh sách mẫu câu mới, từ đã học để gộp. */
+    class ImportPlan(val writes: Map<String, Any>, val templates: List<TemplateItem>?,
+                     val learnedWords: LearnedWords?, val summary: String)
+
+    fun plan(p: BackupPayload, read: (String) -> Any?, currentTemplates: List<TemplateItem>): ImportPlan {
+        val writes = LinkedHashMap<String, Any>()
+        p.settings?.let { writes.putAll(it) }
+        var changed = 0
+        p.shortcuts?.let { sc ->
+            val cur = shortcutsFromPref(read(SHORTCUTS_KEY))
+            changed = sc.count { cur[it.key] != it.value }
+            writes[SHORTCUTS_KEY] = shortcutsToPref(BackupMerge.shortcuts(cur, sc))
+        }
+        val tpl = p.templates?.let { BackupMerge.templates(currentTemplates, it) }
+        val added = tpl?.let { it.size - currentTemplates.size } ?: 0
+        val lw = p.learnedWords?.takeIf { !it.isEmpty }
+        return ImportPlan(writes, tpl, lw, BackupMerge.summary(p, added, changed))
+    }
+}
+
+/**
+ * JSON tối giản không phụ thuộc thư viện (module JVM thuần, không có org.json).
+ * parse ⇒ Map (LinkedHashMap) / List / String / Long / Double / Boolean / null.
+ */
+object MiniJson {
+    fun parse(s: String): Any? {
+        val p = P(s); p.ws(); val v = p.value(); p.ws()
+        require(p.i == s.length) { "trailing data" }
+        return v
+    }
+
+    fun write(v: Any?, pretty: Boolean): String = StringBuilder().also { w(it, v, pretty, 0) }.toString()
+
+    private fun w(sb: StringBuilder, v: Any?, pretty: Boolean, depth: Int) {
+        fun nl(d: Int) { if (pretty) { sb.append('\n'); repeat(d) { sb.append("  ") } } }
+        when (v) {
+            null -> sb.append("null")
+            is Boolean -> sb.append(v)
+            is Int, is Long -> sb.append(v)
+            is Number -> sb.append(v.toDouble())
+            is String -> str(sb, v)
+            is Map<*, *> -> {
+                if (v.isEmpty()) { sb.append("{}"); return }
+                sb.append('{')
+                // Khoá sắp xếp (như iOS .sortedKeys) — file ổn định, dễ diff.
+                v.entries.sortedBy { it.key as String }.forEachIndexed { i, (k, x) ->
+                    if (i > 0) sb.append(',')
+                    nl(depth + 1); str(sb, k as String); sb.append(if (pretty) ": " else ":"); w(sb, x, pretty, depth + 1)
+                }
+                nl(depth); sb.append('}')
+            }
+            is List<*> -> {
+                if (v.isEmpty()) { sb.append("[]"); return }
+                sb.append('[')
+                v.forEachIndexed { i, x -> if (i > 0) sb.append(','); nl(depth + 1); w(sb, x, pretty, depth + 1) }
+                nl(depth); sb.append(']')
+            }
+            else -> str(sb, v.toString())
+        }
+    }
+
+    private fun str(sb: StringBuilder, s: String) {
+        sb.append('"')
+        for (c in s) when {
+            c == '"' -> sb.append("\\\"")
+            c == '\\' -> sb.append("\\\\")
+            c == '\n' -> sb.append("\\n")
+            c == '\r' -> sb.append("\\r")
+            c == '\t' -> sb.append("\\t")
+            c < ' ' -> sb.append(String.format("\\u%04x", c.code))
+            else -> sb.append(c)
+        }
+        sb.append('"')
+    }
+
+    private class P(val s: String) {
+        var i = 0
+        fun ws() { while (i < s.length && s[i] in " \t\r\n") i++ }
+        fun peek(): Char { require(i < s.length) { "eof" }; return s[i] }
+        fun expect(c: Char) { require(peek() == c) { "expected $c at $i" }; i++ }
+        fun value(): Any? = when (peek()) {
+            '{' -> obj()
+            '[' -> arr()
+            '"' -> string()
+            't' -> lit("true", true)
+            'f' -> lit("false", false)
+            'n' -> lit("null", null)
+            else -> number()
+        }
+        fun lit(word: String, v: Any?): Any? { require(s.startsWith(word, i)) { "bad literal" }; i += word.length; return v }
+        fun obj(): Map<String, Any?> {
+            expect('{'); val m = LinkedHashMap<String, Any?>(); ws()
+            if (peek() == '}') { i++; return m }
+            while (true) {
+                ws(); val k = string(); ws(); expect(':'); ws(); m[k] = value(); ws()
+                if (peek() == ',') { i++; continue }
+                expect('}'); return m
+            }
+        }
+        fun arr(): List<Any?> {
+            expect('['); val l = ArrayList<Any?>(); ws()
+            if (peek() == ']') { i++; return l }
+            while (true) {
+                ws(); l.add(value()); ws()
+                if (peek() == ',') { i++; continue }
+                expect(']'); return l
+            }
+        }
+        fun string(): String {
+            expect('"'); val sb = StringBuilder()
+            while (true) {
+                require(i < s.length) { "unterminated string" }
+                when (val c = s[i++]) {
+                    '"' -> return sb.toString()
+                    '\\' -> {
+                        require(i < s.length) { "bad escape" }
+                        when (val e = s[i++]) {
+                            'n' -> sb.append('\n'); 'r' -> sb.append('\r'); 't' -> sb.append('\t')
+                            'b' -> sb.append('\b'); 'f' -> sb.append('\u000C')
+                            '"', '\\', '/' -> sb.append(e)
+                            'u' -> {
+                                require(i + 4 <= s.length) { "bad \\u" }
+                                sb.append(s.substring(i, i + 4).toIntOrNull(16)?.toChar() ?: throw IllegalArgumentException("bad \\u"))
+                                i += 4
+                            }
+                            else -> throw IllegalArgumentException("bad escape \\$e")
+                        }
+                    }
+                    else -> sb.append(c)
+                }
+            }
+        }
+        fun number(): Any {
+            val start = i
+            if (i < s.length && s[i] == '-') i++
+            while (i < s.length && (s[i].isDigit() || s[i] in ".eE+-")) i++
+            val t = s.substring(start, i)
+            require(t.isNotEmpty() && t != "-") { "bad value at $start" }
+            return if (t.any { it in ".eE" }) t.toDoubleOrNull() ?: throw IllegalArgumentException("bad number")
+            else t.toLongOrNull() ?: t.toDoubleOrNull() ?: throw IllegalArgumentException("bad number")
+        }
+    }
+}

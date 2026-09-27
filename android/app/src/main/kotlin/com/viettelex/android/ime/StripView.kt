@@ -179,6 +179,13 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
             set.word?.let { disp[1] = it; slotPayload[1] = it }
             if (set.emojis.isEmpty()) set.word2?.let { disp[2] = it; slotPayload[2] = it }
         }
+        // Chip số chiếm ĐÚNG 1 slot (giữa): literal giữ slot trái, nội dung slot giữa dời sang phải.
+        set.number?.let { n ->
+            val movable = set.nextWords.isNotEmpty() || set.emojis.isEmpty()
+            disp[2] = if (movable) disp[1] else null
+            slotPayload[2] = if (movable) slotPayload[1] else null
+            disp[1] = n; slotPayload[1] = SuggestionSet.NUMBER_TOKEN
+        }
         val emojis = if (set.nextWords.isEmpty()) set.emojis.take(3) else emptyList()
         emojiCount = emojis.size
         for (i in emojis.indices) emojiText[i] = emojis[i]

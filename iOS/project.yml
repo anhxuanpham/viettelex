@@ -28,11 +28,17 @@ targets:
     platform: iOS
     sources:
       - App
+      - Keyboard/Shortcuts.swift
+      - Shared
       - path: ios-mau-cau.yml
         buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.viettelex.ios
+        # App.entitlements gồm App Group + iCloud Key-Value Store (đồng bộ cài đặt/gõ
+        # tắt/mẫu câu, App/Backup/ICloudSync.swift). Chủ repo cần bật capability
+        # "iCloud → Key-value storage" cho App ID com.viettelex.ios trên developer
+        # portal (không cần tạo iCloud container) trước khi ký bản thiết bị/App Store.
         CODE_SIGN_ENTITLEMENTS: App/App.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
@@ -58,6 +64,7 @@ targets:
     platform: iOS
     sources:
       - Keyboard
+      - Shared
       - path: ios-mau-cau.yml
         buildPhase: resources
     settings:
@@ -106,6 +113,7 @@ targets:
       - Keyboard/TouchGeometry.swift
       - Keyboard/TouchLog.swift
       - Keyboard/SuggestionSupport.swift
+      - Keyboard/NumberChips.swift
       - Keyboard/VNSuggest.swift
       - Keyboard/VNLexicon2.swift
       - Keyboard/EmojiSuggest.swift
@@ -119,9 +127,26 @@ targets:
       - Keyboard/SwipeDecoder.swift
       - Keyboard/SwipeGesture.swift
       - Keyboard/SwipeTyping.swift
+      - App/Backup/BackupFormat.swift
+      - App/Backup/SyncMerge.swift
+      - App/Backup/BackupStore.swift
+      - Keyboard/SwipeEnglish.swift
+      - Keyboard/SyllableBigram.swift
+      - Keyboard/Shortcuts.swift
+      # bảng gõ tắt mẫu ở gốc repo — test khứ hồi parse/export cùng định dạng macOS
+      - path: ../sample-shortcuts.yml
+      # VietTelex Plus: gate dùng chung + logic mua (không StoreKit) + cấu hình StoreKit test.
+      - Shared
+      - App/Plus/PlusStoreModel.swift
+      - path: StoreKit/VietTelex.storekit
+        buildPhase: resources
       - path: Keyboard/Resources/vnlexicon.bin
         buildPhase: resources
       - path: Keyboard/Resources/emoji.bin
+        buildPhase: resources
+      - path: Keyboard/Resources/enlexicon.bin
+        buildPhase: resources
+      - path: Keyboard/Resources/vnbigram.bin
         buildPhase: resources
     settings:
       base:
@@ -130,6 +155,17 @@ targets:
       - package: TelexCore
 
 schemes:
+  # App + file cấu hình StoreKit cục bộ (mua thử trên simulator, không cần App
+  # Store Connect). Release/archive không dùng file này.
+  VietTelexApp:
+    build:
+      targets:
+        VietTelexApp: all
+    run:
+      config: Debug
+      storeKitConfiguration: StoreKit/VietTelex.storekit
+    archive:
+      config: Release
   # Test scheme khai báo ở đây (trước đây là file xcscheme ngoài git, bị xcodegen
   # xoá mỗi lần generate). Chạy: xcodebuild -scheme VietTelexKeyboardTests test
   VietTelexKeyboardTests:

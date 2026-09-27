@@ -374,6 +374,13 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// User chỉnh ±10pt/hàng qua Settings (Giao diện); 4 hàng nên tổng đổi 4×.
     private var rowHeightAdjust: CGFloat = 0
 
+    /// Hàng phím số 1…0 trên hàng chữ (Settings → Giao diện, mặc định TẮT; khoá
+    /// App Group "numberRow"). Nằm trong chữ ký rebuild → đổi là vứt planeCache.
+    var numberRowEnabled = false {
+        didSet { if numberRowEnabled != oldValue { rebuild() } }
+    }
+    static let numberRowKey = "numberRow"
+
     /// iPhone 216pt dọc / 162pt ngang; iPad 240/300 — GỌN hơn stock (264/352)
     /// theo ý user 2026-07-24, phím vẫn rộng thoải mái nhờ bề ngang iPad.
     /// Tổng key area = base + rowHeightAdjust × 4 hàng — heightConstraint và
@@ -393,7 +400,12 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             // hơn stock (user) — phần dư của stock nằm ở vùng đáy, không phải hàng phím.
             base = landscape ? 162 : 218
         }
-        return base + rowHeightAdjust * 4
+        return KeyLayout.keyAreaHeight(base: base, adjust: rowHeightAdjust,
+                                       numberRow: numberRowEnabled)
+    }
+    /// Chiều cao một hàng phím chuẩn (hàng số = 0.75× cái này).
+    private func rowUnitHeight() -> CGFloat {
+        keyAreaHeight() / (numberRowEnabled ? 4 + KeyLayout.numberRowRatio : 4)
     }
 
     // Gắn vào window mới biết interfaceOrientation thật — ép layout lại để
@@ -457,8 +469,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         var paste = false               // thẻ Dán thay bar (vừa copy, xem controller)
         var pasteIsImage = false        // clipboard là ẢNH: bàn phím không chèn được → chỉ hướng dẫn
         var restoreLabel: String? = nil // ô "Khôi phục" sau vuốt ⌫ xoá theo từ (slot đầu)
+        var number: String? = nil       // chip số (NumberChips) — luôn ở slot GIỮA, payload numberToken
         var isEmpty: Bool {
             literal == nil && word == nil && word2 == nil && emojis.isEmpty && nextWords.isEmpty
+                && number == nil
         }
     }
 
@@ -591,6 +605,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     static let pasteImageToken = "\u{E000}pasteImage"
     /// Payload ô "Khôi phục" (chèn lại đoạn vừa vuốt ⌫ xoá).
     static let restoreToken = "\u{E000}restore"
+    /// Payload chip số: controller giữ NumberChip (đuôi cần thay + chữ chèn).
+    static let numberToken = "\u{E000}number"
 
     func showSuggestions(_ set: SuggestionSet) {
         guard suggestionsEnabled, !barCollapsed else { return }
@@ -604,6 +620,15 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             if let l = set.literal { texts[0] = ("\u{201C}\(l)\u{201D}", l) }
             if let w = set.word { texts[1] = (w, w) }
             if set.emojis.isEmpty, let w2 = set.word2 { texts[2] = (w2, w2) }
+        }
+        // Chip số chiếm ĐÚNG 1 slot (giữa): literal giữ slot 0; từ bị đẩy sang slot 2.
+        if let n = set.number {
+            if set.nextWords.isEmpty {
+                texts[2] = set.emojis.isEmpty ? texts[1] : nil
+            } else {
+                texts[2] = texts[1]
+            }
+            texts[1] = (n, Self.numberToken)
         }
         if let r = set.restoreLabel {
             texts = [(r, Self.restoreToken), texts[0], texts[1]]
@@ -799,6 +824,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // Chiều cao hàng phím ±10pt (Settings → Giao diện) — đọc mỗi lần hiện.
         let adj = UserDefaultsProvider.shared?.object(forKey: "rowHeightAdjust") as? Int ?? 0
         rowHeightAdjust = CGFloat(max(-10, min(10, adj)))
+        numberRowEnabled = UserDefaultsProvider.shared?.bool(forKey: Self.numberRowKey) ?? false
         // Mẫu câu: danh sách user tự quản trong app + toggle bật/tắt.
         let d = UserDefaultsProvider.shared
         templatesEnabled = d?.object(forKey: "templatesEnabled") == nil
@@ -876,6 +902,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private var builtWidth: CGFloat = -1
     private var builtGlobe = false
     private var builtKind: InputKind = .normal
+    private var builtNumberRow = false
 
     // Cache view theo plane: bấm 123/#+=/ABC chỉ tráo arrangedSubviews thay vì
     // xé/dựng lại ~40 button + constraints mỗi lần. Emoji KHÔNG cache (recents
@@ -890,6 +917,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let indentedRow: UIStackView?
         let indentedRowInset: CGFloat
         let crossRow: [NSLayoutConstraint]
+        let distribution: UIStackView.Distribution   // .fill khi có hàng số (cao khác nhau)
     }
     /// Ràng buộc GIỮA các hàng (phím hàng dưới neo bề rộng theo q hàng 1). UIKit
     /// tự gỡ chúng khi row rời hierarchy (lúc tráo plane) — lưu lại để bật lại khi
@@ -910,6 +938,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         updateSuggestionChrome()
         let styleChanged = builtReturn != returnTitle || builtDark != dark
             || builtGlobe != needsGlobe || builtKind != inputKind
+            || builtNumberRow != numberRowEnabled
         let widthChanged = builtWidth != bounds.width
         let sigChanged = styleChanged || widthChanged
         if builtPlane == plane, !sigChanged { return }
@@ -935,17 +964,20 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 rows: rowsContainer.arrangedSubviews, letterKeys: letterKeys,
                 shiftKeys: shiftKeys, spaceBar: spaceBar, spaceLogo: spaceLogo,
                 indentedRow: indentedRow, indentedRowInset: indentedRowInset,
-                crossRow: crossRowConstraints)
+                crossRow: crossRowConstraints,
+                distribution: rowsContainer.distribution)
         }
         builtPlane = plane; builtReturn = returnTitle
         builtDark = dark; builtWidth = bounds.width
         builtGlobe = needsGlobe; builtKind = inputKind
+        builtNumberRow = numberRowEnabled
         letterKeys.removeAll()
         shiftKeys = []
         crossRowConstraints = []
         rowsContainer.distribution = .fillEqually
         rowsContainer.arrangedSubviews.forEach { $0.removeFromSuperview() }
         if let cached = planeCache[plane] {
+            rowsContainer.distribution = cached.distribution
             cached.rows.forEach { rowsContainer.addArrangedSubview($0) }
             letterKeys = cached.letterKeys
             shiftKeys = cached.shiftKeys
@@ -1010,7 +1042,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         rowsContainer.addArrangedSubview(bottom)
         // Hằng số = đúng chiều cao 1 hàng phím thường; multiplier×rows từng làm
         // hàng đáy phình theo phần host cấp dư (user 2026-07-24).
-        bottom.heightAnchor.constraint(equalToConstant: keyAreaHeight() / 4).isActive = true
+        bottom.heightAnchor.constraint(equalToConstant: rowUnitHeight()).isActive = true
     }
 
     /// Lưới bubble mẫu câu — flow layout tự dàn dòng, self-sizing chips.
@@ -1112,6 +1144,9 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let r1 = "qwertyuiop".map { String($0) }
         let r2 = "asdfghjkl".map { String($0) }
         let r3 = "zxcvbnm".map { String($0) }
+        if numberRowEnabled {
+            rowsContainer.addArrangedSubview(row(KeyLayout.digits.map(textButton)))
+        }
         let r1btns = r1.map(letterButton)
         rowsContainer.addArrangedSubview(row(r1btns))
         // Apple indents row 2 by half a key on iPhone.
@@ -1138,6 +1173,19 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             shiftBtn.widthAnchor.constraint(equalTo: backBtn.widthAnchor).isActive = true
         }
         rowsContainer.addArrangedSubview(bottomRow(planeKey: "123"))
+        applyNumberRowHeights()
+    }
+
+    /// Có hàng số: rowsContainer thôi fillEqually — hàng số = 0.75× hàng chữ, các
+    /// hàng còn lại bằng nhau. Ràng buộc GIỮA các hàng → crossRow (sống qua planeCache).
+    private func applyNumberRowHeights() {
+        let rows = rowsContainer.arrangedSubviews
+        guard numberRowEnabled, rows.count == 5 else { return }
+        rowsContainer.distribution = .fill
+        let ref = rows[1]
+        crossRow(rows[0].heightAnchor.constraint(equalTo: ref.heightAnchor,
+                                                 multiplier: KeyLayout.numberRowRatio))
+        for r in rows[2...] { crossRow(r.heightAnchor.constraint(equalTo: ref.heightAnchor)) }
     }
 
     /// Layout iPad như stock iPadOS 26 (đo ảnh iPad Pro 11", 26/09/2026), đơn vị
@@ -1181,25 +1229,28 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 let b = shiftButton() as! KeyButton
                 padCorner(b, left: id == "shiftL")
                 return b
+            case "-", "=", _ where KeyLayout.digits.contains(id): return textButton(id)
             case "!,": return padPunctButton(lower: ",", upper: "!")
             case "?.": return padPunctButton(lower: ".", upper: "?")
             default: return letterButton(id)
             }
         }
-        for keys in KeyLayout.padRows {
+        let layoutRows = (numberRowEnabled ? [KeyLayout.padNumberRow] : []) + KeyLayout.padRows
+        for keys in layoutRows {
             let rowViews = keys.map { k -> UIView in
                 let v = make(k.id); views[k.id] = v; return v
             }
             rowsContainer.addArrangedSubview(row(rowViews))
         }
         guard let q = views["q"] else { return }
-        for keys in KeyLayout.padRows {
+        for keys in layoutRows {
             for k in keys where k.id != "q" {
                 guard let u = k.units, let v = views[k.id] else { continue }
                 crossRow(v.widthAnchor.constraint(equalTo: q.widthAnchor, multiplier: u))
             }
         }
         rowsContainer.addArrangedSubview(bottomRow(planeKey: "123"))
+        applyNumberRowHeights()
     }
 
     /// Phím chức năng iPad kiểu stock: nền trắng như phím chữ (đè thì sẫm), icon /
@@ -1306,6 +1357,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         searchBar = bar
         buildLetters()
         rowsContainer.insertArrangedSubview(bar, at: 0)
+        // Có hàng số: rows thôi fillEqually (applyNumberRowHeights) — ô tìm cao bằng hàng chữ.
+        if rowsContainer.distribution == .fill, let ref = rowsContainer.arrangedSubviews.last {
+            crossRow(bar.heightAnchor.constraint(equalTo: ref.heightAnchor))
+        }
         refreshSearchBar()
     }
 
@@ -2550,6 +2605,23 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         return (emojiSearch.query, searchBar?.shownResults ?? [])
     }
     var debugInEmojiSearch: Bool { plane == .emojiSearch }
+    /// Test hook: frame các hàng của plane đang hiện (toạ độ self).
+    func debugRowFrames() -> [CGRect] {
+        rowsContainer.arrangedSubviews.map { convert($0.bounds, from: $0) }
+    }
+    /// Test hook: plane chữ ↔ số.
+    func debugSetPlane(numbers: Bool) {
+        plane = numbers ? .numbers : .letters; rebuild()
+    }
+    /// Test hook: button phím text (hàng số / plane số) theo nhãn, trong plane đang hiện.
+    func debugKeyButton(_ title: String) -> UIButton? {
+        func find(_ v: UIView) -> UIButton? {
+            if let b = v as? KeyButton, !b.isSpecial, b.currentTitle == title { return b }
+            for s in v.subviews { if let r = find(s) { return r } }
+            return nil
+        }
+        return rowsContainer.arrangedSubviews.lazy.compactMap(find).first
+    }
     /// Test hook: frame phím chữ (toạ độ self).
     func debugLetterFrame(_ s: String) -> CGRect? {
         letterKeys.first { $0.base == s }.map { convert($0.button.bounds, from: $0.button) }

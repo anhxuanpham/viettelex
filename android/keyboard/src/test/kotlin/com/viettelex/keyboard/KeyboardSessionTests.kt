@@ -261,4 +261,107 @@ class KeyboardSessionTests {
         assertEquals(WriteMode.COMMIT, WriteMode.forPackage("com.android.chrome"))
         assertEquals(WriteMode.KEY_ONLY, FieldTraits(packageName = "cn.wps.huawei").writeMode)
     }
+
+    // MARK: chip số (NumberChips)
+
+    /** Chữ số / ký hiệu → Key.Text (như phím số), chữ cái → Key.Letter, ' ' → Space. */
+    private fun KeyboardSession.typeMixed(p: TextProxy, keys: String) {
+        for (c in keys) handle(when {
+            c == ' ' -> Key.Space
+            c.isLetter() -> Key.Letter(c)
+            else -> Key.Text(c.toString())
+        }, p)
+    }
+
+    @Test fun testNumberChipReadsDigitsAndKeepsNextWords() {
+        val s = session(traits = FieldTraits()); val p = MockProxy()
+        s.typeMixed(p, "gia 1250000")
+        val set = s.suggestionsNow(p)!!
+        assertEquals("một triệu hai trăm năm mươi nghìn", set.number)
+        assertEquals(3, set.nextWords.size)                   // chip chỉ thêm 1 slot, không lấy mất gợi ý
+        s.acceptSuggestion(SuggestionSet.NUMBER_TOKEN, p)
+        assertEquals("gia một triệu hai trăm năm mươi nghìn", p.text)
+    }
+
+    @Test fun testNumberChipShorthandChainsToWords() {
+        val s = session(traits = FieldTraits()); val p = MockProxy()
+        s.typeMixed(p, "1tr2")
+        assertEquals("1.200.000 ₫", s.suggestionsNow(p)!!.number)
+        s.acceptSuggestion(SuggestionSet.NUMBER_TOKEN, p)
+        assertEquals("1.200.000 ₫", p.text)
+        assertEquals("Một triệu hai trăm nghìn đồng", s.suggestionsNow(p)!!.number)   // đầu ô ⇒ viết hoa
+    }
+
+    @Test fun testNumberChipWhileComposingKeepsLiteral() {
+        val s = session(traits = FieldTraits()); val p = MockProxy()
+        s.typeMixed(p, "50k")
+        assertTrue(s.bridge.isComposing)
+        val set = s.suggestionsNow(p)!!
+        assertEquals("k", set.literal)
+        assertEquals("50.000 ₫", set.number)
+        s.acceptSuggestion(SuggestionSet.NUMBER_TOKEN, p)
+        assertEquals("50.000 ₫", p.text)
+        assertFalse(s.bridge.isComposing)
+    }
+
+    @Test fun testCalculatorChipInsertsAfterEquals() {
+        val s = session(traits = FieldTraits()); val p = MockProxy()
+        s.typeMixed(p, "12*3=")
+        assertEquals("36", s.suggestionsNow(p)!!.number)
+        s.acceptSuggestion(SuggestionSet.NUMBER_TOKEN, p)
+        assertEquals("12*3=36", p.text)
+    }
+
+    @Test fun testNumberChipGoneAfterNextWord() {
+        val s = session(traits = FieldTraits()); val p = MockProxy()
+        s.typeMixed(p, "2 ")
+        assertEquals("Hai", s.suggestionsNow(p)!!.number)
+        s.typeMixed(p, "nguoi ")
+        assertNull(s.suggestionsNow(p)!!.number)
+    }
+
+    @Test fun testNumberChipSkipsWhenTextChanged() {
+        val s = session(traits = FieldTraits()); val p = MockProxy()
+        s.typeMixed(p, "5")
+        assertEquals("Năm", s.suggestionsNow(p)!!.number)
+        p.sb.append("x")                                       // host đổi chữ sau lượt gợi ý
+        s.acceptSuggestion(SuggestionSet.NUMBER_TOKEN, p)
+        assertEquals("5x", p.text)                             // không xoá mù
+    }
+
+    /** Proxy phân biệt "\n" thật (giữ lâu) với Enter thường (có thể là action "Gửi"). */
+    private class EnterProxy : TextProxy {
+        val sb = StringBuilder(); var actions = 0
+        override fun insertText(text: String) { if (text == "\n") actions++ else sb.append(text) }
+        override fun insertLineBreak() { sb.append("\n") }
+        override fun deleteCodePoints(count: Int) { repeat(count) { if (sb.isNotEmpty()) sb.setLength(sb.length - 1) } }
+        override fun deleteBackward() = deleteCodePoints(1)
+        override val isSecure = false
+        override fun contextBeforeInput(): String = sb.toString()
+        override fun confirmTail(expected: String) = sb.endsWith(expected)
+    }
+
+    @Test fun testLineBreakCommitsWordLearnsAndSkipsAction() {
+        val s = session(traits = FieldTraits()); val p = EnterProxy()
+        val before = s.langModel.count("việt")
+        for (c in "vieetj") s.handle(Key.Letter(c), p)
+        val out = s.handle(Key.LineBreak, p)
+        assertEquals("việt\n", p.sb.toString())
+        assertEquals(0, p.actions)
+        assertEquals(before + 1, s.langModel.count("việt"))
+        assertTrue(out.needsAutoShift)
+        // ⌫ sau xuống dòng chỉ xoá "\n", không mở lại từ cũ.
+        s.handle(Key.Backspace, p)
+        assertEquals("việt", p.sb.toString())
+        // Enter thường vẫn đi đường cũ (action).
+        s.handle(Key.Newline, p)
+        assertEquals(1, p.actions)
+    }
+
+    @Test fun testLineBreakPassthroughStillLiteralNewline() {
+        val s = session(traits = FieldTraits(passthrough = true)); val p = EnterProxy()
+        s.handle(Key.Letter('a'), p)
+        s.handle(Key.LineBreak, p)
+        assertEquals("a\n", p.sb.toString()); assertEquals(0, p.actions)
+    }
 }
