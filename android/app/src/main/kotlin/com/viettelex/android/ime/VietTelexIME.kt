@@ -22,6 +22,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.viettelex.android.BuildConfig
 import com.viettelex.android.shared.DebugLog
 import com.viettelex.android.shared.VTPrefs
+import com.viettelex.keyboard.ThemeSettings
 import com.viettelex.keyboard.Cancellable
 import com.viettelex.keyboard.EmojiRecents
 import com.viettelex.keyboard.FieldTraits
@@ -155,7 +156,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
 
     override fun onCreateInputView(): View {
         val t0 = SystemClock.elapsedRealtime()
-        val th = ImeTheme(this)
+        val th = freshTheme()
         theme = th
         val balloon = BalloonView(this, th)
         val trail = SwipeTrailView(this, th)
@@ -171,6 +172,12 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         return r
     }
 
+    /** Theme từ cài đặt hiện tại (rẻ: vài lần đọc màu resource, không giải ảnh). */
+    private fun freshTheme(): ImeTheme {
+        val all = prefs.all
+        return ImeTheme(this, ThemeSettings.load { all[it] }, File(filesDir, Keys.WALLPAPER_FILE).exists())
+    }
+
     @Suppress("DEPRECATION")
     private fun styleWindow(th: ImeTheme, v: View) {
         val w = window?.window ?: return
@@ -182,6 +189,8 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         val t0 = SystemClock.elapsedRealtime()
         super.onStartInputView(info, restarting)
+        // Đổi theme/ảnh nền trong app → dựng lại input view (màu/Paint tạo sẵn trong view).
+        if (theme != null && freshTheme().signature != theme?.signature) setInputView(onCreateInputView())
         val kb = keyboard ?: return
         val st = strip ?: return
         val th = theme ?: return

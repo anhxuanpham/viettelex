@@ -28,6 +28,9 @@ targets:
     platform: iOS
     sources:
       - App
+      # Token theme + pipeline ảnh nền dùng chung với extension.
+      - Keyboard/KeyboardTheme.swift
+      - Keyboard/Wallpaper.swift
       - Keyboard/Shortcuts.swift
       - Shared
       - path: ios-mau-cau.yml
@@ -106,6 +109,8 @@ targets:
       - Keyboard/EmojiPlane.swift
       - Keyboard/EmojiData.swift
       - Keyboard/AppearancePolicy.swift
+      - Keyboard/KeyboardTheme.swift
+      - Keyboard/Wallpaper.swift
       - Keyboard/KeyCommitQueue.swift
       - Keyboard/AdjacentKeyFixer.swift
       - Keyboard/TouchGeometry.swift

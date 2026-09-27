@@ -44,6 +44,12 @@ object Keys {
     /** String JSON `[{"label":…,"text":…}]`; vắng ⇒ mặc định từ assets/ios-mau-cau.yml. */
     const val USER_TEMPLATES = "userTemplates"
     const val DEBUG_TOUCH_LOG = "debugTouchLog"
+    // Theme & ảnh nền ([ThemeSettings]) — tên như iOS App Group.
+    const val KEYBOARD_THEME = "keyboardTheme"
+    const val WALLPAPER_ENABLED = "wallpaperEnabled"
+    const val WALLPAPER_DIM = "wallpaperDim"
+    const val WALLPAPER_BLUR = "wallpaperBlur"
+    const val WALLPAPER_VERSION = "wallpaperVersion"
     // nội bộ IME
     const val SUGGESTION_BAR_COLLAPSED = "suggestionBarCollapsed"
     /** String, emoji nối bằng '\n' (xem [EmojiRecents]). */
@@ -60,6 +66,9 @@ object Keys {
     // file trong filesDir
     const val USERLM_FILE = "userlm.bin"
     const val TOUCHLOG_FILE = "touchlog.txt"
+    /** Ảnh nền đã thu nhỏ/mờ/nén cho IME; bản chưa mờ để đổi độ mờ không cần chọn lại. */
+    const val WALLPAPER_FILE = "wallpaper.jpg"
+    const val WALLPAPER_SRC_FILE = "wallpaper-src.jpg"
 
     // assets
     const val ASSET_LEXICON = "vnlexicon.bin"

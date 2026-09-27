@@ -28,9 +28,9 @@ class SwipeTrailView(context: Context, theme: ImeTheme) : View(context) {
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
         strokeWidth = theme.dp(5f)
-        color = theme.action
+        color = theme.trail
     }
-    private val baseAlpha = android.graphics.Color.alpha(theme.action) * 3 / 4
+    private val baseAlpha = android.graphics.Color.alpha(theme.trail) * 3 / 4
 
     init {
         isClickable = false
