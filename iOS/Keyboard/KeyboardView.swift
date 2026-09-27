@@ -457,8 +457,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// Bảng ký tự phụ của lần dựng hiện tại (rỗng ⇒ không nhãn, không hẹn giờ).
     private var activeAlts: [Character: String] = [:]
     private var builtAlts: [Character: String] = [:]
+    /// iPad: đúng nhãn ký tự phụ trên phím (KeyAlternates.padMap) — giữ = vuốt xuống.
     private func currentAlts() -> [Character: String] {
-        KeyAlternates.map(numbers: altNumbersSetting, symbols: altSymbolsSetting,
+        if Self.isPad { return KeyAlternates.padMap() }
+        return KeyAlternates.map(numbers: altNumbersSetting, symbols: altSymbolsSetting,
                           numberRow: numberRowEnabled, isPad: Self.isPad, accessibility: altAccessibility)
     }
     func configureKeyAlternates(numbers: Bool, symbols: Bool) {
@@ -1428,6 +1430,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         #endif
         switch plane {
         case .letters: buildLetters()
+        case .numbers where Self.isPad: buildPadSymbolic(numbers: true)
+        case .symbols where Self.isPad: buildPadSymbolic(numbers: false)
         case .numbers: buildPlane(rows: [
             ["1","2","3","4","5","6","7","8","9","0"],
             // $ ở đúng chỗ bàn phím EN (user 2026-07-23); ₫ chuyển sang plane #+=
@@ -1613,7 +1617,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let r2 = "asdfghjkl".map { String($0) }
         let r3 = "zxcvbnm".map { String($0) }
         if numberRowEnabled {
-            rowsContainer.addArrangedSubview(row(KeyLayout.digits.map(textButton)))
+            rowsContainer.addArrangedSubview(row(KeyLayout.digits.map { textButton($0) }))
         }
         let r1btns = r1.map(letterButton)
         rowsContainer.addArrangedSubview(row(r1btns))
@@ -1681,28 +1685,28 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         }
     }
 
-    /// Layout iPad như stock iPadOS 26 (đo ảnh iPad Pro 11", 26/09/2026), đơn vị
-    /// = bề rộng phím chữ q:
-    ///   [tab 1.3] q…p [⌫ 1.3]
-    ///   [⇪ 1.67] a…l [return: phần còn lại]
-    ///   [⇧ 2.2] z…m [!,] [?.] [⇧: phần còn lại]
-    ///   [🌐][.?123][☺︎][space][,][.?123 1.5][⌨︎ 1.5]   (bottomRow, padLetters)
-    /// Mọi phím nền trắng; phím chức năng để icon/nhãn ở góc dưới (padCorner).
+    /// Kiểu bàn phím iPad như stock (KeyLayout.PadStyle): mini = compact. Theo cạnh ngắn
+    /// MÀN HÌNH (không theo bề ngang view — Split View không đổi kiểu).
+    private lazy var padStyle: KeyLayout.PadStyle = {
+        let b = window?.windowScene?.screen.bounds ?? UIScreen.main.bounds
+        return KeyLayout.padStyle(screenShortSide: min(b.width, b.height))
+    }()
+    /// Test: ép kiểu iPad (rồi rebuild).
+    func debugSetPadStyle(compact: Bool) {
+        padStyle = compact ? .compact : .full
+        planeCache.removeAll(); builtPlane = nil; rebuild()
+    }
+
+    /// Layout iPad như stock iPadOS 27 (KeyLayout.padLetterRows), đơn vị = bề rộng phím q:
+    ///   full:    [tab 1.3] q…p [⌫ 1.3] / [⇪ 1.67] a…l [return] / [⇧ 2.2] z…m [!,] [?.] [⇧]
+    ///   compact: q…p [⌫ 1.23] / ␣ a…l [return] / [⇧] z…m [!,] [?.] [⇧ 1.23]
+    ///   [🌐][.?123][☺︎][space][,][.?123][⌨︎]   (bottomRow, padLetters)
+    /// Mọi phím nền trắng; full: icon/nhãn phím chức năng ở góc dưới (padCorner),
+    /// compact: giữa phím (padCenter).
     private func buildLettersPad() {
-        // Dựng view theo id của KeyLayout.padRows, rồi neo bề rộng theo units × q.
-        var views: [String: UIView] = [:]
-        func make(_ id: String) -> UIView {
+        let style = padStyle
+        func make(_ id: String) -> UIView? {
             switch id {
-            case "tab":
-                let b = controlButton(title: "") { [weak self] in self?.tapped(.text("\t")) }
-                b.setImage(UIImage(systemName: "arrow.right.to.line"), for: .normal)
-                b.accessibilityLabel = "Tab"
-                padCorner(b, left: true)
-                return b
-            case "back":
-                let b = backspaceButton() as! KeyButton
-                padCorner(b, left: false)
-                return b
             case "caps":
                 let b = controlButton(title: "") { [weak self] in
                     guard let self else { return }
@@ -1711,39 +1715,111 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 }
                 b.setImage(UIImage(systemName: "capslock"), for: .normal)
                 b.accessibilityLabel = "Caps Lock"
-                padCorner(b, left: true)
+                padFunction(b, left: true)
                 capsKey = b
-                return b
-            case "return":
-                let b = returnButton()
-                if returnTitle == "return" { padCorner(b, left: false) }
                 return b
             case "shiftL", "shiftR":
                 let b = shiftButton() as! KeyButton
-                padCorner(b, left: id == "shiftL")
+                padFunction(b, left: id == "shiftL")
                 return b
             case "-", "=", _ where KeyLayout.digits.contains(id): return textButton(id)
             case "!,": return padPunctButton(lower: ",", upper: "!")
             case "?.": return padPunctButton(lower: ".", upper: "?")
-            default: return letterButton(id)
+            default: return padCommonKey(id) ?? letterButton(id)
             }
         }
-        let layoutRows = (numberRowEnabled ? [KeyLayout.padNumberRow] : []) + KeyLayout.padRows
-        for keys in layoutRows {
-            let rowViews = keys.map { k -> UIView in
-                let v = make(k.id); views[k.id] = v; return v
-            }
-            rowsContainer.addArrangedSubview(row(rowViews))
-        }
-        guard let q = views["q"] else { return }
-        for keys in layoutRows {
-            for k in keys where k.id != "q" {
-                guard let u = k.units, let v = views[k.id] else { continue }
-                crossRow(v.widthAnchor.constraint(equalTo: q.widthAnchor, multiplier: u))
-            }
-        }
+        let layoutRows = (numberRowEnabled ? [KeyLayout.padNumberRow] : []) + KeyLayout.padLetterRows(style)
+        buildPadRows(layoutRows, reference: "q", make: make)
         rowsContainer.addArrangedSubview(bottomRow(planeKey: "123"))
         applyRowHeights()
+    }
+
+    /// Plane số / ký hiệu iPad đúng stock (KeyLayout.padNumberRows / padSymbolRows): cùng
+    /// khung phím plane chữ; phím có ký tự phụ (padNumberHints) vuốt xuống / giữ ra ký tự đó.
+    private func buildPadSymbolic(numbers: Bool) {
+        let style = padStyle
+        let rows = numbers ? KeyLayout.padNumberRows(style) : KeyLayout.padSymbolRows(style)
+        func make(_ id: String) -> UIView? {
+            switch id {
+            case "more", "more2":
+                let title = numbers ? "#+=" : "123"
+                let b = controlButton(title: title, fire: .down) { [weak self] in
+                    guard let self else { return }
+                    self.plane = (self.plane == .numbers) ? .symbols : .numbers
+                    self.rebuild()
+                }
+                b.accessibilityLabel = numbers ? L("Ký hiệu") : L("Số")
+                padFunction(b, left: id == "more")
+                return b
+            case "undo", "redo":
+                // Ô undo/redo stock: bàn phím bên thứ ba không tới được undo manager của app.
+                let b = textButton(KeyLayout.padSlotTitle(id) ?? ",") as! KeyButton
+                b.isSpecial = true          // bề rộng theo units, không bằng phím ký tự
+                return b
+            case "!,": return padPunctButton(lower: ",", upper: "!")
+            case "?.": return padPunctButton(lower: ".", upper: "?")
+            default:
+                if let v = padCommonKey(id) { return v }
+                return textButton(id, hint: numbers ? KeyLayout.padNumberHints[id] : nil)
+            }
+        }
+        buildPadRows(rows, reference: "1", make: make)
+        rowsContainer.addArrangedSubview(bottomRow(planeKey: "ABC"))
+        applyRowHeights()
+    }
+
+    /// Phím chung mọi plane iPad: tab, ⌫, return, ô thụt hàng 2 (compact).
+    private func padCommonKey(_ id: String) -> UIView? {
+        switch id {
+        case "tab":
+            let b = controlButton(title: "") { [weak self] in self?.tapped(.text("\t")) }
+            b.setImage(UIImage(systemName: "arrow.right.to.line"), for: .normal)
+            b.accessibilityLabel = "Tab"
+            padFunction(b, left: true)
+            return b
+        case "back":
+            let b = backspaceButton() as! KeyButton
+            padFunction(b, left: false)
+            return b
+        case "return":
+            let b = returnButton()
+            if returnTitle == "return" { padFunction(b, left: false) }
+            return b
+        case "indent":
+            let v = UIView()
+            v.isUserInteractionEnabled = false
+            return v
+        default: return nil
+        }
+    }
+
+    /// Dựng các hàng iPad theo id rồi neo bề rộng units × phím `reference` (hàng neo).
+    private func buildPadRows(_ layoutRows: [[KeyLayout.Key]], reference: String,
+                              make: (String) -> UIView?) {
+        var views: [String: UIView] = [:]
+        var built: [[(KeyLayout.Key, UIView)]] = []
+        for keys in layoutRows {
+            let pairs = keys.compactMap { k -> (KeyLayout.Key, UIView)? in
+                guard let v = make(k.id) else { return nil }
+                if views[k.id] == nil { views[k.id] = v }
+                return (k, v)
+            }
+            built.append(pairs)
+            rowsContainer.addArrangedSubview(row(pairs.map(\.1)))
+        }
+        guard let ref = views[reference] else { return }
+        for pairs in built {
+            for (k, v) in pairs where v !== ref {
+                guard let u = k.units else { continue }
+                crossRow(v.widthAnchor.constraint(equalTo: ref.widthAnchor, multiplier: u))
+            }
+        }
+    }
+
+    /// Phím chức năng iPad theo kiểu: full → góc dưới (padCorner), compact → giữa phím.
+    private func padFunction(_ b: KeyButton, left: Bool) {
+        padCorner(b, left: left)
+        if padStyle == .compact { b.padRole = .center }
     }
 
     /// Phím chức năng iPad kiểu stock: nền trắng như phím chữ (đè thì sẫm), icon /
@@ -1760,13 +1836,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     }
 
     /// Ký tự phụ (xám, phía trên) của phím chữ iPad — vuốt xuống trên phím để gõ.
-    static let padSecondary: [String: String] = [
-        "q": "1", "w": "2", "e": "3", "r": "4", "t": "5",
-        "y": "6", "u": "7", "i": "8", "o": "9", "p": "0",
-        "a": "@", "s": "#", "d": "$", "f": "&", "g": "*",
-        "h": "(", "j": ")", "k": "'", "l": "\"",
-        "z": "%", "x": "-", "c": "+", "v": "=", "b": "/", "n": ";", "m": ":",
-    ]
+    static let padSecondary: [String: String] =
+        Dictionary(uniqueKeysWithValues: KeyAlternates.padHints.map { (String($0.key), $0.value) })
 
     /// Phím dấu 2 tầng của iPad ("!" trên "," dưới, cùng cỡ như stock). Shift bật →
     /// ra ký tự trên (nhả shift một lần như phím chữ), tắt → ký tự dưới.
@@ -1789,9 +1860,12 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         }
         b.padRole = .punct
         b.accessibilityLabel = lower
-        armCommit(b) { [weak self] in
+        armPadAlternate(b, alt: upper)          // vuốt xuống / giữ → ký tự trên như stock
+        armCommit(b) { [weak self, weak b] in
             guard let self else { return }
-            if self.shift != .off {
+            if b?.takePadAlt() == true {
+                self.tapped(.text(upper))
+            } else if self.shift != .off {
                 if self.shift == .on { self.shift = .off; self.applyShiftAppearance() }
                 self.tapped(.text(upper))
             } else {
@@ -1889,8 +1963,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     }
 
     private func buildPlane(rows planeRows: [[String]], moreKey: String, altKey: String) {
-        rowsContainer.addArrangedSubview(row(planeRows[0].map(textButton)))
-        rowsContainer.addArrangedSubview(row(planeRows[1].map(textButton)))
+        rowsContainer.addArrangedSubview(row(planeRows[0].map { textButton($0) }))
+        rowsContainer.addArrangedSubview(row(planeRows[1].map { textButton($0) }))
         let more = controlButton(title: moreKey, fire: .down) { [weak self] in
             guard let self else { return }
             self.plane = (self.plane == .numbers) ? .symbols : .numbers
@@ -1899,7 +1973,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         more.accessibilityLabel = moreKey == "#+=" ? L("Ký hiệu") : L("Số")
         applyLabelFont(more, size: KeyGeometry.Typography.rowToggleSize)
         var third: [UIView] = [more]
-        third += [".",",","?","!","'"].map(textButton)
+        third += [".",",","?","!","'"].map { textButton($0) }
         third.append(backspaceButton())
         rowsContainer.addArrangedSubview(row(third, proportional: true))
         rowsContainer.addArrangedSubview(bottomRow(planeKey: altKey))
@@ -2066,12 +2140,23 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // Nhóm phím dấu câu bên phải space. Bình thường là dấu phẩy; ô email/url
         // đổi thành phím tắt như stock (@ . cho email; . / .com cho url). Chỉ áp
         // ở hàng đáy plane CHỮ (planeKey == "123").
+        // iPad plane chữ / số / ký hiệu: hàng đáy kiểu stock (KeyLayout.padBottomRow).
+        let padLetters = Self.isPad && planeKey == "123"
+        let padSym = Self.isPad && !padLetters && !clearInsteadOfEmoji
+            && (plane == .numbers || plane == .symbols)
+        let padStock = padLetters || padSym
         let puncts: [(title: String, insert: String, mult: CGFloat)]
-        if planeKey == "123" {
+        if padSym {
+            // compact: ô undo/redo stock bên phải space (",", "₫"); full: không có phím.
+            let t = KeyLayout.padSlotTitle(plane == .numbers ? "undo" : "redo") ?? ","
+            puncts = padStyle == .compact ? [(t, t, KeyLayout.units("slot", in:
+                KeyLayout.padBottomRow(.compact, letters: false)) ?? 0.079)] : []
+        } else if planeKey == "123" {
             switch inputKind {
             case .email: puncts = [("@", "@", 0.11), (".", ".", 0.09)]
             case .url:   puncts = [(".", ".", 0.075), ("/", "/", 0.075), (".com", ".com", 0.17)]
-            default:     puncts = [(",", ",", 0.075)]
+            // iPad plane chữ: không phím "," riêng như stock ("!," hàng 3 đã có).
+            default:     puncts = padLetters ? [] : [(",", ",", 0.075)]
             }
         } else {
             puncts = [(",", ",", 0.075)]
@@ -2084,35 +2169,35 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             else if Self.isPad { b.padRole = .digit }
             armCommit(b) { [weak self] in self?.tapped(.text(p.insert)) }
             // Bàn chữ iPhone: giữ "," ra "." (KeyAlternates.commaHold — bảng ký tự phụ không
-            // rỗng; iPad/VoiceOver đã rỗng sẵn).
-            if p.title == ",", planeKey == "123", KeyAlternates.commaHold(alternates: activeAlts) {
+            // rỗng; VoiceOver đã rỗng sẵn; iPad có phím ",/." 2 tầng riêng).
+            if !Self.isPad, p.title == ",", planeKey == "123", KeyAlternates.commaHold(alternates: activeAlts) {
                 armCommaHold(b)
             }
             views.append(b)
             punctKeys.append((b, p.mult))
         }
-        // iPad plane chữ: return nằm cuối hàng 2 như stock (buildLettersPad).
-        let padLetters = UIDevice.current.userInterfaceIdiom == .pad && planeKey == "123"
+        // iPad: return nằm cuối hàng 2 như stock (buildLettersPad / buildPadSymbolic).
         var ret: KeyButton?
-        if !padLetters {
+        if !padStock {
             let r = returnButton()
             views.append(r)
             ret = r
         }
-        // iPad plane chữ: 🌐 lên đầu hàng như stock ([🌐][.?123][☺︎]…).
-        if padLetters, let g = globeBtn, let gi = views.firstIndex(where: { $0 === g }) {
+        // iPad: 🌐 lên đầu hàng như stock ([🌐][.?123|ABC][☺︎]…) — cả plane số/ký hiệu.
+        if padStock, let g = globeBtn, let gi = views.firstIndex(where: { $0 === g }) {
             views.remove(at: gi)
             views.insert(g, at: 0)
         }
-        // iPad plane chữ: phím 123 thứ hai bên phải space như stock.
+        // iPad: phím 123 / ABC thứ hai bên phải space như stock.
         var planeBtn2: KeyButton?
-        if padLetters {
+        if padStock {
             let b = controlButton(title: planeKey, fire: .down) { [weak self] in
                 guard let self else { return }
-                self.plane = .numbers
+                self.plane = padLetters ? .numbers : .letters
+                if self.plane == .letters, self.shift == .on { self.shift = .off }
                 self.rebuild()
             }
-            b.accessibilityLabel = L("Số")
+            b.accessibilityLabel = padLetters ? L("Số") : L("Chữ")
             views.append(b)
             planeBtn2 = b
         }
@@ -2144,11 +2229,14 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // Phím phẳng không bóng như stock (26/09/2026) → hàng đáy sát đáy 0pt.
         // iPhone dọc: vùng 50 = khe 7 + phím 43 như stock (27/09: phím đáy 44 trông cao
         // hơn stock) — applyBottomTrim chỉnh lại khi xoay.
+        // iPad: safe area đáy của view (≈5pt) từng lọt vào layoutMargins → phím hàng đáy thấp
+        // hơn 3 hàng trên 5pt (45 thay 50, ngang 60 thay 65) và icon/nhãn sát đáy (đo 27/09).
+        if Self.isPad { stack.insetsLayoutMarginsFromSafeArea = false }
         let bottomTop = KeyGeometry.bottomRowTopMargin(pad: Self.isPad, landscape: isLandscapeNow)
         stack.layoutMargins = UIEdgeInsets(top: bottomTop, left: Self.sideMargin,
                                            bottom: 0, right: Self.sideMargin)
         // Tỉ lệ từ KeyLayout (test: đúng một phím co giãn = space).
-        let spec = padLetters ? KeyLayout.padBottom : KeyLayout.phoneBottom
+        let spec = padStock ? KeyLayout.padBottomRow(padStyle, letters: padLetters) : KeyLayout.phoneBottom
         func frac(_ id: String) -> CGFloat { KeyLayout.units(id, in: spec) ?? 0.1 }
         planeBtn.widthAnchor.constraint(equalTo: stack.widthAnchor, multiplier: frac("plane")).isActive = true
         emojiBtn.widthAnchor.constraint(equalTo: stack.widthAnchor, multiplier: frac("emoji")).isActive = true
@@ -2157,21 +2245,23 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // hàng đáy iPad nhảy size khi bấm (feedback 26/09/2026). Chỉ space co giãn.
         globeBtn?.widthAnchor.constraint(equalTo: stack.widthAnchor, multiplier: frac("globe")).isActive = true
         for pk in punctKeys {
-            let m = pk.btn.currentTitle == "," ? frac("comma") : pk.mult
+            let m = pk.btn.currentTitle == "," ? (KeyLayout.units("comma", in: spec) ?? pk.mult) : pk.mult
             pk.btn.widthAnchor.constraint(equalTo: stack.widthAnchor, multiplier: m).isActive = true
         }
         ret?.widthAnchor.constraint(equalTo: stack.widthAnchor, multiplier: frac("return")).isActive = true
         planeBtn2?.widthAnchor.constraint(equalTo: stack.widthAnchor, multiplier: frac("plane2")).isActive = true
         dismissBtn?.widthAnchor.constraint(equalTo: stack.widthAnchor,
-                                           multiplier: padLetters ? frac("dismiss") : 0.07).isActive = true
-        if padLetters {
-            planeBtn.setTitle(".?123", for: .normal)
-            planeBtn2?.setTitle(".?123", for: .normal)
-            padCorner(planeBtn, left: true)
-            if let b = planeBtn2 { padCorner(b, left: false) }   // .?123 phải: nhãn dạt phải như stock
-            if let g = globeBtn { padCorner(g, left: true) }
-            padCorner(emojiBtn, left: true)
-            if let d = dismissBtn { padCorner(d, left: false) }
+                                           multiplier: padStock ? frac("dismiss") : 0.07).isActive = true
+        if padStock {
+            // Stock: plane chữ full ".?123", compact (mini) "123"; plane số/ký hiệu "ABC".
+            let t = padLetters ? (padStyle == .compact ? "123" : ".?123") : planeKey
+            planeBtn.setTitle(t, for: .normal)
+            planeBtn2?.setTitle(t, for: .normal)
+            padFunction(planeBtn, left: true)
+            if let b = planeBtn2 { padFunction(b, left: false) }   // nhãn phải dạt phải như stock
+            if let g = globeBtn { padFunction(g, left: true) }
+            padFunction(emojiBtn, left: true)
+            if let d = dismissBtn { padFunction(d, left: false) }
             for pk in punctKeys { pk.btn.backgroundColor = plainFill; pk.btn.normalBackground = plainFill }
         }
         return stack
@@ -2190,6 +2280,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         stack.spacing = Self.keyGap
         stack.distribution = proportional ? .fillProportionally : .fill
         stack.isLayoutMarginsRelativeArrangement = true
+        if Self.isPad { stack.insetsLayoutMarginsFromSafeArea = false }   // xem bottomRow
         // bounds.width có thể = 0 lúc init — layoutSubviews chỉnh lại ngay
         // pass đầu (và sau mỗi lần xoay / đổi cỡ Split View)
         // 10/0 thay 5/5 (khe giữa hàng vẫn 10): hàng đáy sát đáy (26/09/2026).
@@ -2228,7 +2319,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             // Hộp nhãn đang căn giữa phím; dời để baseline về đúng chỗ stock.
             let dy: CGFloat
             if let below = padBaselineBelowCenter {
-                dy = KeyGeometry.Typography.offsetY(toBaseline: bounds.height / 2 + below,
+                let m = KeyGeometry.Typography.Pad.metrics(landscape: Self.padLandscape)
+                dy = KeyGeometry.Typography.offsetY(toBaseline: bounds.height / 2 + m.scaled(below, keyHeight: bounds.height),
                                                     keyHeight: bounds.height,
                                                     ascender: f.ascender, descender: f.descender)
             } else {
@@ -2241,13 +2333,39 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // MARK: iPad — chữ theo KeyGeometry.Typography.Pad, đổi theo hướng máy TẠI CHỖ
         // (xoay không dựng lại plane): KeyboardView đặt `padLandscape` đầu mỗi layout pass,
         // mỗi phím tự áp lại ở layoutSubviews của nó khi hướng khác lần áp trước.
-        enum PadRole { case letter, digit, corner(left: Bool), icon, punct }
+        /// `center`: kiểu compact (iPad mini) — icon/nhãn giữa phím như stock.
+        enum PadRole { case letter, digit, corner(left: Bool), icon, punct, center }
         static var padLandscape = false
         var padRole: PadRole? { didSet { padApplied = nil; setNeedsLayout() } }
-        private var padApplied: Bool?
+        /// (hướng máy, chiều cao phím) lần áp trước — số đo quanh tâm co theo chiều cao.
+        private var padApplied: (landscape: Bool, height: CGFloat)?
         private var padBaselineBelowCenter: CGFloat?
         weak var padHint: UILabel?
         var padHintBaseline: NSLayoutConstraint?
+        /// Ký tự phụ iPad của phím thường (plane số, phím 2 tầng) — armPadAlternate.
+        var padAlt: String?
+        var padAltChosen = false
+        var padAltStart: CGPoint?
+        var padAltTimer: DispatchWorkItem?
+        var onPadAltChoose: (() -> Void)?
+        override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+            if padAlt != nil { padAltStart = touch.location(in: self) }
+            return super.beginTracking(touch, with: event)
+        }
+        /// Vuốt XUỐNG quá ngưỡng → ký tự phụ; trôi ngang/lên quá slop → huỷ hẹn giờ giữ.
+        override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+            if padAlt != nil, !padAltChosen, let s = padAltStart {
+                let p = touch.location(in: self)
+                if KeyLayout.isPadFlick(dx: p.x - s.x, dy: p.y - s.y, threshold: KeyboardView.flickDistance) {
+                    onPadAltChoose?()
+                } else if hypot(p.x - s.x, p.y - s.y) > KeyAlternates.slop {
+                    padAltTimer?.cancel(); padAltTimer = nil
+                }
+            }
+            return super.continueTracking(touch, with: event)
+        }
+        /// Đọc + xoá lựa chọn ký tự phụ lúc phím chốt (lần chạm sau bắt đầu sạch).
+        func takePadAlt() -> Bool { defer { padAltChosen = false }; return padAltChosen }
         var padPunctLabels: [(label: UILabel, baseline: NSLayoutConstraint)] = []
 
         override func layoutSubviews() {
@@ -2269,9 +2387,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             }
         }
         private func applyPadTypographyIfNeeded() {
-            guard let role = padRole, padApplied != Self.padLandscape else { return }
-            let land = Self.padLandscape
-            padApplied = land
+            guard let role = padRole else { return }
+            let land = Self.padLandscape, h = bounds.height
+            if let a = padApplied, a.landscape == land, a.height == h { return }
+            padApplied = (land, h)
             let m = KeyGeometry.Typography.Pad.metrics(landscape: land)
             switch role {
             case .letter, .digit:
@@ -2283,7 +2402,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 if case .letter = role {
                     padBaselineBelowCenter = m.letterBaselineBelowCenter
                     padHint?.font = KeyboardView.keyFont(m.hintSize)
-                    padHintBaseline?.constant = -m.hintBaselineAboveCenter
+                    padHintBaseline?.constant = -m.scaled(m.hintBaselineAboveCenter, keyHeight: h)
                 } else {
                     padBaselineBelowCenter = m.digitBaselineBelowCenter
                 }
@@ -2300,17 +2419,34 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                     contentEdgeInsets = UIEdgeInsets(top: 0, left: m.labelSideInset,
                                                      bottom: bottom, right: m.labelSideInset)
                 } else {
-                    let ins = KeyGeometry.Typography.Pad.iconContentInsets(m)
+                    // Ảnh vẽ tay (☺︎) không có lề trong như SF Symbol → dùng thẳng số đo mép nét.
+                    let sym = currentImage?.isSymbolImage ?? true
+                    let ins = sym ? KeyGeometry.Typography.Pad.iconContentInsets(m)
+                                  : (side: m.iconSideInset, bottom: m.iconBottomInset)
                     contentEdgeInsets = UIEdgeInsets(top: 0, left: ins.side, bottom: ins.bottom, right: ins.side)
                 }
                 applyPadSymbolSize(m)
             case .icon:
                 applyPadSymbolSize(m)
+            case .center:
+                contentHorizontalAlignment = .center
+                contentVerticalAlignment = .center
+                contentEdgeInsets = .zero
+                if let t = currentTitle, !t.isEmpty {
+                    let size = t == "#+=" ? m.centerToggleLabelSize : m.centerLabelSize
+                    titleLabel?.font = KeyboardView.keyFont(size)
+                    titleLabel?.adjustsFontSizeToFitWidth = true
+                    titleLabel?.minimumScaleFactor = 0.6
+                }
+                var c = m
+                c.iconPointSize = m.centerIconPointSize
+                applyPadSymbolSize(c)
             case .punct:
                 let f = KeyboardView.keyFont(m.punctSize)
                 for (i, p) in padPunctLabels.enumerated() {
                     p.label.font = f
-                    p.baseline.constant = i == 0 ? m.punctUpperBaselineBelowCenter : m.punctLowerBaselineBelowCenter
+                    let v = i == 0 ? m.punctUpperBaselineBelowCenter : m.punctLowerBaselineBelowCenter
+                    p.baseline.constant = m.scaled(v, keyHeight: h)
                 }
             }
         }
@@ -2438,18 +2574,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         letterKeys.append((b, s))
         if Self.isPad {
             // Chữ + ký tự phụ căn theo tâm phím như stock (KeyGeometry.Typography.Pad).
-            if let sec = Self.padSecondary[s] {
-                let l = UILabel()
-                l.text = sec
-                l.textColor = inkFaded(Double(KeyGeometry.Typography.Pad.hintAlpha(dark: dark)))
-                l.translatesAutoresizingMaskIntoConstraints = false
-                l.isUserInteractionEnabled = false
-                b.addSubview(l)
-                let base = l.firstBaselineAnchor.constraint(equalTo: b.centerYAnchor)
-                NSLayoutConstraint.activate([l.centerXAnchor.constraint(equalTo: b.centerXAnchor), base])
-                b.padHint = l
-                b.padHintBaseline = base
-            }
+            if let sec = Self.padSecondary[s] { addPadHint(sec, to: b) }
             b.padRole = .letter
         } else if let c = s.first, let alt = activeAlts[c] {
             // Nhãn ký tự phụ nhỏ, mờ ở góc trên-phải như Gboard — dựng một lần theo layout.
@@ -2578,20 +2703,76 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     }
     private func hideBalloon() { if balloonMade { balloon.isHidden = true } }
 
-    private func textButton(_ s: String) -> UIView {
+    private func textButton(_ s: String, hint: String? = nil) -> UIView {
         let b = baseButton(title: s, special: false)
         if Self.isPad { b.padRole = .digit }   // số/ký hiệu: cỡ chữ iPad, căn giữa như stock
+        if let hint {
+            // Plane số iPad: ký tự phụ xám phía trên như stock, khối chữ theo tâm phím.
+            addPadHint(hint, to: b)
+            b.padRole = .letter
+            armPadAlternate(b, alt: hint)
+        }
         b.addAction(UIAction { [weak self, weak b] _ in
             Self.clickLetter()
             if let self, let b { self.showBalloon(over: b, text: s) }
         }, for: .touchDown)
         b.addAction(UIAction { [weak self] _ in self?.hideBalloon() },
                     for: [.touchUpInside, .touchUpOutside, .touchCancel])
-        armCommit(b) { [weak self] in
+        armCommit(b) { [weak self, weak b] in
             self?.typedInSymbolPlane = true
-            self?.tapped(.text(s))
+            self?.tapped(.text(b?.takePadAlt() == true ? (hint ?? s) : s))
         }
         return b
+    }
+
+    /// Nhãn ký tự phụ iPad (xám, trên tâm phím) — cỡ/baseline do KeyButton.padRole áp.
+    private func addPadHint(_ text: String, to b: KeyButton) {
+        let l = UILabel()
+        l.text = text
+        l.textColor = inkFaded(Double(KeyGeometry.Typography.Pad.hintAlpha(dark: dark)))
+        l.translatesAutoresizingMaskIntoConstraints = false
+        l.isUserInteractionEnabled = false
+        l.isAccessibilityElement = false
+        b.addSubview(l)
+        let base = l.firstBaselineAnchor.constraint(equalTo: b.centerYAnchor)
+        NSLayoutConstraint.activate([l.centerXAnchor.constraint(equalTo: b.centerXAnchor), base])
+        b.padHint = l
+        b.padHintBaseline = base
+    }
+
+    /// Phím (UIButton thường, không qua router chữ) có ký tự phụ iPad: VUỐT XUỐNG quá
+    /// flickDistance hoặc GIỮ holdDelay mà không trôi → chọn ký tự phụ (balloon hiện nó);
+    /// phím chốt lúc nhấc như cũ, action đọc `padAltChosen`.
+    private func armPadAlternate(_ b: KeyButton, alt: String) {
+        b.padAlt = alt
+        b.onPadAltChoose = { [weak self, weak b] in
+            guard let self, let b else { return }
+            self.choosePadAlt(b)
+        }
+        // Chạm xuống: bắt đầu sạch + hẹn giờ GIỮ (vuốt xuống do KeyButton.continueTracking).
+        b.addAction(UIAction { [weak self, weak b] _ in
+            guard let self, let b else { return }
+            b.padAltChosen = false
+            b.padAltTimer?.cancel()
+            let w = DispatchWorkItem { [weak self, weak b] in
+                guard let self, let b, b.isTracking else { return }
+                self.choosePadAlt(b)
+            }
+            b.padAltTimer = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + KeyAlternates.holdDelay, execute: w)
+        }, for: .touchDown)
+        // Nhấc/huỷ: tắt hẹn giờ + ẨN balloon ký tự phụ (trước đây balloon kẹt lại trên
+        // phím "?." / "!," sau khi giữ — Phil 27/09).
+        b.addAction(UIAction { [weak self, weak b] _ in
+            b?.padAltTimer?.cancel(); b?.padAltTimer = nil
+            self?.hideBalloon()   // vô điều kiện: takePadAlt() (action chốt) có thể đã reset padAltChosen trước
+        }, for: [.touchUpInside, .touchUpOutside, .touchCancel])
+    }
+    private func choosePadAlt(_ b: KeyButton) {
+        guard !b.padAltChosen, let alt = b.padAlt else { return }
+        b.padAltChosen = true
+        b.padAltTimer?.cancel(); b.padAltTimer = nil
+        showBalloon(over: b, text: alt)
     }
 
     /// Phím ra KÝ TỰ lúc nhấc (space, dấu câu, số/ký hiệu, return): arm lúc chạm,
@@ -3351,7 +3532,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // iPad: vuốt xuống trên phím chữ = ký tự phụ như stock. Chữ đã chèn lúc
         // chạm (touchDown) → HUỶ đúng phím đó (không ⌫: phím dấu Telex đã đổi từ)
         // rồi chèn ký tự phụ; shift một lần mà phím đó đã nhả thì trả lại.
-        if let start, raw.y - start.y > Self.flickDistance,
+        if let start, KeyLayout.isPadFlick(dx: raw.x - start.x, dy: raw.y - start.y,
+                                           threshold: Self.flickDistance),
            let base = letterKeys.first(where: { $0.button === b })?.base,
            let sec = Self.padSecondary[base] {
             if shiftBeforeLastLetter == .on, shift == .off { shift = .on; applyShiftAppearance() }
@@ -3360,7 +3542,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     }
     private var routedStart: [ObjectIdentifier: CGPoint] = [:]
     private var shiftBeforeLastLetter: ShiftState = .off
-    private static let flickDistance: CGFloat = 18
+    fileprivate static let flickDistance: CGFloat = 18
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         // hệ thống cancel (edge gesture…) — vẫn CHỐT chữ thay vì nuốt phím; cú vuốt
@@ -3771,6 +3953,41 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         tapped(.space)
     }
     /// Test hook: nút thật theo accessibilityLabel ("Số", "Chữ", "Emoji", "Shift"…).
+    /// Test: nhãn từng phím theo hàng (trái → phải): ký tự phím / accessibilityLabel phím
+    /// chức năng, ô trống (thụt hàng) = "␣".
+    func debugRowLabels() -> [[String]] {
+        rowsContainer.arrangedSubviews.map { r in
+            ((r as? UIStackView)?.arrangedSubviews ?? []).map { v in
+                guard let b = v as? KeyButton else { return "␣" }
+                if b.isSpecial || (b.currentTitle ?? "").isEmpty {
+                    if let t = b.currentTitle, !t.isEmpty, b.accessibilityLabel == nil { return t }
+                    return b.accessibilityLabel ?? b.currentTitle ?? "?"
+                }
+                return b.currentTitle ?? "?"
+            }
+        }
+    }
+    /// Test: ký tự phụ (nhãn xám) của phím có tiêu đề `title`.
+    func debugPadHint(_ title: String) -> String? {
+        (debugKeyButton(title) as? KeyButton)?.padHint?.text
+    }
+    /// Test: giả lập vuốt xuống / giữ trên phím có ký tự phụ rồi nhấc → ký tự gõ ra.
+    func debugPadAlternate(_ title: String) {
+        guard let b = debugKeyButton(title) as? KeyButton else { return }
+        b.sendActions(for: .touchDown)
+        choosePadAlt(b)
+        b.sendActions(for: .touchUpInside)
+    }
+    /// Test: giả lập hết giờ GIỮ trên một phím có ký tự phụ (đang chạm).
+    func debugChoosePadAlt(_ c: UIControl) { if let b = c as? KeyButton { choosePadAlt(b) } }
+    /// Test: chạm xuống phím có ký tự phụ có hẹn giờ giữ không (rồi huỷ chạm).
+    func debugPadAltArmsOnTouchDown(_ title: String) -> Bool {
+        guard let b = debugKeyButton(title) as? KeyButton else { return false }
+        b.sendActions(for: .touchDown)
+        let armed = b.padAltTimer != nil
+        b.sendActions(for: .touchCancel)
+        return armed
+    }
     func debugControl(_ label: String) -> UIControl? {
         func find(_ v: UIView) -> UIControl? {
             if let c = v as? UIControl, c.accessibilityLabel == label { return c }

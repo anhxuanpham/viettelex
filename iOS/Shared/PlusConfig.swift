@@ -6,8 +6,9 @@ import Foundation
 enum PlusConfig {
     /// CÔNG TẮC THANH TOÁN. `false` = chưa bán: PlusGate mở MỌI tính năng Plus
     /// cho mọi người. Chỉ bật `true` sau khi đã tạo sản phẩm trên App Store
-    /// Connect (xem iOS/store-drafts/PRODUCTS.md).
-    static let paywallEnabled = false
+    /// Connect (xem iOS/store-drafts/PRODUCTS.md). BẬT 27/09/2026 (Phil): 4 sản phẩm
+    /// đã tạo trên App Store Connect (Ready to Submit, gửi duyệt cùng bản 1.2).
+    static let paywallEnabled = true
 
     /// Giá gợi ý (chỉ để hiển thị khi StoreKit chưa tải được giá thật).
     static let plusPriceHint = "69.000đ"

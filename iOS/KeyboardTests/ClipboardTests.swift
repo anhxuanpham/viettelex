@@ -168,10 +168,16 @@ final class ClipboardHistoryTests: XCTestCase {
 /// Luồng: công tắc lịch sử / ẩn danh / ô mật khẩu / tự đọc / chip.
 final class ClipboardFeatureTests: XCTestCase {
     private var url: URL!
+    private var savedPaywall = false
     override func setUp() {
         url = FileManager.default.temporaryDirectory.appendingPathComponent("clipfeat-\(UUID().uuidString).json")
+        // Test luồng tính năng (chip STK/OTP là Plus) — mở paywall; gating test ở PlusTests.
+        savedPaywall = PlusGate.paywallEnabled; PlusGate.paywallEnabled = false
     }
-    override func tearDown() { try? FileManager.default.removeItem(at: url) }
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: url)
+        PlusGate.paywallEnabled = savedPaywall
+    }
 
     func testDefaultOffRecordsNothing() {
         let f = ClipboardFeature(fileURL: url)
