@@ -73,12 +73,12 @@ final class OneHandTests: XCTestCase {
         let p = try XCTUnwrap(kb.debugLetterFrame("p"))
         let a = try XCTUnwrap(kb.debugLetterFrame("a"))
         let z = try XCTUnwrap(kb.debugLetterFrame("z"))
-        XCTAssertEqual(q.minX, x0 + 3, accuracy: 0.5, file: file, line: line)
-        XCTAssertEqual(p.maxX, x0 + sw - 3, accuracy: 0.5, file: file, line: line)
+        XCTAssertEqual(q.minX, x0 + KeyGeometry.sideMargin(pad: isPad), accuracy: 0.5, file: file, line: line)
+        XCTAssertEqual(p.maxX, x0 + sw - KeyGeometry.sideMargin(pad: isPad), accuracy: 0.5, file: file, line: line)
         XCTAssertEqual(a.width, q.width, accuracy: 0.5, file: file, line: line)
         XCTAssertEqual(z.width, q.width, accuracy: 0.5, file: file, line: line)
         // Hàng 2 thụt nửa phím THEO VÙNG HẸP (không theo cả view).
-        XCTAssertEqual(a.minX, x0 + 3 + 0.5 * sw / 10, accuracy: 0.5, file: file, line: line)
+        XCTAssertEqual(a.minX, x0 + KeyGeometry.indentedMargin(width: sw, margin: KeyGeometry.sideMargin(pad: isPad), gap: 6, units: 0.5), accuracy: 0.5, file: file, line: line)
     }
 
     @MainActor func testLettersNarrowToEachSide() throws {
@@ -95,7 +95,7 @@ final class OneHandTests: XCTestCase {
         let (kb, _) = makeKeyboard(.right)
         _ = kb.debugEmojiSearch([])
         kb.setNeedsLayout(); kb.layoutIfNeeded()
-        XCTAssertEqual(try XCTUnwrap(kb.debugLetterFrame("q")).minX, 3, accuracy: 0.5)
+        XCTAssertEqual(try XCTUnwrap(kb.debugLetterFrame("q")).minX, KeyGeometry.sideMargin(pad: isPad), accuracy: 0.5)
         XCTAssertTrue(kb.debugRailFrames().isEmpty)
         for r in kb.debugRowFrames() { XCTAssertEqual(r.width, w, accuracy: 0.5) }
     }
@@ -103,7 +103,7 @@ final class OneHandTests: XCTestCase {
     @MainActor func testOffKeepsFullWidth() throws {
         let (kb, _) = makeKeyboard(.off)
         let q = try XCTUnwrap(kb.debugLetterFrame("q"))
-        XCTAssertEqual(q.minX, 3, accuracy: 0.5)
+        XCTAssertEqual(q.minX, KeyGeometry.sideMargin(pad: isPad), accuracy: 0.5)
         XCTAssertTrue(kb.debugRailFrames().isEmpty)
     }
 
@@ -147,7 +147,7 @@ final class OneHandTests: XCTestCase {
         kb.layoutIfNeeded()
         XCTAssertEqual(kb.oneHand, .off)
         XCTAssertEqual(saved, [.left, .off])
-        XCTAssertEqual(try XCTUnwrap(kb.debugLetterFrame("q")).minX, 3, accuracy: 0.5)
+        XCTAssertEqual(try XCTUnwrap(kb.debugLetterFrame("q")).minX, KeyGeometry.sideMargin(pad: isPad), accuracy: 0.5)
         XCTAssertTrue(kb.debugRailFrames().isEmpty)
     }
 

@@ -5,6 +5,7 @@ import UIKit
 /// plane chữ có thêm 1…0 ở trên cùng, thấp 0.75× hàng chữ; plane số giữ 4 hàng.
 final class NumberRowTests: XCTestCase {
     private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+    private var trim: CGFloat { KeyGeometry.bottomRowTrim(pad: isPad, landscape: false) }
 
     @MainActor private func makeKeyboard(numberRow: Bool,
                                          onKey: @escaping (KeyboardView.Key) -> Void = { _ in })
@@ -26,9 +27,11 @@ final class NumberRowTests: XCTestCase {
         guard rows.count == 5 else { return }
         XCTAssertEqual(rows[0].height, rows[1].height * KeyLayout.numberRowRatio,
                        accuracy: 0.5, file: file, line: line)
-        for r in rows[2...] {
+        for r in rows[2..<4] {
             XCTAssertEqual(r.height, rows[1].height, accuracy: 0.5, file: file, line: line)
         }
+        // iPhone dọc: hàng đáy thấp hơn bottomRowTrim (KeyGeometry — khớp vị trí stock).
+        XCTAssertEqual(rows[4].height, rows[1].height - trim, accuracy: 0.5, file: file, line: line)
         let q = try XCTUnwrap(kb.debugLetterFrame("q"))
         let z = try XCTUnwrap(kb.debugLetterFrame("z"))
         let a = try XCTUnwrap(kb.debugLetterFrame("a"))
@@ -56,7 +59,8 @@ final class NumberRowTests: XCTestCase {
         let (kb2, _) = makeKeyboard(numberRow: false)
         let rows = kb2.debugRowFrames()
         XCTAssertEqual(rows.count, 4)
-        for r in rows { XCTAssertEqual(r.height, rows[0].height, accuracy: 0.5) }
+        for r in rows.dropLast() { XCTAssertEqual(r.height, rows[0].height, accuracy: 0.5) }
+        XCTAssertEqual(rows[3].height, rows[0].height - trim, accuracy: 0.5)
         XCTAssertNil(kb2.debugKeyButton("1"))
     }
 
