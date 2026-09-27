@@ -26,8 +26,8 @@ final class BackupTests: XCTestCase {
             shortcuts: ["ko": "không", "stk": "số tài khoản", "đc": "được"],
             templates: [BackupTemplate(label: "👋", text: "Chào buổi sáng"),
                         BackupTemplate(label: "", text: "Anh nói \"ok\" nhé\nDòng 2")],
-            learnedWords: LearnedWords(uni: ["cảm": 7, "ơn": 6, "nhiều": 4], bi: ["cảm": ["ơn": 5]],
-                                       tri: ["cảm\u{1}ơn": ["nhiều": 3]]))
+            learnedWords: LearnedWords(uni: ["cảm": 7, "ơn": 6, "nhiều": 4, "viettelex": 5], bi: ["cảm": ["ơn": 5]],
+                                       tri: ["cảm\u{1}ơn": ["nhiều": 3]], manual: ["VietTelex"]))
     }()
 
     // MARK: codec
@@ -148,6 +148,22 @@ final class BackupTests: XCTestCase {
         XCTAssertEqual(b.shortcuts(), a.shortcuts())
         XCTAssertEqual(b.templates().map(\.text), ["Chào buổi sáng", "một", "hai"])
         XCTAssertEqual(b.learnedWords(), a.learnedWords())
+    }
+
+    /// Từ thêm tay (Từ điển cá nhân) đi qua sao lưu và KHÔNG mất khi nhập gộp.
+    func testManualWordsSurviveBackupImport() throws {
+        let (a, _) = makeStore(); let (b, _) = makeStore()
+        a.mergeLearnedWords(LearnedWords(uni: ["việt": 3], manual: ["Kubernetes"]))
+        b.mergeLearnedWords(LearnedWords(uni: ["nam": 2], manual: ["VietTelex"]))
+        b.apply(try BackupCodec.decode(BackupCodec.encode(a.snapshot(includeLearned: true))))
+        let lw = b.learnedWords()!
+        XCTAssertEqual(Set(lw.manual), ["VietTelex", "Kubernetes"])
+        XCTAssertEqual(lw.uni["kubernetes"], 1)
+        XCTAssertEqual(lw.uni["nam"], 2)
+        // file ghi ra đọc được bằng UserLangModel: từ thêm tay được gợi ý ngay
+        let dir = try XCTUnwrap(b.containerURL)
+        let m = UserLangModel(fileURL: dir.appendingPathComponent("userlm.plist"), synchronous: true)
+        XCTAssertEqual(m.manualCompletions("kube"), ["Kubernetes"])
     }
 
     func testLearnedWordsMergeTakesMax() {

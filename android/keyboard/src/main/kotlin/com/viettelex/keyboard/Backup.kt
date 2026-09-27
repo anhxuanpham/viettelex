@@ -61,8 +61,10 @@ data class LearnedWords(
     val uni: Map<String, Int> = emptyMap(),
     val bi: Map<String, Map<String, Int>> = emptyMap(),
     val tri: Map<String, Map<String, Int>> = emptyMap(),
+    /** Từ thêm tay (Từ điển cá nhân), dạng hiển thị ("VietTelex"). JSON: "manual" (tuỳ chọn). */
+    val manual: List<String> = emptyList(),
 ) {
-    val isEmpty get() = uni.isEmpty() && bi.isEmpty() && tri.isEmpty()
+    val isEmpty get() = uni.isEmpty() && bi.isEmpty() && tri.isEmpty() && manual.isEmpty()
 
     /** Gộp khi nhập: count lớn hơn mỗi mục (nhập lại cùng file không nhân đôi). */
     fun merged(o: LearnedWords): LearnedWords {
@@ -73,7 +75,10 @@ data class LearnedWords(
             for ((k, v) in b) out[k] = m1(out[k] ?: emptyMap(), v)
             return out
         }
-        return LearnedWords(m1(uni, o.uni), m2(bi, o.bi), m2(tri, o.tri))
+        // Từ thêm tay: hợp theo lowercase, giữ dạng hiển thị đang có.
+        val man = LinkedHashMap<String, String>()
+        for (w in manual + o.manual) man.putIfAbsent(w.lowercase(), w)
+        return LearnedWords(m1(uni, o.uni), m2(bi, o.bi), m2(tri, o.tri), man.values.toList())
     }
 }
 
@@ -109,7 +114,11 @@ object BackupCodec {
         p.settings?.let { root["settings"] = it }
         p.shortcuts?.let { root["shortcuts"] = it }
         p.templates?.let { t -> root["templates"] = t.map { mapOf("label" to it.label, "text" to it.text) } }
-        p.learnedWords?.let { root["learnedWords"] = mapOf("uni" to it.uni, "bi" to it.bi, "tri" to it.tri) }
+        p.learnedWords?.let {
+            val lw = mutableMapOf<String, Any>("uni" to it.uni, "bi" to it.bi, "tri" to it.tri)
+            if (it.manual.isNotEmpty()) lw["manual"] = it.manual
+            root["learnedWords"] = lw
+        }
         return MiniJson.write(root, pretty = true) + "\n"
     }
 
@@ -152,7 +161,8 @@ object BackupCodec {
             out
         }
         val learned = (root["learnedWords"] as? Map<*, *>)?.let {
-            LearnedWords(counts(it["uni"]), nested(it["bi"]), nested(it["tri"]))
+            LearnedWords(counts(it["uni"]), nested(it["bi"]), nested(it["tri"]),
+                (it["manual"] as? List<*>)?.mapNotNull { w -> (w as? String)?.let(UserLangModel::normalizeManual) } ?: emptyList())
         }
         val createdAt = (root["createdAt"] as? String)?.let { runCatching { Instant.parse(it) }.getOrNull() }
         return BackupPayload(createdAt, root["platform"] as? String, settings, shortcuts, templates, learned)

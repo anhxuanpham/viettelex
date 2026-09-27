@@ -79,7 +79,8 @@ final class BackupStore: SyncLocal {
               let uni = d["uni"] as? [String: Int] else { return nil }
         return LearnedWords(uni: uni,
                             bi: d["bi"] as? [String: [String: Int]] ?? [:],
-                            tri: d["tri"] as? [String: [String: Int]] ?? [:])
+                            tri: d["tri"] as? [String: [String: Int]] ?? [:],
+                            manual: d["manual"] as? [String] ?? [])
     }
 
     /// Gộp vào file hiện có (count lớn hơn). Bàn phím nạp lại file lần hiện kế tiếp.
@@ -90,10 +91,16 @@ final class BackupStore: SyncLocal {
            let d = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any],
            let ld = d["lastDecay"] as? Date { lastDecay = ld }
         let merged = (learnedWords() ?? LearnedWords()).merged(with: lw)
-        let plist: [String: Any] = ["version": 3, "uni": merged.uni, "bi": merged.bi,
+        // Từ thêm tay luôn có mặt trong uni (như keepManual của UserLangModel).
+        var uni = merged.uni
+        for m in merged.manual where uni[m.lowercased()] == nil { uni[m.lowercased()] = 1 }
+        var plist: [String: Any] = ["version": 3, "uni": uni, "bi": merged.bi,
                                     "tri": merged.tri, "lastDecay": lastDecay]
+        if !merged.manual.isEmpty { plist["manual"] = merged.manual }
         if let data = try? PropertyListSerialization.data(fromPropertyList: plist, format: .binary, options: 0) {
             try? data.write(to: url, options: .atomic)
+            // Bàn phím thấy mốc đổi ⇒ bỏ bảng trong RAM, nạp file vừa gộp (không ghi đè nó).
+            defaults.set(Date().timeIntervalSince1970, forKey: "userlmResetAt")
         }
     }
 

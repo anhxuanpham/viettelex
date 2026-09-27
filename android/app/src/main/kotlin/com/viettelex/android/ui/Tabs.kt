@@ -268,6 +268,16 @@ fun TinhNangTab() {
         RowDivider()
         BoolToggle(Keys.TEMPLATES_ENABLED, Prefs.D.templatesEnabled, "Mẫu câu", "Nút ☰ trên bàn phím chèn nhanh câu soạn sẵn — quản lý ở tab Mẫu Câu.")
         RowDivider()
+        var showDict by remember { mutableStateOf(false) }
+        VTRow(onClick = { showDict = true }) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Từ điển cá nhân", style = VTType.body, color = c.label)
+                Text("Xem, tìm, xoá từ đã học; thêm tên riêng, thuật ngữ.", style = VTType.footnote, color = c.secondary)
+            }
+            Text("›", style = VTType.title3, color = c.tertiary)
+        }
+        if (showDict) UserDictDialog { showDict = false }
+        RowDivider()
         VTRow(onClick = {
             java.io.File(ctx.filesDir, Keys.USERLM_FILE).delete()
             // IME (cùng process) thấy mốc đổi ⇒ bỏ model trong RAM, seed lại, không ghi đè.

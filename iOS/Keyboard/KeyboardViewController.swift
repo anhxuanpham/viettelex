@@ -118,6 +118,7 @@ final class KeyboardViewController: UIInputViewController {
         textToolUndo = nil
         keyboard.textToolsEnabled = PlusGate.isUnlocked(.textTools)
         let settings = KeyboardSettings.load()
+        checkExternalDictEdit()
         clip.load(from: UserDefaultsProvider.shared)
         // Ẩn danh (thủ công, trong app): không học từ, không lưu clipboard.
         learnEnabled = settings.learnWords && !clip.incognito
@@ -168,6 +169,18 @@ final class KeyboardViewController: UIInputViewController {
     /// suspend/kill không làm mất; Apple cũng ghi rõ synchronize() không cần gọi.
     /// Không Full Access thì iOS chặn ghi → giá trị đọc lại không khớp mãi; memo
     /// theo process để không thử ghi lại mỗi lần hiện.
+    /// Mốc "userlmResetAt" (App Group) lần hiện trước. App sửa Từ điển cá nhân / "Xóa từ
+    /// đã học" ⇒ mốc đổi ⇒ bỏ bảng trong RAM, nạp lại file app vừa ghi (không ghi đè nó).
+    private var seenDictResetAt: Double?
+    private func checkExternalDictEdit() {
+        let v = UserDefaults(suiteName: "group.com.viettelex")?.double(forKey: "userlmResetAt") ?? 0
+        if let seen = seenDictResetAt, seen != v {
+            langModel.reloadAfterExternalEdit()
+            ctxCacheKey = nil
+        }
+        seenDictResetAt = v
+    }
+
     private static var reportedFullAccess: Bool?
     private static var lastHeartbeatAttempt: TimeInterval = 0
     private func reportStatusToApp() {
@@ -991,6 +1004,13 @@ final class KeyboardViewController: UIInputViewController {
         // Inline suggestion (research 2026-07-24): pool tương thích dấu từ
         // VNSuggest, re-rank = log(staticFreq) + λ₁·log(personal) +
         // λ₂·context-bonus + λ₃·chỉ-còn-thiếu-dấu.
+        // Từ thêm tay (Từ điển cá nhân) khớp tiền tố: đứng đầu pool với freq = trần lexicon
+        // (255) — lexicon không có tên riêng/thuật ngữ nên VNSuggest không bao giờ đưa ra.
+        let manualHits = langModel.manualCompletions(composed)
+        let pool = manualHits.isEmpty ? pool : {
+            let low = Set(manualHits.map { $0.lowercased() })
+            return manualHits.map { VNSuggest.Match(word: $0, freq: 255) } + pool.filter { !low.contains($0.word.lowercased()) }
+        }()
         if !pool.isEmpty {
             // ctx chỉ đổi khi (lastWord, lastWord2) đổi — cache, khỏi gọi
             // nextWords mỗi keystroke trong lúc đang gõ dở một từ.

@@ -33,6 +33,8 @@ targets:
       - Keyboard/Wallpaper.swift
       - Keyboard/Shortcuts.swift
       - Shared
+      # Từ điển cá nhân: app đọc/sửa userlm.plist bằng chính model của bàn phím.
+      - Keyboard/UserLangModel.swift
       - path: ios-mau-cau.yml
         buildPhase: resources
     settings:

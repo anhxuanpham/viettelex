@@ -47,7 +47,9 @@ object ImeIcons {
     const val EXPAND = 29
     /** Thanh gợi ý: mở bảng sửa văn bản (con trỏ chữ I). */
     const val CURSOR = 30
-    private const val COUNT = 31
+    /** Gợi ý giữ lâu "," = gõ giọng nói. */
+    const val MIC = 31
+    private const val COUNT = 32
 
     /** Thứ tự icon category của plane emoji (clock → flag). */
     val CATEGORY = intArrayOf(CLOCK, FACE, HARE, FORK_KNIFE, SOCCER, CAR, BULB, HEART, FLAG)
@@ -219,6 +221,11 @@ object ImeIcons {
             moveTo(8.5f, 3.5f); quadTo(12f, 3.5f, 12f, 5.5f); quadTo(12f, 3.5f, 15.5f, 3.5f)
             moveTo(8.5f, 20.5f); quadTo(12f, 20.5f, 12f, 18.5f); quadTo(12f, 20.5f, 15.5f, 20.5f)
             moveTo(3f, 12f); lineTo(6.5f, 12f); moveTo(17.5f, 12f); lineTo(21f, 12f)
+        }
+        p(MIC, 1.8f) {
+            addRoundRect(RectF(9f, 3f, 15f, 14f), 3f, 3f, Path.Direction.CW)
+            moveTo(5.5f, 11f); quadTo(5.5f, 17.5f, 12f, 17.5f); quadTo(18.5f, 17.5f, 18.5f, 11f)
+            moveTo(12f, 17.5f); lineTo(12f, 21f)
         }
         p(GRID, 0f) {
             addRoundRect(RectF(4f, 4f, 10.5f, 10.5f), 1.8f, 1.8f, Path.Direction.CW)

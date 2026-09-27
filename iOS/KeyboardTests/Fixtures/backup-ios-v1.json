@@ -7,6 +7,9 @@
         "ơn" : 5
       }
     },
+    "manual" : [
+      "VietTelex"
+    ],
     "tri" : {
       "cảm\u0001ơn" : {
         "nhiều" : 3
@@ -15,6 +18,7 @@
     "uni" : {
       "cảm" : 7,
       "nhiều" : 4,
+      "viettelex" : 5,
       "ơn" : 6
     }
   },

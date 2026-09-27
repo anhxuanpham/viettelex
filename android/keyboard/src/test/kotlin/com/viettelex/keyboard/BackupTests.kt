@@ -68,8 +68,24 @@ class BackupTests {
         assertNull(p.settings!!["hardwareTelex"])
         assertEquals(mapOf("ko" to "không", "stk" to "số tài khoản", "đc" to "được"), p.shortcuts)
         assertEquals(listOf(TemplateItem("👋", "Chào buổi sáng"), TemplateItem("", "Anh nói \"ok\" nhé\nDòng 2")), p.templates)
-        assertEquals(LearnedWords(mapOf("cảm" to 7, "ơn" to 6, "nhiều" to 4), mapOf("cảm" to mapOf("ơn" to 5)),
-            mapOf("cảm\u0001ơn" to mapOf("nhiều" to 3))), p.learnedWords)
+        assertEquals(LearnedWords(mapOf("cảm" to 7, "ơn" to 6, "nhiều" to 4, "viettelex" to 5), mapOf("cảm" to mapOf("ơn" to 5)),
+            mapOf("cảm\u0001ơn" to mapOf("nhiều" to 3)), listOf("VietTelex")), p.learnedWords)
+    }
+
+    /** Từ thêm tay (Từ điển cá nhân) đi qua sao lưu và KHÔNG mất khi nhập gộp vào file. */
+    @Test fun manualWordsSurviveBackupImport() {
+        val dir = Files.createTempDirectory("bk-manual").toFile()
+        val f = File(dir, "userlm.bin")
+        val direct = java.util.concurrent.Executor { it.run() }
+        UserLangModel(f, ImmediateMainThread(), direct).apply { addWord("VietTelex"); save() }
+        val exported = BackupCodec.decode(BackupCodec.encode(androidPayload.copy(
+            learnedWords = LearnedWords(mapOf("kubernetes" to 5), manual = listOf("Kubernetes")))))
+        UserLangModel.mergeLearnedIntoFile(exported.learnedWords!!, f)
+        assertEquals(setOf("VietTelex", "Kubernetes"), UserLangModel.readLearned(f)!!.manual.toSet())
+        val m = UserLangModel(f, ImmediateMainThread(), direct)
+        assertEquals(listOf("Kubernetes"), m.manualCompletions("kube"))
+        assertEquals(listOf("VietTelex"), m.manualCompletions("viet"))
+        dir.deleteRecursively()
     }
 
     @Test fun forwardCompatibleFile() {
@@ -119,7 +135,8 @@ class BackupTests {
         assertEquals(mapOf("hn" to "Hà Nội", "ko" to "không", "stk" to "số tài khoản", "đc" to "được"),
             BackupPrefs.shortcutsFromPref(plan.writes[BackupPrefs.SHORTCUTS_KEY]))
         assertEquals(listOf("Chào buổi sáng", "Anh nói \"ok\" nhé\nDòng 2"), plan.templates!!.map { it.text })
-        assertEquals(3, plan.learnedWords!!.uni.size)
+        assertEquals(4, plan.learnedWords!!.uni.size)          // 3 từ học + 1 từ thêm tay
+        assertEquals(listOf("VietTelex"), plan.learnedWords!!.manual)
         assertTrue("3 gõ tắt" in plan.summary, plan.summary)
         assertTrue("1 mẫu câu mới" in plan.summary, plan.summary)
     }

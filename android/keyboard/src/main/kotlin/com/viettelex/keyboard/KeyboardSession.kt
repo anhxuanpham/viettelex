@@ -674,6 +674,13 @@ class KeyboardSession(
         val literal = if (predicted == composed) raw else composed
         var word: String? = null
         var word2: String? = null
+        // Từ thêm tay (Từ điển cá nhân) khớp tiền tố: đứng đầu pool (freq cao) — lexicon
+        // không có tên riêng/thuật ngữ nên VNSuggest không bao giờ đưa ra.
+        val manualHits = langModel.manualCompletions(composed)
+        val pool = if (manualHits.isEmpty()) pool else {
+            val low = manualHits.mapTo(HashSet()) { it.lowercase() }
+            manualHits.map { VNSuggest.Match(it, MANUAL_FREQ) } + pool.filter { it.word.lowercase() !in low }
+        }
         if (pool.isNotEmpty()) {
             val ctxKey = (lastWord ?: "") + "\u0001" + (lastWord2 ?: "")
             if (ctxKey != ctxCacheKey) {
@@ -910,6 +917,8 @@ class KeyboardSession(
     companion object {
         const val ADD_TONES_LABEL = "Thêm dấu"
         const val UNDO_TONES_LABEL = "↩\uFE0E Hoàn tác"
+        /** freq giả cho từ thêm tay trong pool hoàn thiện = trần freq lexicon (255). */
+        const val MANUAL_FREQ = 255
         val EMAIL_SUFFIXES = listOf("gmail.com", "yahoo.com", "outlook.com")
         val DOMAIN_TLDS = listOf("com", "vn", "net")
 

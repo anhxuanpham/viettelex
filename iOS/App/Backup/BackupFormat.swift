@@ -76,7 +76,9 @@ struct LearnedWords: Equatable {
     var uni: [String: Int] = [:]
     var bi: [String: [String: Int]] = [:]
     var tri: [String: [String: Int]] = [:]
-    var isEmpty: Bool { uni.isEmpty && bi.isEmpty && tri.isEmpty }
+    /// Từ thêm tay (Từ điển cá nhân), dạng hiển thị ("VietTelex"). JSON: "manual" (tuỳ chọn).
+    var manual: [String] = []
+    var isEmpty: Bool { uni.isEmpty && bi.isEmpty && tri.isEmpty && manual.isEmpty }
 
     /// Gộp khi nhập: lấy count LỚN hơn mỗi mục (nhập lại cùng file không nhân đôi).
     func merged(with o: LearnedWords) -> LearnedWords {
@@ -86,7 +88,10 @@ struct LearnedWords: Equatable {
         func m2(_ a: [String: [String: Int]], _ b: [String: [String: Int]]) -> [String: [String: Int]] {
             a.merging(b) { m1($0, $1) }
         }
-        return LearnedWords(uni: m1(uni, o.uni), bi: m2(bi, o.bi), tri: m2(tri, o.tri))
+        // Từ thêm tay: hợp theo lowercase, giữ dạng hiển thị đang có.
+        var seen = Set<String>(), man: [String] = []
+        for w in manual + o.manual where seen.insert(w.lowercased()).inserted { man.append(w) }
+        return LearnedWords(uni: m1(uni, o.uni), bi: m2(bi, o.bi), tri: m2(tri, o.tri), manual: man)
     }
 }
 
@@ -137,7 +142,11 @@ enum BackupCodec {
         }
         if let sc = p.shortcuts { root["shortcuts"] = sc }
         if let t = p.templates { root["templates"] = t.map { ["label": $0.label, "text": $0.text] } }
-        if let lw = p.learnedWords { root["learnedWords"] = ["uni": lw.uni, "bi": lw.bi, "tri": lw.tri] }
+        if let lw = p.learnedWords {
+            var o: [String: Any] = ["uni": lw.uni, "bi": lw.bi, "tri": lw.tri]
+            if !lw.manual.isEmpty { o["manual"] = lw.manual }
+            root["learnedWords"] = o
+        }
         let data = (try? JSONSerialization.data(
             withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])) ?? Data()
         return data + Data("\n".utf8)
@@ -187,7 +196,10 @@ enum BackupCodec {
             p.templates = out
         }
         if let lw = root["learnedWords"] as? [String: Any] {
-            p.learnedWords = LearnedWords(uni: counts(lw["uni"]), bi: nested(lw["bi"]), tri: nested(lw["tri"]))
+            p.learnedWords = LearnedWords(uni: counts(lw["uni"]), bi: nested(lw["bi"]), tri: nested(lw["tri"]),
+                                          manual: (lw["manual"] as? [Any] ?? []).compactMap {
+                                              ($0 as? String).flatMap(UserLangModel.normalizeManual)
+                                          })
         }
         return p
     }
