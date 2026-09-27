@@ -282,6 +282,8 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
             th.dp(KeyLayout.keyAreaDp(th.tablet, th.landscape, settings.rowHeightAdjust, settings.numberRow)),
             field.numberSigned, field.numberDecimal, settings.numberRow)
         kb.keyPreview = settings.keyPreview
+        kb.configureSpaceFlick(settings.spaceSwipeLanguage, session.language)
+        if (session.language == com.viettelex.keyboard.KeyboardLanguage.EN) warmEnglish()
         kb.textToolsEnabled = PlusGate.isUnlocked(PlusFeature.TEXT_TOOLS) && !field.isSecure
         st.setPlane(kb.plane)
         // Giữ lâu "," = gõ giọng nói: chỉ khi máy có IME giọng nói (đọc lại khi vào ô mới —
@@ -319,6 +321,8 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
             capWords = field.capWords, capCharacters = field.capCharacters,
             initialCaps = info.initialCapsMode != 0, noLearning = field.noLearning,
             packageName = info.packageName, urlField = proxy.uriField))
+        // Ngôn ngữ (vuốt phím cách) lưu riêng: ghi không đụng prefs cài đặt (listener/theme).
+        session.restoreLanguage(stateStore().getString(Keys.KEYBOARD_LANGUAGE, null), proxy)
         hwSetting = settings.hardwareTelex
         fieldReady = true
     }
@@ -487,6 +491,28 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
 
     // MARK: phím
 
+    private var stateStoreCache: SharedPreferences? = null
+    private fun stateStore(): SharedPreferences =
+        stateStoreCache ?: getSharedPreferences("ime_state", MODE_PRIVATE).also { stateStoreCache = it }
+
+    /** enlexicon + bảng từ phổ biến nạp nền (lần đầu vào Tiếng Anh), khỏi trễ phím đầu. */
+    private fun warmEnglish() { worker().post { com.viettelex.keyboard.SwipeEnglish.top } }
+
+    /** Vuốt phím cách: đổi Tiếng Việt ↔ Tiếng Anh (chốt từ đang gõ, lưu trạng thái). */
+    override fun onSpaceFlick() {
+        clearSwipeUndo()
+        if (!proxy.begin()) return
+        val lang = try { session.toggleLanguage(proxy) } finally { proxy.end() }
+        resetIfEditFailed()
+        if (lang == null) return
+        stateStore().edit().putString(Keys.KEYBOARD_LANGUAGE, lang.id).apply()
+        keyboard?.spaceLanguage = lang
+        if (lang == com.viettelex.keyboard.KeyboardLanguage.EN) warmEnglish()
+        pendingGen = session.generation
+        handler.removeCallbacks(suggestRun)
+        refreshBar()
+    }
+
     override fun onKey(key: Key) {
         if (key == Key.Backspace && toolUndo != null) { undoTextTool(); return }   // ⌫ ngay sau = hoàn tác
         clearSwipeUndo()
@@ -625,11 +651,12 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
                     futo?.let { f -> worker().post { synchronized(swipeLock) { if (futo === f) f.load() } } }
                 }
         }
-        val choice = SwipeSuggest.choose(cands, ctx.word, case, ctx.lambdaFreq)
+        // chọn từ + (nếu có) sửa lại từ vuốt trước theo ngữ cảnh hai phía (SwipeRevise)
+        val res = session.resolveSwipe(cands, ctx, case)
         if (TouchLog.enabled) TouchLog.write(String.format(java.util.Locale.ROOT, "swipe decode %.1fms pts=%d cands=%d",
             (System.nanoTime() - t0) / 1e6, path.count, cands.size))
-        if (choice == null || !proxy.begin()) { applyAutoShift(); refreshBar(); return }
-        val out = try { session.commitSwipe(choice, proxy) } finally { proxy.end() }
+        if (res == null || !proxy.begin()) { applyAutoShift(); refreshBar(); return }
+        val out = try { session.commitSwipe(res, proxy) } finally { proxy.end() }
         resetIfEditFailed()
         strip?.hidePasteCard()
         pendingGen = out.generation

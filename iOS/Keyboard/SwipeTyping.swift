@@ -25,6 +25,23 @@ final class SwipeTyping {
         var english = false
         /// Các phương án tiếng Anh trong `alternatives` (chọn ⇒ chèn nguyên văn).
         var englishAlternatives: Set<String> = []
+        /// Ứng viên Việt đã chấm của từ này — cú vuốt kế sửa lại được (SwipeRevise).
+        var scored: [SwipeWord] = []
+        /// Cú vuốt này đã sửa lại từ vuốt trước (`committed` là từ mới).
+        var revised: Revision?
+    }
+
+    /// Từ vuốt vừa sửa lại: từ cũ → từ mới (đã theo chữ hoa của từ cũ).
+    struct Revision: Equatable {
+        let old: String
+        let new: String
+    }
+
+    /// Từ vuốt Việt còn mở + ứng viên đã chấm — đưa cho cú vuốt NGAY SAU để sửa lại.
+    struct Revisable: Equatable {
+        let word: String
+        let scored: [SwipeWord]
+        let sc: SwipeCase
     }
 
     /// Kết quả thuần của pick/resolve.
@@ -196,7 +213,16 @@ final class SwipeTyping {
     func resolve(_ path: SwipePath, contextWords: [String], count: @escaping (String) -> Int = { _ in 0 },
                  prev: String? = nil, bigram: SyllableBigram? = SyllableBigram.shared,
                  prev2: String? = nil, lm: SyllableLM? = SyllableLM.shared,
-                 english: SwipeEnglishPrior? = nil, case sc: SwipeCase) -> Choice? {
+                 english: SwipeEnglishPrior? = nil, englishOnly: Bool = false,
+                 case sc: SwipeCase) -> Choice? {
+        resolveFull(path, contextWords: contextWords, count: count, prev: prev, bigram: bigram,
+                    prev2: prev2, lm: lm, english: english, englishOnly: englishOnly, case: sc)?.choice
+    }
+
+    private func resolveFull(_ path: SwipePath, contextWords: [String], count: @escaping (String) -> Int,
+                             prev: String?, bigram: SyllableBigram?, prev2: String?, lm: SyllableLM?,
+                             english: SwipeEnglishPrior?, englishOnly: Bool = false, case sc: SwipeCase)
+        -> (choice: Choice, cands: [SwipeCandidate], ctx: Context)? {
         guard layout != nil, path.count >= 2 else { return nil }
         let ctx = Context(next: Set(contextWords.map { $0.lowercased() }), count: count,
                           prev: prev, bigram: bigram, prev2: prev2, lm: lm)
@@ -215,7 +241,14 @@ final class SwipeTyping {
             }
             return d.decode(path, topK: 5, context: ctx.folded, english: english, englishContext: enCtx)
         }
-        return Self.pick(cands, context: ctx, case: sc)
+        let pool = englishOnly ? Self.englishOnly(cands) : cands
+        return Self.pick(pool, context: ctx, case: sc).map { ($0, pool, ctx) }
+    }
+
+    /// Chế độ Tiếng Anh (vuốt phím cách): chỉ giữ ứng viên tiếng Anh — decode chạy với
+    /// `SwipeLangContext.onlyEnglishPrior` để top-K không bị âm tiết Việt chiếm chỗ.
+    static func englishOnly(_ cands: [SwipeCandidate]) -> [SwipeCandidate] {
+        cands.filter { $0.lang == .en }
     }
 
     /// Phần thuần: từ top-K dạng không dấu → từ chèn + phương án. Phương án = các biến
@@ -278,14 +311,43 @@ final class SwipeTyping {
     }
 
     /// Nhấc tay: giải mã rồi chèn. nil = không nhận ra gì (không đụng màn hình).
+    /// `previous` = từ vuốt Việt đang mở ngay trước (caller đã kiểm còn nguyên, chưa chọn
+    /// phương án): chấm lại theo ngữ cảnh hai phía, đổi thì thay trên màn hình (đuôi phải
+    /// đọc được và khớp đúng) trước khi chốt, rồi chọn lại từ này theo ngữ cảnh trái mới.
+    /// `nextWords` = UserLangModel.nextWords cho ngữ cảnh mới (nil ⇒ không có điểm cá nhân).
     func finish(_ path: SwipePath, case sc: SwipeCase, contextWords: [String],
                 count: @escaping (String) -> Int = { _ in 0 }, prev: String? = nil,
-                prev2: String? = nil, english: SwipeEnglishPrior? = nil,
+                prev2: String? = nil, english: SwipeEnglishPrior? = nil, englishOnly: Bool = false,
+                previous: Revisable? = nil, nextWords: ((String, String?) -> [String])? = nil,
+                bigram: SyllableBigram? = SyllableBigram.shared, lm: SyllableLM? = SyllableLM.shared,
                 bridge: EngineBridge, proxy: TextProxyLike) -> Outcome? {
-        guard let r = resolve(path, contextWords: contextWords, count: count, prev: prev,
-                              prev2: prev2, english: english, case: sc) else {
+        guard let full = resolveFull(path, contextWords: contextWords, count: count, prev: prev,
+                                     bigram: bigram, prev2: prev2, lm: lm, english: english,
+                                     englishOnly: englishOnly, case: sc) else {
             TouchLog.write("swipe: không có ứng viên (pts=\(path.count))")
             return nil
+        }
+        var r = full.choice
+        var scored = r.english ? [] : SwipeRevise.scored(full.cands, context: full.ctx.word,
+                                                        lambdaFreq: full.ctx.lambdaFreq)
+        var revised: Revision?
+        if let rec = previous, !r.english,
+           let new = SwipeRevise.revise(rec.scored, current: rec.word.lowercased(), prev: prev2,
+                                        next: r.word.lowercased(), lm: lm) {
+            let newCased = rec.sc.apply(new)
+            if proxy.contextBeforeInput?.hasSuffix(rec.word) == true,
+               bridge.replaceSwipeWord(with: newCased, accepted: false, proxy: proxy) {
+                revised = Revision(old: rec.word, new: newCased)
+                let nctx = Context(next: Set((nextWords?(new, prev2) ?? []).map { $0.lowercased() }),
+                                   count: count, prev: new, bigram: bigram, prev2: prev2, lm: lm)
+                let re = SwipeRevise.rerank(full.cands, old: full.ctx.word, oldLambda: full.ctx.lambdaFreq,
+                                            new: nctx.word, newLambda: nctx.lambdaFreq)
+                if let c = Self.pick(re, context: nctx, case: sc) {
+                    r = c
+                    scored = c.english ? [] : SwipeRevise.scored(re, context: nctx.word, lambdaFreq: nctx.lambdaFreq)
+                }
+                TouchLog.write("swipe: sửa từ trước (\(rec.word.count)→\(newCased.count) ký tự)")
+            }
         }
         let committed = bridge.insertSwipeWord(r.word, literal: r.english, proxy: proxy)
         if TouchLog.enabled {
@@ -293,7 +355,8 @@ final class SwipeTyping {
                                   path.count, path.length, path.duration * 1000, r.alternatives.count))
         }
         return Outcome(committed: committed, word: r.word, alternatives: r.alternatives,
-                       english: r.english, englishAlternatives: r.englishAlternatives)
+                       english: r.english, englishAlternatives: r.englishAlternatives,
+                       scored: scored, revised: revised)
     }
 
     /// Bỏ dấu tiếng Việt (đ → d), chữ thường — khoá so với dạng không dấu của lexicon.

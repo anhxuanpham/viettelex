@@ -78,6 +78,14 @@ final class SuggestionSlotsTests: XCTestCase {
         XCTAssertEqual(payloads(s), "\(ADD)|\(N)|a")
     }
 
+    /// "↩︎ từ cũ" sau khi vuốt sửa lại từ trước: slot đầu, biến thể vuốt dời phải.
+    func testReviseUndoLeadsSwipeAlternatives() {
+        let r = KeyboardView.undoReviseToken
+        var s = S(); s.nextWords = ["a", "b", "c"]; s.actionLabel = "↩︎ có"; s.actionPayload = r
+        XCTAssertEqual(payloads(s), "\(r)|a|b")
+        XCTAssertEqual(payloads(s, pill: true), "\(r)|a|b")
+    }
+
     /// Đường thật trên KeyboardView: chip số giữa + "Thêm dấu" đầu; clipboard thay bar.
     @MainActor func testKeyboardViewRendersArrangement() throws {
         let kb = KeyboardView(needsGlobe: false, inputController: nil, onKey: { _ in })
@@ -91,5 +99,55 @@ final class SuggestionSlotsTests: XCTestCase {
         var c = S(); c.paste = true; c.clipChips = [otp]; c.number = "x"
         kb.showSuggestions(c)
         XCTAssertEqual(kb.debugSlotPayloads(), [clip("482913"), PASTE, nil])
+    }
+
+    /// Bug 27/09/2026: kết quả gợi ý nền về GIỮA chạm xuống và nhấc tay thay ô ⇒ trước đây
+    /// chèn từ mới (đọc payload lúc nhấc). Phải chèn đúng chữ đang hiện lúc chạm xuống.
+    @MainActor func testTapCommitsPayloadShownAtTouchDown() {
+        let kb = KeyboardView(needsGlobe: false, inputController: nil, onKey: { _ in })
+        let host = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 320))
+        host.addSubview(kb); kb.frame = host.bounds
+        kb.setSuggestionsEnabled(true)
+        kb.layoutIfNeeded()
+        var got: [String] = []
+        kb.onSuggestion = { got.append($0) }
+        kb.showSuggestions(S(literal: "casn", word: "cánh", word2: "cắn"))
+        let slot = kb.debugSlotControl(2)
+        slot.sendActions(for: .touchDown)
+        kb.showSuggestions(S(literal: "casn", word: "cánh", word2: "cân"))   // kết quả nền mới
+        slot.sendActions(for: .touchUpInside)
+        XCTAssertEqual(got, ["cắn"])
+        slot.sendActions(for: .touchDown); slot.sendActions(for: .touchUpInside)
+        XCTAssertEqual(got, ["cắn", "cân"])
+    }
+
+    /// Hit-area slot phủ cả phần strip dưới bar 20pt (trước đây bar UIStackView 20pt chặn
+    /// ⇒ chạm thấp trên gợi ý là vùng chết), không lấn hàng phím.
+    @MainActor func testSlotHitAreaCoversStripBelowBar() throws {
+        let kb = KeyboardView(needsGlobe: false, inputController: nil, onKey: { _ in })
+        let host = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 320))
+        host.addSubview(kb); kb.frame = host.bounds
+        kb.setSuggestionsEnabled(true)
+        kb.layoutIfNeeded()
+        kb.showSuggestions(S(nextWords: ["a", "b", "c"]))
+        let cell = kb.debugSuggestionGeometry().cells[1]
+        XCTAssertTrue(kb.hitTest(CGPoint(x: cell.midX, y: cell.midY), with: nil) === kb.debugSlotControl(1))
+        let low = CGPoint(x: cell.midX, y: KeyboardView.openStrip - 1)
+        XCTAssertTrue(kb.hitTest(low, with: nil) === kb.debugSlotControl(1))
+        XCTAssertFalse(kb.hitTest(CGPoint(x: cell.midX, y: KeyboardView.openStrip + 6), with: nil)
+                       === kb.debugSlotControl(1))
+    }
+
+    /// Bug 27/09/2026: gõ "casn" (ý "caan", a trượt sang s) bar chỉ có "casn" | cánh | cắn.
+    @MainActor func testToneSlipOffersIntendedWordOnBar() {
+        let saved = UserDefaultsProvider.shared
+        UserDefaultsProvider.shared = KeyboardBenchTests.makeDefaults("B")
+        defer { UserDefaultsProvider.shared = saved }
+        let rig = KeyboardBenchTests.Rig()
+        defer { rig.close() }
+        for (i, c) in "casn".enumerated() { _ = rig.key(c, index: i + 1, drain: 0.05) }
+        KeyboardBenchTests.spin(0.2)
+        XCTAssertTrue(rig.vc.debugKeyboard.debugSlotPayloads().contains("Cân"),
+                      "\(rig.vc.debugKeyboard.debugSlotPayloads())")
     }
 }

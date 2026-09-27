@@ -127,6 +127,8 @@ data class SuggestionSet(
         /** Chip "Thêm dấu" / "Hoàn tác" (ký tự Private Use — không thể là từ thật). */
         const val ADD_TONES_TOKEN = "\uE000addTones"
         const val UNDO_TONES_TOKEN = "\uE000undoTones"
+        /** Chip "↩︎ từ cũ": hoàn tác lần vuốt vừa sửa lại từ vuốt trước (SwipeRevise). */
+        const val UNDO_REVISE_TOKEN = "\uE000undoRevise"
     }
 }
 
@@ -145,11 +147,16 @@ class SuggestJob internal constructor(
     private val prev: String? = null,
     internal val number: String? = null,
 ) {
-    class Result(val pool: List<VNSuggest.Match>, val fix: String?, val pmi: FloatArray? = null)
+    class Result(val pool: List<VNSuggest.Match>, val fix: String?, val pmi: FloatArray? = null,
+                 /** Trượt vào phím thanh mà vẫn ra từ ("casn" → cân) — slot 3. */
+                 val slip: String? = null)
     fun compute(): Result {
+        // Chế độ Tiếng Anh: hoàn thành từ enlexicon, không sửa chạm trượt / bigram Việt.
+        if (bridge.englishMode) return Result(SwipeEnglish.completions(composed, 24), null)
         val pool = VNSuggest.matches(composed, poolLimit = 24, excluding = composed.lowercase())
         val fix = if (pool.isEmpty() && wantFix) AdjacentKeyFixer.lexiconCorrection(raw, bridge) else null
-        return Result(pool, fix, SuggestRank.inlinePmi(pool, prev))
+        val slip = if (fix == null && wantFix) AdjacentKeyFixer.lexiconToneSlip(raw, bridge) else null
+        return Result(pool, fix, SuggestRank.inlinePmi(pool, prev), slip)
     }
 }
 
@@ -226,8 +233,21 @@ class KeyboardSession(
     private var swipeEnglishAlts: Set<String> = emptySet()
     /** Vuốt ra từ tiếng Anh (công tắc con, [KeyboardSettings.swipeEnglish]). */
     var swipeEnglish = true
+    /**
+     * Từ vuốt Việt vừa chèn + ứng viên đã chấm — cú vuốt NGAY SAU được sửa lại nó theo ngữ
+     * cảnh hai phía (SwipeRevise). Chỉ sống qua đúng một phím chữ bị huỷ thành đầu cú vuốt kế.
+     */
+    private class Revisable(val word: String, val scored: List<SwipeWord>, val case: SwipeSuggest.Case)
+    private var revisable: Revisable? = null
+    private var revisableAfterLetter: Revisable? = null
+    /** Vừa sửa lại từ trước: (từ cũ, từ mới) — chip "↩︎ từ cũ", sống khi từ vuốt kế còn mở. */
+    private var reviseUndo: Pair<String, String>? = null
     /** Vài từ tiếng Anh vừa vuốt ra (chữ thường) — ngữ cảnh ngôn ngữ cho cú vuốt kế. */
     private val recentEnglish = ArrayDeque<String>()
+    /** Vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh ([KeyboardSettings.spaceSwipeLanguage]). */
+    var spaceFlickEnabled = false; private set
+    /** Ngôn ngữ đang gõ; công tắc tắt ⇒ luôn VI. */
+    var language = KeyboardLanguage.VI; private set
 
     init {
         langModel.isKnownWord = { VNSuggest.contains(it) }
@@ -263,6 +283,31 @@ class KeyboardSession(
         tonesUndo = null; tonesDismissed = null; tonesCacheBefore = null; tonesCachePlan = null
         addTonesChip = settings.addTonesChip
         numberChipsOn = settings.numberChips
+        spaceFlickEnabled = settings.spaceSwipeLanguage
+        language = KeyboardLanguage.VI
+    }
+
+    /** Sau [startInput]: khôi phục ngôn ngữ đã lưu ([Keys.KEYBOARD_LANGUAGE]). */
+    fun restoreLanguage(stored: String?, proxy: TextProxy) {
+        language = KeyboardLanguage.effective(stored, spaceFlickEnabled)
+        bridge.setEnglish(language == KeyboardLanguage.EN, proxy)
+    }
+
+    /**
+     * Vuốt phím cách: đổi Tiếng Việt ↔ Tiếng Anh. Chốt từ đang gõ trước (học như ranh giới,
+     * không chèn gì). Trả ngôn ngữ mới (IME lưu + vẽ), null khi công tắc tắt.
+     */
+    fun toggleLanguage(proxy: TextProxy): KeyboardLanguage? {
+        if (!spaceFlickEnabled) return null
+        val literal = if (swipeLiteral) openSwipeWord() else null
+        clearSwipe(); clearUndo(); tonesUndo = null
+        if (literal != null) settleLiteral(literal)
+        language = language.toggled
+        val committed = bridge.setEnglish(language == KeyboardLanguage.EN, proxy)
+        if (literal == null) commitAndLearn(committed)
+        lastInsertWasSpace = false
+        generation++
+        return language
     }
 
     /** IME bật/tắt gõ vuốt cho ô hiện tại (sau [startInput]). Tắt ⇒ bridge thôi ghi checkpoint. */
@@ -272,7 +317,10 @@ class KeyboardSession(
         if (!on) clearSwipe()
     }
 
-    private fun clearSwipe() { swipeWord = null; swipeAlts = emptyList(); swipeLiteral = false; swipeEnglishAlts = emptySet() }
+    private fun clearSwipe() {
+        swipeWord = null; swipeAlts = emptyList(); swipeLiteral = false; swipeEnglishAlts = emptySet()
+        revisable = null; reviseUndo = null
+    }
 
     /** Từ vuốt còn mở: từ engine đang soạn, hoặc từ tiếng Anh nguyên văn. */
     private fun openSwipeWord(): String? = swipeWord?.takeIf { swipeLiteral || it == bridge.composedWord }
@@ -350,6 +398,7 @@ class KeyboardSession(
         tonesUndo = null
         val swiped = openSwipeWord()
         val literal = if (swipeLiteral) swiped else null
+        revisableAfterLetter = revisable?.takeIf { key is Key.Letter && it.word == swiped }
         clearSwipe()
         // Từ tiếng Anh vuốt ra đang mở: phím chữ/ranh giới chốt nó (học), phím chữ thêm dấu
         // cách treo trước (không dính "mailx"; huỷ được nếu phím đó là đầu cú vuốt mới).
@@ -467,9 +516,41 @@ class KeyboardSession(
      */
     fun undoLastLetter(proxy: TextProxy): Boolean {
         val ok = bridge.undoLastLetter(proxy)
+        revisable = if (ok) revisableAfterLetter else null
+        revisableAfterLetter = null
         generation++
         return ok
     }
+
+    /** Từ chọn cho một cú vuốt; [revisedPrev] = từ vuốt trước cần thay (đã theo chữ hoa của nó). */
+    class SwipeResolved(val choice: SwipeChoice, val scored: List<SwipeWord>, val case: SwipeSuggest.Case,
+                        val revisedPrev: String? = null)
+
+    /**
+     * Ứng viên decoder → từ chèn. Cú vuốt ngay sau một từ vuốt Việt còn nguyên (chưa sửa, chưa
+     * chọn phương án): chấm lại từ đó theo ngữ cảnh hai phía; đổi thì chọn lại từ này theo ngữ
+     * cảnh trái mới. Chỉ vài lần bung dấu + tra LM — sau nhấc tay, không ở đường phím.
+     */
+    fun resolveSwipe(all: List<SwipeCandidate>, ctx: SwipeSuggest.Context,
+                     case: SwipeSuggest.Case = SwipeSuggest.Case.LOWER): SwipeResolved? {
+        // Chế độ Tiếng Anh (vuốt phím cách): chỉ ứng viên tiếng Anh
+        val cands = if (bridge.englishMode) SwipeSuggest.englishOnly(all) else all
+        val choice = SwipeSuggest.choose(cands, ctx.word, case, ctx.lambdaFreq) ?: return null
+        val scored = if (choice.english) emptyList() else SwipeRevise.scored(cands, ctx.word, ctx.lambdaFreq)
+        val rec = revisable
+        if (rec == null || choice.english || swipeLiteral || !bridge.isComposing || bridge.composedWord != rec.word)
+            return SwipeResolved(choice, scored, case)
+        val new = SwipeRevise.revise(rec.scored, rec.word.lowercase(), lastWord, choice.word.lowercase())
+            ?: return SwipeResolved(choice, scored, case)
+        val nctx = SwipeSuggest.context(langModel, new, lastWord, ctx.english)
+        val re = SwipeRevise.rerank(cands, ctx.word, ctx.lambdaFreq, nctx.word, nctx.lambdaFreq)
+        val c = SwipeSuggest.choose(re, nctx.word, case, nctx.lambdaFreq) ?: choice
+        return SwipeResolved(c, if (c.english) emptyList() else SwipeRevise.scored(re, nctx.word, nctx.lambdaFreq),
+            case, SwipeSuggest.applyCase(new, rec.case))
+    }
+
+    fun commitSwipe(r: SwipeResolved, proxy: TextProxy): KeyOutcome =
+        commitSwipe(r.choice, proxy, r.revisedPrev, r.scored, r.case)
 
     /** Điểm ngữ cảnh cho decoder: từ trước = từ đang soạn (sẽ được chốt) hoặc từ chốt gần nhất. */
     fun swipeContext(): SwipeSuggest.Context {
@@ -483,7 +564,7 @@ class KeyboardSession(
         val p1 = if (composing) pending else lastWord
         val p2 = if (composing) (if (pending != null) lastWord else null) else lastWord2
         // Ngôn ngữ theo 2 từ trước: từ Anh vừa vuốt (nhãn) chắc nhất, rồi bảng từ của engine.
-        val english = if (!swipeEnglish) null else SwipeLangContext.prior(
+        val english = if (bridge.englishMode) SwipeLangContext.ONLY_ENGLISH else if (!swipeEnglish) null else SwipeLangContext.prior(
             SwipeLangContext.classify(p1, lit != null || isRecentEnglish(p1)),
             SwipeLangContext.classify(p2, isRecentEnglish(p2)))
         return SwipeSuggest.context(langModel, p1, p2, english)
@@ -496,17 +577,29 @@ class KeyboardSession(
      * nếu liền trước là chữ, chèn [choice] rồi seed engine bằng nó ⇒ composition đang mở
      * (phím dấu Telex sửa được, ⌫ đầu xoá cả từ, thanh gợi ý hiện biến thể).
      */
-    fun commitSwipe(choice: SwipeChoice, proxy: TextProxy): KeyOutcome {
+    fun commitSwipe(choice: SwipeChoice, proxy: TextProxy, revisedPrev: String? = null,
+                    scored: List<SwipeWord> = emptyList(), case: SwipeSuggest.Case = SwipeSuggest.Case.LOWER): KeyOutcome {
         tonesUndo = null
         val lit = if (swipeLiteral) swipeWord else null
+        val prevWord = revisable?.word
         clearUndo(); clearSwipe()
+        var revised: Pair<String, String>? = null
         if (lit != null) {
             // từ tiếng Anh vuốt trước còn mở: chốt nó + dấu cách
             settleLiteral(lit)
             bridge.boundary(" ", proxy, expand = false)
         } else if (bridge.isComposing) {
+            // Sửa lại từ vuốt trước (ngữ cảnh hai phía): chỉ khi đuôi màn hình đúng là nó.
+            if (revisedPrev != null && prevWord != null && prevWord == bridge.composedWord &&
+                proxy.confirmTail(prevWord)) {
+                proxy.deleteCodePoints(Cp.count(prevWord))
+                proxy.insertText(revisedPrev)
+                revised = prevWord to revisedPrev
+                if (!bridge.adoptWord(revisedPrev)) commitAndLearn(revisedPrev)
+            }
             // dấu cách tự chèn trước từ vuốt: không phải ranh giới người dùng gõ → không gõ tắt
-            commitAndLearn(bridge.boundary(" ", proxy, expand = false))
+            if (bridge.isComposing) commitAndLearn(bridge.boundary(" ", proxy, expand = false))
+            else bridge.boundary(" ", proxy, expand = false)
         } else if (SwipeSuggest.needsLeadingSpace(proxy.contextBeforeInput())) {
             bridge.boundary(" ", proxy, expand = false)
         }
@@ -522,7 +615,10 @@ class KeyboardSession(
             swipeWord = choice.word
             swipeAlts = choice.alternatives
             swipeEnglishAlts = choice.englishAlternatives
+            if (scored.isNotEmpty()) revisable = Revisable(choice.word, scored, case)
+            reviseUndo = revised
         }
+        if (revised != null) TouchLog.write("swipe: sửa từ trước (${Cp.count(revised.first)}→${Cp.count(revised.second)} chars)")
         lastInsertWasSpace = false
         lastKeyWasEmailTrigger = false
         initialCapsPending = false
@@ -601,7 +697,8 @@ class KeyboardSession(
 
     private fun padWords(base: List<String>, need: Int, typed: String = ""): List<String> {
         if (base.size >= need) return base.take(need)
-        val cands = SensitiveWords.filter(langModel.topWords(need + 12), filterSensitive)
+        val top = if (bridge.englishMode) SwipeEnglish.top else langModel.topWords(need + 12)
+        val cands = SensitiveWords.filter(top, filterSensitive)
             .map { caseForContext(DisplayCase.apply(it)) }
         return SuggestionFill.pad(base, cands, need, typed)
     }
@@ -611,7 +708,11 @@ class KeyboardSession(
         suggestReq++
         numberChip = null
         if (!suggestionsActive || barCollapsed) return SuggestionPlan.Ready(null)
-        swipeAlternatives?.let { return SuggestionPlan.Ready(SuggestionSet(nextWords = it)) }
+        swipeAlternatives?.let { alts ->
+            val u = reviseUndo
+            return SuggestionPlan.Ready(SuggestionSet(nextWords = alts, actionLabel = u?.let { "↩\uFE0E ${it.first}" },
+                action = u?.let { SuggestionSet.UNDO_REVISE_TOKEN }))
+        }
         val composed = bridge.composedWord
         var literal: String? = null
         if (composed.isEmpty() && undoOfferActive) literal = restoreUndoComposed
@@ -632,7 +733,12 @@ class KeyboardSession(
                 b.rawWord, b.predictedCommit, b.autoFixAdjacent, lastWord, refreshNumberChip(proxy)))
         }
         val prev = lastWord
-        val next: List<String> = if (prev != null) {
+        val next: List<String> = if (bridge.englishMode) {
+            // Tiếng Anh: từ kế tiếp cá nhân chỉ giữ từ tiếng Anh; đệm bằng từ Anh phổ biến
+            val personal = if (prev != null) langModel.nextWords(prev, lastWord2, 12) else emptyList()
+            padWords(SensitiveWords.filter(personal.filter { SwipeEnglish.contains(it.lowercase()) }, filterSensitive)
+                .take(3).map { caseForContext(it) }, 3)
+        } else if (prev != null) {
             // cá nhân/seed trước; thiếu thì lấp bằng bigram tĩnh (người dùng mới) rồi mới topWords
             val personal = SensitiveWords.filter(langModel.nextWords(prev, lastWord2, 6), filterSensitive).take(3)
             val n = if (personal.size >= 3) personal else SuggestionFill.pad(personal,
@@ -650,7 +756,7 @@ class KeyboardSession(
         // "Hoàn tác" thêm dấu (vừa bấm) thắng thẻ Dán; "Thêm dấu" nhường thẻ Dán (StripView/SuggestionSlots).
         if (tonesUndo != null) return SuggestionPlan.Ready(SuggestionSet(literal = literal, nextWords = next,
             number = number, actionLabel = UNDO_TONES_LABEL, action = SuggestionSet.UNDO_TONES_TOKEN))
-        val offer = literal == null && addTonesPlan(proxy) != null
+        val offer = literal == null && !bridge.englishMode && addTonesPlan(proxy) != null
         return SuggestionPlan.Ready(SuggestionSet(literal = literal, nextWords = next, paste = paste,
             number = number, clipChips = chips,
             actionLabel = if (offer) ADD_TONES_LABEL else null, action = if (offer) SuggestionSet.ADD_TONES_TOKEN else null))
@@ -669,7 +775,7 @@ class KeyboardSession(
     fun completeSuggestions(job: SuggestJob, result: SuggestJob.Result): SuggestionSet? {
         if (job.req != suggestReq || job.gen != generation || bridge !== job.bridge ||
             job.bridge.composedWord != job.composed || !suggestionsActive || barCollapsed) return null
-        return composingSuggestions(job.composed, job.raw, job.predicted, result.pool, result.fix, result.pmi)
+        return composingSuggestions(job.composed, job.raw, job.predicted, result.pool, result.fix, result.pmi, result.slip)
             .copy(number = job.number)
     }
 
@@ -681,7 +787,7 @@ class KeyboardSession(
 
     private fun composingSuggestions(composed: String, raw: String, predicted: String,
                                      pool: List<VNSuggest.Match>, fix: String?,
-                                     pmi: FloatArray? = null): SuggestionSet {
+                                     pmi: FloatArray? = null, slip: String? = null): SuggestionSet {
         val literal = if (predicted == composed) raw else composed
         var word: String? = null
         var word2: String? = null
@@ -706,6 +812,8 @@ class KeyboardSession(
         } else if (fix != null) {
             word = fix
         }
+        // Trượt vào phím thanh mà vẫn ra từ ("casn" → cán, ý là cân): bản sửa vào slot 3.
+        if (slip != null && slip != word) { if (word == null) word = slip else word2 = slip }
         var emojis: List<String> = emptyList()
         val cLow = composed.lowercase()
         lastWord?.let { emojis = EmojiSuggest.emojis(it.lowercase() + " " + cLow) }
@@ -807,6 +915,7 @@ class KeyboardSession(
         }
         if (item == SuggestionSet.ADD_TONES_TOKEN) { applyAddTones(proxy); return }
         if (item == SuggestionSet.UNDO_TONES_TOKEN) { undoAddTones(proxy); return }
+        if (item == SuggestionSet.UNDO_REVISE_TOKEN) { undoRevise(proxy); return }
         tonesUndo = null
         if (item.startsWith(SuggestionSet.CLIP_CHIP_PREFIX)) {
             proxy.insertText(item.substring(SuggestionSet.CLIP_CHIP_PREFIX.length))
@@ -835,6 +944,7 @@ class KeyboardSession(
             // phương án chéo đổi chỗ với từ cũ (từ cũ tiếng Anh ⇒ vẫn là phương án tiếng Anh)
             val eng = swipeEnglishAlts - item + (if (swipeLiteral) setOf(sw) else emptySet())
             val alts = swipeAlts.map { if (it == item) sw else it }
+            revisable = null                       // user đã chọn: cú vuốt kế không sửa lại từ này
             if (itemEnglish) {
                 bridge.adoptLiteral()
                 swipeWord = item; swipeLiteral = true; swipeAlts = alts; swipeEnglishAlts = eng
@@ -867,6 +977,28 @@ class KeyboardSession(
         proxy.insertText(if (isWord) "$item " else item)
         bridge.reset()
         if (isWord) commitAndLearn(item, accepted = true) else { lastWord = null; lastWord2 = null }
+    }
+
+    /**
+     * Chip "↩︎ từ cũ": trả từ vuốt trước về như lúc vuốt (đuôi phải đúng "từ mới + từ đang
+     * mở", lệch ⇒ bỏ) và học lại từ cũ thay từ mới.
+     */
+    private fun undoRevise(proxy: TextProxy) {
+        val (old, new) = reviseUndo ?: return
+        reviseUndo = null
+        revisable = null
+        val sw = openSwipeWord() ?: return
+        val tail = "$new $sw"
+        if (!proxy.confirmTail(tail)) return
+        proxy.deleteCodePoints(Cp.count(tail))
+        proxy.insertText("$old $sw")
+        bridge.forgetLastCommit()
+        val lc = lastCommit
+        if (lc != null && lc.word == new) {
+            lc.learned?.let { langModel.retract(it) }
+            lastWord = lc.prev1; lastWord2 = lc.prev2
+        }
+        commitAndLearn(old, accepted = true)
     }
 
     /** Chạm chip số: thay đúng đuôi đã tính (kiểm lại đuôi trước khi xoá — lệch thì bỏ). */

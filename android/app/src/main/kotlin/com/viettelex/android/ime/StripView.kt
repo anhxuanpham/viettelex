@@ -13,6 +13,7 @@ import android.view.animation.AccelerateDecelerateInterpolator
 import com.viettelex.android.R
 import com.viettelex.keyboard.BarChip
 import com.viettelex.keyboard.BarLayout
+import com.viettelex.keyboard.SlotTapLatch
 import com.viettelex.keyboard.SuggestionSet
 import com.viettelex.keyboard.SuggestionSlots
 import kotlin.math.abs
@@ -427,6 +428,13 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
                 if (target == T_SLOT || target == T_EMOJI || target == T_PASTE || target == T_RESTORE || target == T_PILL || target == T_EDIT) {
                     pressed = target; pressedIndex = targetIndex; invalidate()
                 }
+                // chốt từ đang HIỆN dưới ngón tay — gợi ý nền về trước lúc nhấc không được đổi nó
+                tap.down(when (target) {
+                    T_SLOT -> slotPayload[targetIndex]
+                    T_EMOJI -> emojiText[targetIndex]
+                    T_PILL -> actionPill?.payload
+                    else -> null
+                })
                 longFired = false
                 removeCallbacks(editLongRun)
                 if (target == T_EDIT && oneHandAvailable) postDelayed(editLongRun, LONG_MS)
@@ -439,7 +447,7 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
                 if (abs(e.x - downX) > theme.dp(40f) || abs(e.y - downY) > theme.dp(40f)) return true
                 fire(t)
             }
-            MotionEvent.ACTION_CANCEL -> { removeCallbacks(editLongRun); target = T_NONE; if (pressed != T_NONE) { pressed = T_NONE; invalidate() } }
+            MotionEvent.ACTION_CANCEL -> { removeCallbacks(editLongRun); target = T_NONE; tap.cancel(); if (pressed != T_NONE) { pressed = T_NONE; invalidate() } }
         }
         return true
     }
@@ -481,12 +489,12 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
             T_CLIP -> { feedback.click(Feedback.MODIFIER, this); listener?.onToggleClipboard() }
             T_PASTE -> { feedback.click(Feedback.MODIFIER, this); listener?.onSuggestion(SuggestionSet.PASTE_TOKEN) }
             T_RESTORE -> { feedback.click(Feedback.MODIFIER, this); listener?.onRestoreDeleted() }
-            T_PILL -> actionPill?.let { feedback.click(Feedback.MODIFIER, this); listener?.onSuggestion(it.payload) }
-            T_SLOT -> slotPayload[targetIndex]?.let { feedback.click(Feedback.MODIFIER, this); listener?.onSuggestion(it) }
-            T_EMOJI -> emojiText[targetIndex]?.let { feedback.click(Feedback.MODIFIER, this); listener?.onSuggestion(it) }
+            T_PILL -> tap.up()?.let { feedback.click(Feedback.MODIFIER, this); listener?.onSuggestion(it) }
+            T_SLOT, T_EMOJI -> tap.up()?.let { feedback.click(Feedback.MODIFIER, this); listener?.onSuggestion(it) }
         }
     }
 
+    private val tap = SlotTapLatch()
     private var longFired = false
     private val editLongRun = Runnable {
         longFired = true
@@ -497,7 +505,7 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
 
     fun onHidden() {
         removeCallbacks(editLongRun)
-        target = T_NONE; pressed = T_NONE
+        target = T_NONE; pressed = T_NONE; tap.cancel()
     }
 
     companion object {

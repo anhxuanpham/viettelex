@@ -41,6 +41,32 @@ class AdjacentKeyFixerTests {
         assertNull(fix("x"))
     }
 
+    private fun slip(raw: String): String? = AdjacentKeyFixer.toneSlipCorrection(raw,
+        compose = { bridge.composeTrial(it) }, frequency = { VNSuggest.frequency(it) })
+
+    /** Bug 27/09: "casn" (ý "caan", a trượt sang s) ra "cán" — từ hợp lệ nên fixer cũ bỏ qua, bar không có "cân". */
+    @Test fun testToneKeySlipStillValidWord() {
+        assertEquals("cán", bridge.composeTrial("casn"))
+        assertEquals("cân", slip("casn"))              // nhân đôi a thắng "căn" (phổ biến hơn)
+        assertEquals("Cân", slip("Casn"))
+        assertEquals("bên", slip("besn"))
+    }
+
+    @Test fun testToneSlipLeavesNormalTypingAlone() {
+        assertNull(slip("bans"))                       // phím thanh cuối từ = cách gõ thường
+        assertNull(slip("cas"))
+        assertNull(slip("tre"))                        // "tr" là phụ âm, r không phải dấu
+        assertNull(slip("tieesng"))                    // tiếng
+        assertNull(slip("lasm"))                       // "lắm"/"lấm": ứng viên hiếm hơn nhiều ⇒ không gợi
+        assertNull(slip("ohims"))                      // không phải từ ⇒ việc của correction()
+    }
+
+    @Test fun testToneSlipOffInVni() {
+        val vni = EngineBridge(KeyboardSettings().apply { vniMode = true })
+        assertNull(AdjacentKeyFixer.lexiconToneSlip("casn", vni))
+        assertEquals("cân", AdjacentKeyFixer.lexiconToneSlip("casn", EngineBridge(KeyboardSettings())))
+    }
+
     @Test fun testKeepsSentenceCase() = assertEquals("Phím", fix("Ohims"))
 
     @Test fun testTouchOffsetMovesSelectionUp() {

@@ -41,6 +41,10 @@ final class KeyboardViewController: UIInputViewController {
     /// Từ vuốt đang mở + phương án cho thanh gợi ý (hết hiệu lực khi từ đổi / chốt).
     /// `english` = các phương án tiếng Anh (chọn ⇒ chèn nguyên văn).
     private var swipeSuggest: (current: String, alts: [String], english: Set<String>)?
+    /// Từ vuốt Việt vừa chèn + ứng viên đã chấm — cú vuốt kế sửa lại được (SwipeRevise).
+    private var swipeRevisable: SwipeTyping.Revisable?
+    /// Cú vuốt vừa sửa lại từ trước → chip "↩︎ từ cũ" (sống khi từ vuốt mới còn mở).
+    private var swipeReviseUndo: SwipeTyping.Revision?
     /// Công tắc con "Vuốt từ tiếng Anh" (giai đoạn 3).
     private var swipeEnglishSetting = true
     private var swipeFutoSetting = false
@@ -57,6 +61,9 @@ final class KeyboardViewController: UIInputViewController {
     private var addTonesUndo: AddTones.Plan?
     private var addTonesDismissed: String?
     private var addTonesCache: (before: String, plan: AddTones.Plan?)?
+    /// Vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh (công tắc trong app; tắt ⇒ luôn .vi).
+    private var spaceFlickSetting = false
+    private var language: KeyboardLanguage = .vi
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -88,6 +95,7 @@ final class KeyboardViewController: UIInputViewController {
             if side != .off { UserDefaults.standard.set(side.rawValue, forKey: OneHand.lastSideKey) }
         }
         keyboard.onOpenClipboard = { [weak self] in self?.toggleClipboardPanel() }
+        keyboard.onSpaceFlick = { [weak self] in self?.toggleLanguage() }
         keyboard.translatesAutoresizingMaskIntoConstraints = false
         // Như KeyboardView: nền trong suốt = touch xuyên sang app host (rớt phím).
         view.backgroundColor = KeyboardView.touchableClear
@@ -153,6 +161,12 @@ final class KeyboardViewController: UIInputViewController {
         numberChipsSetting = settings.numberChips
         emojiSuggestSetting = settings.emojiSuggest
         pasteButtonSetting = settings.pasteButton
+        spaceFlickSetting = settings.spaceSwipeLanguage
+        language = KeyboardLanguage.effective(
+            stored: UserDefaults.standard.string(forKey: KeyboardLanguage.storageKey),
+            flickEnabled: spaceFlickSetting)
+        if language == .en { bridge.setEnglish(true, proxy: Proxy(p: textDocumentProxy)); warmUpEnglish() }
+        keyboard.configureSpaceFlick(enabled: spaceFlickSetting, language: language)
         warmUpData()
         swipeSuggest = nil
         recentEnglish = []
@@ -179,6 +193,7 @@ final class KeyboardViewController: UIInputViewController {
             }
             else if item == KeyboardView.addTonesToken { self.applyAddTones() }
             else if item == KeyboardView.undoTonesToken { self.undoAddTones() }
+            else if item == KeyboardView.undoReviseToken { self.undoSwipeRevision() }
             else if self.acceptSwipeAlternative(item) { return }
             else { self.acceptSuggestion(item) }
         }
@@ -891,8 +906,8 @@ final class KeyboardViewController: UIInputViewController {
     /// (user 2026-07-25). Model đã seed nên topWords luôn đủ.
     private func padWords(_ base: [String], need: Int, typed: String = "") -> [String] {
         guard base.count < need else { return Array(base.prefix(need)) }
-        let candidates = SensitiveWords.filter(langModel.topWords(limit: need + 12),
-                                               enabled: filterSensitive)
+        let top = bridge.englishMode ? SwipeEnglish.top : langModel.topWords(limit: need + 12)
+        let candidates = SensitiveWords.filter(top, enabled: filterSensitive)
             .map { caseForContext(DisplayCase.apply($0)) }
         return SuggestionFill.pad(base, with: candidates, need: need, excluding: typed)
     }
@@ -911,10 +926,15 @@ final class KeyboardViewController: UIInputViewController {
             if bridge.isSwipeWordOpen, composed == s.current {
                 keyboard.hidePasteCard()
                 set.nextWords = s.alts
+                if let u = swipeReviseUndo {
+                    set.actionLabel = "\u{21A9}\u{FE0E} \(u.old)"
+                    set.actionPayload = KeyboardView.undoReviseToken
+                }
                 keyboard.showSuggestions(set)
                 return
             }
             swipeSuggest = nil
+            swipeReviseUndo = nil
         }
         // Backspace-undo sau auto-restore: chào dạng có dấu ở slot literal.
         if composed.isEmpty, undoOfferActive, let u = restoreUndo {
@@ -948,24 +968,33 @@ final class KeyboardViewController: UIInputViewController {
             // không có phím mới (suggestionGen), cùng bridge + cùng từ đang gõ.
             let req = suggestReq, gen = suggestionGen, b = bridge
             let raw = b.rawWord, predicted = b.predictedCommit, wantFix = b.autoFixAdjacent
-            let prev = lastWord
+            let prev = lastWord, english = b.englishMode
             Self.suggestQueue.async { [weak self] in
-                let pool = VNSuggest.matches(composed, poolLimit: 24,
-                                             excluding: composed.lowercased())
-                let fix = pool.isEmpty && wantFix
+                // Chế độ Tiếng Anh: hoàn thành từ enlexicon, không sửa chạm trượt / bigram Việt.
+                let pool = english ? SwipeEnglish.completions(composed, limit: 24)
+                    : VNSuggest.matches(composed, poolLimit: 24, excluding: composed.lowercased())
+                let fix = !english && pool.isEmpty && wantFix
                     ? AdjacentKeyFixer.lexiconCorrection(raw: raw, bridge: b) : nil
+                // trượt vào phím thanh mà vẫn ra từ ("casn" → cán, ý là cân)
+                let slip = fix == nil && wantFix ? AdjacentKeyFixer.lexiconToneSlip(raw: raw, bridge: b) : nil
                 // bigram âm tiết tĩnh theo từ trước (mmap dùng chung với gõ vuốt; tra ~µs)
-                let pmi = SuggestRank.inlinePmi(pool, prev: prev)
+                let pmi = english ? nil : SuggestRank.inlinePmi(pool, prev: prev)
                 DispatchQueue.main.async {
                     guard let self, req == self.suggestReq, gen == self.suggestionGen,
                           self.bridge === b, b.composedWord == composed,
                           self.suggestionsActive, self.keyboard?.isBarCollapsed != true
                     else { return }
                     self.showComposingSuggestions(composed: composed, raw: raw, predicted: predicted,
-                                                  pool: pool, pmi: pmi, fix: fix)
+                                                  pool: pool, pmi: pmi, fix: fix, slip: slip)
                 }
             }
             return
+        } else if bridge.englishMode {
+            // Tiếng Anh: từ kế tiếp cá nhân chỉ giữ từ tiếng Anh; đệm bằng từ Anh phổ biến
+            let personal = lastWord.map { langModel.nextWords(after: $0, prev2: lastWord2, limit: 12) } ?? []
+            let en = SensitiveWords.filter(personal.filter { SwipeEnglish.contains($0.lowercased()) },
+                                           enabled: filterSensitive).prefix(3)
+            set.nextWords = padWords(en.map { caseForContext($0) }, need: 3)
         } else if let prev = lastWord {
             // vừa space sau một từ → gợi từ KẾ TIẾP (trigram/bigram cá nhân
             // interpolate với seed); thiếu thì lấp bằng bigram tĩnh (người dùng mới)
@@ -995,7 +1024,7 @@ final class KeyboardViewController: UIInputViewController {
         }
         // Thêm dấu: "Hoàn tác" (vừa bấm) thắng thẻ Dán; "Thêm dấu" nhường thẻ Dán
         // (thứ tự slot: SuggestionSlots.arrange).
-        if composed.isEmpty, set.literal == nil {
+        if composed.isEmpty, set.literal == nil, !bridge.englishMode || addTonesUndo != nil {
             if addTonesUndo != nil {
                 set.actionLabel = "\u{21A9}\u{FE0E} Hoàn tác"; set.actionPayload = KeyboardView.undoTonesToken
                 set.paste = false; set.clipChips = []
@@ -1020,7 +1049,8 @@ final class KeyboardViewController: UIInputViewController {
 
     /// Phần main của gợi ý khi đang gõ dở: pool (VNSuggest) + fix đã tính nền.
     private func showComposingSuggestions(composed: String, raw: String, predicted: String,
-                                          pool: [VNSuggest.Match], pmi: [Float]?, fix: String?) {
+                                          pool: [VNSuggest.Match], pmi: [Float]?, fix: String?,
+                                          slip: String? = nil) {
         var set = KeyboardView.SuggestionSet()
         // Slot "nguyên văn" = phương án mà boundary SẼ KHÔNG cho ra —
         // lối thoát cho cả hai chiều collision (user chốt 2026-07-24):
@@ -1060,6 +1090,10 @@ final class KeyboardViewController: UIInputViewController {
             // Thử nghiệm: không từ nào khớp → nghi chạm trượt phím kề; đưa bản sửa
             // lên slot chính (tap để thay, không tự thay).
             set.word = fix
+        }
+        // Trượt vào phím thanh mà vẫn ra từ ("casn" → cán, ý là cân): bản sửa vào slot 3.
+        if let slip, slip != set.word {
+            if set.word == nil { set.word = slip } else { set.word2 = slip }
         }
         set.number = refreshNumberChip()
         // thử cụm 2 từ trước ("hoàn thành", "sinh nhật") rồi mới tới từ đơn.
@@ -1387,6 +1421,32 @@ extension KeyboardViewController {
         if recentEnglish.count > 4 { recentEnglish.removeFirst() }
     }
 
+    /// Vuốt phím cách: đổi Tiếng Việt ↔ Tiếng Anh. Chốt từ đang gõ trước (học như ranh
+    /// giới), lưu trạng thái cho lần hiện sau. KeyboardView đã rung + chạy hiệu ứng nhãn.
+    fileprivate func toggleLanguage() {
+        guard spaceFlickSetting else { return }
+        if externalChangePending { syncComposition("flick") }
+        applyingEdit = true
+        defer { applyingEdit = false }
+        learnSettledSwipe()
+        let accepted = bridge.openWordAccepted
+        language = language.toggled
+        UserDefaults.standard.set(language.rawValue, forKey: KeyboardLanguage.storageKey)
+        commitAndLearn(bridge.setEnglish(language == .en, proxy: Proxy(p: textDocumentProxy)),
+                       accepted: accepted)
+        if language == .en { warmUpEnglish() }
+        keyboard.spaceLanguage = language
+        swipeSuggest = nil
+        restoreUndo = nil; undoOfferActive = false
+        suggestionGen += 1
+        updateSuggestions()
+    }
+
+    /// Nạp enlexicon + bảng từ phổ biến ở nền (lần đầu vào Tiếng Anh), khỏi trễ phím đầu.
+    fileprivate func warmUpEnglish() {
+        DispatchQueue.global(qos: .utility).async { _ = SwipeEnglish.top }
+    }
+
     /// Từ vuốt được chốt bởi phím chữ trước (dấu cách treo) — học khi chắc chắn.
     fileprivate func learnSettledSwipe() {
         if let s = bridge.takeSettledCommit() { commitAndLearn(s.word, accepted: s.accepted) }
@@ -1401,6 +1461,7 @@ extension KeyboardViewController {
         swipe.begin(bridge: bridge, proxy: Proxy(p: textDocumentProxy))
         restoreUndo = nil; undoOfferActive = false
         swipeSuggest = nil
+        swipeReviseUndo = nil
     }
 
     fileprivate func swipeEnded(_ path: SwipePath, _ sc: SwipeCase) {
@@ -1418,15 +1479,30 @@ extension KeyboardViewController {
         let lm = langModel
         // Ngôn ngữ theo 2 từ trước (giai đoạn 3): từ Anh vừa vuốt (nhãn) chắc nhất, rồi bảng
         // từ của engine; mặc định nghiêng tiếng Việt.
-        let english: SwipeEnglishPrior? = swipeEnglishSetting ? SwipeLangContext.prior(
+        let englishOnly = bridge.englishMode
+        let english: SwipeEnglishPrior? = englishOnly ? SwipeLangContext.onlyEnglishPrior
+            : swipeEnglishSetting ? SwipeLangContext.prior(
             prev1: SwipeLangContext.classify(prev, swipedEnglish: bridge.isLiteralSwipeWordOpen
                                                  || isRecentEnglish(prev)),
             prev2: SwipeLangContext.classify(prev2, swipedEnglish: isRecentEnglish(prev2))) : nil
+        // Từ vuốt trước còn nguyên (mở, chưa sửa dấu, chưa chọn phương án) ⇒ cú này sửa lại được.
+        let previous = swipeRevisable.flatMap { r -> SwipeTyping.Revisable? in
+            bridge.isSwipeWordOpen && bridge.isFreshSwipeWord && !bridge.openWordAccepted
+                && !bridge.isLiteralSwipeWordOpen && bridge.composedWord == r.word ? r : nil
+        }
+        swipeRevisable = nil
+        swipeReviseUndo = nil
         let out = swipe.finish(path, case: sc, contextWords: ctx, count: { lm.count(of: $0) },
-                               prev: prev, prev2: prev2, english: english,
+                               prev: prev, prev2: prev2, english: english, englishOnly: englishOnly,
+                               previous: previous,
+                               nextWords: { lm.nextWords(after: $0, prev2: $1, limit: 24) },
                                bridge: bridge, proxy: Proxy(p: textDocumentProxy))
         if let out {
             if let c = out.committed { commitAndLearn(c.word, accepted: c.accepted) }
+            swipeReviseUndo = out.revised
+            if !out.scored.isEmpty, bridge.isSwipeWordOpen {
+                swipeRevisable = SwipeTyping.Revisable(word: out.word, scored: out.scored, sc: sc)
+            }
             if out.english { noteRecentEnglish(out.word) }
             let alts = SensitiveWords.filter(out.alternatives, enabled: filterSensitive)
             swipeSuggest = alts.isEmpty || !bridge.isSwipeWordOpen ? nil
@@ -1455,6 +1531,7 @@ extension KeyboardViewController {
             return false
         }
         if itemEnglish { noteRecentEnglish(item) }
+        swipeRevisable = nil                  // user đã chọn: cú vuốt kế không sửa lại từ này
         var english = s.english
         english.remove(item)
         if wasEnglish { english.insert(s.current) }
@@ -1463,6 +1540,25 @@ extension KeyboardViewController {
         suggestionGen += 1
         updateSuggestions()
         return true
+    }
+}
+
+extension KeyboardViewController {
+    /// Chip "↩︎ từ cũ": trả từ vuốt trước về như lúc vuốt; học lại từ cũ như user chọn
+    /// (iOS không rút lượt học từ mới — weight 1, phai dần).
+    fileprivate func undoSwipeRevision() {
+        guard let u = swipeReviseUndo else { return }
+        swipeReviseUndo = nil
+        applyingEdit = true
+        defer { applyingEdit = false }
+        if bridge.restoreRevisedWord(old: u.old, new: u.new, proxy: Proxy(p: textDocumentProxy)),
+           lastWord == u.new {
+            lastWord = lastWord2; lastWord2 = nil
+            commitAndLearn(u.old, accepted: true)
+            KeyboardView.clickModifier()
+        }
+        suggestionGen += 1
+        updateSuggestions()
     }
 }
 

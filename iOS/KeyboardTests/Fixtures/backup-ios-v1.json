@@ -47,6 +47,7 @@
     "showSuggestions" : true,
     "simpleTelex" : true,
     "smartTouch" : true,
+    "spaceSwipeLanguage" : false,
     "swipeEnglish" : true,
     "swipeTyping" : true,
     "teencode" : false,

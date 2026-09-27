@@ -28,8 +28,14 @@ object Keys {
     const val SWIPE_ENGLISH = "swipeEnglish"
     /** Giải mã vuốt bằng mô hình FUTO Swipe (thử nghiệm, mặc định TẮT — FutoSwipe). */
     const val SWIPE_FUTO = "swipeFuto"
+    /** Luyện vuốt (app): đồng ý LƯU nét vuốt trên máy để xuất (mặc định TẮT, không gửi mạng). */
+    const val SWIPE_PRACTICE_SAVE = "swipePracticeSave"
     /** Chọn phím theo ngữ cảnh lúc chạm (thử nghiệm, mặc định BẬT) — TouchTarget. */
     const val SMART_TOUCH = "smartTouch"
+    /** Vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh — mặc định TẮT (tắt ⇒ luôn Tiếng Việt). */
+    const val SPACE_SWIPE_LANGUAGE = "spaceSwipeLanguage"
+    /** Ngôn ngữ đang gõ ("vi" | "en") — trạng thái bàn phím, KHÔNG sao lưu. */
+    const val KEYBOARD_LANGUAGE = "keyboardLanguage"
     /** Gõ Telex bằng bàn phím cứng (tablet, DeX, Chromebook, BT/USB) — mặc định BẬT. */
     const val HARDWARE_TELEX = "hardwareTelex"
 
