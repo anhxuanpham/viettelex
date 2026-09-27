@@ -48,6 +48,7 @@ final class ClipboardPanel: UIView {
         stack.translatesAutoresizingMaskIntoConstraints = false
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.alwaysBounceVertical = true
+        scroll.disableKeyboardEdgeEffects()
         scroll.addSubview(stack)
         addSubview(scroll)
         NSLayoutConstraint.activate([

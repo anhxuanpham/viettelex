@@ -54,6 +54,7 @@ final class EmojiSearchBar: UIView {
         field.addSubview(clear)
 
         results.showsHorizontalScrollIndicator = false
+        results.disableKeyboardEdgeEffects()   // iOS 26 làm mờ dải kết quả tìm (Phil 27/09)
         results.alwaysBounceHorizontal = true
         results.translatesAutoresizingMaskIntoConstraints = false
         addSubview(results)
