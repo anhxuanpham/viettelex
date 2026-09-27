@@ -41,7 +41,13 @@ object ImeIcons {
     const val CHECK = 26
     /** Toolbar Gboard (vị trí ☰ cũ): lưới 4 ô bo tròn. */
     const val GRID = 27
-    private const val COUNT = 28
+    /** Rail một tay: đổi bên (⇆). */
+    const val SWAP = 28
+    /** Rail một tay: thoát, bàn phím đầy bề ngang (↔ có vạch mép). */
+    const val EXPAND = 29
+    /** Thanh gợi ý: mở bảng sửa văn bản (con trỏ chữ I). */
+    const val CURSOR = 30
+    private const val COUNT = 31
 
     /** Thứ tự icon category của plane emoji (clock → flag). */
     val CATEGORY = intArrayOf(CLOCK, FACE, HARE, FORK_KNIFE, SOCCER, CAR, BULB, HEART, FLAG)
@@ -198,6 +204,22 @@ object ImeIcons {
             lineTo(3f, 14f); close()
         }
         p(CHECK, 2.2f) { moveTo(4.5f, 12.5f); lineTo(9.5f, 17.5f); lineTo(19.5f, 6.5f) }
+        p(SWAP, 1.8f) {
+            moveTo(4f, 8.5f); lineTo(19f, 8.5f); moveTo(15.5f, 5f); lineTo(19f, 8.5f); lineTo(15.5f, 12f)
+            moveTo(20f, 15.5f); lineTo(5f, 15.5f); moveTo(8.5f, 12f); lineTo(5f, 15.5f); lineTo(8.5f, 19f)
+        }
+        p(EXPAND, 1.8f) {
+            moveTo(3f, 5f); lineTo(3f, 19f); moveTo(21f, 5f); lineTo(21f, 19f)
+            moveTo(6.5f, 12f); lineTo(17.5f, 12f)
+            moveTo(9.5f, 9f); lineTo(6.5f, 12f); lineTo(9.5f, 15f)
+            moveTo(14.5f, 9f); lineTo(17.5f, 12f); lineTo(14.5f, 15f)
+        }
+        p(CURSOR, 1.8f) {
+            moveTo(12f, 4.5f); lineTo(12f, 19.5f)
+            moveTo(8.5f, 3.5f); quadTo(12f, 3.5f, 12f, 5.5f); quadTo(12f, 3.5f, 15.5f, 3.5f)
+            moveTo(8.5f, 20.5f); quadTo(12f, 20.5f, 12f, 18.5f); quadTo(12f, 20.5f, 15.5f, 20.5f)
+            moveTo(3f, 12f); lineTo(6.5f, 12f); moveTo(17.5f, 12f); lineTo(21f, 12f)
+        }
         p(GRID, 0f) {
             addRoundRect(RectF(4f, 4f, 10.5f, 10.5f), 1.8f, 1.8f, Path.Direction.CW)
             addRoundRect(RectF(13.5f, 4f, 20f, 10.5f), 1.8f, 1.8f, Path.Direction.CW)

@@ -32,7 +32,14 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
         fun onStripHeightChanged()
         /** Chạm ô "↩︎ Khôi phục" sau vuốt ⌫ xoá theo từ. */
         fun onRestoreDeleted()
+        /** Icon con trỏ: mở/đóng bảng sửa văn bản. */
+        fun onToggleEditPanel()
+        /** Giữ lâu icon con trỏ: bật/tắt chế độ một tay (chỉ khi [oneHandAvailable]). */
+        fun onToggleOneHand()
     }
+
+    /** Điện thoại (không tablet): giữ lâu icon con trỏ = một tay. */
+    var oneHandAvailable = false
 
     var listener: Listener? = null
 
@@ -185,7 +192,7 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
         paste = set.paste
 
         // Gboard: 3 ô bằng nhau, không vạch ngăn; emoji chia đều ô thứ 3.
-        val barL = theme.dp(KeyLayout.STRIP_ZONE_W)
+        val barL = theme.dp(KeyLayout.STRIP_ZONE_W + STRIP_TOOL_W)
         val barR = width - theme.dp(KeyLayout.STRIP_ZONE_W)
         val third = (barR - barL) / 3f
         val pad = theme.dp(4f)
@@ -207,7 +214,7 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
         val h = theme.dp(28f)
         val icon = theme.dp(16f); val gap = theme.dp(6f); val padH = theme.dp(12f)
         val tW = pasteTitle.measureText(pasteTitleText); val sW = pasteSub.measureText(pasteSubText)
-        val maxW = maxOf(0f, width - 2 * theme.dp(KeyLayout.STRIP_ZONE_W))
+        val maxW = maxOf(0f, width - 2 * theme.dp(KeyLayout.STRIP_ZONE_W + STRIP_TOOL_W))
         var total = padH + icon + gap + tW + gap + sW + padH
         pasteShowSub = total <= maxW
         if (!pasteShowSub) total = padH + icon + gap + tW + padH
@@ -266,6 +273,14 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
             iconPaint.color = theme.withAlpha(theme.ink, if (active) 1f else 0.75f)
             ImeIcons.draw(c, ImeIcons.GRID, bx, cy, theme.dp(14f + 4f * o), iconPaint)
         }
+        run {
+            // Icon con trỏ (bảng sửa văn bản) cạnh ô mẫu câu.
+            val ex = theme.dp(88f) + (theme.dp(KeyLayout.STRIP_ZONE_W + STRIP_TOOL_W / 2) - theme.dp(88f)) * o
+            val active = plane == Plane.EDIT && o > 0.5f
+            if (active || pressed == T_EDIT) c.drawCircle(ex, cy, theme.dp(15f), chipPaint)
+            iconPaint.color = theme.withAlpha(theme.ink, if (active) 1f else 0.75f)
+            ImeIcons.draw(c, ImeIcons.CURSOR, ex, cy, theme.dp(14f + 4f * o), iconPaint)
+        }
         val chx = (w - theme.dp(24f)) + (theme.dp(24f) - theme.dp(26f)) * o
         iconPaint.color = theme.withAlpha(theme.ink, 0.75f)
         ImeIcons.draw(c, ImeIcons.CHEVRON_DOWN, chx, cy, theme.dp(14f + 2f * o), iconPaint, rotationDeg = 180f * (1f - o))
@@ -301,7 +316,7 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
     private fun drawChip(c: Canvas, text: String, alpha: Int, trunc: TextUtils.TruncateAt) {
         val cy = theme.dp(KeyLayout.BAR_TOP_PAD + 10f)
         val padH = theme.dp(14f); val h = theme.dp(28f)
-        val maxW = maxOf(0f, width - 2 * theme.dp(KeyLayout.STRIP_ZONE_W) - 2 * padH)
+        val maxW = maxOf(0f, width - 2 * theme.dp(KeyLayout.STRIP_ZONE_W + STRIP_TOOL_W) - 2 * padH)
         val t = TextUtils.ellipsize(text, chipText, maxW, trunc).toString()
         val w = chipText.measureText(t) + 2 * padH
         val l = (width - w) / 2
@@ -335,18 +350,22 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
             MotionEvent.ACTION_DOWN -> {
                 target = findTarget(e.x, e.y)
                 downX = e.x; downY = e.y
-                if (target == T_SLOT || target == T_EMOJI || target == T_PASTE || target == T_RESTORE) {
+                if (target == T_SLOT || target == T_EMOJI || target == T_PASTE || target == T_RESTORE || target == T_EDIT) {
                     pressed = target; pressedIndex = targetIndex; invalidate()
                 }
+                longFired = false
+                removeCallbacks(editLongRun)
+                if (target == T_EDIT && oneHandAvailable) postDelayed(editLongRun, LONG_MS)
                 return target != T_NONE
             }
             MotionEvent.ACTION_UP -> {
-                val t = target; target = T_NONE
+                removeCallbacks(editLongRun)
+                val t = if (longFired) T_NONE else target; target = T_NONE
                 if (pressed != T_NONE) { pressed = T_NONE; invalidate() }
                 if (abs(e.x - downX) > theme.dp(40f) || abs(e.y - downY) > theme.dp(40f)) return true
                 fire(t)
             }
-            MotionEvent.ACTION_CANCEL -> { target = T_NONE; if (pressed != T_NONE) { pressed = T_NONE; invalidate() } }
+            MotionEvent.ACTION_CANCEL -> { removeCallbacks(editLongRun); target = T_NONE; if (pressed != T_NONE) { pressed = T_NONE; invalidate() } }
         }
         return true
     }
@@ -358,12 +377,14 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
         if (collapsed || openness < 1f) {
             if (y > theme.dp(18f)) return T_NONE
             if (templatesEnabled && x < theme.dp(64f)) return T_BURGER
+            if (x >= theme.dp(64f) && x < theme.dp(112f)) return T_EDIT
             if (x >= w - theme.dp(48f)) return T_CHEVRON
             return T_NONE
         }
         if (y > strip) return T_NONE          // không lấn hàng Q–P
         val zone = theme.dp(KeyLayout.STRIP_ZONE_W)
         if (x < zone) return if (templatesEnabled) T_BURGER else T_NONE
+        if (x < zone + theme.dp(STRIP_TOOL_W)) return T_EDIT
         if (x >= w - zone) return T_CHEVRON
         if (swipePreview != null) return T_NONE
         if (restoreOffer) return T_RESTORE
@@ -377,6 +398,7 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
         when (t) {
             T_BURGER -> { feedback.click(Feedback.MODIFIER, this); listener?.onToggleTemplates() }
             T_CHEVRON -> toggleCollapsed()
+            T_EDIT -> { feedback.click(Feedback.MODIFIER, this); listener?.onToggleEditPanel() }
             T_PASTE -> { feedback.click(Feedback.MODIFIER, this); listener?.onSuggestion(SuggestionSet.PASTE_TOKEN) }
             T_RESTORE -> { feedback.click(Feedback.MODIFIER, this); listener?.onRestoreDeleted() }
             T_SLOT -> slotPayload[targetIndex]?.let { feedback.click(Feedback.MODIFIER, this); listener?.onSuggestion(it) }
@@ -384,7 +406,16 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
         }
     }
 
+    private var longFired = false
+    private val editLongRun = Runnable {
+        longFired = true
+        pressed = T_NONE; invalidate()
+        feedback.longPress(this)
+        listener?.onToggleOneHand()
+    }
+
     fun onHidden() {
+        removeCallbacks(editLongRun)
         target = T_NONE; pressed = T_NONE
     }
 
@@ -396,5 +427,9 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
         private const val T_SLOT = 4
         private const val T_EMOJI = 5
         private const val T_RESTORE = 6
+        private const val T_EDIT = 7
+        /** Bề ngang ô icon con trỏ (sau ô mẫu câu), dp. */
+        const val STRIP_TOOL_W = 44f
+        private const val LONG_MS = 450L
     }
 }

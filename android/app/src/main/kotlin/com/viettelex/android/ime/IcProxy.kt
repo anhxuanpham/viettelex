@@ -29,8 +29,13 @@ interface EditorPort {
     fun sendKey(key: PortKey)
     /** Gõ [text] bằng key event ký tự (app chỉ nhận phím — [WriteMode.KEY_ONLY]). */
     fun sendText(text: CharSequence) { commitText(text) }
+    /** Phím kèm Shift (bôi đen theo mũi tên) / Ctrl (phím tắt) — bảng sửa văn bản. */
+    fun sendKeyMeta(key: PortKey, shift: Boolean = false, ctrl: Boolean = false) {}
+    /** performContextMenuAction(android.R.id.*); false = app không hỗ trợ / không có ô. */
+    fun menuAction(action: MenuAction): Boolean = false
 
-    enum class PortKey { DEL, ENTER, LEFT, RIGHT, UP, DOWN }
+    enum class PortKey { DEL, ENTER, LEFT, RIGHT, UP, DOWN, HOME, END, A, C, V, X, Z }
+    enum class MenuAction { SELECT_ALL, COPY, CUT, PASTE, UNDO, REDO }
 }
 
 /**
@@ -101,6 +106,9 @@ class IcProxy(
     }
 
     private fun conn(): EditorPort? = ic ?: portOf()
+
+    /** Cổng thô cho bảng sửa văn bản ([EditCommands]); trong batch nếu đang mở. */
+    internal fun editorPort(): EditorPort? = conn()
 
     /** onStartInputView: [initialBefore] = getInitialTextBeforeCursor đã đối chiếu initialSel (null nếu không tin). */
     fun startInput(initialBefore: CharSequence?, atFieldStart: Boolean) {

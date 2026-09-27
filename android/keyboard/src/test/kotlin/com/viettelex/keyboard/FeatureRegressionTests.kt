@@ -60,6 +60,14 @@ class SettingsRegressionTests {
         assertFalse(KeyboardSettings.load { null }.numberRow)
         assertTrue(KeyboardSettings.load { if (it == Keys.NUMBER_ROW) true else null }.numberRow)
     }
+
+    @Test fun testOneHandModeDefaultOffAndValidated() {
+        assertEquals("off", KeyboardSettings.load { null }.oneHandMode)
+        assertEquals("left", KeyboardSettings.load { if (it == Keys.ONE_HAND_MODE) "left" else null }.oneHandMode)
+        assertEquals("right", KeyboardSettings.load { if (it == Keys.ONE_HAND_MODE) "right" else null }.oneHandMode)
+        assertEquals("off", KeyboardSettings.load { if (it == Keys.ONE_HAND_MODE) "center" else null }.oneHandMode)
+        assertEquals("off", KeyboardSettings.load { if (it == Keys.ONE_HAND_MODE) 3 else null }.oneHandMode)
+    }
 }
 
 class BridgeContractTests {

@@ -69,6 +69,12 @@ class KeyboardView(
         fun onSwipeTypingEnd(path: SwipePath, case: SwipeSuggest.Case)
         /** Huỷ (ACTION_CANCEL / bàn phím ẩn) sau khi đã huỷ chữ đầu. */
         fun onSwipeTypingCancel()
+
+        // --- bảng sửa văn bản / một tay ---
+        /** Ô bảng sửa (trừ SELECT/CLOSE — view tự lo); [selecting] = chế độ chọn đang bật. */
+        fun onEditAction(action: EditAction, selecting: Boolean)
+        /** Rail / nút một tay đổi chế độ — IME lưu prefs rồi gọi lại [setOneHand]. */
+        fun onOneHandChange(side: OneHandSide)
     }
 
     var listener: Listener? = null
@@ -275,8 +281,29 @@ class KeyboardView(
         if (p == Plane.LETTERS && shift == Shift.ON) shift = Shift.OFF
         if (p == Plane.EMOJI) emojiPane.open(listener?.emojiRecents() ?: emptyList())
         if (p == Plane.TEMPLATES) templatesPane.resetScroll()
+        editSelecting = false
         rebuild()
         listener?.onPlaneChanged(p)
+    }
+
+    /** Một tay: dựng lại plane ở bề ngang hẹp (planeCache theo chữ ký). */
+    fun setOneHand(side: OneHandSide) {
+        if (side == oneHand) return
+        cancelAllTouches()
+        oneHand = side
+        rebuild()
+    }
+
+    /** Icon con trỏ trên thanh gợi ý: mở / đóng bảng sửa văn bản. */
+    fun toggleEditPanel() {
+        setPlane(if (plane == Plane.EDIT) Plane.LETTERS else Plane.EDIT)
+    }
+
+    /** IME báo ô đang có vùng chọn (onUpdateSelection) — ô Sao chép / Cắt sáng lên. */
+    fun setEditHasSelection(on: Boolean) {
+        if (on == editHasSelection) return
+        editHasSelection = on
+        if (plane == Plane.EDIT) invalidate()
     }
 
     fun toggleTemplates() {
@@ -287,7 +314,9 @@ class KeyboardView(
     private var numberSigned = false
     private var numberDecimal = false
     private var numberRow = false
-    private fun signature() = "$returnLabel|$inputKind|$needsGlobe|$width|$keyAreaPx|$numberSigned|$numberDecimal|$numberRow"
+    /** Chế độ một tay (IME chỉ đặt khác OFF trên điện thoại). */
+    var oneHand = OneHandSide.OFF; private set
+    private fun signature() = "$returnLabel|$inputKind|$needsGlobe|$width|$keyAreaPx|$numberSigned|$numberDecimal|$numberRow|$oneHand"
 
     private fun rebuild() {
         if (width == 0) return
@@ -295,8 +324,9 @@ class KeyboardView(
         if (sig != builtSig) { planeCache.clear(); builtSig = sig }
         keys = planeCache.getOrPut(plane) {
             KeyLayout.build(LayoutConfig(plane, width.toFloat(), keyAreaPx, d, inputKind, needsGlobe,
-                theme.tablet, returnLabel, numberSigned, numberDecimal, numberRow))
+                theme.tablet, returnLabel, numberSigned, numberDecimal, numberRow, oneHand))
         }
+        railSpan = if (OneHand.appliesTo(plane)) OneHand.rail(width.toFloat(), oneHand) else null
         spaceKey = keys.firstOrNull { it.kind == KeyKind.SPACE }
         spaceKey?.let {
             val sz = theme.dp(22f)
@@ -360,6 +390,68 @@ class KeyboardView(
         }
         val ks = keys
         for (i in ks.indices) drawKey(c, ks[i])
+        railSpan?.let { drawRail(c, it) }
+    }
+
+    // MARK: một tay — rail (dải trống: nút đổi bên + thoát)
+
+    private var railSpan: Pair<Float, Float>? = null
+    private var railPressed = -1
+    private var railPtr = -1
+    private val railFill = theme.fill(theme.specialFill)
+
+    private fun railCenter(i: Int): Pair<Float, Float> {
+        val r = railSpan ?: return 0f to 0f
+        return (r.first + r.second) / 2 to keyAreaPx * (if (i == 0) 0.3f else 0.7f)
+    }
+
+    private fun drawRail(c: Canvas, r: Pair<Float, Float>) {
+        val rad = minOf((r.second - r.first) / 2 - theme.dp(4f), theme.dp(22f))
+        if (rad <= 0f) return
+        for (i in 0..1) {
+            val (cx, cy) = railCenter(i)
+            railFill.color = if (railPressed == i) specialPressed else theme.specialFill
+            c.drawCircle(cx, cy, rad, railFill)
+            icon(c, if (i == 0) ImeIcons.SWAP else ImeIcons.EXPAND, cx, cy, 20f, theme.ink, 255)
+        }
+    }
+
+    // MARK: bảng sửa văn bản
+
+    /** Chế độ chọn của bảng sửa (ô "Chọn"). */
+    private var editSelecting = false
+    private var editHasSelection = false
+    private var editPtr = -1
+    private var editRepeatKey: LaidKey? = null
+    private val editRepeatRun = object : Runnable {
+        override fun run() {
+            val k = editRepeatKey ?: return
+            fireEdit(k)
+            postDelayed(this, EDIT_REPEAT_MS)
+        }
+    }
+
+    private fun editEnabled(a: EditAction) = !a.needsSelection || editHasSelection
+
+    private fun fireEdit(k: LaidKey) {
+        val a = EditAction.of(k.insert) ?: return
+        when (a) {
+            EditAction.SELECT -> { editSelecting = !editSelecting; invalidate() }
+            EditAction.CLOSE -> setPlane(Plane.LETTERS)
+            EditAction.DELETE -> listener?.onKey(Key.Backspace)
+            else -> if (editEnabled(a)) listener?.onEditAction(a, editSelecting)
+        }
+    }
+
+    private fun drawEditKey(c: Canvas, k: LaidKey, alpha: Int) {
+        val a = EditAction.of(k.insert) ?: return
+        val cx = k.centerX; val cy = k.centerY
+        val al = if (editEnabled(a)) alpha else (alpha * 0.35f).toInt()
+        when {
+            a == EditAction.DELETE -> icon(c, ImeIcons.DELETE, cx, cy, 22f, theme.ink, al)
+            EditPanel.isGlyph(a) -> drawLabel(c, k.label, cx, cy, letterPaint, letterOff, al)
+            else -> drawLabel(c, k.label, cx, cy, controlPaint, controlOff, al)
+        }
     }
 
     private fun drawKey(c: Canvas, k: LaidKey) {
@@ -369,6 +461,7 @@ class KeyboardView(
         var face = when {
             k.kind == KeyKind.RETURN -> if (k.pressed) actionPressed else theme.action
             k.kind == KeyKind.SHIFT && shift == Shift.CAPS -> theme.chip
+            k.kind == KeyKind.EDIT && editSelecting && k.insert == "SELECT" -> theme.chip
             special -> if (k.pressed) specialPressed else theme.specialFill
             k.kind == KeyKind.LETTER || k.kind == KeyKind.CHAR -> theme.keyFill   // popup lo phản hồi
             k.kind == KeyKind.PAD && k.side -> if (k.pressed) specialPressed else theme.specialFill
@@ -415,6 +508,7 @@ class KeyboardView(
                 if (switcherHint) icon(c, ImeIcons.GLOBE, k.right - hintInset, k.top + hintInset, 10f, theme.ink, (contentAlpha * 0.55f).toInt())
             }
             KeyKind.CLEAR -> icon(c, ImeIcons.TRASH, cx, cy, 21f, theme.ink, contentAlpha)
+            KeyKind.EDIT -> drawEditKey(c, k, contentAlpha)
             KeyKind.DISMISS -> icon(c, ImeIcons.KB_DISMISS, cx, cy, 22f, theme.ink, contentAlpha)
             KeyKind.RETURN -> {
                 val id = when (returnLabel) {
@@ -490,6 +584,15 @@ class KeyboardView(
         if (plane == Plane.TEMPLATES && templatesPane.contains(x, y)) {
             commits.flush(); ptrPane[pid] = true; templatesPane.down(pid, x, y); return
         }
+        if (railSpan != null && railPtr < 0) {
+            val b = OneHand.railButton(width.toFloat(), keyAreaPx, oneHand, x, y)
+            if (b >= 0) {
+                commits.flush()
+                feedback.click(Feedback.MODIFIER, this)
+                railPtr = pid; railPressed = b; invalidate()
+                return
+            }
+        }
         val k = KeyLayout.hit(keys, plane, x, y, TouchGeometry.yOffset * d, d)
         if (TouchLog.enabled) {
             val lag = (SystemClock.uptimeMillis() - e.eventTime).toDouble()
@@ -564,6 +667,18 @@ class KeyboardView(
                 removeCallbacks(bsStartRun); removeCallbacks(bsTickRun)
                 postDelayed(bsStartRun, BS_HOLD_MS)
             }
+            KeyKind.EDIT -> {
+                feedback.click(Feedback.MODIFIER, this)
+                press(k)
+                val a = EditAction.of(k.insert)
+                // Mũi tên / xoá: chạy NGAY lúc chạm (như ⌫), giữ thì lặp; ô khác chạy lúc nhấc.
+                if (a != null && a.repeats) {
+                    fireEdit(k)
+                    editPtr = pid; editRepeatKey = k
+                    removeCallbacks(editRepeatRun)
+                    postDelayed(editRepeatRun, EDIT_HOLD_MS)
+                }
+            }
             KeyKind.GLOBE, KeyKind.EMOJI -> {
                 // 😊: bấm = plane emoji (lúc nhấc), giữ lâu = danh sách bàn phím (thay phím 🌐).
                 feedback.click(Feedback.MODIFIER, this)
@@ -608,6 +723,14 @@ class KeyboardView(
             else if (plane == Plane.TEMPLATES) templatesPane.up(pid, x, y, cancelled)
             return
         }
+        if (pid == railPtr) {
+            val b = railPressed
+            railPtr = -1; railPressed = -1; invalidate()
+            if (!cancelled && OneHand.railButton(width.toFloat(), keyAreaPx, oneHand, x, y) == b) {
+                listener?.onOneHandChange(if (b == 0) OneHand.switched(oneHand) else OneHandSide.OFF)
+            }
+            return
+        }
         if (pid == swipePid) {
             val wasSwiping = swiping
             stopSwipeTracking()
@@ -646,6 +769,9 @@ class KeyboardView(
                 if (!globeFired && !cancelled) controlAction(k)
             }
             KeyKind.SHIFT -> Unit
+            KeyKind.EDIT -> if (pid == editPtr) {
+                removeCallbacks(editRepeatRun); editPtr = -1; editRepeatKey = null
+            } else if (!cancelled) fireEdit(k)
             else -> if (!cancelled) controlAction(k)
         }
         if (k.pressed) { k.pressed = false; if (k.kind == KeyKind.SHIFT) invalidate() else invalidateKey(k) }
@@ -706,8 +832,9 @@ class KeyboardView(
         commits.flush()
         endSwipe(commit = false)
         removeCallbacks(spaceHoldRun); removeCallbacks(bsStartRun); removeCallbacks(bsTickRun)
-        removeCallbacks(globeLongRun); removeCallbacks(returnHoldRun)
+        removeCallbacks(globeLongRun); removeCallbacks(returnHoldRun); removeCallbacks(editRepeatRun)
         spacePtr = -1; bsPtr = -1; globePtr = -1; returnPtr = -1; bsRepeating = false
+        editPtr = -1; editRepeatKey = null; railPtr = -1; railPressed = -1
         if (trackpad) endTrackpad()
         balloon.hide(); balloonOwner = null
         invalidate()
@@ -718,12 +845,7 @@ class KeyboardView(
     /** Tâm phím chữ a–z (plane chữ) → decoder; bước phím = khoảng cách tâm q→w. */
     private fun publishSwipeLayout() {
         if (!swipeTyping || plane != Plane.LETTERS || keys.isEmpty()) return
-        val m = HashMap<Char, Pair<Float, Float>>(32)
-        for (k in keys) {
-            if (k.kind != KeyKind.LETTER || k.label.length != 1) continue
-            val c = k.label[0]
-            if (c in 'a'..'z') m[c] = k.centerX to k.centerY
-        }
+        val m = KeyLayout.letterCenters(keys)
         val q = m['q'] ?: return
         val w = m['w'] ?: return
         val kw = w.first - q.first
@@ -882,5 +1004,7 @@ class KeyboardView(
         const val BS_INTERVAL = 90L
         const val GLOBE_HOLD_MS = 500L
         const val RETURN_HOLD_MS = 450L
+        const val EDIT_HOLD_MS = 400L
+        const val EDIT_REPEAT_MS = 70L
     }
 }

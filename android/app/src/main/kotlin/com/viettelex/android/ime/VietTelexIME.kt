@@ -201,6 +201,9 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         session.barCollapsed = collapsed
         val barOn = session.suggestionsActive
         st.configure(barOn, collapsed, settings.templatesEnabled)
+        st.oneHandAvailable = !th.tablet
+        kb.setOneHand(if (th.tablet) OneHandSide.OFF else OneHandSide.fromPref(settings.oneHandMode))
+        kb.setEditHasSelection(info.initialSelStart >= 0 && info.initialSelStart != info.initialSelEnd)
         val templates = if (settings.templatesEnabled) VTPrefs.templates(this, prefs) else emptyList()
         kb.configure(field.returnLabel, field.kind, needsGlobe(), settings.showSpaceLogo,
             settings.templatesEnabled, templates,
@@ -288,6 +291,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         // Mình không dùng composing text: span còn (app/IME trước để sót) ⇒ chốt ở phím kế.
         if (candidatesStart != -1) proxy.finishComposingOnNextEdit()
         if (newSelStart < 0) proxy.invalidateShadow()   // "không biết": không reset engine, chỉ đọc lại chữ
+        keyboard?.setEditHasSelection(newSelStart >= 0 && newSelStart != newSelEnd)
         if (!tracker.onUpdate(newSelStart, newSelEnd)) return
         // Đổi từ NGOÀI (chạm chỗ khác, select-all, app tự sửa): quên từ + ngữ cảnh.
         proxy.invalidateShadow()
@@ -610,6 +614,36 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     }
 
     override fun onToggleTemplates() { keyboard?.toggleTemplates() }
+
+    // MARK: bảng sửa văn bản + một tay
+
+    override fun onToggleEditPanel() { keyboard?.toggleEditPanel() }
+
+    override fun onEditAction(action: EditAction, selecting: Boolean) {
+        clearSwipeUndo()
+        if (!proxy.begin()) return
+        try {
+            session.commitComposing(proxy)          // từ đang gõ chốt trước khi dời / cắt / dán
+            EditCommands.run(action, selecting, proxy, tracker)
+        } finally { proxy.end() }
+        resetIfEditFailed()
+        applyAutoShift()
+        refreshBar()
+    }
+
+    override fun onToggleOneHand() {
+        val kb = keyboard ?: return
+        val last = OneHandSide.fromPref(prefs.getString(Keys.ONE_HAND_LAST, null))
+        onOneHandChange(OneHand.toggled(kb.oneHand, last))
+    }
+
+    override fun onOneHandChange(side: OneHandSide) {
+        if (theme?.tablet == true) return
+        val e = prefs.edit().putString(Keys.ONE_HAND_MODE, side.pref)
+        if (side != OneHandSide.OFF) e.putString(Keys.ONE_HAND_LAST, side.pref)
+        e.apply()
+        keyboard?.setOneHand(side)
+    }
 
     override fun onBarToggled(collapsed: Boolean) {
         this.collapsed = collapsed

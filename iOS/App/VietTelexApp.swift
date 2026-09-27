@@ -811,6 +811,9 @@ struct TinhNangSections: View {
     private var rowHeightAdjust = 0
     @AppStorage("numberRow", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var numberRow = false
+    /// "off" | "left" | "right" — bàn phím đọc lúc hiện (OneHand.resolve).
+    @AppStorage("oneHandMode", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var oneHandMode = "off"
     @AppStorage("hapticFeedback", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var hapticFeedback = false
     @AppStorage("reEditWord", store: UserDefaults(suiteName: "group.com.viettelex"))
@@ -862,6 +865,20 @@ struct TinhNangSections: View {
                 }
             }
             settingToggle("Hàng phím số", "Thêm hàng 1 2 3 … 0 phía trên hàng chữ — gõ số không cần chuyển sang bàn phím 123. Bàn phím cao thêm khoảng ¾ hàng.", isOn: $numberRow)
+            if UIDevice.current.userInterfaceIdiom == .phone {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Chế độ một tay")
+                    Picker("Chế độ một tay", selection: $oneHandMode) {
+                        Text("Tắt").tag("off")
+                        Text("Trái").tag("left")
+                        Text("Phải").tag("right")
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    Text("Thu hẹp bàn phím về một bên. Trên bàn phím: giữ lâu icon con trỏ trên thanh gợi ý để bật/tắt nhanh; nút ở dải trống để đổi bên hoặc thoát.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
         } header: { Text("Giao diện") } footer: {
             Text("Cài đặt áp dụng ngay lần mở bàn phím kế tiếp.")
         }

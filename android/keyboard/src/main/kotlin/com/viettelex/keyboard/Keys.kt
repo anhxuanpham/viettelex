@@ -37,6 +37,10 @@ object Keys {
     const val ROW_HEIGHT_ADJUST = "rowHeightAdjust"
     /** Bool — hàng phím số trên plane chữ (tên như iOS App Group). */
     const val NUMBER_ROW = "numberRow"
+    /** String "off" | "left" | "right" — chế độ một tay (điện thoại; tên như iOS App Group). */
+    const val ONE_HAND_MODE = "oneHandMode"
+    /** String "left" | "right" — bên dùng gần nhất (giữ lâu icon con trỏ bật lại bên này). */
+    const val ONE_HAND_LAST = "oneHandLastSide"
     /** String JSON `[{"label":…,"text":…}]`; vắng ⇒ mặc định từ assets/ios-mau-cau.yml. */
     const val USER_TEMPLATES = "userTemplates"
     const val DEBUG_TOUCH_LOG = "debugTouchLog"

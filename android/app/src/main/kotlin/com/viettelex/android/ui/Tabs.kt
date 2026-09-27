@@ -260,6 +260,38 @@ fun TinhNangTab() {
         RowDivider()
         BoolToggle(Keys.NUMBER_ROW, Prefs.D.numberRow, "Hàng phím số",
             "Thêm hàng 1 2 3 … 0 phía trên hàng chữ — gõ số không cần chuyển sang bàn phím ?123. Bàn phím cao thêm khoảng ¾ hàng.")
+        RowDivider()
+        OneHandRow()
+    }
+}
+
+/** Chế độ một tay: Tắt / Trái / Phải (điện thoại; tablet bàn phím bỏ qua). */
+@Composable
+private fun OneHandRow() {
+    val c = LocalVT.current
+    val ctx = LocalContext.current
+    var mode by rememberStringPref(Keys.ONE_HAND_MODE, Prefs.D.oneHandMode)
+    VTRow {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("Chế độ một tay", style = VTType.body, color = c.label)
+            Text("Thu hẹp bàn phím về một bên cho dễ gõ bằng một tay (chỉ điện thoại). Trên bàn phím: giữ lâu icon con trỏ trên thanh gợi ý để bật/tắt; nút ở dải trống để đổi bên hoặc thoát.",
+                style = VTType.footnote, color = c.secondary)
+        }
+    }
+    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        for ((v, t) in listOf("off" to "Tắt", "left" to "Trái", "right" to "Phải")) {
+            val on = mode == v
+            Box(Modifier.weight(1f)
+                .background(if (on) c.accent else c.secondary.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
+                .clickable {
+                    mode = v
+                    if (v != "off") Prefs.of(ctx).edit().putString(Keys.ONE_HAND_LAST, v).apply()
+                }
+                .padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                Text(t, style = VTType.body, color = if (on) Color.White else c.label)
+            }
+        }
     }
 }
 

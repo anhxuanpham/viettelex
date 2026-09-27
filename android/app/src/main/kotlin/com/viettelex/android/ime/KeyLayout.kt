@@ -10,7 +10,9 @@ enum class Plane { LETTERS, NUMBERS, SYMBOLS, EMOJI, TEMPLATES,
     /** Bàn số điện thoại kiểu Gboard (TYPE_CLASS_PHONE). */
     PHONE,
     /** Bàn số kiểu Gboard (TYPE_CLASS_NUMBER / DATETIME). */
-    NUMPAD }
+    NUMPAD,
+    /** Bảng sửa văn bản ([EditPanel]) thay chỗ phím chữ. */
+    EDIT }
 enum class InputKind { NORMAL, NUMBER, EMAIL, URL, PHONE, DATETIME;
     /** Plane mở đầu cho loại ô (bàn số riêng cho ô số/điện thoại/ngày giờ). */
     val padPlane: Plane? get() = when (this) {
@@ -36,6 +38,8 @@ object KeyKind {
     const val DISMISS = 12    // tablet: ẩn bàn phím
     /** Phím bàn số (số / ký hiệu phụ): arm DOWN, chốt UP, không balloon, luôn literal. */
     const val PAD = 13
+    /** Ô bảng sửa văn bản: insert = tên [EditAction]; hành động lúc chạm (lặp khi giữ) / nhấc. */
+    const val EDIT = 14
 
     fun isSpecial(k: Int) = when (k) {
         LETTER, CHAR, PUNCT, SPACE, PAD -> false
@@ -85,6 +89,8 @@ data class LayoutConfig(
     val numberDecimal: Boolean = false,
     /** Hàng phím số 1…0 trên plane chữ (Settings, mặc định tắt) — [keyAreaPx] đã gồm nó. */
     val numberRow: Boolean = false,
+    /** Chế độ một tay (IME chỉ bật trên điện thoại). */
+    val oneHand: OneHandSide = OneHandSide.OFF,
 )
 
 object KeyLayout {
@@ -132,6 +138,14 @@ object KeyLayout {
     private val PUNCT3 = listOf(".", ",", "?", "!", "'")
 
     fun build(c: LayoutConfig): List<LaidKey> {
+        // Một tay: dựng plane ở bề ngang hẹp rồi dời — mọi hình học (router, tâm phím gõ
+        // vuốt, bước vuốt ⌫) tự đúng, không nhánh riêng.
+        if (c.oneHand != OneHandSide.OFF && OneHand.appliesTo(c.plane)) {
+            val (x0, w) = OneHand.span(c.widthPx, c.oneHand)
+            val keys = build(c.copy(widthPx = w, oneHand = OneHandSide.OFF))
+            OneHand.shift(keys, x0)
+            return keys
+        }
         val out = ArrayList<LaidKey>(40)
         val rowH = c.keyAreaPx / 4f
         when (c.plane) {
@@ -160,6 +174,7 @@ object KeyLayout {
                 bottomRow(out, c, c.keyAreaPx - u, u, planeKey = "ABC", clearInsteadOfEmoji = true)
             }
             Plane.EMOJI -> Unit   // EmojiPane tự vẽ
+            Plane.EDIT -> EditPanel.build(out, c)
             Plane.PHONE, Plane.NUMPAD -> numberPad(out, c, rowH)
         }
         for (i in out.indices) out[i].index = i
@@ -337,6 +352,17 @@ object KeyLayout {
             out += LaidKey(KeyKind.MORE, "?123", "?123", "?123", rightX, top(2), rightX + sideW, bot(2))
         }
         out += LaidKey(KeyKind.RETURN, c.returnLabel, c.returnLabel, "\n", rightX, top(3), rightX + sideW, bot(3))
+    }
+
+    /** Tâm phím a–z (toạ độ view) cho SwipeLayout — lấy từ frame THẬT (kể cả một tay). */
+    fun letterCenters(keys: List<LaidKey>): Map<Char, Pair<Float, Float>> {
+        val m = HashMap<Char, Pair<Float, Float>>(32)
+        for (k in keys) {
+            if (k.kind != KeyKind.LETTER || k.label.length != 1) continue
+            val ch = k.label[0]
+            if (ch in 'a'..'z') m[ch] = k.centerX to k.centerY
+        }
+        return m
     }
 
     // MARK: router (port KeyboardView.routedHitTest / nearestLetterButton)
