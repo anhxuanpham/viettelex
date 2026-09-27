@@ -85,6 +85,9 @@
                   Identifier = "TouchTargetTests/testLatency">
                </Test>
                <Test
+                  Identifier = "KeyboardBenchTests/testHotPathBench">
+               </Test>
+               <Test
                   Identifier = "KeyboardThemeTests/testKeyboardDecodeMemoryFootprint">
                </Test>
                <Test

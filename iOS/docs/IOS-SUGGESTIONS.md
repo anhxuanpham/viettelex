@@ -197,7 +197,7 @@ thay: chip **"↩︎ Hoàn tác"** (và ⌫ ngay sau) trả bản gốc, đoạn
 
 - **"↩︎ Khôi phục"**: sau vuốt ⌫ xoá theo từ (`WordDelete`), chèn lại đoạn vừa xoá.
 - **"↩︎ Hoàn tác"** công cụ văn bản (`TextTools`, Plus): sau khi đổi HOA/thường/Hoa Từ/Hoa câu/
-  Xoá dấu (từ lưới mẫu câu hoặc hàng công cụ cuối bảng sửa văn bản), trả lại văn bản cũ.
+  Xoá dấu (từ lưới mẫu câu), trả lại văn bản cũ.
 - Cả hai (và "Hoàn tác" thêm dấu) sống tới phím kế tiếp; hành động mới xoá lời mời cũ.
 
 ## Thứ tự ưu tiên slot

@@ -30,6 +30,39 @@ tái sử dụng nguyên engine TelexCore của bản macOS. Khác macOS: iOS ke
 - **Không Full Access** — engine chạy local 100%, không mạng. Điểm mạnh privacy
   so với đa số bàn phím Việt trên iOS.
 
+## Hiệu năng — công tắc & số đo (27/09/2026)
+
+Quy tắc: tính năng ngoài phần gõ lõi mà chạm đường nóng mỗi phím PHẢI có công tắc; TẮT ⇒
+không nạp dữ liệu, không đọc context, không lên lịch việc mỗi phím.
+
+| Tính năng | Công tắc (App Group) | Khi tắt |
+|---|---|---|
+| Thanh gợi ý (+ học từ) | `showSuggestions` | không tạo UserLangModel, không nạp bigram, không asyncAfter mỗi phím |
+| Emoji / chip số / nút Dán | `emojiSuggest` / `numberChips` / `pasteButton` | không tra emoji; không đọc context sau số; không hỏi UIPasteboard |
+| Chip "Thêm dấu" (Plus) | `addTonesChip` (mặc định TẮT) | không đọc câu + chạy AddTones ở mỗi dấu cách |
+| Chọn phím thông minh | `smartTouch` | router không gọi prior (letterPrior = nil), không nạp trie |
+| Gõ vuốt | `swipeTyping` | không template, không SwipeLexicon, không checkpoint engine mỗi phím (iPhone) |
+| Sửa lỗi chạm trượt / sửa dấu từ đã gõ / gõ tắt | `autoFixAdjacent` / `reEditWord` / `shortcutsEnabled` | không chạy fixer nền; không đọc context đầu từ; không tra bảng |
+| Lịch sử clipboard / theme–ảnh nền / rung / Debug log | `clipboardHistory` / theme / `hapticFeedback` / `debugTouchLog` | không đọc clipboard; không giải ảnh; không rung; không ghi log |
+
+Đo: `KeyboardBenchTests` (bộ chậm; `TEST_RUNNER_VT_BENCH_CONFIG=B|C|D`, `-O`) chạy controller
+thật + proxy giả; process extension thật đo bằng driver XCUITest + `footprint`. Simulator
+iPhone 17, máy có tải song song ⇒ lấy trung vị 4 lượt. A = 1.1.2 (36d2b6b), B = mặc định,
+C = mọi tính năng phụ tắt, D = bật hết.
+
+| | A | B | C | D |
+|---|---|---|---|---|
+| Xử lý phím đồng bộ p50 / p95 (ms) | 0.4 / 0.7 | 0.4 / 0.8 | 0.4 / 0.7 | 0.4 / 0.8 |
+| CPU main mỗi phím gồm gợi ý hoãn, p50 (ms) | 3.9 | 3.0 | 0.64 | 4.0 |
+| CPU process / 100 phím (ms) | ~440 | ~356 | ~73 | ~445 |
+| RAM tăng do bàn phím, trong process test (MB) | 15.9 | 16.4 | 11.5 | 21 |
+| RAM extension thật lúc hiện / sau 100 phím (MB) | 19.9 / 29 | 22.1 / 29 | 21.1 / 27 | 24.2 / 26 |
+| CPU idle 60 s (ms, process test; extension thật ≈ 0) | 5–16 | 5–7 | 0.4–0.8 | 4–7 |
+| willAppear→didAppear, extension thật (ms) | 90 | 78 | 62 | 86 |
+
+~80% CPU mỗi phím ở B là thanh gợi ý (riêng emoji ~25%). Mục tiêu RAM < 20MB chưa đạt
+trên simulator: cả C (tắt hết) vẫn ~21MB lúc hiện ⇒ phần lớn là nền UIKit + binary, bản A cũng vậy.
+
 ## Vì sao engine dùng nguyên xi
 
 `textDocumentProxy` của iOS chỉ có `deleteBackward()` + `insertText()` — khớp

@@ -52,4 +52,13 @@ final class NumberChipsTests: XCTestCase {
         XCTAssertNil(NumberChips.parseAmount("1.2tr5"))      // tail chỉ sau số nguyên trơn
         XCTAssertNil(NumberChips.parseAmount("12 5"))
     }
+
+    func testDigitNearCaret() {
+        XCTAssertTrue(NumberChips.digitNearCaret("giá 2 tỷ"))
+        XCTAssertTrue(NumberChips.digitNearCaret("1250000 "))
+        XCTAssertTrue(NumberChips.digitNearCaret("a 12+3"))
+        XCTAssertFalse(NumberChips.digitNearCaret("năm 2026 rồi mới"))
+        XCTAssertFalse(NumberChips.digitNearCaret("xin chào"))
+        XCTAssertFalse(NumberChips.digitNearCaret(""))
+    }
 }

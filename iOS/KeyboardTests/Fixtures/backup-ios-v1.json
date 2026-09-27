@@ -25,6 +25,7 @@
   "minReaderVersion" : 1,
   "platform" : "ios",
   "settings" : {
+    "addTonesChip" : false,
     "autoFixAdjacent" : true,
     "autoRestore" : true,
     "contextualEnglish" : true,
@@ -33,6 +34,7 @@
     "hapticFeedback" : true,
     "liveSpellCheck" : true,
     "modernTone" : true,
+    "numberChips" : true,
     "numberRow" : true,
     "quickTelex" : false,
     "reEditWords" : false,

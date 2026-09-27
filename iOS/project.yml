@@ -109,8 +109,6 @@ targets:
       - Keyboard/KeyLayout.swift
       - Keyboard/KeyboardView.swift
       - Keyboard/OneHand.swift
-      - Keyboard/TextEditing.swift
-      - Keyboard/EditPanelView.swift
       - Keyboard/EmojiPlane.swift
       - Keyboard/EmojiData.swift
       - Keyboard/EmojiSearch.swift
@@ -164,6 +162,9 @@ targets:
       - Keyboard/ClipDetect.swift
       - Keyboard/ClipboardHistory.swift
       - Keyboard/ClipboardFeature.swift
+      # Bench đường nóng qua controller thật (KeyboardBenchTests, bộ chậm).
+      - Keyboard/KeyboardViewController.swift
+      - Keyboard/ClipboardPanel.swift
       - path: Keyboard/Resources/vnlexicon.bin
         buildPhase: resources
       - path: Keyboard/Resources/emoji.bin
@@ -227,5 +228,6 @@ schemes:
             - SuggestBigramTests/testLatencyAndDirtyMemory
             - SwipeDecoderTests/testBenchmark
             - TouchTargetTests/testLatency
+            - KeyboardBenchTests/testHotPathBench
             - KeyboardThemeTests/testKeyboardDecodeMemoryFootprint
             - PlusStoreKitConfigTests/testStoreKitTestSessionLoadsProducts
