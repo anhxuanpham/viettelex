@@ -281,6 +281,24 @@ final class KeyAlternatesTests: XCTestCase {
         for (k, v) in KeyAlternates.padHints { XCTAssertEqual(KeyboardView.padSecondary[String(k)], v) }
     }
 
+    /// Giữ phím 2 tầng "?." / "!," trên trang chữ iPad rồi nhấc ⇒ balloon phải tắt
+    /// (trước đây kẹt lại trên phím — Phil 27/09).
+    @MainActor func testPadPunctHoldHidesBalloonOnRelease() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad)
+        var out: [String] = []
+        let (kb, host) = makePadKeyboard { out.append($0) }
+        _ = host
+        for label in [".", ","] {
+            let b = try XCTUnwrap(kb.debugControl(label) as? UIControl, label)
+            b.sendActions(for: .touchDown)
+            kb.debugChoosePadAlt(b)
+            XCTAssertTrue(kb.debugBalloonVisible, "\(label): giữ ⇒ balloon hiện")
+            b.sendActions(for: .touchUpInside)
+            XCTAssertFalse(kb.debugBalloonVisible, "\(label): nhấc ⇒ balloon tắt")
+        }
+        XCTAssertEqual(out, ["T?", "T!"])
+    }
+
     @MainActor func testPadHoldTypesHint() throws {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad)
         var out: [String] = []

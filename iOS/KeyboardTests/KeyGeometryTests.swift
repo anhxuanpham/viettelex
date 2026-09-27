@@ -395,6 +395,8 @@ final class KeyGeometryTests: XCTestCase {
             for (k, h) in KeyLayout.padNumberHints { XCTAssertEqual(kb.debugPadHint(k), h, k) }
             typed.removeAll()
             kb.debugPadAlternate("@")
+            // Nhấc tay sau khi giữ ⇒ balloon ký tự phụ phải tắt (trước đây kẹt trên phím — Phil 27/09).
+            XCTAssertFalse(kb.debugBalloonVisible, "balloon ký tự phụ phải ẩn khi nhấc tay")
             let at = try XCTUnwrap(kb.debugKeyButton("@"))
             at.sendActions(for: .touchDown); at.sendActions(for: .touchUpInside)
             XCTAssertEqual(typed, ["¥", "@"])

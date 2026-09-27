@@ -2761,8 +2761,11 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             b.padAltTimer = w
             DispatchQueue.main.asyncAfter(deadline: .now() + KeyAlternates.holdDelay, execute: w)
         }, for: .touchDown)
-        b.addAction(UIAction { [weak b] _ in
+        // Nhấc/huỷ: tắt hẹn giờ + ẨN balloon ký tự phụ (trước đây balloon kẹt lại trên
+        // phím "?." / "!," sau khi giữ — Phil 27/09).
+        b.addAction(UIAction { [weak self, weak b] _ in
             b?.padAltTimer?.cancel(); b?.padAltTimer = nil
+            self?.hideBalloon()   // vô điều kiện: takePadAlt() (action chốt) có thể đã reset padAltChosen trước
         }, for: [.touchUpInside, .touchUpOutside, .touchCancel])
     }
     private func choosePadAlt(_ b: KeyButton) {
@@ -3975,6 +3978,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         choosePadAlt(b)
         b.sendActions(for: .touchUpInside)
     }
+    /// Test: giả lập hết giờ GIỮ trên một phím có ký tự phụ (đang chạm).
+    func debugChoosePadAlt(_ c: UIControl) { if let b = c as? KeyButton { choosePadAlt(b) } }
     /// Test: chạm xuống phím có ký tự phụ có hẹn giờ giữ không (rồi huỷ chạm).
     func debugPadAltArmsOnTouchDown(_ title: String) -> Bool {
         guard let b = debugKeyButton(title) as? KeyButton else { return false }
