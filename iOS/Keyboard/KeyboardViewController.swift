@@ -224,6 +224,7 @@ final class KeyboardViewController: UIInputViewController {
         }
         // Omnibox (inline autocomplete tự viết lại chữ): không với lại từ đã chốt.
         bridge.reachBackAllowed = t.keyboardType != .webSearch
+        bridge.shortcutsAllowed = t.keyboardType != .webSearch   // omnibox: không gõ tắt
         // Một lần rebuild cho cả 3 (và 0 lần nếu field giống lần trước).
         keyboard.batchConfigure {
             keyboard.configureReturnKey(type: t.returnKeyType)
@@ -445,7 +446,9 @@ final class KeyboardViewController: UIInputViewController {
             let composedBefore = bridge.composedWord
             let committed = bridge.boundary(" ", proxy: proxy)
             // Auto-restore vừa ghi đè dạng có dấu → nhớ lại cho backspace-undo.
-            restoreUndo = (!composedBefore.isEmpty && committed != composedBefore)
+            // (Gõ tắt vừa bung thì không: ⌫ kế tiếp tự trả lại chữ tắt trong bridge.)
+            restoreUndo = (!composedBefore.isEmpty && committed != composedBefore
+                           && !bridge.expandedAtLastBoundary)
                 ? (raw: committed, composed: composedBefore) : nil
             undoOfferActive = false
             commitAndLearn(committed, accepted: openAccepted)
@@ -746,6 +749,13 @@ final class KeyboardViewController: UIInputViewController {
     /// `accepted` = user bấm nhận suggestion → weight 2 (tín hiệu mạnh hơn).
     private func commitAndLearn(_ word: String, accepted: Bool = false) {
         guard !word.isEmpty else { return }
+        // Nội dung gõ tắt nhiều từ ("mọi người"): học lần lượt từng từ (bigram trong cụm).
+        let parts = ShortcutLearning.words(word)
+        if parts.count != 1 || parts.first != word {
+            for p in parts { commitAndLearn(p, accepted: accepted) }
+            if parts.isEmpty { lastWord = nil; lastWord2 = nil }
+            return
+        }
         if learnEnabled {
             langModel.record(word: word, after: lastWord, prev2: lastWord2,
                              weight: accepted ? 2 : 1)
@@ -922,6 +932,12 @@ final class KeyboardViewController: UIInputViewController {
                                  need: 2, typed: composed)
             set.word = words.first
             set.word2 = words.count > 1 ? words.last : nil
+        }
+        // Đang gõ đúng một chữ tắt: slot chính hiện nội dung sẽ bung (chạm = bung ngay).
+        // (Nội dung nhiều dòng không lên bar — chạm sẽ chèn sai; gõ ranh giới vẫn bung.)
+        if let preview = bridge.shortcutPreview, !preview.contains("\n"), set.word != preview {
+            set.word2 = set.word ?? set.word2
+            set.word = preview
         }
         keyboard.showSuggestions(set)
     }

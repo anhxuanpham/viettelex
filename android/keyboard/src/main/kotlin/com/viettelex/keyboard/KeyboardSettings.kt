@@ -35,6 +35,9 @@ data class KeyboardSettings(
     var swipeEnglish: Boolean = true,
     /** Telex cho bàn phím cứng — mặc định BẬT; tắt ⇒ IME không đụng KeyEvent. */
     var hardwareTelex: Boolean = true,
+    /** Gõ tắt — mặc định BẬT, bảng mặc định RỖNG (như macOS; "Thêm bộ gợi ý" trong app). */
+    var shortcutsEnabled: Boolean = true,
+    var shortcuts: ShortcutTable = ShortcutTable(),
     // Phần UI (iOS đọc rải rác trong KeyboardView) — gom về đây cho IME.
     var templatesEnabled: Boolean = true,
     var showSpaceLogo: Boolean = true,
@@ -69,6 +72,8 @@ data class KeyboardSettings(
             s.swipeTyping = b(Keys.SWIPE_TYPING, s.swipeTyping)
             s.swipeEnglish = b(Keys.SWIPE_ENGLISH, s.swipeEnglish)
             s.hardwareTelex = b(Keys.HARDWARE_TELEX, s.hardwareTelex)
+            s.shortcutsEnabled = b(Keys.SHORTCUTS_ENABLED, s.shortcutsEnabled)
+            if (s.shortcutsEnabled) s.shortcuts = ShortcutTable(ShortcutFile.parse(get(Keys.SHORTCUTS) as? String))
             s.templatesEnabled = b(Keys.TEMPLATES_ENABLED, s.templatesEnabled)
             s.showSpaceLogo = b(Keys.SHOW_SPACE_LOGO, s.showSpaceLogo)
             s.debugTouchLog = b(Keys.DEBUG_TOUCH_LOG, s.debugTouchLog)
