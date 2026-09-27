@@ -125,7 +125,9 @@ final class KeyLayoutTests: XCTestCase {
     /// Hàng đáy: 🌐 đầu hàng mọi plane iPad; plane số full không phẩy, compact có ô undo/redo.
     func testPadBottomRowsMatchStock() {
         XCTAssertEqual(KeyLayout.padBottomRow(.full, letters: true).map(\.id),
-                       ["globe", "plane", "emoji", "space", "comma", "plane2", "dismiss"])
+                       ["globe", "plane", "emoji", "space", "plane2", "dismiss"], "stock: không phím , riêng")
+        XCTAssertEqual(KeyLayout.padBottomRow(.compact, letters: true).map(\.id),
+                       ["globe", "plane", "emoji", "space", "plane2", "dismiss"])
         XCTAssertEqual(KeyLayout.padBottomRow(.full, letters: false).map(\.id),
                        ["globe", "plane", "emoji", "space", "plane2", "dismiss"])
         XCTAssertEqual(KeyLayout.padBottomRow(.compact, letters: false).map(\.id),

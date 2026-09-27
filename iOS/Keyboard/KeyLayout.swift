@@ -37,11 +37,12 @@ enum KeyLayout {
     }
 
     /// Hàng đáy — units = PHẦN của bề rộng hàng (multiplier theo stack width).
+    /// iPad full plane chữ = stock [🌐][.?123][☺︎][space][.?123][⌨︎] — KHÔNG phím ","
+    /// riêng (phím "!," hàng 3 đã có ","; Phil 27/09). Đo stock Pro 11": 58.7 / 88 trên 834.
     static let padBottom: [Key] = [
         Key(id: "globe", units: 0.068), Key(id: "plane", units: 0.068),
         Key(id: "emoji", units: 0.068), Key(id: "space", units: nil),
-        Key(id: "comma", units: 0.068), Key(id: "plane2", units: 0.102),
-        Key(id: "dismiss", units: 0.102),
+        Key(id: "plane2", units: 0.102), Key(id: "dismiss", units: 0.102),
     ]
     /// iPhone: đo stock iOS 26/27 (KeyGeometry): 123 / emoji 43.3pt trên 402 (0.108), "."
     /// bằng phím chữ (0.083), return 0.156 — cũ 0.12/0.12/0.075/0.14 làm phẩy lệch phải
@@ -118,7 +119,8 @@ enum KeyLayout {
         "%": "§", "-": "|", "+": "~", "=": "…", "/": "\\", ";": "<", ":": ">",
     ]
 
-    /// Hàng đáy iPad theo kiểu + plane. `letters`: [🌐][.?123][☺︎][space][,][.?123][⌨︎];
+    /// Hàng đáy iPad theo kiểu + plane. `letters`: [🌐][.?123][☺︎][space][.?123][⌨︎] (stock,
+    /// full lẫn mini — "," nằm ở phím "!," hàng 3);
     /// plane số/ký hiệu full: [🌐][ABC][☺︎][space][ABC][⌨︎] (stock không có phẩy);
     /// compact số/ký hiệu: [🌐][ABC][☺︎][space][ô undo/redo][ABC][⌨︎].
     /// units = phần bề rộng hàng (compact: stock mini 59 / 93.5 trên 744).
@@ -133,7 +135,7 @@ enum KeyLayout {
         case (.compact, true): return [
             Key(id: "globe", units: 0.079), Key(id: "plane", units: 0.079),
             Key(id: "emoji", units: 0.079), Key(id: "space", units: nil),
-            Key(id: "comma", units: 0.079), Key(id: "plane2", units: 0.126),
+            Key(id: "plane2", units: 0.126),
             Key(id: "dismiss", units: 0.126),
         ]
         case (.compact, false): return [

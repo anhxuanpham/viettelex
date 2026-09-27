@@ -24,6 +24,20 @@ enum KeyAlternates {
         "z": "*", "x": "\"", "c": "%", "v": ":", "b": "/", "n": "!", "m": "?",
     ]
 
+    /// iPad: ký tự phụ stock in xám trên phím chữ (KHÁC bảng iPhone) — vuốt xuống hoặc
+    /// giữ `holdDelay` đều ra ký tự này. Nhãn luôn hiện như stock ⇒ giữ luôn bật, không
+    /// theo công tắc longPress* của iPhone (xem `padMap`).
+    static let padHints: [Character: String] = [
+        "q": "1", "w": "2", "e": "3", "r": "4", "t": "5",
+        "y": "6", "u": "7", "i": "8", "o": "9", "p": "0",
+        "a": "@", "s": "#", "d": "$", "f": "&", "g": "*",
+        "h": "(", "j": ")", "k": "'", "l": "\"",
+        "z": "%", "x": "-", "c": "+", "v": "=", "b": "/", "n": ";", "m": ":",
+    ]
+    /// Bảng giữ phím của iPad = đúng nhãn đang vẽ trên phím (luôn vẽ ⇒ luôn bật; VoiceOver
+    /// giữ nguyên như vuốt xuống iPad — không gate riêng).
+    static func padMap() -> [Character: String] { padHints }
+
     /// Giữ bao lâu thì thành ký tự phụ — ngắn hơn giữ ⌫/emoji (0,45–0,5 s), dài hơn
     /// trackpad phím cách (0,3 s) để gõ chậm không lỡ tay.
     static let holdDelay: TimeInterval = 0.38

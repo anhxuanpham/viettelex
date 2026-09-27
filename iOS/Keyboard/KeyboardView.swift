@@ -457,8 +457,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// Bảng ký tự phụ của lần dựng hiện tại (rỗng ⇒ không nhãn, không hẹn giờ).
     private var activeAlts: [Character: String] = [:]
     private var builtAlts: [Character: String] = [:]
+    /// iPad: đúng nhãn ký tự phụ trên phím (KeyAlternates.padMap) — giữ = vuốt xuống.
     private func currentAlts() -> [Character: String] {
-        KeyAlternates.map(numbers: altNumbersSetting, symbols: altSymbolsSetting,
+        if Self.isPad { return KeyAlternates.padMap() }
+        return KeyAlternates.map(numbers: altNumbersSetting, symbols: altSymbolsSetting,
                           numberRow: numberRowEnabled, isPad: Self.isPad, accessibility: altAccessibility)
     }
     func configureKeyAlternates(numbers: Bool, symbols: Bool) {
@@ -1834,13 +1836,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     }
 
     /// Ký tự phụ (xám, phía trên) của phím chữ iPad — vuốt xuống trên phím để gõ.
-    static let padSecondary: [String: String] = [
-        "q": "1", "w": "2", "e": "3", "r": "4", "t": "5",
-        "y": "6", "u": "7", "i": "8", "o": "9", "p": "0",
-        "a": "@", "s": "#", "d": "$", "f": "&", "g": "*",
-        "h": "(", "j": ")", "k": "'", "l": "\"",
-        "z": "%", "x": "-", "c": "+", "v": "=", "b": "/", "n": ";", "m": ":",
-    ]
+    static let padSecondary: [String: String] =
+        Dictionary(uniqueKeysWithValues: KeyAlternates.padHints.map { (String($0.key), $0.value) })
 
     /// Phím dấu 2 tầng của iPad ("!" trên "," dưới, cùng cỡ như stock). Shift bật →
     /// ra ký tự trên (nhả shift một lần như phím chữ), tắt → ký tự dưới.
@@ -2158,7 +2155,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             switch inputKind {
             case .email: puncts = [("@", "@", 0.11), (".", ".", 0.09)]
             case .url:   puncts = [(".", ".", 0.075), ("/", "/", 0.075), (".com", ".com", 0.17)]
-            default:     puncts = [(",", ",", 0.075)]
+            // iPad plane chữ: không phím "," riêng như stock ("!," hàng 3 đã có).
+            default:     puncts = padLetters ? [] : [(",", ",", 0.075)]
             }
         } else {
             puncts = [(",", ",", 0.075)]
@@ -2171,8 +2169,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             else if Self.isPad { b.padRole = .digit }
             armCommit(b) { [weak self] in self?.tapped(.text(p.insert)) }
             // Bàn chữ iPhone: giữ "," ra "." (KeyAlternates.commaHold — bảng ký tự phụ không
-            // rỗng; iPad/VoiceOver đã rỗng sẵn).
-            if p.title == ",", planeKey == "123", KeyAlternates.commaHold(alternates: activeAlts) {
+            // rỗng; VoiceOver đã rỗng sẵn; iPad có phím ",/." 2 tầng riêng).
+            if !Self.isPad, p.title == ",", planeKey == "123", KeyAlternates.commaHold(alternates: activeAlts) {
                 armCommaHold(b)
             }
             views.append(b)

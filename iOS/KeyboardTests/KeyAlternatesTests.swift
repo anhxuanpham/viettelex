@@ -252,4 +252,107 @@ final class KeyAlternatesTests: XCTestCase {
         XCTAssertFalse(kb.altHoldActive)
         withExtendedLifetime(host) {}
     }
+
+    // MARK: KeyboardView (iPad) — giữ phím chữ = ký tự phụ in trên phím (bug Phil 27/09:
+    // giữ "w" không ra "2"; trước chỉ vuốt xuống được).
+
+    @MainActor private func makePadKeyboard(log: @escaping (String) -> Void) -> (KeyboardView, UIView) {
+        let kb = KeyboardView(needsGlobe: true, inputController: nil) { k in
+            switch k {
+            case .letter(let c): log("L\(c.lowercased())")
+            case .replaceLastLetter(let s): log("R\(s)")
+            case .text(let s): log("T\(s)")
+            default: log("?")
+            }
+        }
+        let host = UIView(frame: CGRect(x: 0, y: 0, width: 834, height: 300))
+        host.addSubview(kb)
+        kb.frame = host.bounds
+        kb.configureKeyAlternates(numbers: false, symbols: false)   // công tắc iPhone không ảnh hưởng iPad
+        kb.layoutIfNeeded()
+        return (kb, host)
+    }
+
+    func testPadMapIsTheHintPrintedOnKeys() {
+        XCTAssertEqual(KeyAlternates.padMap().count, 26)
+        XCTAssertEqual(KeyAlternates.padMap()["w"], "2")
+        XCTAssertEqual(KeyAlternates.padMap()["a"], "@")
+        XCTAssertEqual(KeyAlternates.padMap()["f"], "&", "bảng iPad khác iPhone (f → _)")
+        for (k, v) in KeyAlternates.padHints { XCTAssertEqual(KeyboardView.padSecondary[String(k)], v) }
+    }
+
+    @MainActor func testPadHoldTypesHint() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad)
+        var out: [String] = []
+        let (kb, host) = makePadKeyboard { out.append($0) }
+        XCTAssertTrue(kb.altHoldActive, "iPad: nhãn luôn hiện ⇒ giữ luôn bật")
+        XCTAssertEqual(kb.debugPadHint("w") ?? kb.debugPadHint("W"), "2")
+        XCTAssertTrue(kb.debugHold("w"))
+        XCTAssertEqual(out, ["Lw", "R2"])
+        out = []
+        kb.debugHold("a")
+        XCTAssertEqual(out, ["La", "R@"])
+        out = []
+        kb.debugHold("e")                                        // "tie" + giữ e ⇒ R3 (rollback ở bridge)
+        XCTAssertEqual(out, ["Le", "R3"])
+        out = []
+        kb.debugHold("e", fire: false)                          // chạm thường ⇒ chữ
+        XCTAssertEqual(out, ["Le"])
+        out = []
+        kb.debugHold("e", drift: 30)                            // trôi ngang ⇒ không phải giữ
+        XCTAssertEqual(out, ["Le"])
+        out = []
+        kb.debugHold("q", secondTouch: "s")                     // đã bắn: chốt "1" trước phím mới
+        XCTAssertEqual(out, ["Lq", "R1", "Ls"])
+        // Vuốt xuống vẫn ra ký tự phụ (không cần đợi giờ giữ).
+        out = []
+        let x = try XCTUnwrap(kb.debugLetterFrame("x"))
+        let c = CGPoint(x: x.midX, y: x.midY)
+        kb.debugTouch(from: c, through: [CGPoint(x: c.x, y: c.y + 12), CGPoint(x: c.x, y: c.y + 25)], start: 10)
+        XCTAssertEqual(out, ["Lx", "R-"])
+        // Chạm thường.
+        out = []
+        kb.debugTouch(from: c, through: [], start: 20)
+        XCTAssertEqual(out, ["Lx"])
+        withExtendedLifetime(host) {}
+    }
+
+    /// Toàn luồng như controller: "tie" + giữ e trên iPad ⇒ huỷ đúng phím e (checkpoint,
+    /// không ⌫) rồi chốt "3" ⇒ "tie3" (giống iPhone).
+    @MainActor func testPadHoldRollbackThroughBridge() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad)
+        let p = MockProxy(), br = EngineBridge(settings: KeyboardSettings())
+        for ch in "tie" { br.letter(ch, proxy: p) }
+        let kb = KeyboardView(needsGlobe: true, inputController: nil) { k in
+            switch k {
+            case .letter(let c): br.letter(Character(c.lowercased()), proxy: p)
+            case .replaceLastLetter(let s): if br.undoLastLetter(proxy: p) { _ = br.boundary(s, proxy: p) }
+            default: break
+            }
+        }
+        let host = UIView(frame: CGRect(x: 0, y: 0, width: 834, height: 300))
+        host.addSubview(kb)
+        kb.frame = host.bounds
+        kb.layoutIfNeeded()
+        kb.debugHold("e")
+        XCTAssertEqual(p.text, "tie3")
+        withExtendedLifetime(host) {}
+    }
+
+    /// Bàn chữ iPad: không phím "," riêng cạnh space (stock), không giữ "," ra ".".
+    @MainActor func testPadLettersBottomRowHasNoComma() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad)
+        let (kb, host) = makePadKeyboard { _ in }
+        for compact in [false, true] {
+            kb.debugSetPadStyle(compact: compact)
+            kb.layoutIfNeeded()
+            let rows = kb.debugRowLabels()
+            XCTAssertEqual(rows.last?.count, 6, "\(rows.last ?? [])")
+            XCTAssertFalse(rows.last?.contains(",") ?? true)
+            XCTAssertEqual(rows.last?.first, "Bàn phím tiếp theo")
+            XCTAssertEqual(rows.last?[3], "Dấu cách")
+            XCTAssertNil(kb.debugCommaHint)
+        }
+        withExtendedLifetime(host) {}
+    }
 }
