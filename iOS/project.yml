@@ -106,6 +106,9 @@ targets:
       - Keyboard/PlanePolicy.swift
       - Keyboard/KeyLayout.swift
       - Keyboard/KeyboardView.swift
+      - Keyboard/OneHand.swift
+      - Keyboard/TextEditing.swift
+      - Keyboard/EditPanelView.swift
       - Keyboard/EmojiPlane.swift
       - Keyboard/EmojiData.swift
       - Keyboard/EmojiSearch.swift

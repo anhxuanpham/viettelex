@@ -91,6 +91,51 @@ class FakeEditor(initial: String = "", var selStart: Int = initial.length, var s
     val actions = ArrayList<Int>()
     override fun performEditorAction(actionId: Int): Boolean { actions.add(actionId); return true }
     override fun sendKey(key: EditorPort.PortKey) { keys.add(key); pendingKeys.add(key); if (depth == 0) flushKeys() }
+
+    // --- bảng sửa văn bản: performContextMenuAction + phím kèm meta ---
+    /** false ⇒ app không hỗ trợ menu (WebView cũ…): IME phải rơi về phím tắt. */
+    var menuSupported = true
+    /** undo/redo là menu riêng: TextView có, Chrome không. */
+    var undoMenuSupported = true
+    var clipboard = ""
+    val menus = ArrayList<EditorPort.MenuAction>()
+    val metaKeys = ArrayList<Triple<EditorPort.PortKey, Boolean, Boolean>>()
+    private val undoStack = ArrayList<Triple<String, Int, Int>>()
+    private val redoStack = ArrayList<Triple<String, Int, Int>>()
+    fun snapshot() { undoStack.add(Triple(text, selStart, selEnd)); redoStack.clear() }
+    private fun restore(t: Triple<String, Int, Int>) { sb.setLength(0); sb.append(t.first); selStart = t.second; selEnd = t.third }
+    private fun selected() = sb.substring(minOf(selStart, selEnd), maxOf(selStart, selEnd))
+    override fun menuAction(action: EditorPort.MenuAction): Boolean {
+        if (!menuSupported) return false
+        if ((action == EditorPort.MenuAction.UNDO || action == EditorPort.MenuAction.REDO) && !undoMenuSupported) return false
+        menus.add(action)
+        when (action) {
+            EditorPort.MenuAction.SELECT_ALL -> { selStart = 0; selEnd = sb.length }
+            EditorPort.MenuAction.COPY -> if (selStart != selEnd) clipboard = selected()
+            EditorPort.MenuAction.CUT -> if (selStart != selEnd) {
+                snapshot(); clipboard = selected()
+                val lo = minOf(selStart, selEnd); val hi = maxOf(selStart, selEnd); selStart = lo; selEnd = hi
+                replaceSel("")
+            }
+            EditorPort.MenuAction.PASTE -> {
+                snapshot()
+                val lo = minOf(selStart, selEnd); val hi = maxOf(selStart, selEnd); selStart = lo; selEnd = hi
+                replaceSel(clipboard)
+            }
+            EditorPort.MenuAction.UNDO -> undoStack.removeLastOrNull()?.let { redoStack.add(Triple(text, selStart, selEnd)); restore(it) }
+            EditorPort.MenuAction.REDO -> redoStack.removeLastOrNull()?.let { undoStack.add(Triple(text, selStart, selEnd)); restore(it) }
+        }
+        return true
+    }
+    /** Shift+←/→: mở rộng vùng chọn (neo = đầu kia) như ArrowKeyMovementMethod. */
+    override fun sendKeyMeta(key: EditorPort.PortKey, shift: Boolean, ctrl: Boolean) {
+        metaKeys.add(Triple(key, shift, ctrl))
+        if (shift && !ctrl) when (key) {
+            EditorPort.PortKey.LEFT -> if (selEnd > 0) selEnd--
+            EditorPort.PortKey.RIGHT -> if (selEnd < sb.length) selEnd++
+            else -> {}
+        }
+    }
 }
 
 class IcProxyTest {

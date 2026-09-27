@@ -30,6 +30,10 @@ fun rememberIntPref(key: String, default: Int): MutableState<Int> =
     rememberPref(key, { getInt(key, default) }, { putInt(key, it) })
 
 @Composable
+fun rememberStringPref(key: String, default: String): MutableState<String> =
+    rememberPref(key, { getString(key, default) ?: default }, { putString(key, it) })
+
+@Composable
 private fun <T> rememberPref(
     key: String,
     read: SharedPreferences.() -> T,

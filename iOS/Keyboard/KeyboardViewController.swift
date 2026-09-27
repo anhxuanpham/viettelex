@@ -66,6 +66,13 @@ final class KeyboardViewController: UIInputViewController {
         keyboard.onTemplate = { [weak self] in self?.insertTemplate($0) }
         keyboard.onOpenTemplates = { [weak self] in self?.openTemplatesInApp() }
         keyboard.onTextTool = { [weak self] in self?.applyTextTool($0) }
+        keyboard.onEditAction = { [weak self] in self?.performEdit($0) }
+        keyboard.editCapabilities = { [weak self] in self?.editCaps() ?? TextEditing.Caps() }
+        keyboard.onOneHandChange = { side in
+            // Bàn phím tự lưu (không Full Access thì không ghi được App Group).
+            UserDefaults.standard.set(side.rawValue, forKey: OneHand.key)
+            if side != .off { UserDefaults.standard.set(side.rawValue, forKey: OneHand.lastSideKey) }
+        }
         keyboard.translatesAutoresizingMaskIntoConstraints = false
         // Như KeyboardView: nền trong suốt = touch xuyên sang app host (rớt phím).
         view.backgroundColor = KeyboardView.touchableClear
@@ -113,6 +120,7 @@ final class KeyboardViewController: UIInputViewController {
         // Trait ô (layout, return key, passthrough, bar) — force: mỗi lần hiện áp lại
         // appearance/mẫu câu dù trait y hệt (batchConfigure tự dedupe rebuild).
         refreshFieldTraits(force: true)
+        applyOneHandSetting()
         TouchLog.session(fullAccess: hasFullAccess, traits: fieldTraits?.logDescription ?? "")
         // Rung phím: cần cả toggle trong app LẪN Toàn quyền Truy cập (iOS
         // vô hiệu haptics trong extension không có Full Access).
@@ -299,6 +307,70 @@ final class KeyboardViewController: UIInputViewController {
         if !applyingEdit {
             if externalChangePending { syncComposition("selectionDidChange") }
             refreshFieldTraits()
+        }
+        keyboard?.refreshEditPanel()     // Sao chép / Cắt sáng khi người dùng vừa chọn chữ
+    }
+
+    // MARK: chế độ một tay + bảng sửa văn bản
+
+    /// App (App Group) vừa đổi lựa chọn ⇒ theo app; không thì theo trạng thái bàn phím tự lưu.
+    private func applyOneHandSetting() {
+        let std = UserDefaults.standard
+        let group = UserDefaultsProvider.shared?.string(forKey: OneHand.key)
+        let seen = std.string(forKey: OneHand.seenGroupKey)
+        let side = OneHand.resolve(group: group, seenGroup: seen, local: std.string(forKey: OneHand.key))
+        if group != seen {
+            std.set(group, forKey: OneHand.seenGroupKey)
+            std.set(side.rawValue, forKey: OneHand.key)
+        }
+        if let last = std.string(forKey: OneHand.lastSideKey).flatMap(OneHandSide.init(rawValue:)), last != .off {
+            keyboard.lastOneHandSide = last
+        }
+        keyboard.configureOneHand(side)
+    }
+
+    /// Sao chép / cắt cần phần ĐANG CHỌN (selectedText, iOS 16+) + Full Access; dán cần
+    /// Full Access + clipboard có chữ (hasStrings không bật hỏi quyền dán).
+    private func editCaps() -> TextEditing.Caps {
+        guard hasFullAccess else { return TextEditing.Caps() }
+        let sel = textDocumentProxy.selectedText?.isEmpty == false
+        return TextEditing.Caps(canCopyCut: sel, canPaste: UIPasteboard.general.hasStrings)
+    }
+
+    /// Thực thi nút bảng sửa (xem giới hạn iOS ở TextEditing.swift). Di con trỏ tái dùng
+    /// đường trackpad (.moveCursor / .moveLine) — engine reset, auto-shift, gợi ý như cũ.
+    private func performEdit(_ a: TextEditAction) {
+        switch a {
+        case .left: handle(.moveCursor(-1))
+        case .right: handle(.moveCursor(1))
+        case .up: handle(.moveLine(-1))
+        case .down: handle(.moveLine(1))
+        case .lineStart:
+            let off = TextEditing.lineStartOffset(before: textDocumentProxy.documentContextBeforeInput ?? "")
+            if off != 0 { handle(.moveCursor(off)) }
+        case .lineEnd:
+            let off = TextEditing.lineEndOffset(after: textDocumentProxy.documentContextAfterInput ?? "")
+            if off != 0 { handle(.moveCursor(off)) }
+        case .delete: handle(.backspace)
+        case .copy, .cut:
+            guard hasFullAccess, let s = textDocumentProxy.selectedText, !s.isEmpty else { return }
+            let pb = UIPasteboard.general
+            pb.string = s
+            pasteUsedChange = pb.changeCount          // chữ của chính mình: khỏi mời "Dán" lại
+            pasteCached = false
+            guard a == .cut else { return }
+            applyingEdit = true
+            textDocumentProxy.deleteBackward()        // có vùng chọn ⇒ xoá đúng vùng chọn
+            applyingEdit = false
+            bridge.reset(); lastWord = nil; lastWord2 = nil
+            restoreUndo = nil; undoOfferActive = false
+            updateAutoShift()
+            updateSuggestions()
+        case .paste:
+            guard hasFullAccess else { return }
+            acceptSuggestion(KeyboardView.pasteToken)  // cùng đường với thẻ Dán
+        case .close, .oneHand, .select, .selectWord, .selectAll, .undo, .redo:
+            break                                      // view tự lo / iOS không làm được
         }
     }
 

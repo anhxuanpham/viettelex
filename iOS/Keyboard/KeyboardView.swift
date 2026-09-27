@@ -21,7 +21,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     }
 
     /// emojiSearch = hàng ô tìm emoji + plane chữ (phím chặn vào EmojiSearchSession).
-    private enum Plane { case letters, numbers, symbols, emoji, templates, emojiSearch }
+    /// edit = bảng sửa văn bản (EditPanel).
+    private enum Plane { case letters, numbers, symbols, emoji, templates, emojiSearch, edit }
     /// Plane có phím chữ qua router (chữ thường + chế độ tìm emoji).
     private var lettersLike: Bool { plane == .letters || plane == .emojiSearch }
 
@@ -77,6 +78,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private var rowsHeightConstraint: NSLayoutConstraint?
     private var rowsMaxHeightConstraint: NSLayoutConstraint?
     private var rowsTopConstraint: NSLayoutConstraint?
+    private var rowsLeftConstraint: NSLayoutConstraint?
+    private var rowsRightConstraint: NSLayoutConstraint?
     private var repeatTimer: Timer?
     private var lastSuggestionSig = ""
     private var wordDeleteTick = 0
@@ -152,9 +155,14 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // 999: host áp frame khổng lồ lúc settle thì nhả êm, dư tràn lên trên.
         let rowsTop = rowsContainer.topAnchor.constraint(equalTo: topAnchor, constant: 0)
         rowsTop.priority = UILayoutPriority(999)
+        // Hai mép là constraint GIỮ LẠI: chế độ một tay thụt vào (applyOneHand).
+        let rowsLeft = rowsContainer.leftAnchor.constraint(equalTo: leftAnchor)
+        let rowsRight = rowsContainer.rightAnchor.constraint(equalTo: rightAnchor)
+        rowsLeftConstraint = rowsLeft
+        rowsRightConstraint = rowsRight
         NSLayoutConstraint.activate([
-            rowsContainer.leftAnchor.constraint(equalTo: leftAnchor),
-            rowsContainer.rightAnchor.constraint(equalTo: rightAnchor),
+            rowsLeft,
+            rowsRight,
             rowsHeight,
             rowsMax,
             rowsTop,
@@ -178,7 +186,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // Thụt 2 mép chừa chỗ cho burgerZone/chevronZone (ghim cố định) — gợi ý
         // nằm giữa, không bao giờ chồng lên 2 nút mép.
         NSLayoutConstraint.activate([
-            suggestionBar.leftAnchor.constraint(equalTo: leftAnchor, constant: Self.stripZoneWidth),
+            suggestionBar.leftAnchor.constraint(equalTo: leftAnchor,
+                                                constant: Self.stripZoneWidth + Self.editZoneWidth),
             suggestionBar.rightAnchor.constraint(equalTo: rightAnchor, constant: -Self.stripZoneWidth),
             suggestionBar.topAnchor.constraint(equalTo: topAnchor, constant: Self.barTopPad),
             suggestionBar.heightAnchor.constraint(equalToConstant: 20),
@@ -309,6 +318,25 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         addSubview(b)
         return b
     }()
+    /// Icon con trỏ cạnh burger: chạm = bảng sửa văn bản; giữ lâu = bật/tắt một tay (iPhone).
+    static let editZoneWidth: CGFloat = 44
+    private lazy var editZone: UIButton = {
+        let b = UIButton(type: .custom)
+        b.addAction(UIAction { [weak self] _ in
+            Self.clickModifier()
+            self?.toggleEditPanel()
+        }, for: .touchUpInside)
+        let hold = UILongPressGestureRecognizer(target: self, action: #selector(editZoneHold(_:)))
+        hold.minimumPressDuration = 0.45
+        b.addGestureRecognizer(hold)
+        addSubview(b)
+        return b
+    }()
+    @objc private func editZoneHold(_ g: UILongPressGestureRecognizer) {
+        guard g.state == .began, !Self.isPad else { return }
+        Self.clickModifier()
+        setOneHand(OneHand.toggled(oneHand, preferred: lastOneHandSide))
+    }
     private lazy var chevronZone: UIButton = {
         let b = UIButton(type: .custom)
         b.addAction(UIAction { [weak self] _ in self?.toggleBarCollapsed() }, for: .touchUpInside)
@@ -323,10 +351,12 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let open = suggestionsEnabled && !barCollapsed && plane != .emoji && plane != .emojiSearch
         burgerZone.isHidden = !open || !templatesEnabled
         chevronZone.isHidden = !open
+        editZone.isHidden = !open
         guard open, bounds.width > 0 else { return }
         let strip = max(rowsTopConstraint?.constant ?? Self.openStrip, Self.openStrip)
         let w = Self.stripZoneWidth
         burgerZone.frame = CGRect(x: 0, y: 0, width: w, height: strip)
+        editZone.frame = CGRect(x: w, y: 0, width: Self.editZoneWidth, height: strip)
         chevronZone.frame = CGRect(x: bounds.width - w, y: 0, width: w, height: strip)
         let ink = palette.barInk.ui
         burgerZone.setImage(UIImage(systemName: "line.3.horizontal",
@@ -343,6 +373,13 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let bottomInset = max(strip - 20 - Self.barTopPad, 0)
         burgerZone.contentEdgeInsets = UIEdgeInsets(top: Self.barTopPad, left: 0, bottom: bottomInset, right: 0)
         chevronZone.contentEdgeInsets = UIEdgeInsets(top: Self.barTopPad, left: 0, bottom: bottomInset, right: 0)
+        editZone.setImage(UIImage(systemName: "character.cursor.ibeam",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)), for: .normal)
+        editZone.tintColor = ink.withAlphaComponent(plane == .edit ? 0.9 : 0.45)
+        editZone.accessibilityLabel = plane == .edit ? "Đóng bảng sửa văn bản" : "Bảng sửa văn bản"
+        editZone.accessibilityHint = Self.isPad ? nil : "Giữ lâu để bật hoặc tắt chế độ một tay"
+        editZone.contentEdgeInsets = UIEdgeInsets(top: Self.barTopPad, left: 0, bottom: bottomInset, right: 0)
+        bringSubviewToFront(editZone)
         bringSubviewToFront(burgerZone)
         bringSubviewToFront(chevronZone)
     }
@@ -452,8 +489,12 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         if bounds.width != lastLayoutWidth {
             lastLayoutWidth = bounds.width
             updateSuggestionChrome()
-            if let r = indentedRow {
-                let inset = 3 + indentedRowInset * bounds.width / 10
+        }
+        applyOneHand()
+        if let r = indentedRow {
+            // Thụt theo bề ngang VÙNG PHÍM (một tay: hẹp hơn view) — hàng 2 đúng nửa phím.
+            let inset = 3 + indentedRowInset * keysWidth / 10
+            if r.layoutMargins.left != inset {
                 r.layoutMargins = UIEdgeInsets(top: 10, left: inset, bottom: 0, right: inset)
             }
         }
@@ -461,8 +502,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         loadWallpaperIfNeeded()
         logGeometryIfChanged()
         if pasteCard.superview != nil, !pasteCard.isHidden {   // xoay màn hình
-            let w = Self.stripZoneWidth
-            pasteCard.frame = CGRect(x: w, y: Self.barTopPad, width: max(bounds.width - 2 * w, 0),
+            let w = Self.stripZoneWidth, e = Self.editZoneWidth
+            pasteCard.frame = CGRect(x: w + e, y: Self.barTopPad, width: max(bounds.width - 2 * w - e, 0),
                                      height: Self.openStrip - Self.barTopPad)
         }
     }
@@ -593,18 +634,28 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// Bubble ⚙️ cuối lưới → controller mở tab Mẫu Câu của app.
     var onOpenTemplates: (() -> Void)?
 
-    // MARK: công cụ văn bản (Plus) — lối vào là chip đầu lưới mẫu câu (burger).
-    // iOS không có bảng sửa văn bản; đây là chỗ ít đụng code nhất: chạm "Aa Công cụ
-    // văn bản" → lưới đổi sang danh sách thao tác, chạm thao tác → về bàn phím chữ.
+    // MARK: công cụ văn bản (Plus) — hai lối vào: hàng công cụ cuối bảng sửa văn bản
+    // (EditPanelView, áp lên phần đang chọn / câu trước con trỏ, ở lại bảng sửa) và chip
+    // đầu lưới mẫu câu (burger): chạm "Aa Công cụ văn bản" → lưới đổi sang danh sách thao
+    // tác, chạm thao tác → về bàn phím chữ.
 
     /// PlusGate.isUnlocked(.textTools) — controller đặt mỗi lần hiện bàn phím.
     var textToolsEnabled = false {
-        didSet { if oldValue != textToolsEnabled, templatesActive { rebuild() } }
+        didSet {
+            if oldValue != textToolsEnabled, templatesActive || plane == .edit { rebuildUncachedPlane() }
+        }
     }
     var onTextTool: ((TextTool) -> Void)?
     private var textToolsMode = false
     private static let textToolsEntryID = "\u{E000}tools"
     private static let textToolsBackID = "\u{E000}back"
+
+    /// Dựng lại plane KHÔNG cache đang hiện (mẫu câu / bảng sửa) dù chữ ký không đổi —
+    /// rebuild() bỏ qua khi builtPlane == plane (lật danh sách công cụ, bật/tắt Plus).
+    private func rebuildUncachedPlane() {
+        if plane == .templates || plane == .edit { builtPlane = nil }
+        rebuild()
+    }
 
     private func toggleTemplates() {
         guard templatesEnabled else { return }
@@ -781,8 +832,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             pasteCard.accessibilityLabel = image ? "Ảnh vừa copy — giữ ô nhập rồi chọn Dán"
                                                  : "Dán nội dung vừa copy"
             if pasteCard.superview == nil { addSubview(pasteCard) }
-            let w = Self.stripZoneWidth
-            pasteCard.frame = CGRect(x: w, y: Self.barTopPad, width: max(bounds.width - 2 * w, 0),
+            let w = Self.stripZoneWidth, e = Self.editZoneWidth
+            pasteCard.frame = CGRect(x: w + e, y: Self.barTopPad, width: max(bounds.width - 2 * w - e, 0),
                                      height: Self.openStrip - Self.barTopPad)
             (pasteCard.viewWithTag(91) as? UILabel)?.textColor = ink
             (pasteCard.viewWithTag(92) as? UILabel)?.textColor = ink.withAlphaComponent(0.55)
@@ -973,6 +1024,140 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private weak var capsKey: KeyButton?
 
 
+    // MARK: chế độ một tay (iPhone)
+
+    /// Chế độ hiện tại. Controller đặt lúc hiện (configureOneHand, theo OneHand.resolve);
+    /// bàn phím tự đổi qua giữ lâu icon con trỏ / nút "Một tay" / rail rồi báo
+    /// onOneHandChange để controller lưu.
+    private(set) var oneHand: OneHandSide = .off
+    /// Bên dùng gần nhất — giữ lâu bật lại bên này.
+    var lastOneHandSide: OneHandSide = .right
+    var onOneHandChange: ((OneHandSide) -> Void)?
+
+    /// Đặt từ controller (không báo lại). iPad luôn tắt.
+    func configureOneHand(_ side: OneHandSide) {
+        let s = Self.isPad ? .off : side
+        guard s != oneHand else { return }
+        oneHand = s
+        if s != .off { lastOneHandSide = s }
+        applyOneHand()
+        setNeedsLayout()
+    }
+
+    /// Người dùng đổi trên bàn phím.
+    private func setOneHand(_ side: OneHandSide) {
+        configureOneHand(side)
+        onOneHandChange?(oneHand)
+    }
+
+    /// Plane hiện tại có thu hẹp không (emoji / mẫu câu tự dàn đầy bề ngang).
+    private var oneHandActive: Bool {
+        oneHand != .off && !Self.isPad && plane != .emoji && plane != .templates
+            && plane != .emojiSearch   // họ emoji: ô tìm + chữ đầy bề ngang (Android y hệt)
+    }
+    /// Bề ngang vùng phím (thụt hàng 2 tính theo đây).
+    private var keysWidth: CGFloat {
+        oneHandActive ? bounds.width * OneHand.ratio : bounds.width
+    }
+
+    private func applyOneHand() {
+        let side: OneHandSide = oneHandActive ? oneHand : .off
+        let i = OneHand.insets(width: bounds.width, side: side)
+        if rowsLeftConstraint?.constant != i.left { rowsLeftConstraint?.constant = i.left }
+        if rowsRightConstraint?.constant != -i.right { rowsRightConstraint?.constant = -i.right }
+        layoutRail(side)
+    }
+
+    /// Rail: 2 nút tròn ở dải trống — đổi bên (trên) / thoát (dưới). Chỉ tạo khi cần.
+    private var railButtons: [KeyButton] = []
+    private func layoutRail(_ side: OneHandSide) {
+        guard let r = OneHand.rail(width: bounds.width, side: side), r.width >= 24 else {
+            railButtons.forEach { $0.isHidden = true }
+            return
+        }
+        if railButtons.isEmpty {
+            for (i, symbol) in ["arrow.left.arrow.right", "arrow.up.left.and.arrow.down.right"].enumerated() {
+                let b = baseButton(title: "", special: true)
+                b.setImage(UIImage(systemName: symbol,
+                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium)), for: .normal)
+                b.accessibilityLabel = i == 0 ? "Đổi bên bàn phím một tay" : "Thoát chế độ một tay"
+                b.addAction(UIAction { _ in Self.clickModifier() }, for: .touchDown)
+                b.addAction(UIAction { [weak self] _ in
+                    guard let self else { return }
+                    self.setOneHand(i == 0 ? self.oneHand.switched : .off)
+                }, for: .touchUpInside)
+                addSubview(b)
+                railButtons.append(b)
+            }
+        }
+        let top = rowsTopConstraint?.constant ?? 0
+        let h = max(bounds.height - top, 0)
+        let size = min(r.width - 12, 44)
+        for (i, b) in railButtons.enumerated() {
+            let cy = top + h * (i == 0 ? 0.3 : 0.7)
+            b.frame = CGRect(x: r.x + (r.width - size) / 2, y: cy - size / 2, width: size, height: size)
+            b.layer.cornerRadius = size / 2
+            b.backgroundColor = specialFill
+            b.normalBackground = specialFill
+            b.pressedBackground = plainFill
+            b.tintColor = dark ? .white : .black
+            b.isHidden = false
+            bringSubviewToFront(b)
+        }
+    }
+
+    // MARK: bảng sửa văn bản
+
+    /// Nút bảng sửa (trừ ABC / Một tay — view tự lo). Controller thực thi trên proxy.
+    var onEditAction: ((TextEditAction) -> Void)?
+    /// Quyền / vùng chọn hiện tại (bật/tắt Sao chép · Cắt · Dán).
+    var editCapabilities: (() -> TextEditing.Caps)?
+    private weak var editPanel: EditPanelView?
+    var isEditPanelOpen: Bool { plane == .edit }
+
+    func toggleEditPanel() {
+        plane = (plane == .edit) ? .letters : .edit
+        rebuild()
+        setNeedsLayout()          // icon con trỏ sáng/tối
+    }
+
+    /// Controller gọi khi vùng chọn / clipboard có thể đã đổi.
+    func refreshEditPanel() {
+        guard plane == .edit, let p = editPanel else { return }
+        p.update(caps: editCapabilities?() ?? TextEditing.Caps())
+    }
+
+    private func buildEdit() {
+        rowsContainer.distribution = .fill
+        let p = EditPanelView(dark: dark, fill: plainFill, pressed: specialFill, ink: ink,
+                              oneHandAvailable: !Self.isPad,
+                              tools: textToolsEnabled ? TextTool.allCases : [],
+                              caps: editCapabilities?() ?? TextEditing.Caps(),
+                              onTool: { [weak self] tool in
+            // Ở lại bảng sửa: chọn tiếp / hoàn tác bằng ô "↩︎ Hoàn tác" trên thanh gợi ý.
+            self?.onTextTool?(tool)
+            self?.refreshEditPanel()
+        }) { [weak self] a in
+            self?.editAction(a)
+        }
+        editPanel = p
+        rowsContainer.addArrangedSubview(p)
+    }
+
+    private func editAction(_ a: TextEditAction) {
+        switch a {
+        case .close:
+            plane = .letters
+            rebuild()
+            setNeedsLayout()
+        case .oneHand:
+            setOneHand(OneHand.toggled(oneHand, preferred: lastOneHandSide))
+        default:
+            onEditAction?(a)
+            refreshEditPanel()
+        }
+    }
+
     // MARK: layout
 
     // Dedupe: rebuild bị gọi nhiều lần mỗi lần hiện (init, configureReturnKey,
@@ -1020,6 +1205,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private func rebuild() {
         guard !rebuildDeferred else { return }   // batchConfigure rebuild 1 lần cuối
         updateSuggestionChrome()
+        applyOneHand()                           // plane mới có thể thu hẹp / đầy bề ngang
         let styleChanged = builtReturn != returnTitle || builtDark != dark
             || builtPalette != palette
             || builtGlobe != needsGlobe || builtKind != inputKind
@@ -1033,14 +1219,14 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // đang hiện. Khỏi xé/dựng; chỉ vứt cache các plane khác (inset cũ sai).
         // Emoji/mẫu câu không cache, dựng tự do → vẫn dựng lại như cũ.
         if builtPlane == plane, !styleChanged,
-           plane != .emoji, plane != .templates, plane != .emojiSearch {
+           plane != .emoji, plane != .templates, plane != .emojiSearch, plane != .edit {
             planeCache.removeAll()
             builtWidth = bounds.width
             return
         }
         if sigChanged {
             planeCache.removeAll()
-        } else if let old = builtPlane, old != .emoji, old != .templates, old != .emojiSearch {
+        } else if let old = builtPlane, old != .emoji, old != .templates, old != .emojiSearch, old != .edit {
             // KHÔNG cache emoji/templates: cả hai đổi distribution sang .fill và
             // dựng layout tự do; khôi phục từ cache (distribution đã bị reset về
             // .fillEqually + constraint chiều cao hàng đáy còn treo) làm plane
@@ -1097,6 +1283,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         case .emoji: buildEmoji()
         case .templates: buildTemplates()
         case .emojiSearch: buildEmojiSearch()
+        case .edit: buildEdit()
         }
     }
 
@@ -1121,7 +1308,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             case Self.textToolsEntryID, Self.textToolsBackID:
                 Self.clickModifier()
                 self.textToolsMode = id == Self.textToolsEntryID
-                self.rebuild()
+                self.rebuildUncachedPlane()
             default:
                 guard let tool = TextTool(rawValue: id) else { return }
                 Self.clickModifier()
@@ -1797,7 +1984,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         stack.isLayoutMarginsRelativeArrangement = true
         // bounds.width có thể = 0 lúc init — layoutSubviews chỉnh lại ngay
         // pass đầu (và sau mỗi lần xoay / đổi cỡ Split View)
-        let unit = bounds.width / 10
+        let unit = keysWidth / 10
         // 10/0 thay 5/5 (khe giữa hàng vẫn 10): hàng đáy cũng 10/0 (sát đáy) → khe
         // hàng 3↔hàng đáy đúng 10, không hở hơn các khe khác (26/09/2026).
         stack.layoutMargins = UIEdgeInsets(top: 10, left: 3 + sideInset * unit,
@@ -2749,6 +2936,20 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             return nil
         }
         return rowsContainer.arrangedSubviews.lazy.compactMap(find).first
+    }
+    /// Test hook: frame nút rail một tay đang hiện (toạ độ self).
+    func debugRailFrames() -> [CGRect] {
+        railButtons.filter { !$0.isHidden }.map { $0.frame }
+    }
+    /// Test hook: bấm nút rail (0 = đổi bên, 1 = thoát).
+    func debugTapRail(_ i: Int) {
+        railButtons[i].sendActions(for: .touchUpInside)
+    }
+    /// Test hook: bảng sửa đang hiện.
+    var debugEditPanel: EditPanelView? { plane == .edit ? editPanel : nil }
+    /// Test hook: giữ lâu icon con trỏ.
+    func debugHoldEditZone() {
+        setOneHand(OneHand.toggled(oneHand, preferred: lastOneHandSide))
     }
     /// Test hook: frame phím chữ (toạ độ self).
     func debugLetterFrame(_ s: String) -> CGRect? {

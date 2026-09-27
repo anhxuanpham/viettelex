@@ -41,12 +41,55 @@ class AndroidEditorPort(val ic: InputConnection) : EditorPort {
             EditorPort.PortKey.RIGHT -> KeyEvent.KEYCODE_DPAD_RIGHT
             EditorPort.PortKey.UP -> KeyEvent.KEYCODE_DPAD_UP
             EditorPort.PortKey.DOWN -> KeyEvent.KEYCODE_DPAD_DOWN
+            EditorPort.PortKey.HOME -> KeyEvent.KEYCODE_MOVE_HOME
+            EditorPort.PortKey.END -> KeyEvent.KEYCODE_MOVE_END
+            EditorPort.PortKey.A -> KeyEvent.KEYCODE_A
+            EditorPort.PortKey.C -> KeyEvent.KEYCODE_C
+            EditorPort.PortKey.V -> KeyEvent.KEYCODE_V
+            EditorPort.PortKey.X -> KeyEvent.KEYCODE_X
+            EditorPort.PortKey.Z -> KeyEvent.KEYCODE_Z
         }
+        send(code, 0)
+    }
+
+    override fun sendKeyMeta(key: EditorPort.PortKey, shift: Boolean, ctrl: Boolean) {
+        var meta = 0
+        if (shift) meta = meta or KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
+        if (ctrl) meta = meta or KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON
+        if (meta == 0) { sendKey(key); return }
+        val code = when (key) {
+            EditorPort.PortKey.LEFT -> KeyEvent.KEYCODE_DPAD_LEFT
+            EditorPort.PortKey.RIGHT -> KeyEvent.KEYCODE_DPAD_RIGHT
+            EditorPort.PortKey.UP -> KeyEvent.KEYCODE_DPAD_UP
+            EditorPort.PortKey.DOWN -> KeyEvent.KEYCODE_DPAD_DOWN
+            EditorPort.PortKey.HOME -> KeyEvent.KEYCODE_MOVE_HOME
+            EditorPort.PortKey.END -> KeyEvent.KEYCODE_MOVE_END
+            EditorPort.PortKey.A -> KeyEvent.KEYCODE_A
+            EditorPort.PortKey.C -> KeyEvent.KEYCODE_C
+            EditorPort.PortKey.V -> KeyEvent.KEYCODE_V
+            EditorPort.PortKey.X -> KeyEvent.KEYCODE_X
+            EditorPort.PortKey.Z -> KeyEvent.KEYCODE_Z
+            EditorPort.PortKey.DEL -> KeyEvent.KEYCODE_DEL
+            EditorPort.PortKey.ENTER -> KeyEvent.KEYCODE_ENTER
+        }
+        send(code, meta)
+    }
+
+    private fun send(code: Int, meta: Int) {
         val t = SystemClock.uptimeMillis()
         val flags = KeyEvent.FLAG_SOFT_KEYBOARD or KeyEvent.FLAG_KEEP_TOUCH_MODE
-        ic.sendKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_DOWN, code, 0, 0, -1, 0, flags))
-        ic.sendKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_UP, code, 0, 0, -1, 0, flags))
+        ic.sendKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_DOWN, code, 0, meta, -1, 0, flags))
+        ic.sendKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_UP, code, 0, meta, -1, 0, flags))
     }
+
+    override fun menuAction(action: EditorPort.MenuAction): Boolean = ic.performContextMenuAction(when (action) {
+        EditorPort.MenuAction.SELECT_ALL -> android.R.id.selectAll
+        EditorPort.MenuAction.COPY -> android.R.id.copy
+        EditorPort.MenuAction.CUT -> android.R.id.cut
+        EditorPort.MenuAction.PASTE -> android.R.id.paste
+        EditorPort.MenuAction.UNDO -> android.R.id.undo
+        EditorPort.MenuAction.REDO -> android.R.id.redo
+    })
 }
 
 /**
