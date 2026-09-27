@@ -22,6 +22,7 @@ final class BackupTests: XCTestCase {
         s["reEditWords"] = .bool(false); s["showSpaceLogo"] = .bool(false); s["swipeTyping"] = .bool(true)
         s["rowHeightAdjust"] = .int(-3); s["autoCorrect"] = .bool(true); s["autoCapitalize"] = .bool(false)
         s["keyboardTransparency"] = .int(40); s["keyLabelTransparency"] = .int(20)
+        s["uiLanguage"] = .string("en")
         return BackupPayload(
             createdAt: iso.date(from: "2026-09-27T08:00:00Z"), platform: "ios", settings: s,
             shortcuts: ["ko": "không", "stk": "số tài khoản", "đc": "được"],
@@ -143,6 +144,28 @@ final class BackupTests: XCTestCase {
         let (t, _) = makeStore()
         _ = t.apply(try BackupCodec.decode(BackupCodec.encode(snap)))
         XCTAssertEqual(t.defaults.object(forKey: "autoCorrect") as? Bool, true)
+    }
+
+    /// Ngôn ngữ giao diện (uiLanguage, kiểu chuỗi) đi theo sao lưu; mặc định "vi";
+    /// giá trị lạ bị bỏ qua cả khi nhập file lẫn khi đồng bộ.
+    func testUILanguageBackupRoundTrip() throws {
+        let (s, _) = makeStore()
+        XCTAssertEqual(s.snapshot(includeLearned: false).settings?["uiLanguage"], .string("vi"))
+        s.defaults.set("en", forKey: "uiLanguage")
+        let snap = s.snapshot(includeLearned: false)
+        XCTAssertEqual(snap.settings?["uiLanguage"], .string("en"))
+        let (t, _) = makeStore()
+        _ = t.apply(try BackupCodec.decode(BackupCodec.encode(snap)))
+        XCTAssertEqual(t.defaults.string(forKey: "uiLanguage"), "en")
+        XCTAssertEqual(L10n.stored(t.defaults), "en")
+
+        let bad = Data(#"{"format":"viettelex-backup","version":1,"settings":{"uiLanguage":"fr","numberRow":true}}"#.utf8)
+        let p = try BackupCodec.decode(bad)
+        XCTAssertNil(p.settings?["uiLanguage"])
+        XCTAssertEqual(p.settings?["numberRow"], .bool(true))
+        XCTAssertEqual(SettingValue.fromSyncString("en", key: "uiLanguage"), .string("en"))
+        XCTAssertNil(SettingValue.fromSyncString("fr", key: "uiLanguage"))
+        XCTAssertEqual(SettingValue.string("en").syncString, "en")
     }
 
     func testImportAndroidFileIntoIOSStore() throws {

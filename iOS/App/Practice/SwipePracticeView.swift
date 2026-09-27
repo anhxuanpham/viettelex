@@ -124,52 +124,52 @@ struct SwipePracticeView: View {
                             .font(.subheadline).foregroundStyle(.secondary)
                         Group {
                             if let r = m.result {
-                                Text(r.ok ? "✓ Đúng" : "✗ Bàn phím đọc thành “\(r.got)” — thử lại")
+                                Text(r.ok ? L("✓ Đúng") : L("✗ Bàn phím đọc thành “%@” — thử lại", r.got))
                                     .foregroundStyle(r.ok ? .green : .red)
                             } else { Text(" ") }
                         }.font(.subheadline)
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 12)
                     HStack {
-                        Text(m.tries == 0 ? "Phiên này: chưa vuốt"
-                             : "Phiên này: \(m.hits)/\(m.tries) đúng (\(m.hits * 100 / m.tries)%)")
+                        Text(m.tries == 0 ? L("Phiên này: chưa vuốt")
+                             : L("Phiên này: %@/%@ đúng (%@%)", m.hits, m.tries, m.hits * 100 / m.tries))
                         Spacer()
-                        Button("Bỏ qua") { m.skip() }
+                        Button(L("Bỏ qua")) { m.skip() }
                     }
                 } footer: {
-                    Text(m.target.lang == .en ? "Từ tiếng Anh — vuốt đúng từng chữ."
-                         : "Vuốt qua các chữ không dấu rồi nhấc tay.")
+                    Text(m.target.lang == .en ? L("Từ tiếng Anh — vuốt đúng từng chữ.")
+                         : L("Vuốt qua các chữ không dấu rồi nhấc tay."))
                 }
                 Section {
                     Toggle(isOn: $save) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Lưu nét vuốt trên máy")
-                            Text(m.stored > 0 ? "Đã lưu \(m.stored) nét." : "Tắt: chỉ luyện, không lưu gì.")
+                            Text(L("Lưu nét vuốt trên máy"))
+                            Text(m.stored > 0 ? L("Đã lưu %@ nét.", m.stored) : L("Tắt: chỉ luyện, không lưu gì."))
                                 .font(.footnote).foregroundStyle(.secondary)
                         }
                     }
                     if m.stored > 0 {
-                        Button("Xuất JSON…") {
+                        Button(L("Xuất JSON…")) {
                             DispatchQueue.global(qos: .userInitiated).async {
                                 let u = SwipeTraceStore.exportFile()
                                 DispatchQueue.main.async { share = u.map(ShareItem.init) }
                             }
                         }
-                        Button(confirmDelete ? "Chạm lần nữa để xoá \(m.stored) nét" : "Xoá nét đã lưu",
+                        Button(confirmDelete ? L("Chạm lần nữa để xoá %@ nét", m.stored) : L("Xoá nét đã lưu"),
                                role: .destructive) {
                             if confirmDelete { m.deleteAll() }
                             confirmDelete.toggle()
                         }
                     }
-                } header: { Text("Dữ liệu") } footer: {
-                    Text("Nét vuốt chỉ nằm trên máy này (không sao lưu iCloud, không tự gửi đi). Xuất JSON để gửi cho nhà phát triển nếu bạn muốn giúp gõ vuốt chính xác hơn.")
+                } header: { Text(L("Dữ liệu")) } footer: {
+                    Text(L("Nét vuốt chỉ nằm trên máy này (không sao lưu iCloud, không tự gửi đi). Xuất JSON để gửi cho nhà phát triển nếu bạn muốn giúp gõ vuốt chính xác hơn."))
                 }
             }
             PracticeKeyboard(rowHeight: 54 + CGFloat(max(-10, min(10, rowHeightAdjust)))) { path, layout in
                 m.submit(path, layout: layout, save: save)
             }
         }
-        .navigationTitle("Luyện vuốt")
+        .navigationTitle(L("Luyện vuốt"))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { m.load() }
         .sheet(item: $share) { ActivitySheet(url: $0.url) }

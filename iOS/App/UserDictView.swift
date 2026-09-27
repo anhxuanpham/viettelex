@@ -51,7 +51,7 @@ struct UserDictView: View {
         List {
             if !fullAccess {
                 Section {
-                    Text("Bàn phím chỉ lưu được từ đã học khi bật \"Cho phép Toàn quyền\" (Cài đặt → Chung → Bàn phím → Bàn phím → VietTelex). Từ thêm tay ở đây vẫn dùng được.")
+                    Text(L("Bàn phím chỉ lưu được từ đã học khi bật \"Cho phép Toàn quyền\" (Cài đặt → Chung → Bàn phím → Bàn phím → VietTelex). Từ thêm tay ở đây vẫn dùng được."))
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
@@ -63,8 +63,8 @@ struct UserDictView: View {
                     Button(action: add) { Image(systemName: "plus.circle.fill").font(.title2) }
                         .disabled(newWord.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
-            } header: { Text("Thêm từ") } footer: {
-                Text(notice ?? "Tên riêng, thuật ngữ… (một từ, chỉ chữ cái). Từ thêm tay được gợi ý ngay khi gõ vài chữ đầu.")
+            } header: { Text(L("Thêm từ")) } footer: {
+                Text(notice ?? L("Tên riêng, thuật ngữ… (một từ, chỉ chữ cái). Từ thêm tay được gợi ý ngay khi gõ vài chữ đầu."))
             }
 
             Section {
@@ -72,7 +72,7 @@ struct UserDictView: View {
                     HStack {
                         Text(e.word)
                         Spacer()
-                        Text(e.manual ? "thêm tay" : "\(e.count)")
+                        Text(e.manual ? L("thêm tay") : "\(e.count)")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                 }
@@ -81,17 +81,17 @@ struct UserDictView: View {
                     commit()
                 }
                 if entries.isEmpty {
-                    Text(query.isEmpty ? "Chưa có từ nào — gõ bằng VietTelex để bàn phím học." : "Không có từ khớp.")
+                    Text(query.isEmpty ? L("Chưa có từ nào — gõ bằng VietTelex để bàn phím học.") : L("Không có từ khớp."))
                         .foregroundStyle(.secondary)
                 }
             } header: {
-                Text(query.isEmpty ? "Từ đã học (\(total))" : "Kết quả (\(entries.count))")
+                Text(query.isEmpty ? L("Từ đã học (%@)", total) : L("Kết quả (%@)", entries.count))
             } footer: {
-                Text("Vuốt trái để xoá — xoá một từ cũng xoá các cặp/bộ ba từ đi kèm nó. Mọi dữ liệu chỉ nằm trên máy.")
+                Text(L("Vuốt trái để xoá — xoá một từ cũng xoá các cặp/bộ ba từ đi kèm nó. Mọi dữ liệu chỉ nằm trên máy."))
             }
 
             Section {
-                Button(confirmErase ? "Chạm lần nữa để xoá tất cả" : "Xoá tất cả từ đã học", role: .destructive) {
+                Button(confirmErase ? L("Chạm lần nữa để xoá tất cả") : L("Xoá tất cả từ đã học"), role: .destructive) {
                     guard confirmErase else { confirmErase = true; return }
                     confirmErase = false
                     UserDictStore.eraseAll()
@@ -100,9 +100,9 @@ struct UserDictView: View {
                 }
             }
         }
-        .searchable(text: $query, prompt: "Tìm từ")
+        .searchable(text: $query, prompt: L("Tìm từ"))
         .onChange(of: query) { _ in reload() }
-        .navigationTitle("Từ điển cá nhân")
+        .navigationTitle(L("Từ điển cá nhân"))
         .navigationBarTitleDisplayMode(.inline)
         .bottomBarScrollMargin()
         .onAppear(perform: reload)
@@ -110,13 +110,13 @@ struct UserDictView: View {
 
     private func add() {
         let w = newWord
-        guard let m = model else { notice = "Không mở được dữ liệu (App Group)."; return }
+        guard let m = model else { notice = L("Không mở được dữ liệu (App Group)."); return }
         if m.addWord(w) {
-            notice = "Đã thêm “\(w.trimmingCharacters(in: .whitespaces))”."
+            notice = L("Đã thêm “%@”.", w.trimmingCharacters(in: .whitespaces))
             newWord = ""
             commit()
         } else {
-            notice = "Chỉ nhận một từ gồm chữ cái (tối đa \(UserLangModel.manualMaxLen) ký tự)."
+            notice = L("Chỉ nhận một từ gồm chữ cái (tối đa %@ ký tự).", UserLangModel.manualMaxLen)
         }
     }
 }

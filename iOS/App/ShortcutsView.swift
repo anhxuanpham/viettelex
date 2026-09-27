@@ -22,17 +22,17 @@ struct ShortcutsSection: View {
         Section {
             Toggle(isOn: $enabled) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Gõ tắt")
-                    Text("Gõ chữ tắt rồi dấu cách/dấu câu để bung: ko → không, Ko → Không, KO → KHÔNG. ⌫ ngay sau đó trả lại chữ đã gõ.")
+                    Text(L("Gõ tắt"))
+                    Text(L("Gõ chữ tắt rồi dấu cách/dấu câu để bung: ko → không, Ko → Không, KO → KHÔNG. ⌫ ngay sau đó trả lại chữ đã gõ."))
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
             NavigationLink {
                 ShortcutsView()
             } label: {
-                LabeledContent("Bảng gõ tắt", value: count == 0 ? "Trống" : "\(count) mục")
+                LabeledContent(L("Bảng gõ tắt"), value: count == 0 ? L("Trống") : L("%@ mục", count))
             }
-        } header: { Text("Gõ tắt") }
+        } header: { Text(L("Gõ tắt")) }
         .onAppear { count = ShortcutStore.load().count }
     }
 }
@@ -63,9 +63,9 @@ struct ShortcutsView: View {
     private func add() {
         let k = newKey.trimmingCharacters(in: .whitespaces)
         let v = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard ShortcutTable.isValidKey(k) else { notice = "Chữ tắt không được chứa khoảng trắng."; return }
+        guard ShortcutTable.isValidKey(k) else { notice = L("Chữ tắt không được chứa khoảng trắng."); return }
         guard !v.isEmpty else { return }
-        if table[k] != nil { notice = "“\(k)” đã có — chạm dòng đó để sửa."; return }
+        if table[k] != nil { notice = L("“%@” đã có — chạm dòng đó để sửa.", k); return }
         table[k] = v
         newKey = ""; newValue = ""; notice = nil
         persist()
@@ -75,8 +75,8 @@ struct ShortcutsView: View {
         guard let old = editingKey else { return }
         let k = editKey.trimmingCharacters(in: .whitespaces)
         let v = editValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard ShortcutTable.isValidKey(k), !v.isEmpty else { notice = "Chữ tắt không được chứa khoảng trắng."; return }
-        if k != old, table[k] != nil { notice = "“\(k)” đã có."; return }
+        guard ShortcutTable.isValidKey(k), !v.isEmpty else { notice = L("Chữ tắt không được chứa khoảng trắng."); return }
+        if k != old, table[k] != nil { notice = L("“%@” đã có.", k); return }
         table.removeValue(forKey: old)
         table[k] = v
         editingKey = nil; notice = nil
@@ -86,20 +86,20 @@ struct ShortcutsView: View {
     var body: some View {
         List {
             Section {
-                TextField("Tìm chữ tắt hoặc nội dung…", text: $query)
+                TextField(L("Tìm chữ tắt hoặc nội dung…"), text: $query)
                     .textInputAutocapitalization(.never)
                 ForEach(rows, id: \.key) { row in
                     if editingKey == row.key {
                         VStack(alignment: .leading, spacing: 6) {
-                            TextField("Chữ tắt", text: $editKey)
+                            TextField(L("Chữ tắt"), text: $editKey)
                                 .textInputAutocapitalization(.never)
-                            TextField("Nội dung", text: $editValue, axis: .vertical)
+                            TextField(L("Nội dung"), text: $editValue, axis: .vertical)
                                 .lineLimit(1...6)
                             HStack {
-                                Button("Lưu") { commitEdit() }
+                                Button(L("Lưu")) { commitEdit() }
                                     .buttonStyle(.borderless)
                                 Spacer()
-                                Button("Huỷ") { editingKey = nil }
+                                Button(L("Huỷ")) { editingKey = nil }
                                     .buttonStyle(.borderless).foregroundStyle(.secondary)
                             }
                         }
@@ -124,29 +124,29 @@ struct ShortcutsView: View {
                     persist()
                 }
                 if table.isEmpty {
-                    Text("Chưa có gõ tắt nào. Thêm bên dưới, hoặc bấm “Thêm bộ gợi ý”.")
+                    Text(L("Chưa có gõ tắt nào. Thêm bên dưới, hoặc bấm “Thêm bộ gợi ý”."))
                         .foregroundStyle(.secondary)
                 } else if rows.isEmpty {
-                    Text("Không tìm thấy.").foregroundStyle(.secondary)
+                    Text(L("Không tìm thấy.")).foregroundStyle(.secondary)
                 }
-            } header: { Text("Bảng gõ tắt (\(table.count))") } footer: {
-                Text("Chạm một dòng để sửa, vuốt trái để xoá.")
+            } header: { Text(L("Bảng gõ tắt (%@)", table.count)) } footer: {
+                Text(L("Chạm một dòng để sửa, vuốt trái để xoá."))
             }
 
             Section {
-                TextField("Chữ tắt (vd: ko, cty, ->)", text: $newKey)
+                TextField(L("Chữ tắt (vd: ko, cty, ->)"), text: $newKey)
                     .textInputAutocapitalization(.never)
-                TextField("Nội dung đầy đủ (được nhiều dòng)", text: $newValue, axis: .vertical)
+                TextField(L("Nội dung đầy đủ (được nhiều dòng)"), text: $newValue, axis: .vertical)
                     .lineLimit(1...6)
-                Button { add() } label: { Label("Thêm", systemImage: "plus.circle.fill") }
+                Button { add() } label: { Label(L("Thêm"), systemImage: "plus.circle.fill") }
                     .buttonStyle(.borderless)
                     .disabled(newKey.trimmingCharacters(in: .whitespaces).isEmpty
                               || newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 if let notice {
                     Text(notice).font(.footnote).foregroundStyle(.secondary)
                 }
-            } header: { Text("Thêm mới") } footer: {
-                Text("Bung khi gõ dấu cách, Enter hoặc dấu câu ngay sau chữ tắt. Viết chữ tắt thường để tự theo hoa/thường khi gõ. Chữ tắt có ký hiệu hoặc số (->, k2) bung khi gõ dấu cách. Không bung khi dính liền sau số hoặc / # @ (5h, /h3), trong ô mật khẩu, email, URL.")
+            } header: { Text(L("Thêm mới")) } footer: {
+                Text(L("Bung khi gõ dấu cách, Enter hoặc dấu câu ngay sau chữ tắt. Viết chữ tắt thường để tự theo hoa/thường khi gõ. Chữ tắt có ký hiệu hoặc số (->, k2) bung khi gõ dấu cách. Không bung khi dính liền sau số hoặc / # @ (5h, /h3), trong ô mật khẩu, email, URL."))
             }
 
             Section {
@@ -154,10 +154,10 @@ struct ShortcutsView: View {
                     let missing = ShortcutFile.suggested.filter { table[$0.key] == nil }
                     table.merge(missing) { cur, _ in cur }
                     persist()
-                    notice = missing.isEmpty ? "Bộ gợi ý đã có đủ." : "Đã thêm \(missing.count) gõ tắt gợi ý."
-                } label: { Label("Thêm bộ gợi ý", systemImage: "sparkles") }
+                    notice = missing.isEmpty ? L("Bộ gợi ý đã có đủ.") : L("Đã thêm %@ gõ tắt gợi ý.", missing.count)
+                } label: { Label(L("Thêm bộ gợi ý"), systemImage: "sparkles") }
                 Button { showImporter = true } label: {
-                    Label("Nhập từ file…", systemImage: "square.and.arrow.down")
+                    Label(L("Nhập từ file…"), systemImage: "square.and.arrow.down")
                 }
                 .fileImporter(isPresented: $showImporter,
                               allowedContentTypes: [.yaml, .json, .plainText, .text, .data]) { result in
@@ -165,31 +165,31 @@ struct ShortcutsView: View {
                     let scoped = url.startAccessingSecurityScopedResource()
                     defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                     guard let text = try? String(contentsOf: url, encoding: .utf8) else {
-                        notice = "Không đọc được file."
+                        notice = L("Không đọc được file.")
                         return
                     }
                     let imported = ShortcutFile.parse(text)
-                    guard !imported.isEmpty else { notice = "File không có gõ tắt nào."; return }
+                    guard !imported.isEmpty else { notice = L("File không có gõ tắt nào."); return }
                     let r = ShortcutFile.merge(table, imported)
                     table = r.table
                     persist()
-                    notice = "Đã nhập \(imported.count) mục: \(r.added) mới, \(r.replaced) ghi đè."
+                    notice = L("Đã nhập %@ mục: %@ mới, %@ ghi đè.", imported.count, r.added, r.replaced)
                 }
                 Button { showExporter = true } label: {
-                    Label("Xuất ra YAML…", systemImage: "square.and.arrow.up")
+                    Label(L("Xuất ra YAML…"), systemImage: "square.and.arrow.up")
                 }
                 .disabled(table.isEmpty)
                 .fileExporter(isPresented: $showExporter,
                               document: TemplatesDocument(text: ShortcutFile.exportYAML(table)),
                               contentType: .yaml,
                               defaultFilename: "viettelex-go-tat") { result in
-                    if case .success = result { notice = "Đã xuất \(table.count) gõ tắt." }
+                    if case .success = result { notice = L("Đã xuất %@ gõ tắt.", table.count) }
                 }
             } footer: {
-                Text("Bộ gợi ý: \(ShortcutFile.suggested.keys.sorted().joined(separator: ", ")). File YAML “chữ tắt: nội dung” dùng chung với VietTelex trên Mac và Android; nhập sẽ gộp (mục trùng lấy theo file).")
+                Text(L("Bộ gợi ý: %@. File YAML “chữ tắt: nội dung” dùng chung với VietTelex trên Mac và Android; nhập sẽ gộp (mục trùng lấy theo file).", ShortcutFile.suggested.keys.sorted().joined(separator: ", ")))
             }
         }
-        .navigationTitle("Gõ tắt")
+        .navigationTitle(L("Gõ tắt"))
         .scrollDismissesKeyboard(.immediately)
     }
 }

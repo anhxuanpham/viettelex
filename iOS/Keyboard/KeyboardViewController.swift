@@ -156,6 +156,7 @@ final class KeyboardViewController: UIInputViewController {
         }
         #endif
         super.viewWillAppear(animated)
+        L10n.reload()   // ngôn ngữ giao diện app (uiLanguage) — một lần mỗi lần hiện
         TouchLog.loadSetting()
         // Đọc settings MỘT lần mỗi lần hiện (trước đây EngineBridge() tự load lần hai).
         let settings = KeyboardSettings.load()
@@ -1089,9 +1090,9 @@ final class KeyboardViewController: UIInputViewController {
         if composed.isEmpty, undoOfferActive, let u = restoreUndo {
             set.literal = u.composed
         }
-        if composed.isEmpty, wordSwipeRestore != nil { set.restoreLabel = "\u{21A9}\u{FE0E} Khôi phục" }
+        if composed.isEmpty, wordSwipeRestore != nil { set.restoreLabel = L("\u{21A9}\u{FE0E} Khôi phục") }
         if composed.isEmpty, textToolUndo != nil {
-            set.restoreLabel = "\u{21A9}\u{FE0E} Hoàn tác"
+            set.restoreLabel = L("\u{21A9}\u{FE0E} Hoàn tác")
             set.restorePayload = KeyboardView.toolUndoToken
         }
         // Ngữ cảnh email/domain: "phuc@" → gợi đuôi mail; "github." → gợi TLD.
@@ -1175,10 +1176,10 @@ final class KeyboardViewController: UIInputViewController {
         // (thứ tự slot: SuggestionSlots.arrange).
         if composed.isEmpty, set.literal == nil, !bridge.englishMode || addTonesUndo != nil {
             if addTonesUndo != nil {
-                set.actionLabel = "\u{21A9}\u{FE0E} Hoàn tác"; set.actionPayload = KeyboardView.undoTonesToken
+                set.actionLabel = L("\u{21A9}\u{FE0E} Hoàn tác"); set.actionPayload = KeyboardView.undoTonesToken
                 set.paste = false; set.clipChips = []
             } else if addTonesPlan() != nil {
-                set.actionLabel = "Thêm dấu"; set.actionPayload = KeyboardView.addTonesToken
+                set.actionLabel = L("Thêm dấu"); set.actionPayload = KeyboardView.addTonesToken
             }
         }
         // Vừa tự sửa: chip "↩︎ chữ gốc" (một chạm trả lại) thắng mọi chip khác tới phím kế.
@@ -1495,7 +1496,7 @@ extension KeyboardViewController {
             guard let self else { return }
             if self.clip.togglePin(t) { self.reloadClipboardPanel(); return }
             let limit = self.clip.pinLimit() ?? 0
-            self.reloadClipboardPanel(notice: "Tối đa \(limit) mục ghim — VietTelex Plus ghim không giới hạn.")
+            self.reloadClipboardPanel(notice: L("Tối đa %@ mục ghim — VietTelex Plus ghim không giới hạn.", limit))
         }
         p.onDelete = { [weak self] t in self?.clip.remove(t); self?.reloadClipboardPanel() }
         p.onClearAll = { [weak self] in self?.clip.clearUnpinned(); self?.reloadClipboardPanel() }

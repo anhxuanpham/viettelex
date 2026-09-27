@@ -123,14 +123,14 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         f.backgroundColor = UIColor(red: 118 / 255, green: 118 / 255, blue: 128 / 255,
                                     alpha: dark ? 0.24 : 0.12)
         f.layer.cornerRadius = 16
-        f.accessibilityLabel = "Tìm emoji"
+        f.accessibilityLabel = L("Tìm emoji")
         f.accessibilityTraits = .searchField
         f.translatesAutoresizingMaskIntoConstraints = false
         let icon = UIImageView(image: UIImage(systemName: "magnifyingglass",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium)))
         icon.tintColor = ink.withAlphaComponent(0.5)
         let label = UILabel()
-        label.text = "Tìm emoji"
+        label.text = L("Tìm emoji")
         label.font = .systemFont(ofSize: 17)
         label.textColor = ink.withAlphaComponent(0.5)
         for v in [icon, label] as [UIView] {
@@ -237,7 +237,7 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         kao.titleLabel?.adjustsFontSizeToFitWidth = true
         kao.setTitleColor(ink.withAlphaComponent(0.55), for: .normal)
         kao.layer.cornerRadius = 13
-        kao.accessibilityLabel = "Kaomoji và ký tự đặc biệt"
+        kao.accessibilityLabel = L("Kaomoji và ký tự đặc biệt")
         kao.addAction(UIAction { [weak self] _ in self?.showKaomoji() }, for: .touchUpInside)
         kaomojiButton = kao
         iconsStack.addArrangedSubview(kao)

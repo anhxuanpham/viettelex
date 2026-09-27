@@ -387,12 +387,12 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         burgerZone.setImage(UIImage(systemName: "line.3.horizontal",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)), for: .normal)
         burgerZone.tintColor = ink.withAlphaComponent(templatesActive ? 0.9 : 0.45)
-        burgerZone.accessibilityLabel = templatesActive ? "Đóng mẫu câu" : "Mẫu câu"
-        burgerZone.accessibilityHint = Self.isPad ? nil : "Giữ lâu để bật hoặc tắt chế độ một tay"
+        burgerZone.accessibilityLabel = templatesActive ? L("Đóng mẫu câu") : L("Mẫu câu")
+        burgerZone.accessibilityHint = Self.isPad ? nil : L("Giữ lâu để bật hoặc tắt chế độ một tay")
         chevronZone.setImage(UIImage(systemName: "chevron.down",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)), for: .normal)
         chevronZone.tintColor = ink.withAlphaComponent(0.45)
-        chevronZone.accessibilityLabel = "Thu gọn thanh gợi ý"
+        chevronZone.accessibilityLabel = L("Thu gọn thanh gợi ý")
         chevronZone.imageView?.transform = .identity   // bar mở = chevron xuôi
         // Icon canh giữa trong vùng 20pt TRÊN CÙNG (tâm y≈10) để khớp chữ gợi ý,
         // thay vì canh giữa cả strip 36 (tâm y≈18 → icon thấp hơn chữ, user 2026-07-25).
@@ -414,7 +414,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             floatingBurgerIcon?.image = UIImage(systemName: "line.3.horizontal",
                 withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold))
             floatingBurgerIcon?.tintColor = palette.barInk.ui.withAlphaComponent(0.45)
-            floatingBurger.accessibilityLabel = "Mẫu câu"
+            floatingBurger.accessibilityLabel = L("Mẫu câu")
         }
         let chevImg = UIImage(systemName: "chevron.down",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold))
@@ -426,7 +426,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             chevronIconY?.constant = 7
             chevronIcon?.image = chevImg      // một icon duy nhất, xoay bằng transform
             chevronIcon?.tintColor = ink
-            collapseButton.accessibilityLabel = "Mở thanh gợi ý"
+            collapseButton.accessibilityLabel = L("Mở thanh gợi ý")
         }
         // Bar mở: burger/chevron là burgerZone/chevronZone (ghim mép) — style +
         // frame do layoutStripZones lo. Chỉ cần đảm bảo pool đã dựng.
@@ -913,7 +913,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private lazy var clipZone: UIButton = {
         clipZoneMade = true
         let b = UIButton(type: .custom)
-        b.accessibilityLabel = "Lịch sử clipboard"
+        b.accessibilityLabel = L("Lịch sử clipboard")
         b.addAction(UIAction { [weak self] _ in
             Self.clickModifier()
             self?.onOpenClipboard?()
@@ -968,11 +968,11 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let b = KeyButton(type: .custom)
         b.backgroundColor = .clear
         b.hitInsets = UIEdgeInsets(top: -8, left: 0, bottom: 0, right: 0)
-        b.accessibilityLabel = "Dán nội dung vừa copy"
+        b.accessibilityLabel = L("Dán nội dung vừa copy")
         let title = UILabel(), sub = UILabel()
-        title.text = "Dán"
+        title.text = L("Dán")
         title.font = .systemFont(ofSize: 14, weight: .regular)
-        sub.text = "Nội dung vừa copy"
+        sub.text = L("Nội dung vừa copy")
         sub.font = .systemFont(ofSize: 10, weight: .regular)
         title.tag = 91; sub.tag = 92
         let icon = UIImageView(image: UIImage(systemName: "doc.on.clipboard",
@@ -1008,14 +1008,14 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
 
     private func setPasteCard(visible: Bool, image: Bool = false, ink: UIColor) {
         if visible {
-            (pasteCard.viewWithTag(91) as? UILabel)?.text = image ? "Ảnh vừa copy" : "Dán"
-            (pasteCard.viewWithTag(92) as? UILabel)?.text = image ? "Giữ ô nhập → Dán" : "Nội dung vừa copy"
+            (pasteCard.viewWithTag(91) as? UILabel)?.text = image ? L("Ảnh vừa copy") : L("Dán")
+            (pasteCard.viewWithTag(92) as? UILabel)?.text = image ? L("Giữ ô nhập → Dán") : L("Nội dung vừa copy")
             (pasteCard.viewWithTag(93) as? UIImageView)?.image = UIImage(
                 systemName: image ? "photo.on.rectangle" : "doc.on.clipboard",
                 withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .regular))
             pasteCard.payload = image ? Self.pasteImageToken : Self.pasteToken
-            pasteCard.accessibilityLabel = image ? "Ảnh vừa copy — giữ ô nhập rồi chọn Dán"
-                                                 : "Dán nội dung vừa copy"
+            pasteCard.accessibilityLabel = image ? L("Ảnh vừa copy — giữ ô nhập rồi chọn Dán")
+                                                 : L("Dán nội dung vừa copy")
             if pasteCard.superview == nil { addSubview(pasteCard) }
             let w = Self.stripZoneWidth
             let clipW = clipboardButtonVisible ? Self.clipZoneWidth : 0   // chừa nút 📋
@@ -1283,7 +1283,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 let b = baseButton(title: "", special: true)
                 b.setImage(UIImage(systemName: symbol,
                     withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium)), for: .normal)
-                b.accessibilityLabel = i == 0 ? "Đổi bên bàn phím một tay" : "Thoát chế độ một tay"
+                b.accessibilityLabel = i == 0 ? L("Đổi bên bàn phím một tay") : L("Thoát chế độ một tay")
                 b.addAction(UIAction { _ in Self.clickModifier() }, for: .touchDown)
                 b.addAction(UIAction { [weak self] _ in
                     guard let self else { return }
@@ -1453,8 +1453,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let tools = textToolsEnabled && textToolsMode
         if !textToolsEnabled { textToolsMode = false }
         let extras: [(display: String, id: String)] = tools
-            ? [("\u{2039} Mẫu câu", Self.textToolsBackID)] + TextTool.allCases.map { ($0.label, $0.rawValue) }
-            : (textToolsEnabled ? [("Aa Công cụ văn bản", Self.textToolsEntryID)] : [])
+            ? [(L("\u{2039} Mẫu câu"), Self.textToolsBackID)] + TextTool.allCases.map { ($0.label, $0.rawValue) }
+            : (textToolsEnabled ? [(L("Aa Công cụ văn bản"), Self.textToolsEntryID)] : [])
         let chips = TemplateChipsView(items: tools ? [] : userTemplates, extras: extras,
                                       showGear: !tools, dark: dark,
                                       plainFill: plainFill,
@@ -1561,7 +1561,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 cell.accessibilityLabel = nil
             } else if i == items.count {
                 cell.set(display: "⚙️", fill: fill, ink: ink, dark: dark)
-                cell.accessibilityLabel = "Quản lý mẫu câu"
+                cell.accessibilityLabel = L("Quản lý mẫu câu")
             } else {
                 let item = items[i]
                 cell.set(display: item.label.isEmpty ? item.text : item.label,
@@ -1896,7 +1896,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             self.plane = (self.plane == .numbers) ? .symbols : .numbers
             self.rebuild()
         }
-        more.accessibilityLabel = moreKey == "#+=" ? "Ký hiệu" : "Số"
+        more.accessibilityLabel = moreKey == "#+=" ? L("Ký hiệu") : L("Số")
         applyLabelFont(more, size: KeyGeometry.Typography.rowToggleSize)
         var third: [UIView] = [more]
         third += [".",",","?","!","'"].map(textButton)
@@ -1912,7 +1912,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                                 armed: true) { [weak self] in
             self?.tapped(.newline)
         }
-        ret.accessibilityLabel = returnTitle == "return" ? "Xuống dòng" : returnTitle
+        ret.accessibilityLabel = returnTitle == "return" ? L("Xuống dòng") : returnTitle
         if Self.isPad, returnTitle == "return" { ret.padRole = .icon }
         if returnTitle == "return" {
             ret.setImage(UIImage(systemName: "return.left",
@@ -1948,7 +1948,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             if self.plane == .letters, self.shift == .on { self.shift = .off }
             self.rebuild()
         }
-        planeBtn.accessibilityLabel = planeKey == "123" ? "Số" : "Chữ"
+        planeBtn.accessibilityLabel = planeKey == "123" ? L("Số") : L("Chữ")
         applyLabelFont(planeBtn, size: KeyGeometry.Typography.planeKeySize)
         views.append(planeBtn)
         // globe sát bên phải [123] như stock (muscle memory), emoji sau đó
@@ -1958,7 +1958,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             globe.setImage(UIImage(systemName: "globe",
                 withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)), for: .normal)
             globe.tintColor = ink
-            globe.accessibilityLabel = "Bàn phím tiếp theo"
+            globe.accessibilityLabel = L("Bàn phím tiếp theo")
             if Self.isPad { globe.padRole = .icon }
             if let c = inputController {
                 // hợp đồng Apple: event thật + allTouchEvents để long-press
@@ -1980,7 +1980,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             emojiBtn.setImage(UIImage(systemName: "trash",
                 withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)), for: .normal)
             emojiBtn.tintColor = ink
-            emojiBtn.accessibilityLabel = "Xoá ô nhập"
+            emojiBtn.accessibilityLabel = L("Xoá ô nhập")
         } else {
             // Nhấc tay như stock; touch bị hệ thống huỷ (sát vùng 🌐/mic) vẫn mở emoji.
             emojiBtn = controlButton(title: "", fire: .upOrCancel) { [weak self] in
@@ -2005,7 +2005,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         space.backgroundColor = plainFill
         space.normalBackground = plainFill
         space.pressedBackground = specialFill      // space sẫm lại khi đè
-        space.accessibilityLabel = "Dấu cách"
+        space.accessibilityLabel = L("Dấu cách")
         spaceBar = space
         // logo Vᴛ mờ ở mép phải nút space (thay "VI EN" — user 2026-07-23);
         // PNG 2x/3x render từ MenuIcon.pdf nên sắc nét, tint theo appearance.
@@ -2112,7 +2112,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 self.plane = .numbers
                 self.rebuild()
             }
-            b.accessibilityLabel = "Số"
+            b.accessibilityLabel = L("Số")
             views.append(b)
             planeBtn2 = b
         }
@@ -2123,7 +2123,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             d.setImage(UIImage(systemName: "keyboard.chevron.compact.down",
                 withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)), for: .normal)
             d.tintColor = ink
-            d.accessibilityLabel = "Ẩn bàn phím"
+            d.accessibilityLabel = L("Ẩn bàn phím")
             d.padRole = .icon
             d.addAction(UIAction { _ in Self.clickModifier() }, for: .touchDown)
             d.addAction(UIAction { [weak self] _ in
@@ -2664,7 +2664,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         if Self.isPad { b.padRole = .icon }   // icon cỡ stock iPad (Typography.Pad)
         b.setImage(UIImage(systemName: "delete.left.fill"), for: .highlighted)
         b.tintColor = ink
-        b.accessibilityLabel = "Xoá"
+        b.accessibilityLabel = L("Xoá")
         // touchDown xoá 1 ký tự như cũ; kéo ngang → vuốt xoá theo từ (xem MARK dưới).
         b.addTarget(self, action: #selector(backspaceDown(_:event:)), for: .touchDown)
         b.addTarget(self, action: #selector(backspaceDrag(_:event:)),
@@ -2795,7 +2795,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             pill.isUserInteractionEnabled = false
             wordSwipePill = pill
         }
-        pill.text = n > 0 ? "\u{232B} \(n) từ" : "Huỷ"
+        pill.text = n > 0 ? L("\u{232B} %@ từ", n) : L("Huỷ")
         pill.textColor = palette.ink.ui
         pill.backgroundColor = palette.balloon.ui
         if pill.superview == nil { addSubview(pill) }

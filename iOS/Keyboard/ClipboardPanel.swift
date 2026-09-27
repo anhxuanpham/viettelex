@@ -18,18 +18,18 @@ final class ClipboardPanel: UIView {
     private var dark = false
 
     /// Ghi chú giới hạn iOS (hiện cuối danh sách / khi trống).
-    static let limitNote = "iOS chỉ cho bàn phím đọc clipboard khi bàn phím đang hiện, có Toàn quyền truy cập và đã chọn \"Cho phép dán\". Mục copy lúc bàn phím ẩn được ghi khi bạn mở lại bàn phím (hoặc khi chạm Dán). Lưu chỉ trên máy; mục không ghim tự xoá sau 1 giờ."
+    static var limitNote: String { L("iOS chỉ cho bàn phím đọc clipboard khi bàn phím đang hiện, có Toàn quyền truy cập và đã chọn \"Cho phép dán\". Mục copy lúc bàn phím ẩn được ghi khi bạn mở lại bàn phím (hoặc khi chạm Dán). Lưu chỉ trên máy; mục không ghim tự xoá sau 1 giờ.") }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         titleLabel.text = "Clipboard"
         titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
-        clearButton.setTitle("Xoá hết", for: .normal)
+        clearButton.setTitle(L("Xoá hết"), for: .normal)
         clearButton.titleLabel?.font = .systemFont(ofSize: 15)
         clearButton.addAction(UIAction { [weak self] _ in self?.onClearAll?() }, for: .touchUpInside)
         closeButton.setImage(UIImage(systemName: "keyboard",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .regular)), for: .normal)
-        closeButton.accessibilityLabel = "Đóng clipboard"
+        closeButton.accessibilityLabel = L("Đóng clipboard")
         closeButton.addAction(UIAction { [weak self] _ in self?.onClose?() }, for: .touchUpInside)
         let spacer = UIView()
         header.addArrangedSubview(titleLabel)
@@ -77,11 +77,11 @@ final class ClipboardPanel: UIView {
         closeButton.tintColor = ink
         clearButton.tintColor = ink
         clearButton.isHidden = !items.contains { !$0.pinned }
-        titleLabel.text = incognito ? "Clipboard · ẩn danh (không lưu)" : "Clipboard"
+        titleLabel.text = incognito ? L("Clipboard · ẩn danh (không lưu)") : "Clipboard"
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         if let n = notice { stack.addArrangedSubview(note(n, ink: ink)) }
         if items.isEmpty {
-            stack.addArrangedSubview(note("Chưa có mục nào. Copy nội dung rồi mở bàn phím để ghi lại.", ink: ink))
+            stack.addArrangedSubview(note(L("Chưa có mục nào. Copy nội dung rồi mở bàn phím để ghi lại."), ink: ink))
         }
         for item in items { stack.addArrangedSubview(row(item, ink: ink)) }
         stack.addArrangedSubview(note(Self.limitNote, ink: ink.withAlphaComponent(0.55)))
@@ -108,11 +108,11 @@ final class ClipboardPanel: UIView {
         let shown = item.text.replacingOccurrences(of: "\n", with: " ⏎ ")
         body.setTitle(item.sensitive ? String(repeating: "•", count: min(item.text.count, 12)) : shown, for: .normal)
         body.setTitleColor(ink, for: .normal)
-        body.accessibilityLabel = item.sensitive ? "Mục ẩn, chạm để dán" : "Dán: \(item.text.prefix(80))"
+        body.accessibilityLabel = item.sensitive ? L("Mục ẩn, chạm để dán") : L("Dán: %@", item.text.prefix(80))
         body.addAction(UIAction { [weak self] _ in self?.onPaste?(item.text) }, for: .touchUpInside)
         let pin = iconButton(item.pinned ? "pin.fill" : "pin", ink: ink,
-                             label: item.pinned ? "Bỏ ghim" : "Ghim") { [weak self] in self?.onTogglePin?(item.text) }
-        let del = iconButton("xmark", ink: ink, label: "Xoá mục") { [weak self] in self?.onDelete?(item.text) }
+                             label: item.pinned ? L("Bỏ ghim") : "Ghim") { [weak self] in self?.onTogglePin?(item.text) }
+        let del = iconButton("xmark", ink: ink, label: L("Xoá mục")) { [weak self] in self?.onDelete?(item.text) }
         let h = UIStackView(arrangedSubviews: [body, pin, del])
         h.axis = .horizontal
         h.spacing = 4

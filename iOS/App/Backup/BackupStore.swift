@@ -37,6 +37,9 @@ final class BackupStore: SyncLocal {
             case .int(let def, let r):
                 let v = (raw as? Int) ?? def
                 out[spec.key] = .int(min(max(v, r.lowerBound), r.upperBound))
+            case .string(let def, let allowed):
+                let v = raw as? String
+                out[spec.key] = .string(v.map { allowed.contains($0) } == true ? v! : def)
             }
         }
         return out
@@ -45,7 +48,11 @@ final class BackupStore: SyncLocal {
     func setSettings(_ s: [String: SettingValue]) {
         for (k, v) in s where BackupSettings.byKey[k] != nil && !Self.unsupported.contains(k) {
             let lk = Self.localKey[k] ?? k
-            switch v { case .bool(let b): defaults.set(b, forKey: lk); case .int(let i): defaults.set(i, forKey: lk) }
+            switch v {
+            case .bool(let b): defaults.set(b, forKey: lk)
+            case .int(let i): defaults.set(i, forKey: lk)
+            case .string(let t): defaults.set(t, forKey: lk)
+            }
         }
     }
 

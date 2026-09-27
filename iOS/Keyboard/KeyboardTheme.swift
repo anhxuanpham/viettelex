@@ -154,14 +154,14 @@ enum KeyboardTheme: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .system: return "Hệ thống"
-        case .oled: return "Tối OLED"
-        case .contrast: return "Tương phản cao"
-        case .peach: return "Hồng đào"
-        case .mint: return "Bạc hà"
-        case .sky: return "Trời xanh"
-        case .lavender: return "Oải hương"
-        case .glass: return "Kính"
+        case .system: return L("Hệ thống")
+        case .oled: return L("Tối OLED")
+        case .contrast: return L("Tương phản cao")
+        case .peach: return L("Hồng đào")
+        case .mint: return L("Bạc hà")
+        case .sky: return L("Trời xanh")
+        case .lavender: return L("Oải hương")
+        case .glass: return L("Kính")
         }
     }
 

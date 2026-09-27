@@ -56,7 +56,8 @@
     "swipeEnglish" : true,
     "swipeTyping" : true,
     "teencode" : false,
-    "templatesEnabled" : true
+    "templatesEnabled" : true,
+    "uiLanguage" : "en"
   },
   "shortcuts" : {
     "ko" : "không",

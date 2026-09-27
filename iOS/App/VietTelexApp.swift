@@ -43,10 +43,10 @@ enum AppTab: CaseIterable {
     case kieuGo, tinhNang, mauCau, gioiThieu
     var title: String {
         switch self {
-        case .kieuGo: return "Kiểu Gõ"
-        case .tinhNang: return "Tính Năng"
-        case .mauCau: return "Mẫu Câu"
-        case .gioiThieu: return "Giới Thiệu"
+        case .kieuGo: return L("Kiểu Gõ")
+        case .tinhNang: return L("Tính Năng")
+        case .mauCau: return L("Mẫu Câu")
+        case .gioiThieu: return L("Giới Thiệu")
         }
     }
     var icon: String {
@@ -70,7 +70,14 @@ struct RootView: View {
         return d?.bool(forKey: "kbFullAccess") == true && d?.bool(forKey: "pasteNoPrompt") == true
     }
     @State private var tryItText = ""
-    @State private var tab: AppTab = .kieuGo
+    @State private var tab: AppTab = Self.initialTab
+    /// Bản Debug: `-startTab tinhnang` (launch argument) mở thẳng tab — chụp màn hình tự động.
+    private static var initialTab: AppTab {
+        #if DEBUG
+        if UserDefaults.standard.string(forKey: "startTab") == "tinhnang" { return .tinhNang }
+        #endif
+        return .kieuGo
+    }
     @State private var barCollapsed = false
     /// Bàn phím đang hiện → ẩn FloatingTabBar: overlay đáy bị iOS đẩy lên theo bàn
     /// phím và đè đúng dải khung "kính" phía trên bàn phím (host vẽ) → thanh gợi ý
@@ -78,6 +85,10 @@ struct RootView: View {
     @State private var keyboardShown = false
     @AppStorage("templatesEnabled", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var templatesEnabled = true
+    /// Ngôn ngữ giao diện ("vi" | "en", mặc định "vi" — KHÔNG theo máy). Đổi ở Tính Năng
+    /// → dựng lại toàn bộ cây view (id bên dưới) nên áp dụng ngay, không cần mở lại app.
+    @AppStorage(L10n.defaultsKey, store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var uiLanguage = "vi"
 
     private var visibleTabs: [AppTab] {
         templatesEnabled ? AppTab.allCases
@@ -97,6 +108,8 @@ struct RootView: View {
     // reserve nguyên dải đáy — hai bên pill lộ nền list thành 2 khối chắn.
     // Overlay + contentMargins để content cuộn xuyên dưới capsule glass.
     var body: some View {
+        // Đồng bộ bảng tra trước khi con dựng lại (kể cả khi iCloud/sao lưu đổi key).
+        let _ = L10n.apply(uiLanguage)
         NavigationStack {
             List {
                 switch tab {
@@ -115,10 +128,12 @@ struct RootView: View {
         }
         // Đổi tab ⇒ dựng lại stack: trang con đang mở (vd Tính Năng → Giao diện) không
         // còn đè lên tab mới.
-        .id(tab)
+        // … và đổi ngôn ngữ cũng dựng lại để mọi chữ lấy bản dịch mới.
+        .id("\(tab)|\(uiLanguage)")
         .overlay(alignment: .bottom) {
             if !keyboardShown {
                 FloatingTabBar(selected: $tab, tabs: visibleTabs, collapsed: barCollapsed)
+                    .id(uiLanguage)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
@@ -162,11 +177,11 @@ struct RootView: View {
             // KHÔNG .autocorrectionDisabled(): bàn phím coi ô autocorrection == .no là
             // ô mã/username → passthrough (literal, tắt Telex) — ô thử gõ mất tác dụng
             // (log Debug mode 25/09/2026: composing=0 mọi phím).
-            TextField("Thử gõ tại đây…", text: $tryItText, axis: .vertical)
+            TextField(L("Thử gõ tại đây…"), text: $tryItText, axis: .vertical)
                 .lineLimit(1...4)
                 .textInputAutocapitalization(.never)
-        } header: { Text("Thử gõ") } footer: {
-            Text("Bấm 🌐 dưới bàn phím để chuyển sang Tiếng Việt (VietTelex), rồi gõ thử: vieejt → việt.")
+        } header: { Text(L("Thử gõ")) } footer: {
+            Text(L("Bấm 🌐 dưới bàn phím để chuyển sang Tiếng Việt (VietTelex), rồi gõ thử: vieejt → việt."))
         }
         KieuGoSection()
     }
@@ -188,7 +203,7 @@ struct RootView: View {
                     Text("⌨️").font(.system(size: 64))
                 }
                 Text("VietTelex").font(.title2.bold())
-                Text("Bàn phím Telex tiếng Việt")
+                Text(L("Bàn phím Telex tiếng Việt"))
                     .font(.subheadline).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
@@ -197,21 +212,21 @@ struct RootView: View {
         }
         Section { PlusEntryRow() }
         Section {
-            Link(destination: URL(string: "https://viettelex.com/hdsd/?os=ios")!) {
-                Label("Hướng dẫn sử dụng", systemImage: "book")
+            Link(destination: L10n.guideURL(os: "ios")) {
+                Label(L("Hướng dẫn sử dụng"), systemImage: "book")
             }
             Link(destination: URL(string: "https://ptrinh.github.io/viettelex/")!) {
                 Label("Website", systemImage: "globe")
             }
             Link(destination: URL(string: "https://ptrinh.github.io/viettelex/learn/")!) {
-                Label("Học gõ Telex", systemImage: "graduationcap")
+                Label(L("Học gõ Telex"), systemImage: "graduationcap")
             }
             Link(destination: URL(string: "https://github.com/ptrinh/viettelex")!) {
-                Label("Mã nguồn trên GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
+                Label(L("Mã nguồn trên GitHub"), systemImage: "chevron.left.forwardslash.chevron.right")
             }
-        } header: { Text("Tài nguyên") }
+        } header: { Text(L("Tài nguyên")) }
         Section {
-            LabeledContent("Phiên bản", value: Self.versionLine)
+            LabeledContent(L("Phiên bản"), value: Self.versionLine)
             HStack {
                 Text(verbatim: "© Phil Trinh \(String(Calendar.current.component(.year, from: Date())))")
                 Spacer()
@@ -219,17 +234,17 @@ struct RootView: View {
                     .foregroundStyle(accentBlue)
             }
             .font(.footnote).foregroundStyle(.secondary)
-            Text("Không thu thập dữ liệu · Không theo dõi · Mã nguồn mở")
+            Text(L("Không thu thập dữ liệu · Không theo dõi · Mã nguồn mở"))
                 .font(.footnote).foregroundStyle(.secondary)
             // Ghi công theo giấy phép dữ liệu bigram gõ vuốt (vnbigram.bin) — docs/DATA-SOURCES.md
             Link(destination: URL(string: "https://github.com/ptrinh/viettelex/blob/main/docs/DATA-SOURCES.md")!) {
-                Text("Dữ liệu gõ vuốt: thống kê từ Wikipedia, Wikisource… tiếng Việt (CC BY-SA 4.0) và Tatoeba (CC BY 2.0 FR)")
+                Text(L("Dữ liệu gõ vuốt: thống kê từ Wikipedia, Wikisource… tiếng Việt (CC BY-SA 4.0) và Tatoeba (CC BY 2.0 FR)"))
                     .multilineTextAlignment(.leading)
             }
             .font(.footnote).foregroundStyle(.secondary)
-            Text("Toàn quyền Truy cập là tuỳ chọn — chỉ cần cho Rung phím và Mẫu câu động (https://); VietTelex không dùng quyền này cho bất kỳ việc gì khác.")
+            Text(L("Toàn quyền Truy cập là tuỳ chọn — chỉ cần cho Rung phím và Mẫu câu động (https://); VietTelex không dùng quyền này cho bất kỳ việc gì khác."))
                 .font(.footnote).foregroundStyle(.secondary)
-        } header: { Text("Giới thiệu") }
+        } header: { Text(L("Giới thiệu")) }
     }
 }
 
@@ -387,6 +402,9 @@ struct MauCauSections: View {
 
     /// Báo lý do ở ngay dưới hàng đang thao tác (thêm mới / sửa).
     @State private var addNotice: String?
+    /// addNotice là thông báo thành công (xám) hay lý do từ chối (cam) — trước đây
+    /// dò tiền tố "Đã", vỡ khi giao diện tiếng Anh.
+    @State private var addNoticeOK = false
 
     /// Lưu dòng đang sửa; rỗng/trùng câu dòng khác → báo lý do, giữ nguyên ô sửa.
     private func commitEdit() {
@@ -398,7 +416,7 @@ struct MauCauSections: View {
             addNotice = nil
             persist()
         case .rejected(let r):
-            addNotice = TemplateEdit.message(r, items: templates)
+            addNotice = TemplateEdit.message(r, items: templates); addNoticeOK = false
         }
     }
 
@@ -408,11 +426,11 @@ struct MauCauSections: View {
         switch TemplateEdit.add(templates, label: newLabel, text: newText) {
         case .ok(let items):
             templates = items
-            addNotice = "Đã thêm mẫu câu (dòng \(items.count))."
+            addNotice = L("Đã thêm mẫu câu (dòng %@).", items.count); addNoticeOK = true
             newLabel = ""; newText = ""
             persist()
         case .rejected(let r):
-            addNotice = TemplateEdit.message(r, items: templates)
+            addNotice = TemplateEdit.message(r, items: templates); addNoticeOK = false
         }
     }
 
@@ -437,7 +455,7 @@ struct MauCauSections: View {
                             .frame(width: 44)
                             .multilineTextAlignment(.center)
                         Divider()
-                        TextField("Mẫu câu", text: $editText, axis: .vertical)
+                        TextField(L("Mẫu câu"), text: $editText, axis: .vertical)
                             .lineLimit(1...4)
                         Button { endEditing(); commitEdit() } label: {
                             Image(systemName: "checkmark.circle.fill").font(.title3)
@@ -449,7 +467,7 @@ struct MauCauSections: View {
                         .buttonStyle(.borderless)
                         .foregroundStyle(.secondary)
                     }
-                    if let addNotice, !addNotice.hasPrefix("Đã") {
+                    if let addNotice, !addNoticeOK {
                         Text(addNotice).font(.footnote).foregroundStyle(.orange)
                     }
                     }
@@ -472,10 +490,10 @@ struct MauCauSections: View {
                 persist()
             }
             if templates.isEmpty {
-                Text("Chưa có mẫu câu nào.").foregroundStyle(.secondary)
+                Text(L("Chưa có mẫu câu nào.")).foregroundStyle(.secondary)
             }
-        } header: { Text("Mẫu câu (\(templates.count))") } footer: {
-            Text("Bấm ☰ trên bàn phím để chèn nhanh. Chạm một dòng để sửa, vuốt trái để xoá. Label (emoji/chữ ngắn) giúp bubble trên bàn phím gọn hơn.")
+        } header: { Text(L("Mẫu câu (%@)", templates.count)) } footer: {
+            Text(L("Bấm ☰ trên bàn phím để chèn nhanh. Chạm một dòng để sửa, vuốt trái để xoá. Label (emoji/chữ ngắn) giúp bubble trên bàn phím gọn hơn."))
         }
 
         Section {
@@ -484,26 +502,26 @@ struct MauCauSections: View {
                     .frame(width: 44)
                     .multilineTextAlignment(.center)
                 Divider()
-                TextField("Thêm mẫu câu…", text: $newText, axis: .vertical)
+                TextField(L("Thêm mẫu câu…"), text: $newText, axis: .vertical)
                     .lineLimit(1...3)
                 // KHÔNG .disabled theo newText: chữ đang soạn (marked text) chưa vào
                 // binding → nút xám dù ô có chữ; bấm luôn được, lý do báo ở footer.
                 Button { commitAdd() } label: { Image(systemName: "plus.circle.fill").font(.title3) }
                 .buttonStyle(.borderless)
-                .accessibilityLabel("Thêm mẫu câu")
+                .accessibilityLabel(L("Thêm mẫu câu"))
             }
-        } header: { Text("Thêm mới") } footer: {
+        } header: { Text(L("Thêm mới")) } footer: {
             if let addNotice {
-                Text(addNotice).foregroundStyle(addNotice.hasPrefix("Đã") ? Color.secondary : Color.orange)
+                Text(addNotice).foregroundStyle(addNoticeOK ? Color.secondary : Color.orange)
             } else {
-                Text("Ô nhỏ bên trái là label (không bắt buộc).")
+                Text(L("Ô nhỏ bên trái là label (không bắt buộc)."))
             }
         }
 
         Section {
-            FullAccessNotice(reason: "Mẫu câu động")
-        } header: { Text("Mẫu câu động (https://)") } footer: {
-            Text("Mẫu có nội dung bắt đầu bằng https:// sẽ fetch dữ liệu NGAY LÚC BẤM và chèn kết quả (tối đa 1000 bytes) — ví dụ 🌐 IP chèn địa chỉ IP hiện tại. Chưa cấp Toàn quyền thì bàn phím không có mạng, bấm sẽ chèn chính URL.")
+            FullAccessNotice(reason: L("Mẫu câu động"))
+        } header: { Text(L("Mẫu câu động (https://)")) } footer: {
+            Text(L("Mẫu có nội dung bắt đầu bằng https:// sẽ fetch dữ liệu NGAY LÚC BẤM và chèn kết quả (tối đa 1000 bytes) — ví dụ 🌐 IP chèn địa chỉ IP hiện tại. Chưa cấp Toàn quyền thì bàn phím không có mạng, bấm sẽ chèn chính URL."))
         }
 
         Section {
@@ -516,7 +534,7 @@ struct MauCauSections: View {
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 guard let text = try? String(contentsOf: url, encoding: .utf8) else {
-                    notice = "Không đọc được file."
+                    notice = L("Không đọc được file.")
                     return
                 }
                 let imported = Self.parseYAML(text)
@@ -527,8 +545,8 @@ struct MauCauSections: View {
                 }
                 persist()
                 let added = templates.count - before
-                notice = "Đã thêm \(added)/\(imported.count) mẫu"
-                    + (imported.count > added ? " (trùng bị bỏ qua)." : ".")
+                notice = L("Đã thêm %@/%@ mẫu", added, imported.count)
+                    + (imported.count > added ? L(" (trùng bị bỏ qua).") : ".")
             }
             Button {
                 showExporter = true
@@ -537,13 +555,13 @@ struct MauCauSections: View {
                           document: TemplatesDocument(text: Self.exportYAML(templates)),
                           contentType: .yaml,
                           defaultFilename: "viettelex-mau-cau") { result in
-                if case .success = result { notice = "Đã export \(templates.count) mẫu." }
+                if case .success = result { notice = L("Đã export %@ mẫu.", templates.count) }
             }
             if let notice {
                 Text(notice).font(.footnote).foregroundStyle(.secondary)
             }
         } footer: {
-            Text("YAML phẳng, mỗi dòng “- \"👋 | Chào buổi sáng\"” (label | câu) hoặc “- \"câu\"”. Import gộp thêm, không thay thế.")
+            Text(L("YAML phẳng, mỗi dòng “- \"👋 | Chào buổi sáng\"” (label | câu) hoặc “- \"câu\"”. Import gộp thêm, không thay thế."))
         }
     }
 
@@ -609,12 +627,12 @@ struct OnboardingCard: View {
     /// "Dán từ ứng dụng khác" → một nút mở thẳng trang đó.
     @ViewBuilder private var pasteSetup: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Để dán nhanh từ thanh gợi ý", systemImage: "doc.on.clipboard")
+            Label(L("Để dán nhanh từ thanh gợi ý"), systemImage: "doc.on.clipboard")
                 .font(.subheadline.weight(.semibold))
             VStack(alignment: .leading, spacing: 4) {
-                Text("1. Bàn phím → VietTelex → bật Cho phép Toàn quyền")
-                Text("2. Dán từ ứng dụng khác → chọn Cho phép")
-                Text("Nếu chưa thấy mục 2: bấm nút Dán trên bàn phím một lần để iOS hỏi, rồi quay lại đây.")
+                Text(L("1. Bàn phím → VietTelex → bật Cho phép Toàn quyền"))
+                Text(L("2. Dán từ ứng dụng khác → chọn Cho phép"))
+                Text(L("Nếu chưa thấy mục 2: bấm nút Dán trên bàn phím một lần để iOS hỏi, rồi quay lại đây."))
                     .foregroundStyle(.tertiary)
             }
             .font(.footnote).foregroundStyle(.secondary)
@@ -623,7 +641,7 @@ struct OnboardingCard: View {
                     UIApplication.shared.open(url)
                 }
             } label: {
-                Text("Mở Cài đặt VietTelex").font(.subheadline.weight(.semibold))
+                Text(L("Mở Cài đặt VietTelex")).font(.subheadline.weight(.semibold))
             }
             // .borderless: nút trong dòng List có nhiều control — kiểu mặc định để cả
             // dòng nuốt chạm, nút "không làm gì" (user 25/09/2026, như "Xem log" cũ).
@@ -641,8 +659,8 @@ struct OnboardingCard: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.title2).foregroundStyle(Color.green)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Bàn phím đã bật").font(.headline)
-                        Text("Thử gõ ngay bên dưới.")
+                        Text(L("Bàn phím đã bật")).font(.headline)
+                        Text(L("Thử gõ ngay bên dưới."))
                             .font(.subheadline).foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -650,14 +668,14 @@ struct OnboardingCard: View {
                 if !pasteReady { pasteSetup }
             } else {
                 hero
-                Text("Bật bàn phím VietTelex").font(.title3.bold())
+                Text(L("Bật bàn phím VietTelex")).font(.title3.bold())
                 VStack(alignment: .leading, spacing: 10) {
-                    step(1, "Bật bàn phím trong Cài đặt", done: enabled)
-                    step(2, "Thử gõ ngay bên dưới", done: false)
+                    step(1, L("Bật bàn phím trong Cài đặt"), done: enabled)
+                    step(2, L("Thử gõ ngay bên dưới"), done: false)
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Cài đặt → Cài đặt chung → Bàn phím → Bàn phím")
-                        Text("Thêm bàn phím mới… → Tiếng Việt (VietTelex)")
-                        Text("Khi gõ, bấm 🌐 để chuyển sang VietTelex")
+                        Text(L("Cài đặt → Cài đặt chung → Bàn phím → Bàn phím"))
+                        Text(L("Thêm bàn phím mới… → Tiếng Việt (VietTelex)"))
+                        Text(L("Khi gõ, bấm 🌐 để chuyển sang VietTelex"))
                     }
                     .font(.footnote).foregroundStyle(.secondary)
                     .padding(.leading, 30)
@@ -668,7 +686,7 @@ struct OnboardingCard: View {
                         UIApplication.shared.open(url)
                     }
                 } label: {
-                    Text("Mở Cài đặt").font(.headline).frame(maxWidth: .infinity)
+                    Text(L("Mở Cài đặt")).font(.headline).frame(maxWidth: .infinity)
                 }
                 .prominentGlassButton()
                 if !pasteReady { pasteSetup }
@@ -704,7 +722,7 @@ struct FullAccessNotice: View {
         Group {
             if state.granted {
                 Label {
-                    Text("Đã cấp Toàn quyền Truy cập.")
+                    Text(L("Đã cấp Toàn quyền Truy cập."))
                         .font(.footnote).foregroundStyle(.secondary)
                 } icon: {
                     Image(systemName: "checkmark.circle.fill")
@@ -713,7 +731,7 @@ struct FullAccessNotice: View {
             } else {
                 notice
                 if !state.kbSeen {
-                    Text("Nếu đã bật rồi: mở bàn phím VietTelex một lần (gõ ở app bất kỳ) để app nhận trạng thái quyền.")
+                    Text(L("Nếu đã bật rồi: mở bàn phím VietTelex một lần (gõ ở app bất kỳ) để app nhận trạng thái quyền."))
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
             }
@@ -730,7 +748,7 @@ struct FullAccessNotice: View {
     private var notice: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label {
-                Text("\(reason) cần Toàn quyền Truy cập. Bật trong Cài đặt → Bàn phím → Cho phép Toàn quyền Truy cập. VietTelex không thu thập dữ liệu.")
+                Text(L("%@ cần Toàn quyền Truy cập. Bật trong Cài đặt → Bàn phím → Cho phép Toàn quyền Truy cập. VietTelex không thu thập dữ liệu.", reason))
                     .font(.footnote).foregroundStyle(.secondary)
             } icon: {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -741,7 +759,7 @@ struct FullAccessNotice: View {
                     UIApplication.shared.open(url)
                 }
             } label: {
-                Text("Mở Cài đặt để cấp Toàn quyền")
+                Text(L("Mở Cài đặt để cấp Toàn quyền"))
                     .font(.subheadline.weight(.medium))
             }
             // .borderless bắt buộc: Button nằm chung row trong List mà không
@@ -791,7 +809,7 @@ struct KieuGoSection: View {
             // Telex / VNI loại trừ nhau → segmented (như radio macOS). Chọn VNI TỰ BẬT hàng
             // phím số (số là phím dấu — không có hàng số thì mỗi dấu phải chuyển plane 123);
             // tắt lại được ở Tính năng → Phím & cử chỉ.
-            Picker("Kiểu gõ", selection: Binding(
+            Picker(L("Kiểu gõ"), selection: Binding(
                 get: { vniMode ? "vni" : "telex" },
                 set: { v in
                     let vni = v == "vni"
@@ -803,23 +821,23 @@ struct KieuGoSection: View {
             }
             .pickerStyle(.segmented)
             if vniMode {
-                Text("Gõ dấu bằng số khi đang gõ một từ: 1 sắc, 2 huyền, 3 hỏi, 4 ngã, 5 nặng, 6 mũ (â ê ô), 7 móc (ơ ư), 8 trăng (ă), 9 đ, 0 xoá dấu — tie6ng1 vie6t5 → tiếng việt. Ngoài từ, phím số vẫn gõ ra số. Chọn VNI tự bật Hàng phím số (tắt được ở Tính năng → Phím & cử chỉ).")
+                Text(L("Gõ dấu bằng số khi đang gõ một từ: 1 sắc, 2 huyền, 3 hỏi, 4 ngã, 5 nặng, 6 mũ (â ê ô), 7 móc (ơ ư), 8 trăng (ă), 9 đ, 0 xoá dấu — tie6ng1 vie6t5 → tiếng việt. Ngoài từ, phím số vẫn gõ ra số. Chọn VNI tự bật Hàng phím số (tắt được ở Tính năng → Phím & cử chỉ)."))
                     .font(.footnote).foregroundStyle(.secondary)
             } else {
-                settingToggle("Telex đơn giản", "Phím w đứng lẻ giữ nguyên là w, không thành ư.", isOn: $simpleTelex)
-                settingToggle("Bỏ dấu tự do", "Phím dấu đặt đâu cũng được, không cần đúng thứ tự.", isOn: $freeMarking)
-                settingToggle("Gõ nhanh (Quick Telex)", "Phụ âm đôi đầu từ thành phụ âm ghép: cc → ch, nn → ng, tt → th…", isOn: $quickTelex)
+                settingToggle(L("Telex đơn giản"), L("Phím w đứng lẻ giữ nguyên là w, không thành ư."), isOn: $simpleTelex)
+                settingToggle(L("Bỏ dấu tự do"), L("Phím dấu đặt đâu cũng được, không cần đúng thứ tự."), isOn: $freeMarking)
+                settingToggle(L("Gõ nhanh (Quick Telex)"), L("Phụ âm đôi đầu từ thành phụ âm ghép: cc → ch, nn → ng, tt → th…"), isOn: $quickTelex)
             }
-            settingToggle("Bỏ dấu kiểu mới", "hoà, thuý thay vì hòa, thúy.", isOn: $modernTone)
+            settingToggle(L("Bỏ dấu kiểu mới"), L("hoà, thuý thay vì hòa, thúy."), isOn: $modernTone)
             // iOS không cho bàn phím bên thứ ba đọc công tắc Tự động viết hoa của hệ thống.
-            settingToggle("Tự động viết hoa đầu câu", "Bật shift ở đầu ô, sau . ! ? và khi xuống dòng. Công tắc “Tự động viết hoa” trong Cài đặt → Bàn phím của iOS không áp dụng cho bàn phím bên thứ ba — tắt ở đây.", isOn: $autoCapitalize)
-            settingToggle("Quyết định theo ngữ cảnh", "Sau một từ tiếng Anh, từ nhập nhằng kế tiếp mà chuỗi phím tạo thành một từ tiếng Anh sẽ được giữ tiếng Anh thay vì tiếng Việt — “he is” → “he is”, không phải “he í”. Sau từ tiếng Việt hoặc không rõ thì để tiếng Việt — “sao í”.", isOn: $contextualEnglish)
-            settingToggle("Gợi ý sửa lỗi chạm trượt", "Khi từ đang gõ không phải tiếng Việt, gợi ý từ đúng nếu bạn lỡ chạm phím bên cạnh: nbjeeuf → nhiều, ohims → phím, cahcs → cách. Chạm gợi ý để thay.", isOn: $autoFixAdjacent)
+            settingToggle(L("Tự động viết hoa đầu câu"), L("Bật shift ở đầu ô, sau . ! ? và khi xuống dòng. Công tắc “Tự động viết hoa” trong Cài đặt → Bàn phím của iOS không áp dụng cho bàn phím bên thứ ba — tắt ở đây."), isOn: $autoCapitalize)
+            settingToggle(L("Quyết định theo ngữ cảnh"), L("Sau một từ tiếng Anh, từ nhập nhằng kế tiếp mà chuỗi phím tạo thành một từ tiếng Anh sẽ được giữ tiếng Anh thay vì tiếng Việt — “he is” → “he is”, không phải “he í”. Sau từ tiếng Việt hoặc không rõ thì để tiếng Việt — “sao í”."), isOn: $contextualEnglish)
+            settingToggle(L("Gợi ý sửa lỗi chạm trượt"), L("Khi từ đang gõ không phải tiếng Việt, gợi ý từ đúng nếu bạn lỡ chạm phím bên cạnh: nbjeeuf → nhiều, ohims → phím, cahcs → cách. Chạm gợi ý để thay."), isOn: $autoFixAdjacent)
             if !vniMode {
-                settingToggle("Chính tả teencode", "Chấp nhận cách viết khi chat: w/z/k thay cho qu/d/c (wá, zui zẻ, kó) và bíe, thík, gòy, ừk. Tắt = chỉ chính tả chuẩn, từ tiếng Anh như was, war, zoo giữ nguyên.", isOn: $teencode)
+                settingToggle(L("Chính tả teencode"), L("Chấp nhận cách viết khi chat: w/z/k thay cho qu/d/c (wá, zui zẻ, kó) và bíe, thík, gòy, ừk. Tắt = chỉ chính tả chuẩn, từ tiếng Anh như was, war, zoo giữ nguyên."), isOn: $teencode)
             }
-        } header: { Text("Kiểu gõ") } footer: {
-            Text("Cài đặt áp dụng ngay lần mở bàn phím kế tiếp.")
+        } header: { Text(L("Kiểu gõ")) } footer: {
+            Text(L("Cài đặt áp dụng ngay lần mở bàn phím kế tiếp."))
         }
     }
 }
@@ -847,23 +865,23 @@ struct DebugSection: View {
 
     var body: some View {
         Section {
-            settingToggle("Debug mode — ghi log chạm phím",
-                          "Ghi thời điểm chạm, độ trễ và số phím vào log trong app — KHÔNG ghi nội dung bạn gõ. Cần \"Cho phép Toàn quyền\" cho bàn phím. Tắt + Xoá log khi xong.",
+            settingToggle(L("Debug mode — ghi log chạm phím"),
+                          L("Ghi thời điểm chạm, độ trễ và số phím vào log trong app — KHÔNG ghi nội dung bạn gõ. Cần \"Cho phép Toàn quyền\" cho bàn phím. Tắt + Xoá log khi xong."),
                           isOn: $debugTouchLog)
             if debugTouchLog {
-                settingToggle("Hiện log (tự copy vào clipboard)",
-                              "Bật để xem log bên dưới và copy toàn bộ — tắt rồi bật lại để tải log mới.",
+                settingToggle(L("Hiện log (tự copy vào clipboard)"),
+                              L("Bật để xem log bên dưới và copy toàn bộ — tắt rồi bật lại để tải log mới."),
                               isOn: $showLog)
-                settingToggle("Xoá log", "Bật để xoá log cũ trước khi thử lại.", isOn: $clearLog)
+                settingToggle(L("Xoá log"), L("Bật để xoá log cũ trước khi thử lại."), isOn: $clearLog)
                 if showLog {
                     Text(logText.isEmpty
-                         ? "Chưa có log. Bật \"Cho phép Toàn quyền\" cho bàn phím VietTelex (Cài đặt → Chung → Bàn phím → Bàn phím → VietTelex), rồi gõ thử."
-                         : "\(logText.split(separator: "\n").count) dòng — đã copy vào clipboard.\n\n" + logText.split(separator: "\n").suffix(80).joined(separator: "\n"))
+                         ? L("Chưa có log. Bật \"Cho phép Toàn quyền\" cho bàn phím VietTelex (Cài đặt → Chung → Bàn phím → Bàn phím → VietTelex), rồi gõ thử.")
+                         : L("%@ dòng — đã copy vào clipboard.\n\n", logText.split(separator: "\n").count) + logText.split(separator: "\n").suffix(80).joined(separator: "\n"))
                         .font(.system(.caption2, design: .monospaced))
                         .textSelection(.enabled)
                 }
             }
-        } header: { Text("Gỡ lỗi") }
+        } header: { Text(L("Gỡ lỗi")) }
         .onChange(of: showLog) { on in
             guard on else { return }
             reload()

@@ -15,10 +15,10 @@ enum TextTool: String, CaseIterable {
     var label: String {
         switch self {
         case .upper: return "HOA"
-        case .lower: return "thường"
-        case .title: return "Hoa Đầu Từ"
-        case .sentence: return "Hoa đầu câu"
-        case .stripDiacritics: return "Xoá dấu"
+        case .lower: return L("thường")
+        case .title: return L("Hoa Đầu Từ")
+        case .sentence: return L("Hoa đầu câu")
+        case .stripDiacritics: return L("Xoá dấu")
         }
     }
 }

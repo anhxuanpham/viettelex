@@ -74,7 +74,7 @@ final class PlusStoreModel: ObservableObject {
             plusProduct = all.first { $0.id == PlusConfig.plusProductID }
             tipProducts = PlusConfig.tipProductIDs.compactMap { id in all.first { $0.id == id } }
         } catch {
-            message = "Không tải được sản phẩm từ App Store. Kiểm tra kết nối mạng rồi thử lại."
+            message = L("Không tải được sản phẩm từ App Store. Kiểm tra kết nối mạng rồi thử lại.")
         }
     }
 
@@ -93,17 +93,17 @@ final class PlusStoreModel: ObservableObject {
             case .success(let id):
                 if id == PlusConfig.plusProductID {
                     await refreshEntitlements()
-                    message = purchased ? "Đã mở khoá VietTelex Plus. Cảm ơn bạn!" : nil
+                    message = purchased ? L("Đã mở khoá VietTelex Plus. Cảm ơn bạn!") : nil
                 } else {
-                    message = "Cảm ơn bạn đã ủng hộ VietTelex! ❤️"
+                    message = L("Cảm ơn bạn đã ủng hộ VietTelex! ❤️")
                 }
             case .pending:
-                message = "Giao dịch đang chờ duyệt. Plus sẽ tự mở khi được chấp thuận."
+                message = L("Giao dịch đang chờ duyệt. Plus sẽ tự mở khi được chấp thuận.")
             case .cancelled:
                 break
             }
         } catch {
-            message = "Giao dịch không thành công. Bạn chưa bị trừ tiền."
+            message = L("Giao dịch không thành công. Bạn chưa bị trừ tiền.")
         }
     }
 
@@ -111,11 +111,11 @@ final class PlusStoreModel: ObservableObject {
         isRestoring = true
         defer { isRestoring = false }
         do { try await backend.sync() } catch {
-            message = "Không kết nối được App Store để khôi phục."
+            message = L("Không kết nối được App Store để khôi phục.")
             return
         }
         await refreshEntitlements()
-        message = purchased ? "Đã khôi phục VietTelex Plus." : "Không tìm thấy giao dịch Plus nào với Apple ID này."
+        message = purchased ? L("Đã khôi phục VietTelex Plus.") : L("Không tìm thấy giao dịch Plus nào với Apple ID này.")
     }
 
     private func apply(_ entitled: Bool) {

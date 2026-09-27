@@ -10,22 +10,22 @@ struct RiengTuSection: View {
 
     var body: some View {
         Section {
-            toggle("Lịch sử clipboard",
-                   "Nút clipboard trên thanh gợi ý mở 20 mục vừa copy; ghim để giữ lâu. Mục không ghim tự xoá sau 1 giờ (mật khẩu/OTP: 2 phút). Chỉ lưu trên máy.",
+            toggle(L("Lịch sử clipboard"),
+                   L("Nút clipboard trên thanh gợi ý mở 20 mục vừa copy; ghim để giữ lâu. Mục không ghim tự xoá sau 1 giờ (mật khẩu/OTP: 2 phút). Chỉ lưu trên máy."),
                    isOn: $clipboardHistory)
             if clipboardHistory {
-                FullAccessNotice(reason: "Lịch sử clipboard")
-                Text("iOS chỉ cho bàn phím đọc clipboard khi đang hiện và có Toàn quyền. Để tự ghi mục mới mà không bị hỏi: Cài đặt → VietTelex → Dán từ ứng dụng khác → Cho phép. Bỏ qua ô mật khẩu.")
+                FullAccessNotice(reason: L("Lịch sử clipboard"))
+                Text(L("iOS chỉ cho bàn phím đọc clipboard khi đang hiện và có Toàn quyền. Để tự ghi mục mới mà không bị hỏi: Cài đặt → VietTelex → Dán từ ứng dụng khác → Cho phép. Bỏ qua ô mật khẩu."))
                     .font(.footnote).foregroundStyle(.secondary)
             }
         } header: { Text("Clipboard") } footer: {
-            Text("Tắt Lịch sử clipboard sẽ xoá toàn bộ mục đã lưu ở lần mở bàn phím kế tiếp.")
+            Text(L("Tắt Lịch sử clipboard sẽ xoá toàn bộ mục đã lưu ở lần mở bàn phím kế tiếp."))
         }
         Section {
-            toggle("Chế độ ẩn danh",
-                   "Bàn phím không học từ bạn gõ và không lưu clipboard.",
+            toggle(L("Chế độ ẩn danh"),
+                   L("Bàn phím không học từ bạn gõ và không lưu clipboard."),
                    isOn: $incognitoMode)
-        } header: { Text("Riêng tư") }
+        } header: { Text(L("Riêng tư")) }
     }
 
     private func toggle(_ title: String, _ caption: String, isOn: Binding<Bool>) -> some View {

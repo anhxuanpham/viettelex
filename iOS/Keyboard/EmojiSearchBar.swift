@@ -48,7 +48,7 @@ final class EmojiSearchBar: UIView {
         clear.setImage(UIImage(systemName: "xmark.circle.fill",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 14)), for: .normal)
         clear.tintColor = ink.withAlphaComponent(0.35)
-        clear.accessibilityLabel = "Xoá ô tìm"
+        clear.accessibilityLabel = L("Xoá ô tìm")
         clear.addAction(UIAction { [weak self] _ in self?.onClear?() }, for: .touchUpInside)
         clear.translatesAutoresizingMaskIntoConstraints = false
         field.addSubview(clear)
@@ -99,7 +99,7 @@ final class EmojiSearchBar: UIView {
     func update(query: String, results list: [String]) {
         let ink: UIColor = dark ? .white : .black
         if query.isEmpty {
-            label.text = "Tìm emoji"
+            label.text = L("Tìm emoji")
             label.textColor = ink.withAlphaComponent(0.4)
         } else {
             label.text = query
@@ -129,7 +129,7 @@ final class EmojiSearchBar: UIView {
         results.contentSize = CGSize(width: x, height: size)
         results.contentOffset = .zero
         emptyLabel.isHidden = !list.isEmpty
-        emptyLabel.text = query.isEmpty ? "Gõ để tìm: tim, chó, cười…" : "Không thấy emoji"
+        emptyLabel.text = query.isEmpty ? L("Gõ để tìm: tim, chó, cười…") : L("Không thấy emoji")
     }
 
     override func layoutSubviews() {

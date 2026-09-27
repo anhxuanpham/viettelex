@@ -60,23 +60,23 @@ enum PlusFeature: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .premiumThemes: return "Theme cao cấp & ảnh nền"
-        case .sentenceDiacritics: return "Thêm dấu cả câu"
-        case .advancedClipboard: return "Clipboard nâng cao"
-        case .iCloudSync: return "Đồng bộ iCloud"
-        case .textTools: return "Công cụ văn bản"
-        case .thanksBadge: return "Huy hiệu cảm ơn"
+        case .premiumThemes: return L("Theme cao cấp & ảnh nền")
+        case .sentenceDiacritics: return L("Thêm dấu cả câu")
+        case .advancedClipboard: return L("Clipboard nâng cao")
+        case .iCloudSync: return L("Đồng bộ iCloud")
+        case .textTools: return L("Công cụ văn bản")
+        case .thanksBadge: return L("Huy hiệu cảm ơn")
         }
     }
 
     var detail: String {
         switch self {
-        case .premiumThemes: return "Thêm bộ màu bàn phím và đặt ảnh riêng làm nền."
-        case .sentenceDiacritics: return "Gõ không dấu cả câu, một chạm thêm dấu."
-        case .advancedClipboard: return "Ghim không giới hạn, chip tách số tài khoản, số điện thoại, mã OTP."
-        case .iCloudSync: return "Cài đặt, gõ tắt và từ đã học theo bạn sang máy khác."
-        case .textTools: return "Đổi HOA/thường, hoa đầu từ/đầu câu, xoá dấu tiếng Việt."
-        case .thanksBadge: return "Dấu ★ nhỏ trong app — lời cảm ơn vì đã ủng hộ."
+        case .premiumThemes: return L("Thêm bộ màu bàn phím và đặt ảnh riêng làm nền.")
+        case .sentenceDiacritics: return L("Gõ không dấu cả câu, một chạm thêm dấu.")
+        case .advancedClipboard: return L("Ghim không giới hạn, chip tách số tài khoản, số điện thoại, mã OTP.")
+        case .iCloudSync: return L("Cài đặt, gõ tắt và từ đã học theo bạn sang máy khác.")
+        case .textTools: return L("Đổi HOA/thường, hoa đầu từ/đầu câu, xoá dấu tiếng Việt.")
+        case .thanksBadge: return L("Dấu ★ nhỏ trong app — lời cảm ơn vì đã ủng hộ.")
         }
     }
 

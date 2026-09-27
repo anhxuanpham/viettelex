@@ -42,14 +42,14 @@ struct ThemeSettingsView: View {
                     .frame(height: 190)
                     .listRowInsets(EdgeInsets())
             } footer: {
-                Text("Áp dụng lần mở bàn phím kế tiếp.")
+                Text(L("Áp dụng lần mở bàn phím kế tiếp."))
             }
 
             if !ThemeGate.allowsWallpaper {
                 Section {
                     PlusEntryRow()
                 } footer: {
-                    Text("Theme có nhãn Plus và ảnh nền thuộc VietTelex Plus. Hệ thống, Tối OLED và Tương phản cao luôn miễn phí.")
+                    Text(L("Theme có nhãn Plus và ảnh nền thuộc VietTelex Plus. Hệ thống, Tối OLED và Tương phản cao luôn miễn phí."))
                 }
             }
 
@@ -64,78 +64,78 @@ struct ThemeSettingsView: View {
 
             Section {
                 PhotosPicker(selection: $pickerItem, matching: .images) {
-                    Label(hasWallpaperFile ? "Đổi ảnh nền" : "Chọn ảnh nền từ Thư viện",
+                    Label(hasWallpaperFile ? L("Đổi ảnh nền") : L("Chọn ảnh nền từ Thư viện"),
                           systemImage: "photo")
                 }
                 .disabled(busy || !ThemeGate.allowsWallpaper)
                 if hasWallpaperFile {
-                    Toggle("Dùng ảnh nền", isOn: binding(\.wallpaper)).tint(.green)
+                    Toggle(L("Dùng ảnh nền"), isOn: binding(\.wallpaper)).tint(.green)
                     VStack(alignment: .leading) {
-                        Text("Độ tối lớp phủ: \(settings.dim)%")
+                        Text(L("Độ tối lớp phủ: %@%", settings.dim))
                         Slider(value: Binding(get: { Double(settings.dim) },
                                               set: { settings.dim = Int($0); save() }),
                                in: 0...80, step: 5)
                     }
                     VStack(alignment: .leading) {
-                        Text("Độ mờ ảnh: \(settings.blur)")
+                        Text(L("Độ mờ ảnh: %@", settings.blur))
                         Slider(value: Binding(get: { Double(settings.blur) },
                                               set: { settings.blur = Int($0) }),
                                in: 0...20, step: 1) { editing in
                             if !editing { rerenderBlur() }
                         }
                     }
-                    Button("Xoá ảnh nền", role: .destructive) { removeWallpaper() }
+                    Button(L("Xoá ảnh nền"), role: .destructive) { removeWallpaper() }
                 }
                 if busy { ProgressView() }
                 if let error { Text(error).font(.footnote).foregroundStyle(.red) }
             } header: {
-                HStack { Text("Ảnh nền"); plusBadge }
+                HStack { Text(L("Ảnh nền")); plusBadge }
             } footer: {
-                Text("Ảnh được thu nhỏ và nén ngay trên máy, không gửi đi đâu. Lớp phủ giúp chữ trên phím dễ đọc.")
+                Text(L("Ảnh được thu nhỏ và nén ngay trên máy, không gửi đi đâu. Lớp phủ giúp chữ trên phím dễ đọc."))
             }
 
             Section {
-                percentSlider("Độ trong suốt phím", \.keyboardTransparency)
-                percentSlider("Độ trong suốt ký tự", \.labelTransparency)
+                percentSlider(L("Độ trong suốt phím"), \.keyboardTransparency)
+                percentSlider(L("Độ trong suốt ký tự"), \.labelTransparency)
             } header: {
-                Text("Độ trong suốt")
+                Text(L("Độ trong suốt"))
             } footer: {
-                Text("Phím: nền, ảnh nền, nền và viền phím — 100% chỉ còn chữ. Ký tự: chữ và biểu tượng trên phím — 100% là phím trơn không chữ. iOS luôn giữ lớp kính mờ phía sau bàn phím.")
+                Text(L("Phím: nền, ảnh nền, nền và viền phím — 100% chỉ còn chữ. Ký tự: chữ và biểu tượng trên phím — 100% là phím trơn không chữ. iOS luôn giữ lớp kính mờ phía sau bàn phím."))
             }
 
             Section {
                 Stepper(value: $rowHeightAdjust, in: -10...10) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Chiều cao hàng phím")
+                        Text(L("Chiều cao hàng phím"))
                         Text(rowHeightAdjust == 0
-                             ? "Chuẩn"
-                             : String(format: "%+d pt mỗi hàng (%+d pt cả bàn phím)",
+                             ? L("Chuẩn")
+                             : String(format: L("%+d pt mỗi hàng (%+d pt cả bàn phím)"),
                                       // hàng số cao ¾ hàng chữ ⇒ tổng ×4,75 khi bật
                                       rowHeightAdjust,
                                       Int((Double(rowHeightAdjust) * (numberRow ? 4.75 : 4)).rounded())))
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                 }
-                settingToggle("Hiện logo Vᴛ", "Logo mờ ở góc phải phím cách.", isOn: $showSpaceLogo)
-            } header: { Text("Bàn phím") }
+                settingToggle(L("Hiện logo Vᴛ"), L("Logo mờ ở góc phải phím cách."), isOn: $showSpaceLogo)
+            } header: { Text(L("Bàn phím")) }
 
             Section {
-                Button("Khôi phục giao diện gốc", role: .destructive) { confirmReset = true }
+                Button(L("Khôi phục giao diện gốc"), role: .destructive) { confirmReset = true }
                     .disabled(settings.isDefault)
             } footer: {
-                Text("Về theme Hệ thống, tắt ảnh nền (ảnh vẫn giữ để bật lại), độ tối/mờ và độ trong suốt về mặc định. Chiều cao hàng và logo giữ nguyên.")
+                Text(L("Về theme Hệ thống, tắt ảnh nền (ảnh vẫn giữ để bật lại), độ tối/mờ và độ trong suốt về mặc định. Chiều cao hàng và logo giữ nguyên."))
             }
 
             GuideLinkSection(page: .giaoDien)
         }
-        .navigationTitle("Giao diện")
+        .navigationTitle(L("Giao diện"))
         .navigationBarTitleDisplayMode(.inline)
         .bottomBarScrollMargin()
-        .confirmationDialog("Khôi phục giao diện gốc?", isPresented: $confirmReset, titleVisibility: .visible) {
-            Button("Khôi phục", role: .destructive) { resetAppearance() }
-            Button("Huỷ", role: .cancel) {}
+        .confirmationDialog(L("Khôi phục giao diện gốc?"), isPresented: $confirmReset, titleVisibility: .visible) {
+            Button(L("Khôi phục"), role: .destructive) { resetAppearance() }
+            Button(L("Huỷ"), role: .cancel) {}
         } message: {
-            Text("Theme, ảnh nền và độ trong suốt về mặc định. Ảnh nền không bị xoá.")
+            Text(L("Theme, ảnh nền và độ trong suốt về mặc định. Ảnh nền không bị xoá."))
         }
         .onChange(of: pickerItem) { item in
             guard let item else { return }
@@ -175,7 +175,7 @@ struct ThemeSettingsView: View {
             .opacity(locked ? 0.5 : 1)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(t.title + (selected ? ", đang chọn" : ""))
+        .accessibilityLabel(t.title + (selected ? L(", đang chọn") : ""))
     }
 
     private func binding(_ kp: WritableKeyPath<ThemeSettings, Bool>) -> Binding<Bool> {
@@ -216,7 +216,7 @@ struct ThemeSettingsView: View {
             await MainActor.run {
                 busy = false
                 pickerItem = nil
-                guard let result else { error = "Không đọc được ảnh này."; return }
+                guard let result else { error = L("Không đọc được ảnh này."); return }
                 write(src: result.src, out: result.out)
                 settings.wallpaper = true
                 save()
@@ -246,12 +246,12 @@ struct ThemeSettingsView: View {
                                                         withIntermediateDirectories: true)
                 try src.write(to: u, options: .atomic)
             }
-            guard let u = Wallpaper.url else { error = "Không truy cập được App Group."; return }
+            guard let u = Wallpaper.url else { error = L("Không truy cập được App Group."); return }
             try out.write(to: u, options: .atomic)
             settings.version = Date().timeIntervalSince1970   // bàn phím bỏ cache cũ
             wallpaperImage = Self.loadPreviewImage()
         } catch {
-            self.error = "Không lưu được ảnh: \(error.localizedDescription)"
+            self.error = L("Không lưu được ảnh: %@", error.localizedDescription)
         }
     }
 
@@ -320,7 +320,7 @@ struct ThemePreview: View {
             }
             HStack(spacing: gap) {
                 key(large ? "123" : "", w: keyW * 2, h: keyH, r: radius, fill: palette.specialFill)
-                key(large ? "dấu cách" : "", w: keyW * 5 + gap * 4, h: keyH, r: radius)
+                key(large ? L("dấu cách") : "", w: keyW * 5 + gap * 4, h: keyH, r: radius)
                 key(large ? "return" : "", w: keyW * 2 + gap, h: keyH, r: radius, fill: palette.accent,
                     ink: palette.accentInk)
             }

@@ -56,10 +56,10 @@ enum TemplateEdit {
     static func message(_ r: Rejection, items: [TemplateItem]) -> String {
         switch r {
         case .emptyText:
-            return "Chưa có nội dung mẫu câu — nhập câu vào ô bên phải label."
+            return L("Chưa có nội dung mẫu câu — nhập câu vào ô bên phải label.")
         case .duplicate(let i):
             let lbl = items.indices.contains(i) && !items[i].label.isEmpty ? " (\(items[i].label))" : ""
-            return "Không thêm: mẫu câu này đã có ở dòng \(i + 1)\(lbl)."
+            return L("Không thêm: mẫu câu này đã có ở dòng %@%@.", i + 1, lbl)
         }
     }
 }

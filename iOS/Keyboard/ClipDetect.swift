@@ -31,14 +31,14 @@ enum ClipDetect {
         } else if !otpRuns.isEmpty {
             otp = otpAfterKeyword(tokens: tokens, runs: otpRuns)
         }
-        if let v = otp { out.append(ClipChip(kind: .otp, value: v, label: "Dán OTP \(v)")) }
+        if let v = otp { out.append(ClipChip(kind: .otp, value: v, label: L("Dán OTP %@", v))) }
 
         // SĐT
         var phone: String?, phoneRaw: String?
         for r in runs(chars, seps: [" ", ".", "-"], allowPlus: true) where bounded(chars, r) {
             if let p = phonePrefix(r) { phone = p.normalized; phoneRaw = p.raw; break }
         }
-        if let v = phone { out.append(ClipChip(kind: .phone, value: v, label: "Dán SĐT \(short(v))")) }
+        if let v = phone { out.append(ClipChip(kind: .phone, value: v, label: L("Dán SĐT %@", short(v)))) }
 
         // STK
         let hasAccountKeyword = tokens.contains { ["stk", "tk", "account", "acc"].contains($0.word) }
@@ -48,7 +48,7 @@ enum ClipDetect {
             guard (6...19).contains(d.count), d != phone, d != phoneRaw, d != otp,
                   !followedByCurrency(folded, r.end) else { continue }
             guard hasAccountKeyword || d.count >= 9 else { continue }
-            out.append(ClipChip(kind: .account, value: d, label: "Dán STK \(short(d))"))
+            out.append(ClipChip(kind: .account, value: d, label: L("Dán STK %@", short(d))))
             break
         }
         return out

@@ -18,7 +18,7 @@ struct PlusEntryRow: View {
                 Label("VietTelex Plus", systemImage: "star.circle")
                 Spacer()
                 if model.isPlus {
-                    Text("Đã mở khoá").font(.footnote).foregroundStyle(.secondary)
+                    Text(L("Đã mở khoá")).font(.footnote).foregroundStyle(.secondary)
                 }
             }
         }
@@ -39,8 +39,8 @@ struct PlusView: View {
                         .foregroundStyle(accentBlue)
                     Text("VietTelex Plus").font(.title2.bold())
                     Text(model.isPlus
-                         ? "Cảm ơn bạn đã ủng hộ VietTelex ★"
-                         : "Mua một lần, dùng mãi mãi. Không thuê bao, không quảng cáo.")
+                         ? L("Cảm ơn bạn đã ủng hộ VietTelex ★")
+                         : L("Mua một lần, dùng mãi mãi. Không thuê bao, không quảng cáo."))
                         .font(.subheadline).foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -51,7 +51,7 @@ struct PlusView: View {
 
             if !PlusGate.paywallEnabled {
                 Section {
-                    Text("Trong giai đoạn này mọi tính năng Plus đang mở miễn phí cho tất cả mọi người.")
+                    Text(L("Trong giai đoạn này mọi tính năng Plus đang mở miễn phí cho tất cả mọi người."))
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
@@ -67,20 +67,20 @@ struct PlusView: View {
                         Image(systemName: f.systemImage).foregroundStyle(accentBlue)
                     }
                 }
-            } header: { Text("Quyền lợi Plus") } footer: {
-                Text("Toàn bộ phần gõ — Telex/VNI, sửa dấu từ đã gõ, gợi ý, gõ vuốt, gõ tắt, mẫu câu, theme sáng/tối — luôn miễn phí.")
+            } header: { Text(L("Quyền lợi Plus")) } footer: {
+                Text(L("Toàn bộ phần gõ — Telex/VNI, sửa dấu từ đã gõ, gợi ý, gõ vuốt, gõ tắt, mẫu câu, theme sáng/tối — luôn miễn phí."))
             }
 
             Section {
                 if model.isPlus {
-                    Label("Bạn đã có VietTelex Plus", systemImage: "checkmark.seal.fill")
+                    Label(L("Bạn đã có VietTelex Plus"), systemImage: "checkmark.seal.fill")
                         .foregroundStyle(.green)
                 } else {
                     Button {
                         Task { await model.buy(PlusConfig.plusProductID) }
                     } label: {
                         HStack {
-                            Text("Mở khoá Plus").bold()
+                            Text(L("Mở khoá Plus")).bold()
                             Spacer()
                             if model.busyProductID == PlusConfig.plusProductID {
                                 ProgressView()
@@ -95,14 +95,14 @@ struct PlusView: View {
                     Task { await model.restore() }
                 } label: {
                     HStack {
-                        Text("Khôi phục giao dịch")
+                        Text(L("Khôi phục giao dịch"))
                         Spacer()
                         if model.isRestoring { ProgressView() }
                     }
                 }
                 .disabled(model.isRestoring)
-            } header: { Text("Mua") } footer: {
-                Text("Thanh toán qua Apple ID. Đã mua trên máy khác cùng Apple ID thì bấm Khôi phục.")
+            } header: { Text(L("Mua")) } footer: {
+                Text(L("Thanh toán qua Apple ID. Đã mua trên máy khác cùng Apple ID thì bấm Khôi phục."))
             }
 
             Section {
@@ -119,10 +119,10 @@ struct PlusView: View {
                     .disabled(model.busyProductID != nil)
                 }
                 if model.tipProducts.isEmpty {
-                    Text("Chưa tải được các mức ủng hộ.").font(.footnote).foregroundStyle(.secondary)
+                    Text(L("Chưa tải được các mức ủng hộ.")).font(.footnote).foregroundStyle(.secondary)
                 }
-            } header: { Text("Ủng hộ tác giả") } footer: {
-                Text("Tuỳ tâm, không mở khoá thêm gì — giúp VietTelex tiếp tục miễn phí và mã nguồn mở.")
+            } header: { Text(L("Ủng hộ tác giả")) } footer: {
+                Text(L("Tuỳ tâm, không mở khoá thêm gì — giúp VietTelex tiếp tục miễn phí và mã nguồn mở."))
             }
 
             if let msg = model.message {
@@ -131,9 +131,9 @@ struct PlusView: View {
 
             #if DEBUG
             Section {
-                Toggle("Giả lập đã mua Plus", isOn: $debugOverride).tint(.green)
+                Toggle(L("Giả lập đã mua Plus"), isOn: $debugOverride).tint(.green)
             } header: { Text("Debug") } footer: {
-                Text("Chỉ có trong bản Debug. Bàn phím đọc cùng cờ qua App Group.")
+                Text(L("Chỉ có trong bản Debug. Bàn phím đọc cùng cờ qua App Group."))
             }
             #endif
         }

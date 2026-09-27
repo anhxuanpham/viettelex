@@ -20,7 +20,11 @@
 // Tên setting là tên CHUẨN (theo Android Keys) — iOS map "reEditWord" cục bộ.
 import Foundation
 
-enum BackupSettingKind: Equatable { case bool(Bool), int(Int, ClosedRange<Int>) }
+enum BackupSettingKind: Equatable {
+    case bool(Bool), int(Int, ClosedRange<Int>)
+    /// Chuỗi trong tập giá trị cho phép (mặc định, cho phép) — giá trị lạ bị bỏ qua.
+    case string(String, [String])
+}
 
 /// Setting được sao lưu/đồng bộ. KHÔNG gồm: debugTouchLog, trạng thái nội bộ
 /// (kbFullAccess, suggestionBarCollapsed…), công tắc đồng bộ iCloud của chính máy.
@@ -60,16 +64,22 @@ enum BackupSettings {
         Spec(key: "longPressSymbols", kind: .bool(false)),
         Spec(key: "keyboardTransparency", kind: .int(0, 0...100)),
         Spec(key: "keyLabelTransparency", kind: .int(0, 0...100)),
+        // Ngôn ngữ giao diện app (L10n) — mặc định "vi", không theo máy.
+        Spec(key: "uiLanguage", kind: .string("vi", ["vi", "en"])),
     ]
     static let byKey: [String: Spec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
 }
 
 enum SettingValue: Equatable {
-    case bool(Bool), int(Int)
+    case bool(Bool), int(Int), string(String)
 
-    /// Dạng chuỗi ổn định cho sổ đồng bộ ("true"/"false"/"-3").
+    /// Dạng chuỗi ổn định cho sổ đồng bộ ("true"/"false"/"-3"/"en").
     var syncString: String {
-        switch self { case .bool(let b): return b ? "true" : "false"; case .int(let i): return String(i) }
+        switch self {
+        case .bool(let b): return b ? "true" : "false"
+        case .int(let i): return String(i)
+        case .string(let s): return s
+        }
     }
     /// Parse theo spec của key; nil = sai kiểu / ngoài phạm vi kiểu.
     static func fromSyncString(_ s: String, key: String) -> SettingValue? {
@@ -77,6 +87,7 @@ enum SettingValue: Equatable {
         switch spec.kind {
         case .bool: return s == "true" ? .bool(true) : s == "false" ? .bool(false) : nil
         case .int(_, let r): return Int(s).map { .int(min(max($0, r.lowerBound), r.upperBound)) }
+        case .string(_, let allowed): return allowed.contains(s) ? .string(s) : nil
         }
     }
 }
@@ -122,9 +133,9 @@ enum BackupError: Error, Equatable {
 
     var message: String {
         switch self {
-        case .notJSON: return "File không phải JSON hợp lệ."
-        case .notBackup: return "Không phải file sao lưu VietTelex."
-        case .tooNew(let v): return "File sao lưu từ phiên bản mới hơn (định dạng \(v)) — hãy cập nhật VietTelex."
+        case .notJSON: return L("File không phải JSON hợp lệ.")
+        case .notBackup: return L("Không phải file sao lưu VietTelex.")
+        case .tooNew(let v): return L("File sao lưu từ phiên bản mới hơn (định dạng %@) — hãy cập nhật VietTelex.", v)
         }
     }
 }
@@ -148,7 +159,7 @@ enum BackupCodec {
         if let s = p.settings {
             var o: [String: Any] = [:]
             for (k, v) in s {
-                switch v { case .bool(let b): o[k] = b; case .int(let i): o[k] = i }
+                switch v { case .bool(let b): o[k] = b; case .int(let i): o[k] = i; case .string(let t): o[k] = t }
             }
             root["settings"] = o
         }
@@ -186,6 +197,8 @@ enum BackupCodec {
                     if let b = boolValue(raw) { out[k] = .bool(b) }
                 case .int(_, let r):
                     if let i = intValue(raw) { out[k] = .int(min(max(i, r.lowerBound), r.upperBound)) }
+                case .string(_, let allowed):
+                    if let t = raw as? String, allowed.contains(t) { out[k] = .string(t) }
                 }
             }
             p.settings = out
@@ -260,10 +273,10 @@ enum BackupMerge {
     /// Mô tả ngắn cho người dùng sau khi nhập.
     static func summary(_ p: BackupPayload, templatesAdded: Int, shortcutsChanged: Int) -> String {
         var parts: [String] = []
-        if let s = p.settings, !s.isEmpty { parts.append("\(s.count) cài đặt") }
-        if p.shortcuts != nil { parts.append("\(shortcutsChanged) gõ tắt") }
-        if p.templates != nil { parts.append("\(templatesAdded) mẫu câu mới") }
-        if let lw = p.learnedWords, !lw.isEmpty { parts.append("\(lw.uni.count) từ đã học") }
-        return parts.isEmpty ? "File không có dữ liệu để nhập." : "Đã nhập " + parts.joined(separator: ", ") + "."
+        if let s = p.settings, !s.isEmpty { parts.append(L("%@ cài đặt", s.count)) }
+        if p.shortcuts != nil { parts.append(L("%@ gõ tắt", shortcutsChanged)) }
+        if p.templates != nil { parts.append(L("%@ mẫu câu mới", templatesAdded)) }
+        if let lw = p.learnedWords, !lw.isEmpty { parts.append(L("%@ từ đã học", lw.uni.count)) }
+        return parts.isEmpty ? L("File không có dữ liệu để nhập.") : L("Đã nhập %@.", parts.joined(separator: ", "))
     }
 }
