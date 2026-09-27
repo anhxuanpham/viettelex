@@ -1,11 +1,11 @@
 name: 🐞 Báo lỗi
-description: Gõ ra chữ sai, mất chữ, chữ nhảy, không gõ được trong một app cụ thể…
+description: Gõ ra chữ sai, mất chữ, chữ nhảy, lỗi hiển thị bàn phím, không gõ được trong một app cụ thể…
 labels: [bug]
 body:
   - type: markdown
     attributes:
       value: |
-        Điền đủ 4 dòng đầu **+ nhật ký gỡ lỗi** là hầu hết lỗi fix được ngay vòng đầu — thiếu nhật ký thì gần như luôn phải hỏi lại thêm một vòng.
+        Chỉ cần chọn nền tảng + mô tả lỗi. Các mục còn lại **không bắt buộc** — điền được mục nào thì lỗi fix nhanh hơn chừng ấy. Lỗi gõ sai chữ trên macOS: kèm **nhật ký gỡ lỗi** là hầu hết fix được ngay vòng đầu.
 
         Cách lấy nhật ký: [BAO-LOI.md](https://github.com/ptrinh/viettelex/blob/main/BAO-LOI.md#lấy-nhật-ký-gỡ-lỗi)
 
@@ -14,10 +14,31 @@ body:
     attributes:
       label: Trước khi gửi
       options:
-        - label: Đã cập nhật bản mới nhất (tab **Giới thiệu** → *Kiểm tra cập nhật*) và lỗi vẫn còn
-          required: true
         - label: Đã tìm trong [các issue đang mở](https://github.com/ptrinh/viettelex/issues) và không thấy trùng
           required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Nền tảng
+      multiple: true
+      options:
+        - macOS
+        - iPhone / iPad
+        - Android
+        - Windows
+        - Linux
+        - Web (trang học gõ)
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Mô tả lỗi
+      description: Chuyện gì xảy ra, làm thế nào để thấy lỗi. Lỗi hiển thị → kèm ảnh chụp / video quay màn hình (kéo-thả file vào đây).
+    validations:
+      required: true
 
   - type: input
     id: app
@@ -25,38 +46,30 @@ body:
       label: App / website bị lỗi
       description: Nếu là browser, ghi cả tên website — cơ chế gõ khác nhau giữa address bar và nội dung trang.
       placeholder: Chrome — docs.google.com
-    validations:
-      required: true
 
   - type: input
     id: keys
     attributes:
       label: Gõ chuỗi phím
-      description: Ghi đúng **phím bấm**, không phải chữ mong muốn.
+      description: Với lỗi gõ ra chữ sai — ghi đúng **phím bấm**, không phải chữ mong muốn.
       placeholder: "theme "
-    validations:
-      required: true
 
   - type: input
     id: expected
     attributes:
       label: Mong đợi
       placeholder: thêm
-    validations:
-      required: true
 
   - type: input
     id: actual
     attributes:
       label: Thực tế
       placeholder: themee
-    validations:
-      required: true
 
   - type: textarea
     id: log
     attributes:
-      label: Nhật ký gỡ lỗi
+      label: Nhật ký gỡ lỗi (macOS)
       description: |
         Tab **Thử nghiệm** → **Chẩn đoán** → bật **Ghi nhật ký gỡ lỗi** → **Xoá** → tái hiện lỗi → **Chép nhật ký gỡ lỗi** → dán vào đây (log chỉ giữ 2000 dòng gần nhất).
 
@@ -66,12 +79,6 @@ body:
   - type: input
     id: version
     attributes:
-      label: Phiên bản VietTelex + macOS
+      label: Phiên bản VietTelex + hệ điều hành
       description: Chỉ cần điền nếu **không** kèm nhật ký ở trên.
-      placeholder: 1.5.10 — macOS 26.1
-
-  - type: textarea
-    id: extra
-    attributes:
-      label: Thông tin thêm
-      description: Lỗi hiển thị (chữ nhảy, bôi đen, mất chữ…) → kèm video quay màn hình (⌘⇧5) càng tốt. Kéo-thả file vào đây.
+      placeholder: 1.5.10 — macOS 26.1 / iOS 1.1.2 — iOS 27
