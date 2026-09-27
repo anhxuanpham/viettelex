@@ -69,4 +69,12 @@ class SuggestionSlotsTests {
         assertEquals("$ADD|a|b", payloads(s, middle = true))
         assertEquals("$ADD|$N|a", payloads(s.copy(number = "x")))
     }
+
+    /** "↩︎ từ cũ" sau khi vuốt sửa lại từ trước: slot đầu, biến thể vuốt dời phải — không thành pill. */
+    @Test fun reviseUndoLeadsSwipeAlternatives() {
+        val r = SuggestionSet.UNDO_REVISE_TOKEN
+        val s = SuggestionSet(nextWords = listOf("a", "b", "c"), actionLabel = "↩︎ có", action = r)
+        assertEquals("$r|a|b", payloads(s))
+        assertEquals("$r|a|b", payloads(s, pill = true))
+    }
 }

@@ -749,6 +749,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// Payload chip "Thêm dấu" / "Hoàn tác" (AddTones — chỉ khi người dùng bấm).
     static let addTonesToken = "\u{E000}addTones"
     static let undoTonesToken = "\u{E000}undoTones"
+    /// Payload chip "↩︎ từ cũ": hoàn tác lần vuốt vừa sửa lại từ vuốt trước (SwipeRevise).
+    static let undoReviseToken = "\u{E000}undoRevise"
 
     func showSuggestions(_ set: SuggestionSet) {
         guard suggestionsEnabled, !barCollapsed else { return }

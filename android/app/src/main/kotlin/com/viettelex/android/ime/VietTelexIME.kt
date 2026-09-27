@@ -624,11 +624,12 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
                     futo?.let { f -> worker().post { synchronized(swipeLock) { if (futo === f) f.load() } } }
                 }
         }
-        val choice = SwipeSuggest.choose(cands, ctx.word, case, ctx.lambdaFreq)
+        // chọn từ + (nếu có) sửa lại từ vuốt trước theo ngữ cảnh hai phía (SwipeRevise)
+        val res = session.resolveSwipe(cands, ctx, case)
         if (TouchLog.enabled) TouchLog.write(String.format(java.util.Locale.ROOT, "swipe decode %.1fms pts=%d cands=%d",
             (System.nanoTime() - t0) / 1e6, path.count, cands.size))
-        if (choice == null || !proxy.begin()) { applyAutoShift(); refreshBar(); return }
-        val out = try { session.commitSwipe(choice, proxy) } finally { proxy.end() }
+        if (res == null || !proxy.begin()) { applyAutoShift(); refreshBar(); return }
+        val out = try { session.commitSwipe(res, proxy) } finally { proxy.end() }
         resetIfEditFailed()
         strip?.hidePasteCard()
         pendingGen = out.generation

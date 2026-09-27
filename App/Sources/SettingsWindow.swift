@@ -1193,6 +1193,11 @@ struct AboutTab: View {
             Text(String(format: model.loc("Version %@ · %@"), appVersion, buildDate))
                 .foregroundStyle(.secondary)
             Link("Website", destination: URL(string: "https://ptrinh.github.io/viettelex/")!)
+            Link(model.loc("User guide"),
+                 // UI đang tiếng Anh (kể cả "system" ra en) ⇒ bản tiếng Anh của trang.
+                 destination: URL(string: model.loc("User guide") == "User guide"
+                                  ? "https://viettelex.com/en/guide/"
+                                  : "https://viettelex.com/hdsd")!)
             Link(model.loc("Learn Telex typing"),
                  destination: URL(string: "https://ptrinh.github.io/viettelex/learn")!)
             Link(model.loc("FAQ"),

@@ -11,6 +11,9 @@ object KeyboardData {
     @Volatile private var provider: ((String) -> ByteBuffer)? = null
     private val cache = HashMap<String, ByteBuffer>()
 
+    /** Đã có nguồn blob (IME hoặc app đã install) — app gọi install chỉ khi chưa. */
+    val installed: Boolean get() = provider != null
+
     fun install(provider: (String) -> ByteBuffer) {
         synchronized(cache) { cache.clear() }
         this.provider = provider

@@ -199,6 +199,7 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 "Input source hotkey howto body" = "Trong bảng Bàn phím (Keyboard) vừa mở, bấm “Keyboard Shortcuts…” (Phím tắt bàn phím…), rồi chọn “Input Sources” (Nguồn nhập) trong danh sách bên trái.";
 "OK" = "OK";
 "Learn Telex typing" = "Học gõ Telex";
+"User guide" = "Hướng dẫn sử dụng";
 "How to report a bug" = "Hướng dẫn báo lỗi";
 "Downloading and installing…" = "Đang tải và cài đặt…";
 "Add diacritics to the word before the caret (experimental)" = "Gõ thêm dấu cho từ ngay trước con trỏ (thử nghiệm)";
