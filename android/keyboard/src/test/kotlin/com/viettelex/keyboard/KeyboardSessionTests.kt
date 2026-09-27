@@ -218,6 +218,40 @@ class KeyboardSessionTests {
         assertEquals(true, chars.updateAutoShift(NullCtxProxy()))
     }
 
+    /** Công tắc "Tự động viết hoa đầu câu" TẮT: không auto-shift, không đọc context cho nó. */
+    @Test fun testAutoCapitalizeOffNeverShifts() {
+        for (t in listOf(FieldTraits(capSentences = true, initialCaps = true), FieldTraits(capWords = true),
+                         FieldTraits(capCharacters = true))) {
+            val s = session(KeyboardSettings(autoCapitalize = false), t); val p = MockProxy()
+            fun shiftNoRead(): Boolean? {
+                val r0 = p.contextReads
+                return s.updateAutoShift(p).also { assertEquals(r0, p.contextReads) }
+            }
+            assertNull(shiftNoRead())                                 // ô trống: không bật shift
+            assertFalse(s.handle(Key.Space, p).needsAutoShift)        // IME khỏi hẹn auto-shift
+            s.typeKeys(p, "xin"); s.handle(Key.Text("."), p); s.handle(Key.Space, p)
+            assertNull(shiftNoRead())                                 // sau ". " vẫn không
+            assertFalse(s.handle(Key.Newline, p).needsAutoShift)
+            assertNull(shiftNoRead())
+            assertFalse(s.autoShiftOn)
+        }
+        // BẬT: như cũ.
+        val on = session(); val p = MockProxy()
+        assertEquals(true, on.updateAutoShift(p))
+        on.typeKeys(p, "xin"); on.handle(Key.Text("."), p); on.handle(Key.Space, p)
+        assertEquals(true, on.updateAutoShift(p))
+        assertTrue(on.handle(Key.Space, p).needsAutoShift)
+    }
+
+    /** Tắt giữa chừng (ô Thử gõ) khi shift đang do auto bật ⇒ hạ một lần, rồi thôi đụng shift. */
+    @Test fun testAutoCapitalizeTurnedOffLowersOnce() {
+        val s = session(); val p = MockProxy()
+        assertEquals(true, s.updateAutoShift(p))
+        s.autoCapitalize = false
+        assertEquals(false, s.updateAutoShift(p))
+        assertNull(s.updateAutoShift(p))
+    }
+
     @Test fun testCapModes() {
         assertTrue(KeyboardSession.autoShiftFor("nguyễn ", CapMode.WORDS))
         assertTrue(KeyboardSession.autoShiftFor("", CapMode.WORDS))

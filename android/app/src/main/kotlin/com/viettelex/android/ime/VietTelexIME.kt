@@ -152,6 +152,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         // Bật/tắt gõ vuốt trong app khi bàn phím đang mở (ô Thử gõ).
         else if (key == Keys.SWIPE_TYPING) { swipeSetting = settings().swipeTyping; updateSwipeTyping() }
         else if (key == Keys.SWIPE_ENGLISH) session.swipeEnglish = settings().swipeEnglish
+        else if (key == Keys.AUTO_CAPITALIZE) session.autoCapitalize = settings().autoCapitalize
         else if (key == Keys.SWIPE_FUTO) { futoSetting = settings().swipeFuto; updateSwipeTyping() }
         else if (key == Keys.SMART_TOUCH) { smartTouchSetting = settings().smartTouch; warmSmartTouch() }
         else if (key == Keys.HARDWARE_TELEX) hwSetting = settings().hardwareTelex

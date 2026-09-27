@@ -777,6 +777,8 @@ struct KieuGoSection: View {
     private var vniMode = false
     @AppStorage("numberRow", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var numberRow = false
+    @AppStorage("autoCapitalize", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var autoCapitalize = true
 
     var body: some View {
         Section {
@@ -803,6 +805,8 @@ struct KieuGoSection: View {
                 settingToggle("Gõ nhanh (Quick Telex)", "Phụ âm đôi đầu từ thành phụ âm ghép: cc → ch, nn → ng, tt → th…", isOn: $quickTelex)
             }
             settingToggle("Bỏ dấu kiểu mới", "hoà, thuý thay vì hòa, thúy.", isOn: $modernTone)
+            // iOS không cho bàn phím bên thứ ba đọc công tắc Tự động viết hoa của hệ thống.
+            settingToggle("Tự động viết hoa đầu câu", "Bật shift ở đầu ô, sau . ! ? và khi xuống dòng. Công tắc “Tự động viết hoa” trong Cài đặt → Bàn phím của iOS không áp dụng cho bàn phím bên thứ ba — tắt ở đây.", isOn: $autoCapitalize)
             settingToggle("Quyết định theo ngữ cảnh", "Sau một từ tiếng Anh, từ nhập nhằng kế tiếp mà chuỗi phím tạo thành một từ tiếng Anh sẽ được giữ tiếng Anh thay vì tiếng Việt — “he is” → “he is”, không phải “he í”. Sau từ tiếng Việt hoặc không rõ thì để tiếng Việt — “sao í”.", isOn: $contextualEnglish)
             settingToggle("Gợi ý sửa lỗi chạm trượt", "Khi từ đang gõ không phải tiếng Việt, gợi ý từ đúng nếu bạn lỡ chạm phím bên cạnh: nbjeeuf → nhiều, ohims → phím, cahcs → cách. Chạm gợi ý để thay.", isOn: $autoFixAdjacent)
             if !vniMode {

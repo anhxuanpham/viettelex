@@ -16,6 +16,8 @@ object Keys {
     const val RE_EDIT_WORDS = "reEditWords"
     const val AUTO_FIX_ADJACENT = "autoFixAdjacent"
     const val TEENCODE = "teencode"
+    /** Tự động viết hoa đầu câu (Bool, mặc định BẬT) — tắt ⇒ không auto-shift, không đọc context. */
+    const val AUTO_CAPITALIZE = "autoCapitalize"
     /** Kiểu gõ VNI (Bool, mặc định false = Telex) — tên như iOS App Group / macOS. */
     const val VNI_MODE = "vniMode"
     // Tính Năng

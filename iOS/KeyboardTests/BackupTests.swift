@@ -20,7 +20,7 @@ final class BackupTests: XCTestCase {
         }
         s["hapticFeedback"] = .bool(true); s["modernTone"] = .bool(true); s["numberRow"] = .bool(true)
         s["reEditWords"] = .bool(false); s["showSpaceLogo"] = .bool(false); s["swipeTyping"] = .bool(true)
-        s["rowHeightAdjust"] = .int(-3)
+        s["rowHeightAdjust"] = .int(-3); s["autoCapitalize"] = .bool(false)
         return BackupPayload(
             createdAt: iso.date(from: "2026-09-27T08:00:00Z"), platform: "ios", settings: s,
             shortcuts: ["ko": "không", "stk": "số tài khoản", "đc": "được"],
@@ -124,12 +124,12 @@ final class BackupTests: XCTestCase {
     /// Công tắc emoji / nút Dán / chọn phím thông minh phải theo bản sao lưu (27/09).
     func testSnapshotIncludesPerfSwitches() throws {
         let (s, _) = makeStore()
-        for k in ["emojiSuggest", "pasteButton", "smartTouch"] { s.defaults.set(false, forKey: k) }
+        for k in ["emojiSuggest", "pasteButton", "smartTouch", "autoCapitalize"] { s.defaults.set(false, forKey: k) }
         let snap = s.snapshot(includeLearned: false)
-        for k in ["emojiSuggest", "pasteButton", "smartTouch"] { XCTAssertEqual(snap.settings?[k], .bool(false), k) }
+        for k in ["emojiSuggest", "pasteButton", "smartTouch", "autoCapitalize"] { XCTAssertEqual(snap.settings?[k], .bool(false), k) }
         let (t, _) = makeStore()
         _ = t.apply(try BackupCodec.decode(BackupCodec.encode(snap)))
-        for k in ["emojiSuggest", "pasteButton", "smartTouch"] { XCTAssertEqual(t.defaults.object(forKey: k) as? Bool, false, k) }
+        for k in ["emojiSuggest", "pasteButton", "smartTouch", "autoCapitalize"] { XCTAssertEqual(t.defaults.object(forKey: k) as? Bool, false, k) }
     }
 
     func testImportAndroidFileIntoIOSStore() throws {

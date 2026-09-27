@@ -140,6 +140,7 @@ final class KeyboardViewController: UIInputViewController {
         keyboard.setIncognito(clip.incognito)
         filterSensitive = settings.filterSensitive
         showSuggestionsSetting = settings.showSuggestions
+        autoCapitalizeSetting = settings.autoCapitalize
         swipeSetting = settings.swipeTyping
         swipeEnglishSetting = settings.swipeEnglish
         swipeFutoSetting = settings.swipeFuto
@@ -284,9 +285,12 @@ final class KeyboardViewController: UIInputViewController {
     /// Apple behavior: shift turns on at sentence start when the field asks for
     /// .sentences autocapitalization (empty context, or after ".!?" + space).
     private func updateAutoShift() {
+        // Tắt viết hoa đầu câu: chỉ hạ shift do chính mình bật trước đó (shift tay giữ nguyên).
+        if !autoCapitalizeSetting, autoShiftOn { autoShiftOn = false; keyboard.setAutoShift(false) }
         guard let auto = FieldPolicy.autoShift(
+            enabled: autoCapitalizeSetting,
             autocap: textDocumentProxy.autocapitalizationType ?? nil,
-            before: textDocumentProxy.documentContextBeforeInput ?? "") else { return }
+            before: { textDocumentProxy.documentContextBeforeInput ?? "" }) else { return }
         autoShiftOn = auto
         keyboard.setAutoShift(auto)
     }
@@ -294,6 +298,7 @@ final class KeyboardViewController: UIInputViewController {
     /// Trait ô hiện tại (nil = chưa đọc lần nào trong phiên).
     private var fieldTraits: FieldTraits?
     private var showSuggestionsSetting = true
+    private var autoCapitalizeSetting = true
 
     /// Đọc trait ô và cấu hình lại bàn phím CHỈ khi trait đổi (hoặc `force` ở
     /// viewWillAppear). Host đổi ô trong cùng app không gọi viewWillAppear → gọi

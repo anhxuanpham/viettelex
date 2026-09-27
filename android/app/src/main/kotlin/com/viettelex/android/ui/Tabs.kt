@@ -232,6 +232,8 @@ private fun KieuGoSection() {
         }
         BoolToggle(Keys.MODERN_TONE, Prefs.D.modernTone, "Bỏ dấu kiểu mới", "hoà, thuý thay vì hòa, thúy.")
         RowDivider()
+        BoolToggle(Keys.AUTO_CAPITALIZE, Prefs.D.autoCapitalize, "Tự động viết hoa đầu câu", "Bật shift ở đầu ô, sau . ! ? và khi xuống dòng.")
+        RowDivider()
         BoolToggle(Keys.CONTEXTUAL_ENGLISH, Prefs.D.contextualEnglish, "Quyết định theo ngữ cảnh", "Sau một từ tiếng Anh, từ nhập nhằng kế tiếp mà chuỗi phím tạo thành một từ tiếng Anh sẽ được giữ tiếng Anh thay vì tiếng Việt — “he is” → “he is”, không phải “he í”. Sau từ tiếng Việt hoặc không rõ thì để tiếng Việt — “sao í”.")
         RowDivider()
         BoolToggle(Keys.RE_EDIT_WORDS, Prefs.D.reEditWords, "Sửa dấu từ đã gõ", "Bấm ⌫ ngay sau dấu cách để sửa tiếp từ vừa gõ (tháy ␣ ⌫ a → thấy), hoặc đặt con trỏ ngay sau một từ rồi gõ phím dấu thanh để thêm dấu (chao + f → chào; VNI: chao + 2).")

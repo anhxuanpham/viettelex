@@ -184,6 +184,8 @@ class KeyboardSession(
     private var lastInsertWasSpace = false
     /** Auto-shift đang bật (gợi ý viết hoa chữ đầu). */
     var autoShiftOn = false; private set
+    /** Công tắc "Tự động viết hoa đầu câu" ([KeyboardSettings.autoCapitalize]). */
+    var autoCapitalize = true
     /** Bar tắt ở setting hoặc ô cấm. */
     var suggestionsActive = true; private set
     /** Bar thu gọn — pipeline gợi ý ngừng. IME set theo chevron. */
@@ -250,6 +252,7 @@ class KeyboardSession(
         initialCapsPending = true
         filterSensitive = settings.filterSensitive
         swipeEnglish = settings.swipeEnglish
+        autoCapitalize = settings.autoCapitalize
         recentEnglish.clear()
         suggestionsActive = settings.showSuggestions && field.suggestionsAllowed && !field.isSecure && !field.passthrough
         lastWord = null; lastWord2 = null
@@ -319,6 +322,8 @@ class KeyboardSession(
      * nên bật shift sai giữa câu). Chỉ nâng OFF→ON là việc của IME (không hạ CAPS).
      */
     fun updateAutoShift(proxy: TextProxy): Boolean? {
+        // Tắt: không đọc context; chỉ hạ shift do chính mình bật trước đó (shift tay giữ nguyên).
+        if (!autoCapitalize) return if (autoShiftOn) { autoShiftOn = false; false } else null
         val mode = capMode(traits)
         if (mode == CapMode.NONE) return null
         val before = proxy.contextBeforeInput()
@@ -431,7 +436,7 @@ class KeyboardSession(
         lastInsertWasSpace = key == Key.Space || key == Key.DoubleSpacePeriod
         lastKeyWasEmailTrigger = key is Key.Text && (key.text == "@" || key.text == ".")
         initialCapsPending = false
-        val needsAutoShift = when (key) {
+        val needsAutoShift = autoCapitalize && when (key) {
             Key.Space, Key.Newline, Key.LineBreak, Key.DoubleSpacePeriod, Key.Backspace, is Key.MoveCursor, Key.ClearField -> true
             // CAP_CHARACTERS: shift ON bị bàn phím hạ sau mỗi chữ → bật lại.
             else -> traits.capCharacters
