@@ -79,6 +79,9 @@ struct RootView: View {
         return .kieuGo
     }
     @State private var barCollapsed = false
+    /// Trang con có bàn phím mẫu ở đáy (Luyện vuốt) ẩn FloatingTabBar — nó đè hàng
+    /// phím dưới (Phil 27/09/2026).
+    @ObservedObject private var tabBarVisibility = TabBarVisibility.shared
     /// Bàn phím đang hiện → ẩn FloatingTabBar: overlay đáy bị iOS đẩy lên theo bàn
     /// phím và đè đúng dải khung "kính" phía trên bàn phím (host vẽ) → thanh gợi ý
     /// trông như bị cắt (user 25/09/2026).
@@ -131,7 +134,7 @@ struct RootView: View {
         // … và đổi ngôn ngữ cũng dựng lại để mọi chữ lấy bản dịch mới.
         .id("\(tab)|\(uiLanguage)")
         .overlay(alignment: .bottom) {
-            if !keyboardShown {
+            if !keyboardShown && !tabBarVisibility.hidden {
                 FloatingTabBar(selected: $tab, tabs: visibleTabs, collapsed: barCollapsed)
                     .id(uiLanguage)
             }
@@ -252,6 +255,20 @@ struct RootView: View {
 /// xuyên bên dưới. iOS 26 dùng glassEffect thật (khúc xạ + interactive);
 /// iOS cũ fallback material + viền specular. Pill chọn morph bằng
 /// matchedGeometryEffect + spring.
+/// Trang con xin ẩn FloatingTabBar khi đang hiện (`.hidesFloatingTabBar()`).
+final class TabBarVisibility: ObservableObject {
+    static let shared = TabBarVisibility()
+    @Published var hidden = false
+}
+
+extension View {
+    /// Ẩn FloatingTabBar khi view này đang hiện (vd trang có bàn phím mẫu ở đáy).
+    func hidesFloatingTabBar() -> some View {
+        onAppear { TabBarVisibility.shared.hidden = true }
+            .onDisappear { TabBarVisibility.shared.hidden = false }
+    }
+}
+
 struct FloatingTabBar: View {
     @Binding var selected: AppTab
     var tabs: [AppTab] = AppTab.allCases

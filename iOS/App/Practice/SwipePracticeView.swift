@@ -171,6 +171,7 @@ struct SwipePracticeView: View {
         }
         .navigationTitle(L("Luyện vuốt"))
         .navigationBarTitleDisplayMode(.inline)
+        .hidesFloatingTabBar()
         .onAppear { m.load() }
         .sheet(item: $share) { ActivitySheet(url: $0.url) }
     }
