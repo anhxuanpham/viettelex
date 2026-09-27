@@ -972,7 +972,7 @@ struct TinhNangSections: View {
             settingToggle("Gõ vuốt", "Vuốt qua các chữ không dấu rồi nhấc tay: v→i→e→t ra “việt”. Gõ tiếp phím dấu (s f r x j) để đổi dấu, ⌫ ngay sau đó xoá cả từ, thanh gợi ý có các cách viết khác. Chỉ trên iPhone; tắt khi dùng VoiceOver và ở ô email/mật khẩu/URL.", isOn: $swipeTyping)
             if swipeTyping {
                 settingToggle("Vuốt từ tiếng Anh", "Vuốt ra cả từ tiếng Anh xen trong câu: check, mail, file, meeting… Khi một nét vuốt vừa là từ Việt vừa là từ Anh (the/thế, can/cần), bàn phím ưu tiên tiếng Việt — trừ khi đang gõ tiếng Anh — và luôn để phương án kia trên thanh gợi ý.", isOn: $swipeEnglish)
-                settingToggle("Mô hình nơ-ron gõ vuốt", "Thêm mạng nơ-ron nhận dạng nét vuốt (chạy hoàn toàn trên máy) để chấm cùng bộ giải mã hiện có. Tốn thêm khoảng 3 MB bộ nhớ khi bàn phím mở.", isOn: $swipeFuto)
+                settingToggle("Mô hình neural gõ vuốt", "Thêm mạng neural nhận dạng nét vuốt (chạy hoàn toàn trên máy) để chấm cùng bộ giải mã hiện có. Tốn thêm khoảng 3 MB bộ nhớ khi bàn phím mở.", isOn: $swipeFuto)
                 NavigationLink {
                     SwipePracticeView()
                 } label: {
