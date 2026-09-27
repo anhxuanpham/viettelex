@@ -45,6 +45,13 @@ final class KeyboardViewController: UIInputViewController {
     private var swipeRevisable: SwipeTyping.Revisable?
     /// Cú vuốt vừa sửa lại từ trước → chip "↩︎ từ cũ" (sống khi từ vuốt mới còn mở).
     private var swipeReviseUndo: SwipeTyping.Revision?
+    fileprivate typealias Learned = (word: String, receipt: UserLangModel.Learned?, prev1: String?, prev2: String?)
+    /// Từ vuốt Việt còn nguyên vừa được phím chữ (dấu cách treo) / dấu cách chốt ⇒ chờ từ GÕ
+    /// PHÍM kế: ranh giới chốt từ đó thì chấm lại từ vuốt (SwipeRevise.reviseTyped). `learned` =
+    /// lượt học của từ vuốt (rút khi thay). Sống qua phím chữ / ⌫ trong từ gõ; khác ⇒ bỏ.
+    private var swipeTyped: (rev: SwipeRevise.Typed, learned: Learned?)?
+    /// Vừa sửa lại từ vuốt theo từ gõ → chip "↩︎ từ cũ" (sống tới phím kế).
+    private var swipeTypedUndo: (edit: SwipeRevise.TypedEdit, newLearned: Learned?, sentenceBreak: Bool)?
     /// Công tắc con "Vuốt từ tiếng Anh" (giai đoạn 3).
     private var swipeEnglishSetting = true
     private var swipeFutoSetting = false
@@ -67,7 +74,7 @@ final class KeyboardViewController: UIInputViewController {
     /// lần mỗi lần hiện khi tự sửa bật) — coi là từ hợp lệ, không sửa.
     private var lexiconWords: Set<String> = []
     /// Biên nhận học của từ vừa chốt — hoàn tác tự sửa rút lại đúng lượt học từ đã sửa.
-    private var lastLearned: (word: String, receipt: UserLangModel.Learned?, prev1: String?, prev2: String?)?
+    private var lastLearned: Learned?
     /// Vài từ tiếng Anh vừa vuốt ra (chữ thường) — ngữ cảnh ngôn ngữ cho cú vuốt kế
     /// (từ trùng chuỗi như "the" vuốt ra dạng Anh vẫn mở mạch Anh).
     private var recentEnglish: [String] = []
@@ -163,7 +170,6 @@ final class KeyboardViewController: UIInputViewController {
         // Ẩn danh (thủ công, trong app): không học từ, không lưu clipboard.
         learnEnabled = settings.learnWords && !clip.incognito
         keyboard.setClipboardButton(visible: clip.historyEnabled && hasFullAccess)
-        keyboard.setIncognito(clip.incognito)
         filterSensitive = settings.filterSensitive
         showSuggestionsSetting = settings.showSuggestions
         autoCapitalizeSetting = settings.autoCapitalize
@@ -413,6 +419,7 @@ final class KeyboardViewController: UIInputViewController {
         if verdict != .keep {
             bridge.reset(); lastWord = nil; lastWord2 = nil
             restoreUndo = nil; undoOfferActive = false
+            swipeTyped = nil; swipeTypedUndo = nil
         }
     }
 
@@ -510,6 +517,17 @@ final class KeyboardViewController: UIInputViewController {
         wordSwipeRestore = nil                 // ô "Khôi phục" chỉ sống tới phím kế
         learnSettledSwipe()                    // từ vuốt chốt bởi phím trước — giờ mới chắc
         let openAccepted = bridge.openWordAccepted   // từ vuốt chọn trên bar → weight 2
+        // Sửa lại từ vuốt khi từ kế GÕ PHÍM: phím chữ/dấu cách chốt từ vuốt còn nguyên ⇒ chờ;
+        // đang chờ ⇒ phím chữ / ⌫ trong từ gõ giữ, ranh giới thử sửa, phím khác bỏ.
+        var typedWait = swipeTyped
+        swipeTyped = nil
+        swipeTypedUndo = nil
+        if let w = typedWait, w.learned == nil, let l = lastLearned, l.word == w.rev.word {
+            typedWait = (w.rev, l)             // dấu cách treo: từ vuốt vừa được học ở trên
+        }
+        let typedArm = typedArmCandidate(key)
+        let composingBefore = bridge.isComposing
+        var typedCommit: (word: String, boundary: String)?
         applyingEdit = true
         let t0 = TouchLog.enabled ? CACurrentMediaTime() : 0
         defer {
@@ -560,8 +578,10 @@ final class KeyboardViewController: UIInputViewController {
             if let d = Self.singleDigit(s), bridge.vniDigit(d, proxy: proxy) {
                 // VNI: số trong lúc soạn từ (hàng số / plane 123) mang dấu — phím của từ
             } else {
-                commitAndLearn(bridge.boundary(s, proxy: proxy), accepted: openAccepted)
+                let final = bridge.boundary(s, proxy: proxy)
+                commitAndLearn(final, accepted: openAccepted)
                 lastWord = nil; lastWord2 = nil            // dấu câu/ký hiệu = ngắt câu
+                typedCommit = (final, s)
             }
             restoreUndo = nil; undoOfferActive = false
         case .space:
@@ -574,6 +594,7 @@ final class KeyboardViewController: UIInputViewController {
                 ? (raw: committed, composed: composedBefore) : nil
             undoOfferActive = false
             commitAndLearn(committed, accepted: openAccepted)
+            typedCommit = (committed, " ")
         case .doubleSpacePeriod:
             // Apple: double-space biến space vừa gõ thành ". ". ĐỌC context thật
             // (không phải hot path — gesture hiếm): điều kiện = đang có đúng " "
@@ -606,8 +627,10 @@ final class KeyboardViewController: UIInputViewController {
                 textDocumentProxy.adjustTextPosition(byCharacterOffset: off)
             }
         case .newline:
-            commitAndLearn(bridge.boundary("\n", proxy: proxy), accepted: openAccepted)
+            let final = bridge.boundary("\n", proxy: proxy)
+            commitAndLearn(final, accepted: openAccepted)
             lastWord = nil; lastWord2 = nil
+            typedCommit = (final, "\n")
             restoreUndo = nil; undoOfferActive = false
         case .clearField:
             clearAllText()
@@ -631,6 +654,26 @@ final class KeyboardViewController: UIInputViewController {
             if let orig = bridge.revertedAutoCorrect {
                 bridge.revertedAutoCorrect = nil
                 autoCorrectReverted(orig, fixed: acUndo?.fixed)
+            }
+        }
+        if let a = typedArm {
+            // phím chữ: dấu cách treo đã chốt từ vuốt (từ gõ bắt đầu); dấu cách: chốt đúng từ vuốt
+            if case .letter = key, !bridge.isSwipeWordOpen, bridge.isComposing { swipeTyped = (a, nil) }
+            if case .space = key, typedCommit?.word == a.word {
+                swipeTyped = (a, lastLearned.flatMap { $0.word == a.word ? $0 : nil })
+            }
+        } else if let w = typedWait {
+            if let c = typedCommit {
+                if composingBefore, !bridge.englishMode {
+                    reviseTypedSwipe(w, typed: c.word, boundary: c.boundary, proxy: proxy)
+                }
+            } else if bridge.isComposing {
+                switch key {
+                case .letter: swipeTyped = w
+                case .backspace where composingBefore: swipeTyped = w
+                case .text: if composingBefore { swipeTyped = w }     // VNI: số mang dấu trong từ
+                default: break
+                }
             }
         }
         // Chip số: chỉ đọc context khi vừa có chữ số/phép tính trong token này hoặc
@@ -1143,6 +1186,11 @@ final class KeyboardViewController: UIInputViewController {
             set.actionLabel = "\u{21A9}\u{FE0E} \(u.original)"; set.actionPayload = KeyboardView.undoAutoCorrectToken
             set.literal = nil; set.paste = false; set.clipChips = []
         }
+        // Vừa sửa lại từ vuốt theo từ gõ: chip "↩︎ từ cũ" tới phím kế.
+        if composed.isEmpty, let u = swipeTypedUndo {
+            set.actionLabel = "\u{21A9}\u{FE0E} \(u.edit.old)"; set.actionPayload = KeyboardView.undoReviseToken
+            set.literal = nil; set.paste = false; set.clipChips = []
+        }
         keyboard.showSuggestions(set)
     }
 
@@ -1284,6 +1332,7 @@ final class KeyboardViewController: UIInputViewController {
         defer { applyingEdit = false }
         learnSettledSwipe()
         addTonesUndo = nil
+        swipeTyped = nil; swipeTypedUndo = nil
         if item == KeyboardView.pasteImageToken {       // chỉ hướng dẫn → ẩn thẻ
             pasteUsedChange = UIPasteboard.general.changeCount
             pasteCached = false
@@ -1576,6 +1625,7 @@ extension KeyboardViewController {
         restoreUndo = nil; undoOfferActive = false
         swipeSuggest = nil
         swipeReviseUndo = nil
+        swipeTyped = nil; swipeTypedUndo = nil
     }
 
     fileprivate func swipeEnded(_ path: SwipePath, _ sc: SwipeCase) {
@@ -1661,6 +1711,11 @@ extension KeyboardViewController {
     /// Chip "↩︎ từ cũ": trả từ vuốt trước về như lúc vuốt; học lại từ cũ như user chọn
     /// (iOS không rút lượt học từ mới — weight 1, phai dần).
     fileprivate func undoSwipeRevision() {
+        if let t = swipeTypedUndo {
+            swipeTypedUndo = nil
+            undoTypedRevision(t)
+            return
+        }
         guard let u = swipeReviseUndo else { return }
         swipeReviseUndo = nil
         applyingEdit = true
@@ -1669,6 +1724,64 @@ extension KeyboardViewController {
            lastWord == u.new {
             lastWord = lastWord2; lastWord2 = nil
             commitAndLearn(u.old, accepted: true)
+            KeyboardView.clickModifier()
+        }
+        suggestionGen += 1
+        updateSuggestions()
+    }
+}
+
+extension KeyboardViewController {
+    /// Phím này có thể chốt một từ vuốt Việt còn nguyên (mở, chưa sửa dấu, chưa chọn phương án)
+    /// ⇒ ứng viên chờ từ gõ kế. nil khi gõ vuốt tắt (swipeRevisable luôn nil) — 0 việc.
+    fileprivate func typedArmCandidate(_ key: KeyboardView.Key) -> SwipeRevise.Typed? {
+        guard let r = swipeRevisable else { return nil }
+        switch key {
+        case .letter, .space: break
+        default: return nil
+        }
+        guard bridge.isSwipeWordOpen, bridge.isFreshSwipeWord, !bridge.openWordAccepted,
+              !bridge.isLiteralSwipeWordOpen, !bridge.englishMode, bridge.composedWord == r.word else { return nil }
+        return SwipeRevise.Typed(word: r.word, scored: r.scored, sc: r.sc, prev: lastWord)
+    }
+
+    /// Từ gõ vừa được chốt ngay sau từ vuốt đang chờ: chấm lại từ vuốt; đổi thì thay đúng đuôi
+    /// "từ vuốt ␠ từ gõ ranh giới" (đọc lại trước khi xoá) và học lại hai từ theo thứ tự mới.
+    fileprivate func reviseTypedSwipe(_ w: (rev: SwipeRevise.Typed, learned: Learned?), typed: String,
+                                      boundary: String, proxy: TextProxyLike) {
+        guard let e = SwipeRevise.reviseTyped(w.rev, typed: typed, boundary: boundary,
+                                              before: proxy.contextBeforeInput),
+              SwipeRevise.apply(e, proxy: proxy) else { return }
+        let sentenceBreak = boundary != " "
+        let newLearned = relearnPair(before: w.learned, first: e.new, typed: typed)
+        if sentenceBreak { lastWord = nil; lastWord2 = nil }
+        swipeTypedUndo = (e, newLearned, sentenceBreak)
+        TouchLog.write("swipe: sửa từ vuốt trước theo từ gõ (\(e.old.count)→\(e.new.count) ký tự)")
+    }
+
+    /// Rút lượt học của từ gõ vừa chốt (lastLearned) và của từ đứng trước nó (`before`), học lại
+    /// `first` (cùng ngữ cảnh trái cũ) rồi `typed`. Trả lượt học của `first`.
+    private func relearnPair(before: Learned?, first: String, typed: String, accepted: Bool = false) -> Learned? {
+        if let l = lastLearned, l.word == typed, let r = l.receipt { langModel.retract(r) }
+        if let b = before {
+            if let r = b.receipt { langModel.retract(r) }
+            lastWord = b.prev1; lastWord2 = b.prev2
+        } else {
+            lastWord = nil; lastWord2 = nil
+        }
+        commitAndLearn(first, accepted: accepted)
+        let firstLearned = lastLearned
+        commitAndLearn(typed)
+        return firstLearned
+    }
+
+    /// Chip "↩︎ từ cũ" sau khi sửa theo từ gõ: trả từ vuốt về như lúc vuốt (đuôi phải khớp).
+    fileprivate func undoTypedRevision(_ u: (edit: SwipeRevise.TypedEdit, newLearned: Learned?, sentenceBreak: Bool)) {
+        applyingEdit = true
+        defer { applyingEdit = false }
+        if SwipeRevise.apply(u.edit, undo: true, proxy: Proxy(p: textDocumentProxy)) {
+            _ = relearnPair(before: u.newLearned, first: u.edit.old, typed: u.edit.typed, accepted: true)
+            if u.sentenceBreak { lastWord = nil; lastWord2 = nil }
             KeyboardView.clickModifier()
         }
         suggestionGen += 1

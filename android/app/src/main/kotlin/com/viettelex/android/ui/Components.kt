@@ -183,7 +183,8 @@ fun Modifier.glassCard(c: VTColors, radius: Dp = 18.dp): Modifier =
 // ---------------------------------------------------------------- glyphs
 // Icon vẽ tay bằng Canvas (thay SF Symbols) — không kéo material-icons-extended.
 
-enum class Glyph { Keyboard, Sliders, Quote, Info, Globe, Cap, Code, Import, Export, Plus, Check, Trash }
+enum class Glyph { Keyboard, Sliders, Quote, Info, Globe, Cap, Code, Import, Export, Plus, Check, Trash,
+    Spell, Bulb, Swipe, Palette, Lock, Cloud, Search }
 
 @Composable
 fun GlyphIcon(g: Glyph, color: Color, size: Dp = 20.dp, modifier: Modifier = Modifier) {
@@ -252,6 +253,38 @@ private fun DrawScope.drawGlyph(g: Glyph, col: Color) {
                 drawLine(on, p(0.28f, 0.52f), p(0.44f, 0.68f), w, StrokeCap.Round)
                 drawLine(on, p(0.44f, 0.68f), p(0.73f, 0.36f), w, StrokeCap.Round)
             }
+        }
+        Glyph.Spell -> { line(0.16f, 0.52f, 0.4f, 0.76f); line(0.4f, 0.76f, 0.86f, 0.26f) }
+        Glyph.Bulb -> {
+            drawCircle(col, s * 0.27f, p(0.5f, 0.4f), style = st)
+            line(0.4f, 0.8f, 0.6f, 0.8f); line(0.43f, 0.93f, 0.57f, 0.93f)
+        }
+        Glyph.Swipe -> {
+            val path = Path().apply {
+                moveTo(0.1f * s, 0.62f * s)
+                quadraticTo(0.3f * s, 0.1f * s, 0.5f * s, 0.5f * s)
+                quadraticTo(0.7f * s, 0.9f * s, 0.9f * s, 0.36f * s)
+            }
+            drawPath(path, col, style = st)
+        }
+        Glyph.Palette -> {
+            drawCircle(col, s * 0.4f, p(0.5f, 0.5f), style = st)
+            drawCircle(col, s * 0.07f, p(0.34f, 0.38f)); drawCircle(col, s * 0.07f, p(0.56f, 0.3f))
+            drawCircle(col, s * 0.07f, p(0.68f, 0.5f)); drawCircle(col, s * 0.07f, p(0.42f, 0.64f))
+        }
+        Glyph.Lock -> {
+            drawRoundRect(col, p(0.2f, 0.46f), Size(s * 0.6f, s * 0.44f), CornerRadius(s * 0.08f))
+            drawArc(col, 180f, 180f, false, p(0.32f, 0.16f), Size(s * 0.36f, s * 0.5f), style = st)
+            line(0.32f, 0.41f, 0.32f, 0.47f); line(0.68f, 0.41f, 0.68f, 0.47f)
+        }
+        Glyph.Cloud -> {
+            drawCircle(col, s * 0.17f, p(0.33f, 0.58f)); drawCircle(col, s * 0.23f, p(0.55f, 0.46f))
+            drawCircle(col, s * 0.15f, p(0.74f, 0.6f))
+            drawRoundRect(col, p(0.16f, 0.56f), Size(s * 0.73f, s * 0.19f), CornerRadius(s * 0.09f))
+        }
+        Glyph.Search -> {
+            drawCircle(col, s * 0.27f, p(0.43f, 0.43f), style = st)
+            line(0.63f, 0.63f, 0.88f, 0.88f)
         }
         Glyph.Trash -> {
             line(0.15f, 0.25f, 0.85f, 0.25f); line(0.4f, 0.12f, 0.6f, 0.12f)

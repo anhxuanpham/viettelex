@@ -247,6 +247,16 @@ class KeyboardSession(
     private var revisableAfterLetter: Revisable? = null
     /** Vừa sửa lại từ trước: (từ cũ, từ mới) — chip "↩︎ từ cũ", sống khi từ vuốt kế còn mở. */
     private var reviseUndo: Pair<String, String>? = null
+    /**
+     * Từ vuốt Việt còn nguyên vừa được dấu cách chốt ⇒ chờ từ GÕ PHÍM kế tiếp: ranh giới chốt
+     * từ đó thì chấm lại từ vuốt ([SwipeRevise.reviseTyped]). [learned] = lượt học của từ vuốt
+     * (rút lại khi thay). Sống qua các phím chữ / ⌫ trong từ gõ; phím/thao tác khác ⇒ bỏ.
+     */
+    private class TypedPending(val rev: SwipeRevise.Typed, val learned: LastCommit?)
+    private var typedPending: TypedPending? = null
+    /** Vừa sửa lại từ vuốt khi từ gõ kế được chốt — chip "↩︎ từ cũ", sống tới phím kế. */
+    private class TypedUndo(val edit: SwipeRevise.TypedEdit, val newLearned: LastCommit?, val sentenceBreak: Boolean)
+    private var typedUndo: TypedUndo? = null
     /** Vài từ tiếng Anh vừa vuốt ra (chữ thường) — ngữ cảnh ngôn ngữ cho cú vuốt kế. */
     private val recentEnglish = ArrayDeque<String>()
     /** Vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh ([KeyboardSettings.spaceSwipeLanguage]). */
@@ -373,6 +383,7 @@ class KeyboardSession(
     private fun clearSwipe() {
         swipeWord = null; swipeAlts = emptyList(); swipeLiteral = false; swipeEnglishAlts = emptySet()
         revisable = null; reviseUndo = null
+        typedPending = null; typedUndo = null
     }
 
     /** Từ vuốt còn mở: từ engine đang soạn, hoặc từ tiếng Anh nguyên văn. */
@@ -463,6 +474,13 @@ class KeyboardSession(
         val swiped = openSwipeWord()
         val literal = if (swipeLiteral) swiped else null
         revisableAfterLetter = revisable?.takeIf { key is Key.Letter && it.word == swiped }
+        // Sửa lại từ vuốt khi từ kế GÕ PHÍM: dấu cách chốt từ vuốt còn nguyên ⇒ chờ; đang chờ ⇒
+        // phím chữ / ⌫ trong từ gõ giữ, ranh giới thử sửa, phím khác bỏ (clearSwipe).
+        val typedArm = revisable?.takeIf { key == Key.Space && literal == null && it.word == swiped && !bridge.englishMode }
+        val typedWait = typedPending
+        val composingBefore = bridge.isComposing
+        val prevBefore = lastWord
+        var typedCommit: Pair<String, String>? = null      // (từ gõ đã chốt, ranh giới)
         clearSwipe()
         // Từ tiếng Anh vuốt ra đang mở: phím chữ/ranh giới chốt nó (học), phím chữ thêm dấu
         // cách treo trước (không dính "mailx"; huỷ được nếu phím đó là đầu cú vuốt mới).
@@ -485,10 +503,13 @@ class KeyboardSession(
                 val d = key.text.singleOrNull()
                 if (literal == null && d != null && bridge.vniDigit(d, proxy)) {
                     clearUndo()
+                    if (typedWait != null && bridge.isComposing) typedPending = typedWait
                 } else {
-                    commitAndLearn(bridge.boundary(key.text, proxy, expand = expand))
+                    val committed = bridge.boundary(key.text, proxy, expand = expand)
+                    commitAndLearn(committed)
                     lastWord = null; lastWord2 = null
                     clearUndo()
+                    typedCommit = committed to key.text
                 }
             }
             Key.Space -> {
@@ -500,6 +521,10 @@ class KeyboardSession(
                 } else { restoreUndoRaw = null; restoreUndoComposed = null }
                 undoOfferActive = false
                 if (literal == null) commitAndLearn(committed)
+                if (typedArm != null && committed == typedArm.word)
+                    typedPending = TypedPending(SwipeRevise.Typed(typedArm.word, typedArm.scored, typedArm.case, prevBefore),
+                        lastCommit?.takeIf { it.word == committed })
+                typedCommit = committed to " "
             }
             Key.DoubleSpacePeriod -> {
                 val ctx = proxy.contextBeforeInput() ?: ""
@@ -521,7 +546,9 @@ class KeyboardSession(
                 bridge.reset(); lastWord = null; lastWord2 = null; clearUndo()
             }
             Key.Newline, Key.LineBreak -> {
-                commitAndLearn(bridge.boundary("\n", proxy, lineBreak = key == Key.LineBreak, expand = expand))
+                val committed = bridge.boundary("\n", proxy, lineBreak = key == Key.LineBreak, expand = expand)
+                commitAndLearn(committed)
+                typedCommit = committed to "\n"
                 // Enter có thể là "gửi"/performEditorAction: ⌫ sau đó không mở lại từ cũ.
                 bridge.forgetLastCommit()
                 lastWord = null; lastWord2 = null; clearUndo()
@@ -544,6 +571,13 @@ class KeyboardSession(
                 else if (!bridge.isComposing) { lastWord = null; lastWord2 = null }
                 bridge.revertedAutoCorrect?.let { bridge.revertedAutoCorrect = null; onAutoCorrectReverted(it, acUndo?.second) }
             }
+        }
+        if (typedWait != null) when {
+            typedCommit != null -> if (composingBefore && !bridge.englishMode) typedCommit.let { (w, b) ->
+                reviseTypedPrev(typedWait, w, b, proxy, sentenceBreak = b != " ") }
+            key is Key.Letter || key == Key.Backspace && composingBefore ->
+                if (bridge.isComposing) typedPending = typedWait
+            else -> {}
         }
         // Chip số: chỉ đọc context khi token này / token ngay trước có chữ số/phép tính.
         numberSpaces = when (key) {
@@ -588,6 +622,7 @@ class KeyboardSession(
     fun undoLastLetter(proxy: TextProxy): Boolean {
         val ok = bridge.undoLastLetter(proxy)
         wordTouchesOk = false
+        typedPending = null
         revisable = if (ok) revisableAfterLetter else null
         revisableAfterLetter = null
         generation++
@@ -826,6 +861,10 @@ class KeyboardSession(
         // Chip tách STK/SĐT/OTP = Clipboard nâng cao (Plus; paywall tắt ⇒ mở cho mọi người).
         val chips = if (paste && !incognito && PlusGate.isUnlocked(PlusFeature.ADVANCED_CLIPBOARD)) clipChips() else emptyList()
         // "Hoàn tác" thêm dấu (vừa bấm) thắng thẻ Dán; "Thêm dấu" nhường thẻ Dán (StripView/SuggestionSlots).
+        typedUndo?.let { u ->
+            return SuggestionPlan.Ready(SuggestionSet(nextWords = next, number = number,
+                actionLabel = "\u21A9\uFE0E ${u.edit.old}", action = SuggestionSet.UNDO_REVISE_TOKEN))
+        }
         bridge.autoCorrectUndo?.let { (orig, _) ->
             return SuggestionPlan.Ready(SuggestionSet(nextWords = next, number = number,
                 actionLabel = "\u21A9\uFE0E $orig", action = SuggestionSet.UNDO_AUTOCORRECT_TOKEN))
@@ -1065,6 +1104,7 @@ class KeyboardSession(
      * mở", lệch ⇒ bỏ) và học lại từ cũ thay từ mới.
      */
     private fun undoRevise(proxy: TextProxy) {
+        typedUndo?.let { typedUndo = null; undoTypedRevise(it, proxy); return }
         val (old, new) = reviseUndo ?: return
         reviseUndo = null
         revisable = null
@@ -1080,6 +1120,51 @@ class KeyboardSession(
             lastWord = lc.prev1; lastWord2 = lc.prev2
         }
         commitAndLearn(old, accepted = true)
+    }
+
+    /**
+     * Từ gõ [typed] vừa được [boundary] chốt ngay sau từ vuốt đang chờ: chấm lại từ vuốt; đổi thì
+     * thay đúng đuôi "từ vuốt ␠ từ gõ ranh giới" (kiểm lại trước khi xoá) và học lại cả hai từ
+     * theo thứ tự mới. [sentenceBreak] = ranh giới là dấu câu/xuống dòng (ngữ cảnh đã xoá).
+     */
+    private fun reviseTypedPrev(p: TypedPending, typed: String, boundary: String, proxy: TextProxy,
+                                sentenceBreak: Boolean) {
+        val e = SwipeRevise.reviseTyped(p.rev, typed, boundary, proxy.contextBeforeInput()) ?: return
+        proxy.deleteCodePoints(Cp.count(e.tail))
+        proxy.insertText(e.replacement)
+        val newLearned = relearnPair(p.learned, e.new, typed)
+        typedUndo = TypedUndo(e, newLearned, sentenceBreak)
+        if (sentenceBreak) { lastWord = null; lastWord2 = null }
+        TouchLog.write("swipe: sửa từ vuốt trước theo từ gõ (${Cp.count(e.old)}→${Cp.count(e.new)} chars)")
+    }
+
+    /**
+     * Rút lượt học của từ gõ vừa chốt ([lastCommit]) và của từ đứng trước nó ([before]), học lại
+     * [first] (cùng ngữ cảnh trái cũ) rồi [typed]. Trả lượt học của [first].
+     */
+    private fun relearnPair(before: LastCommit?, first: String, typed: String, accepted: Boolean = false): LastCommit? {
+        val lc = lastCommit
+        if (lc != null && lc.word == typed) lc.learned?.let { langModel.retract(it) }
+        if (before != null) {
+            before.learned?.let { langModel.retract(it) }
+            lastWord = before.prev1; lastWord2 = before.prev2
+        } else { lastWord = null; lastWord2 = null }
+        commitAndLearn(first, accepted)
+        val firstLearned = lastCommit
+        commitAndLearn(typed)
+        return firstLearned
+    }
+
+    /** Chip "↩︎ từ cũ" sau khi sửa theo từ gõ: trả từ vuốt về như lúc vuốt (đuôi phải khớp). */
+    private fun undoTypedRevise(u: TypedUndo, proxy: TextProxy) {
+        val e = u.edit
+        val now = e.replacement
+        if (proxy.contextBeforeInput()?.endsWith(now) != true) return
+        proxy.deleteCodePoints(Cp.count(now))
+        proxy.insertText(e.tail)
+        // lượt học của typed/new hiện là lastCommit/u.newLearned: rút, học lại old (user chọn) + typed
+        relearnPair(u.newLearned, e.old, e.typed, accepted = true)
+        if (u.sentenceBreak) { lastWord = null; lastWord2 = null }
     }
 
     /** Chạm chip số: thay đúng đuôi đã tính (kiểm lại đuôi trước khi xoá — lệch thì bỏ). */

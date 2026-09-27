@@ -60,7 +60,9 @@ class BackupTests {
         val p = BackupCodec.decode(fixture("backup-ios-v1"))
         assertEquals("ios", p.platform)
         assertEquals(Instant.parse("2026-09-27T08:00:00Z"), p.createdAt)
-        assertEquals(28, p.settings!!.size)             // emojiSuggest/pasteButton chỉ iOS, bị bỏ qua
+        assertEquals(30, p.settings!!.size)             // emojiSuggest/pasteButton chỉ iOS, bị bỏ qua
+        assertEquals(40, p.settings!!["keyboardTransparency"])
+        assertEquals(20, p.settings!!["keyLabelTransparency"])
         assertEquals(false, p.settings!!["autoCapitalize"])
         assertEquals(true, p.settings!!["shortcutsEnabled"])
         assertEquals(false, p.settings!!["reEditWords"])
@@ -114,9 +116,12 @@ class BackupTests {
 
     @Test fun snapshotFillsDefaultsAndClamps() {
         val prefs = mapOf<String, Any?>("quickTelex" to true, "rowHeightAdjust" to 42, "debugTouchLog" to true,
+            "keyboardTransparency" to 250, "keyLabelTransparency" to 35,
             BackupPrefs.SHORTCUTS_KEY to "# VietTelex — bảng gõ tắt\nko: không\n")
         val p = BackupPrefs.snapshot({ prefs[it] }, listOf(TemplateItem("", "a")), null)
-        assertEquals(29, p.settings!!.size)
+        assertEquals(31, p.settings!!.size)
+        assertEquals(100, p.settings!!["keyboardTransparency"])   // kẹp 0…100
+        assertEquals(35, p.settings!!["keyLabelTransparency"])
         assertEquals(true, p.settings!!["smartTouch"])
         assertEquals(false, p.settings!!["autoCorrect"])
         assertEquals(true, p.settings!!["autoCapitalize"])

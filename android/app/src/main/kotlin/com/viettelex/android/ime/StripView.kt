@@ -71,7 +71,6 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
     /** Nút 📋 lịch sử clipboard + chỉ báo ẩn danh (đặt trước ⌄, bar co lại). */
     private var clipButton = false
     private var clipOpen = false
-    private var incognito = false
     private var lastSig = ""
     private var lastSet: SuggestionSet? = null
 
@@ -117,14 +116,14 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
     }
 
     /** Bề rộng dành cho 📋 / 🕶 bên trái ⌄. */
-    private fun extraW(): Float = (if (clipButton) theme.dp(CLIP_W) else 0f) + (if (incognito) theme.dp(INCOG_W) else 0f)
+    private fun extraW(): Float = if (clipButton) theme.dp(CLIP_W) else 0f
     /** Lề mỗi bên cho pill căn giữa: zone + phần lớn hơn giữa icon con trỏ (trái) và 📋/🕶 (phải). */
     private fun sideW(): Float = theme.dp(KeyLayout.STRIP_ZONE_W) + maxOf(theme.dp(STRIP_TOOL_W), extraW())
 
     /** Nút 📋 (lịch sử bật) + chỉ báo ẩn danh; [open] = bảng lịch sử đang mở (tô đậm). */
-    fun setExtras(clipButton: Boolean, incognito: Boolean, open: Boolean = clipOpen) {
-        if (clipButton == this.clipButton && incognito == this.incognito && open == clipOpen) return
-        this.clipButton = clipButton; this.incognito = incognito; clipOpen = open
+    fun setExtras(clipButton: Boolean, open: Boolean = clipOpen) {
+        if (clipButton == this.clipButton && open == clipOpen) return
+        this.clipButton = clipButton; clipOpen = open
         lastSet?.let { layoutSlots(it) }
         layoutPaste()
         invalidate()
@@ -366,9 +365,9 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
         }
     }
 
-    /** 📋 (bấm được) và 🕶 ẩn danh (chỉ báo) bên trái ⌄; thu gọn thì nhỏ lại ở hàng nổi. */
+    /** 📋 (bấm được) bên trái ⌄; thu gọn thì nhỏ lại ở hàng nổi. Không có chỉ báo ẩn danh (Phil 27/09 bỏ). */
     private fun drawExtras(c: Canvas, w: Float, cy: Float, o: Float) {
-        if (!clipButton && !incognito) return
+        if (!clipButton) return
         val zoneL = w - theme.dp(KeyLayout.STRIP_ZONE_W) * o - theme.dp(48f) * (1f - o)
         var x = zoneL
         if (clipButton) {
@@ -376,16 +375,8 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
             if (clipOpen && o > 0.5f) c.drawCircle(cx, cy, theme.dp(15f), chipPaint)
             iconPaint.color = theme.withAlpha(theme.ink, if (clipOpen) 1f else 0.75f)
             ImeIcons.draw(c, ImeIcons.CLIPBOARD, cx, cy, theme.dp(14f + 3f * o), iconPaint)
-            x -= theme.dp(CLIP_W)
-        }
-        if (incognito) {
-            incogPaint.alpha = 200
-            c.drawText("🕶", x - theme.dp(INCOG_W) / 2, cy + incogOff, incogPaint)
         }
     }
-
-    private val incogPaint = theme.text(13f)
-    private val incogOff = theme.centerOffset(incogPaint)
 
     /** Pill giữa bar (cùng kiểu thẻ Dán) cho xem trước vuốt ⌫ / Khôi phục. */
     private fun drawChip(c: Canvas, text: String, alpha: Int, trunc: TextUtils.TruncateAt) {
@@ -523,6 +514,5 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
         const val STRIP_TOOL_W = 44f
         private const val LONG_MS = 450L
         private const val CLIP_W = 40f
-        private const val INCOG_W = 24f
     }
 }

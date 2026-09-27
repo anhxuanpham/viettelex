@@ -24,7 +24,7 @@ enum TextActionHotkey {
 
     private static var hotKeyRef: EventHotKeyRef?
     private static var handlerRef: EventHandlerRef?
-    private static let signature: OSType = 0x5654_5448   // "VTTH"
+    static let signature: OSType = 0x5654_5448   // "VTTH"
 
     /// MAIN thread. Gọi lúc khởi động và khi đổi lựa chọn trong Cài đặt.
     static func apply(_ choice: String) {
@@ -32,7 +32,16 @@ enum TextActionHotkey {
         guard let mods = carbonModifiers(for: choice) else { return }
         if handlerRef == nil {
             var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-            InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
+            // Chỉ nhận hotkey CỦA MÌNH: bảng Công cụ… (TextToolsPanel) đăng ký phím riêng
+            // lúc đang mở trên cùng event target — không lọc thì phím 1–6 cũng chạy Thêm dấu.
+            InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
+                var hk = EventHotKeyID()
+                let st = GetEventParameter(event, EventParamName(kEventParamDirectObject),
+                                           EventParamType(typeEventHotKeyID), nil,
+                                           MemoryLayout<EventHotKeyID>.size, nil, &hk)
+                guard st == noErr, hk.signature == TextActionHotkey.signature else {
+                    return OSStatus(eventNotHandledErr)
+                }
                 DispatchQueue.main.async { TextActionRunner.run(.addTones, client: nil) }
                 return noErr
             }, 1, &spec, nil, &handlerRef)

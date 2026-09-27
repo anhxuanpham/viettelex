@@ -47,6 +47,26 @@ class SwipeReviseTests {
         assertEquals("cô", SwipeRevise.revise(scored, "có", null, "giáo"))
     }
 
+    @Test fun typedNextWordNeedsExactTail() {
+        val scored = listOf(w("có", 1.0f), w("cô", 0.95f), w("cố", 0.9f))
+        val t = SwipeRevise.Typed("có", scored, SwipeSuggest.Case.LOWER, "tôi")
+        val e = SwipeRevise.reviseTyped(t, "giáo", " ", "tôi có giáo ")!!
+        assertEquals("cô", e.new)
+        assertEquals("tôi có giáo ", "tôi " + e.tail)
+        assertEquals("cô giáo ", e.replacement)
+        assertEquals("cô giáo,", SwipeRevise.reviseTyped(t, "giáo", ",", "có giáo,")!!.replacement)
+        assertNull("đuôi lệch", SwipeRevise.reviseTyped(t, "giáo", " ", "tôi có giáo  "))
+        assertNull("từ vuốt dính chữ trước", SwipeRevise.reviseTyped(t, "giáo", " ", "xcó giáo "))
+        assertNull("ranh giới là chữ", SwipeRevise.reviseTyped(t, "giáo", "a", "có giáoa"))
+        assertNull("không đọc được", SwipeRevise.reviseTyped(t, "giáo", " ", null))
+        assertNull("từ gõ rỗng", SwipeRevise.reviseTyped(t, "", " ", "có  "))
+        assertNull("từ gõ tiếng Anh", SwipeRevise.reviseTyped(t, "check", " ", "có check "))
+        assertNull("từ kế ủng hộ từ đang hiện", SwipeRevise.reviseTyped(t, "thể", " ", "có thể "))
+        // chữ hoa theo từ cũ; từ gõ viết hoa vẫn tra LM chữ thường
+        val c = SwipeRevise.Typed("Có", scored, SwipeSuggest.Case.FIRST, null)
+        assertEquals("Cô Giáo ", SwipeRevise.reviseTyped(c, "Giáo", " ", "Có Giáo ")!!.replacement)
+    }
+
     @Test fun rightScoreClamped() {
         val lm = SyllableLM.shared!!
         val id = { s: String -> SyllableBigram.idOf(s) }
@@ -164,6 +184,82 @@ class SwipeReviseTests {
             Locale.ROOT, (rev.rate() - base.rate()) * 100, msBase, msRev))
         assertTrue("sửa lại phải tăng top-1 ≥ 1 điểm", rev.rate() - base.rate() >= 0.01)
         assertTrue("sửa sai (${rev.broke}) phải ít hơn nhiều sửa đúng (${rev.fixed})", rev.broke * 3 <= rev.fixed)
+    }
+
+    // ---- từ kế GÕ BẰNG PHÍM (chắc chắn): vuốt xen kẽ gõ ----
+
+    /**
+     * Vuốt/gõ xen kẽ: vị trí i vuốt khi i % 2 == [phase], còn lại gõ phím (đúng đáp án). Gõ
+     * xong từ kế ⇒ chấm lại từ vuốt ngay trước (lõi của [SwipeRevise.reviseTyped], hằng số TYPED_*). Đo CHỈ các từ vuốt
+     * có từ gõ ngay sau (đủ điều kiện). Trả (n, đúng, sửa đúng, sửa sai, số lần sửa).
+     */
+    private fun simulateTyped(d: SwipeDecoder, words: List<String>, phase: Int, revise: Boolean, sim: SwipeSim,
+                              margin: Float, weight: Float): Acc {
+        val out = ArrayList<String>()
+        val before = HashMap<Int, String>()
+        var pending: List<SwipeWord> = emptyList()
+        for ((i, word) in words.withIndex()) {
+            val p1 = out.getOrNull(i - 1); val p2 = out.getOrNull(i - 2)
+            if (i % 2 != phase) {
+                if (revise && p1 != null && pending.isNotEmpty())
+                    SwipeRevise.revise(pending, p1, p2, word, margin = margin, weight = weight)?.let { out[i - 1] = it }
+                pending = emptyList()
+                out.add(word)
+                continue
+            }
+            val p = sim.path(SwipeSuggest.fold(word), layout, sigma = 0.25)
+            val ctx = SwipeSuggest.context(null, p1, p2)
+            val cands = d.decode(p, SwipeSuggest.TOP_K, ctx.folded)
+            val c = SwipeSuggest.choose(cands, ctx.word, lambdaFreq = ctx.lambdaFreq)
+            val got = c?.word ?: ""
+            pending = if (c == null) emptyList() else SwipeRevise.scored(cands, ctx.word, ctx.lambdaFreq)
+            if (i + 1 < words.size) before[i] = got
+            out.add(got)
+        }
+        var n = 0; var ok = 0; var fixed = 0; var broke = 0; var revised = 0
+        for ((i, b) in before) {
+            n++
+            if (out[i] == words[i]) ok++
+            if (out[i] != b) { revised++; if (out[i] == words[i]) fixed++; if (b == words[i]) broke++ }
+        }
+        return Acc(n, ok, fixed, broke, revised)
+    }
+
+    private fun measureTyped(chains: List<List<String>>, revise: Boolean, margin: Float = SwipeRevise.TYPED_MARGIN,
+                             weight: Float = SwipeRevise.TYPED_RIGHT_WEIGHT): Acc {
+        val d = decoder()
+        val sim = SwipeSim(2027)
+        var a = Acc(0, 0, 0, 0, 0)
+        for (chain in chains) for (phase in 0..1) {
+            val r = simulateTyped(d, chain, phase, revise, sim, margin, weight)
+            a = Acc(a.n + r.n, a.ok + r.ok, a.fixed + r.fixed, a.broke + r.broke, a.revised + r.revised)
+        }
+        return a
+    }
+
+    /** Cùng tập đo như [heldoutRevisionGain]; từ kế gõ bằng phím. JVM 27/09/2026: 85,7 % → 94,2 % (+341 −15). */
+    @Test fun heldoutTypedRevisionGain() {
+        SlowTests.assume()
+        val test = heldout().filterIndexed { i, _ -> i % 3 == 0 }
+        val base = measureTyped(test, false)
+        val rev = measureTyped(test, true)
+        println("REVISE-TYPED heldout (vuốt xen gõ, σ0.25): trước ${base.fmt()} | sau ${rev.fmt()} | +%.2f điểm | sửa sai %.2f%% số lần sửa, %.2f%% số từ".format(
+            Locale.ROOT, (rev.rate() - base.rate()) * 100, 100.0 * rev.broke / maxOf(1, rev.revised), 100.0 * rev.broke / rev.n))
+        assertTrue("sửa lại phải tăng top-1 ≥ 1 điểm", rev.rate() - base.rate() >= 0.01)
+        assertTrue("sửa sai (${rev.broke}) phải rất ít so với sửa đúng (${rev.fixed})", rev.broke * 5 <= rev.fixed)
+    }
+
+    /** Quét cho ca từ kế gõ phím trên tập dev: `VT_SLOW_TESTS=1 SWIPE_REVISE_SWEEP=1`. */
+    @Test fun sweepTyped() {
+        SlowTests.assume()
+        org.junit.Assume.assumeTrue(System.getenv("SWIPE_REVISE_SWEEP") == "1")
+        val dev = heldout().filterIndexed { i, _ -> i % 3 != 0 }.filterIndexed { i, _ -> i % 2 == 0 }
+        val base = measureTyped(dev, false)
+        println("SWEEP-TYPED dev base ${base.fmt()}")
+        for (wt in listOf(0.1f, 0.15f, 0.2f, 0.3f, 0.4f, 0.6f)) for (m in listOf(0f, 0.1f, 0.2f, 0.3f, 0.5f)) {
+            val r = measureTyped(dev, true, margin = m, weight = wt)
+            println("SWEEP-TYPED w=$wt m=$m ${r.fmt()} +%.2f".format(Locale.ROOT, (r.rate() - base.rate()) * 100))
+        }
     }
 
     /** Quét trọng số/lề trên tập dev: `VT_SLOW_TESTS=1 SWIPE_REVISE_SWEEP=1`. */

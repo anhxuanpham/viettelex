@@ -56,6 +56,7 @@
 		26F92D30462E28A390FD70A6 /* UXSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C8682721439F0EE47DDC34 /* UXSnapshotTests.swift */; };
 		28204C66017B9ADA8F8C46FE /* Wallpaper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69A12BC49EB45298684CF97D /* Wallpaper.swift */; };
 		28C579703223D53D46A60F0D /* swipe-paths-en.txt in Resources */ = {isa = PBXBuildFile; fileRef = 38966B5E3DF4C19B07287B0C /* swipe-paths-en.txt */; };
+		28F59AFC0EA801B2565A2A41 /* FeaturePages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CD424A6A736C971B3F87998 /* FeaturePages.swift */; };
 		2B0B920D87566C26DAABB175 /* SwipePracticeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D0C7CC44A57FCB3E41047D7 /* SwipePracticeTests.swift */; };
 		2B6BD2360AA9943D6F05C350 /* KeyboardTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81B2DDC0E24D11BD96525161 /* KeyboardTheme.swift */; };
 		2BCBE4C85250474B6AC8B5CC /* TemplateEdit.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4D95DF2E5846D5F65882073 /* TemplateEdit.swift */; };
@@ -301,6 +302,7 @@
 		1AFEC1150BE618B085350A60 /* backup-android-v1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "backup-android-v1.json"; sourceTree = "<group>"; };
 		1B65EEFA3CD83560C2E9D86B /* EmojiSearchBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiSearchBar.swift; sourceTree = "<group>"; };
 		1C44AD1817EC463233B42B2D /* PlusStoreModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlusStoreModel.swift; sourceTree = "<group>"; };
+		1CD424A6A736C971B3F87998 /* FeaturePages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeaturePages.swift; sourceTree = "<group>"; };
 		214BE1EF9FDB2118D4F50109 /* AppearancePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearancePolicyTests.swift; sourceTree = "<group>"; };
 		22BDEAB6EAD0F1EA689B388A /* CompositionSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionSync.swift; sourceTree = "<group>"; };
 		23D9F4828FBAE93DCCEB2271 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -627,6 +629,7 @@
 			children = (
 				142CFBEA43046FC96EBF437F /* App.entitlements */,
 				07973B1798B754A6DDA969C3 /* Assets.xcassets */,
+				1CD424A6A736C971B3F87998 /* FeaturePages.swift */,
 				80CE2088FB873FD0D894A6C0 /* Info.plist */,
 				FDF03074145DE8EA1461687C /* RiengTuSection.swift */,
 				6BFF48078EDB3236A1B9C795 /* ShortcutsView.swift */,
@@ -975,6 +978,7 @@
 				83667F4BE07F378F1DD8EDEA /* BackupFormat.swift in Sources */,
 				83E46F7A9330C715C3C78F49 /* BackupSection.swift in Sources */,
 				2C4EB5A2F26CFEC063FDD2D0 /* BackupStore.swift in Sources */,
+				28F59AFC0EA801B2565A2A41 /* FeaturePages.swift in Sources */,
 				752FB9D5D429DB659988F787 /* ICloudSync.swift in Sources */,
 				F8600BEC357C950EB10B41E2 /* KeyGeometry.swift in Sources */,
 				709378BF50A391137F4F48C6 /* KeyboardTheme.swift in Sources */,

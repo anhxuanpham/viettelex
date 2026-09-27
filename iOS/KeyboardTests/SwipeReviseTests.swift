@@ -29,6 +29,36 @@ final class SwipeReviseTests: XCTestCase {
         XCTAssertEqual(SwipeRevise.revise(scored, current: "có", prev: nil, next: "giáo"), "cô")
     }
 
+    func testTypedNextWordNeedsExactTail() throws {
+        let scored = [w("có", 1.0), w("cô", 0.95), w("cố", 0.9)]
+        let t = SwipeRevise.Typed(word: "có", scored: scored, sc: .lower, prev: "tôi")
+        let e = try XCTUnwrap(SwipeRevise.reviseTyped(t, typed: "giáo", boundary: " ", before: "tôi có giáo "))
+        XCTAssertEqual(e.new, "cô")
+        XCTAssertEqual("tôi " + e.tail, "tôi có giáo ")
+        XCTAssertEqual(e.replacement, "cô giáo ")
+        XCTAssertEqual(SwipeRevise.reviseTyped(t, typed: "giáo", boundary: ",", before: "có giáo,")?.replacement, "cô giáo,")
+        XCTAssertNil(SwipeRevise.reviseTyped(t, typed: "giáo", boundary: " ", before: "tôi có giáo  "), "đuôi lệch")
+        XCTAssertNil(SwipeRevise.reviseTyped(t, typed: "giáo", boundary: " ", before: "xcó giáo "), "từ vuốt dính chữ trước")
+        XCTAssertNil(SwipeRevise.reviseTyped(t, typed: "giáo", boundary: "a", before: "có giáoa"), "ranh giới là chữ")
+        XCTAssertNil(SwipeRevise.reviseTyped(t, typed: "giáo", boundary: " ", before: nil), "không đọc được")
+        XCTAssertNil(SwipeRevise.reviseTyped(t, typed: "", boundary: " ", before: "có  "), "từ gõ rỗng")
+        XCTAssertNil(SwipeRevise.reviseTyped(t, typed: "check", boundary: " ", before: "có check "), "từ gõ tiếng Anh")
+        XCTAssertNil(SwipeRevise.reviseTyped(t, typed: "thể", boundary: " ", before: "có thể "), "từ kế ủng hộ từ đang hiện")
+        let c = SwipeRevise.Typed(word: "Có", scored: scored, sc: .capitalized, prev: nil)
+        XCTAssertEqual(SwipeRevise.reviseTyped(c, typed: "Giáo", boundary: " ", before: "Có Giáo ")?.replacement, "Cô Giáo ")
+        // áp lên màn hình: đọc lại đuôi, lệch ⇒ không đụng
+        let p = MockProxy()
+        p.text = "tôi có giáo "
+        XCTAssertTrue(SwipeRevise.apply(e, proxy: p))
+        XCTAssertEqual(p.text, "tôi cô giáo ")
+        XCTAssertFalse(SwipeRevise.apply(e, proxy: p), "đã sửa ⇒ đuôi cũ không còn")
+        XCTAssertTrue(SwipeRevise.apply(e, undo: true, proxy: p))
+        XCTAssertEqual(p.text, "tôi có giáo ")
+        p.fakeContext = .some(nil)
+        XCTAssertFalse(SwipeRevise.apply(e, proxy: p))
+        XCTAssertEqual(p.text, "tôi có giáo ")
+    }
+
     func testRightScoreClamped() throws {
         let lm = try XCTUnwrap(SyllableLM.shared)
         let id = { (s: String) in SyllableBigram.id(of: s) ?? -1 }
@@ -141,6 +171,32 @@ final class SwipeReviseTests: XCTestCase {
         }
     }
 
+    /// Từ kế GÕ PHÍM ngay sau từ vuốt (dấu cách treo của phím chữ, hoặc dấu cách) — như
+    /// KeyboardViewController.handle: chốt từ gõ xong mới chấm lại, rồi ⌫ vẫn mở lại từ gõ.
+    func testTypedNextWordRevisesViaBridge() throws {
+        for viaSpace in [false, true] {
+            let f = Flow(layout)
+            var sim = SwipeSim(seed: 7)
+            f.swipe("co", layout, sim: &sim)
+            let rec = try XCTUnwrap(f.rec)
+            let t = SwipeRevise.Typed(word: rec.word, scored: rec.scored, sc: rec.sc, prev: nil)
+            if viaSpace { f.b.boundary(" ", proxy: f.p) }
+            for ch in "gawngs" { f.b.letter(ch, proxy: f.p) }
+            XCTAssertEqual(f.p.text, "có gắng")
+            let typed = f.b.boundary(" ", proxy: f.p)
+            XCTAssertEqual(typed, "gắng")
+            let e = try XCTUnwrap(SwipeRevise.reviseTyped(t, typed: typed, boundary: " ", before: f.p.contextBeforeInput))
+            XCTAssertEqual(e.new, "cố")
+            XCTAssertTrue(SwipeRevise.apply(e, proxy: f.p))
+            XCTAssertEqual(f.p.text, "cố gắng ")
+            XCTAssertTrue(f.b.backspace(proxy: f.p), "⌫ vẫn mở lại từ gõ")
+            XCTAssertEqual(f.p.text, "cố gắng")
+            f.b.boundary(" ", proxy: f.p)
+            XCTAssertTrue(SwipeRevise.apply(e, undo: true, proxy: f.p), "chip ↩︎ có")
+            XCTAssertEqual(f.p.text, "có gắng ")
+        }
+    }
+
     func testFailSafeWhenContextDiffers() {
         let f = Flow(layout)
         var sim = SwipeSim(seed: 7)
@@ -174,6 +230,67 @@ final class SwipeReviseTests: XCTestCase {
             ok += zip(got, chain).filter { $0 == $1 }.count
         }
         return (n, ok, revised)
+    }
+
+    /// Vuốt/gõ xen kẽ (vị trí i vuốt khi i % 2 == phase; từ gõ = đáp án, chèn thẳng như đã
+    /// gõ xong + dấu cách): chốt từ gõ ⇒ SwipeRevise.reviseTyped + apply. Đo các từ vuốt có từ
+    /// gõ ngay sau. Song sinh SwipeReviseTests.kt measureTyped.
+    private func measureTyped(_ chains: [[String]], revise: Bool)
+        -> (n: Int, ok: Int, fixed: Int, broke: Int, revised: Int) {
+        var sim = SwipeSim(seed: 2027)
+        var n = 0, ok = 0, fixed = 0, broke = 0, revised = 0
+        for chain in chains {
+            for phase in 0...1 {
+                let f = Flow(layout)
+                var before: [Int: String] = [:]
+                var words: [String] = []          // từ trên màn hình theo vị trí ("" = vuốt không ra gì)
+                var pending: SwipeRevise.Typed?
+                for (i, word) in chain.enumerated() {
+                    if i % 2 != phase {
+                        if f.b.isComposing { f.committed.append(f.b.boundary(" ", proxy: f.p)) }
+                        f.p.insertText(word + " ")
+                        f.committed.append(word)
+                        if revise, let t = pending,
+                           let e = SwipeRevise.reviseTyped(t, typed: word, boundary: " ", before: f.p.contextBeforeInput),
+                           SwipeRevise.apply(e, proxy: f.p) {
+                            f.committed[f.committed.count - 2] = e.new
+                            words[i - 1] = e.new
+                        }
+                        words.append(word)
+                        pending = nil
+                        f.rec = nil
+                        continue
+                    }
+                    let out = f.swipe(word, layout, sim: &sim, sigma: 0.25, revise: false)
+                    if i + 1 < chain.count { before[i] = out?.word ?? "" }
+                    words.append(out?.word ?? "")
+                    pending = f.rec.map { SwipeRevise.Typed(word: $0.word, scored: $0.scored, sc: $0.sc,
+                                                             prev: f.committed.last) }
+                }
+                XCTAssertEqual(words.filter { !$0.isEmpty }.joined(separator: " "),
+                               f.p.text.trimmingCharacters(in: .whitespaces))
+                for (i, b) in before {
+                    n += 1
+                    let now = words[i]
+                    if now == chain[i] { ok += 1 }
+                    if now != b { revised += 1; if now == chain[i] { fixed += 1 }; if b == chain[i] { broke += 1 } }
+                }
+            }
+        }
+        return (n, ok, fixed, broke, revised)
+    }
+
+    /// Từ kế gõ phím, cùng tập đo. 27/09/2026: iOS 0.853 → 0.934 (+328 −15); JVM 0.857 → 0.942 (+341 −15).
+    func testHeldoutTypedRevisionGain() throws {
+        try SlowTests.require()
+        let test = try heldout().enumerated().filter { $0.offset % 3 == 0 }.map(\.element)
+        let base = measureTyped(test, revise: false)
+        let rev = measureTyped(test, revise: true)
+        let a = Double(base.ok) / Double(base.n), b = Double(rev.ok) / Double(rev.n)
+        print(String(format: "REVISE-TYPED heldout iOS (vuốt xen gõ, σ0.25): trước %.4f | sau %.4f (+%.2f điểm, n=%d, sửa %d: +%d −%d)",
+                     a, b, (b - a) * 100, rev.n, rev.revised, rev.fixed, rev.broke))
+        XCTAssertGreaterThanOrEqual(b - a, 0.01)
+        XCTAssertLessThanOrEqual(rev.broke * 5, rev.fixed)
     }
 
     /// Cùng tập đo với Kotlin (offset % 3 == 0). Android JVM 27/09/2026: 0.809 → 0.855.

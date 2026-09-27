@@ -38,7 +38,7 @@ func isKeyboardEnabled() -> Bool {
 }
 
 /// Các tab của app — floating menu kiểu iOS ở đáy (user 2026-07-24).
-/// Tab Mẫu Câu chỉ hiện khi bật tính năng trong Tính Năng → Gợi ý.
+/// Tab Mẫu Câu chỉ hiện khi bật tính năng trong Tính Năng → Gõ tắt & mẫu câu.
 enum AppTab: CaseIterable {
     case kieuGo, tinhNang, mauCau, gioiThieu
     var title: String {
@@ -101,7 +101,7 @@ struct RootView: View {
             List {
                 switch tab {
                 case .kieuGo: kieuGoTab
-                case .tinhNang: TinhNangSections(); RiengTuSection()
+                case .tinhNang: TinhNangSections()
                 case .mauCau: MauCauSections()
                 case .gioiThieu: gioiThieuTab
                 }
@@ -113,6 +113,9 @@ struct RootView: View {
             // nó nuốt tap của mọi Button trong row (+, Import, Export, Xóa từ đã học…).
             .scrollDismissesKeyboard(.immediately)
         }
+        // Đổi tab ⇒ dựng lại stack: trang con đang mở (vd Tính Năng → Giao diện) không
+        // còn đè lên tab mới.
+        .id(tab)
         .overlay(alignment: .bottom) {
             if !keyboardShown {
                 FloatingTabBar(selected: $tab, tabs: visibleTabs, collapsed: barCollapsed)
@@ -169,7 +172,7 @@ struct RootView: View {
     }
 
     @ViewBuilder private var gioiThieuTab: some View {
-        SaoLuuSection()
+        // Sao lưu & đồng bộ chuyển sang Tính Năng (27/09/2026).
         DebugSection()
         // Logo + tên app trên đầu tab (user 2026-07-24), như About của macOS.
         Section {
@@ -787,7 +790,7 @@ struct KieuGoSection: View {
         Section {
             // Telex / VNI loại trừ nhau → segmented (như radio macOS). Chọn VNI TỰ BẬT hàng
             // phím số (số là phím dấu — không có hàng số thì mỗi dấu phải chuyển plane 123);
-            // tắt lại được ở Tính năng → Giao diện.
+            // tắt lại được ở Tính năng → Phím & cử chỉ.
             Picker("Kiểu gõ", selection: Binding(
                 get: { vniMode ? "vni" : "telex" },
                 set: { v in
@@ -800,7 +803,7 @@ struct KieuGoSection: View {
             }
             .pickerStyle(.segmented)
             if vniMode {
-                Text("Gõ dấu bằng số khi đang gõ một từ: 1 sắc, 2 huyền, 3 hỏi, 4 ngã, 5 nặng, 6 mũ (â ê ô), 7 móc (ơ ư), 8 trăng (ă), 9 đ, 0 xoá dấu — tie6ng1 vie6t5 → tiếng việt. Ngoài từ, phím số vẫn gõ ra số. Chọn VNI tự bật Hàng phím số (tắt được ở Tính năng → Giao diện).")
+                Text("Gõ dấu bằng số khi đang gõ một từ: 1 sắc, 2 huyền, 3 hỏi, 4 ngã, 5 nặng, 6 mũ (â ê ô), 7 móc (ơ ư), 8 trăng (ă), 9 đ, 0 xoá dấu — tie6ng1 vie6t5 → tiếng việt. Ngoài từ, phím số vẫn gõ ra số. Chọn VNI tự bật Hàng phím số (tắt được ở Tính năng → Phím & cử chỉ).")
                     .font(.footnote).foregroundStyle(.secondary)
             } else {
                 settingToggle("Telex đơn giản", "Phím w đứng lẻ giữ nguyên là w, không thành ư.", isOn: $simpleTelex)
@@ -821,184 +824,7 @@ struct KieuGoSection: View {
     }
 }
 
-/// Tab Tính Năng — Chính tả, Gợi ý, Giao diện.
-struct TinhNangSections: View {
-    @AppStorage("liveSpellCheck", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var liveSpellCheck = true
-    @AppStorage("autoRestore", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var autoRestore = true
-    @AppStorage("showSpaceLogo", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var showSpaceLogo = true
-    @AppStorage("showSuggestions", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var showSuggestions = true
-    @AppStorage("filterSensitive", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var filterSensitive = true
-    // Công tắc phụ của thanh gợi ý (KeyboardSettings) — tắt = bàn phím không làm việc đó.
-    @AppStorage("emojiSuggest", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var emojiSuggest = true
-    @AppStorage("numberChips", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var numberChips = true
-    @AppStorage("pasteButton", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var pasteButton = true
-    @AppStorage("addTonesChip", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var addTonesChip = false
-    @AppStorage("templatesEnabled", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var templatesEnabled = true
-    @AppStorage("rowHeightAdjust", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var rowHeightAdjust = 0
-    @AppStorage("numberRow", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var numberRow = false
-    /// Giữ phím chữ ra ký tự phụ (KeyAlternates) — số mặc định BẬT, ký hiệu TẮT.
-    @AppStorage("longPressNumbers", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var longPressNumbers = true
-    @AppStorage("longPressSymbols", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var longPressSymbols = false
-    /// "off" | "left" | "right" — bàn phím đọc lúc hiện (OneHand.resolve).
-    @AppStorage("oneHandMode", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var oneHandMode = "off"
-    @AppStorage("hapticFeedback", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var hapticFeedback = false
-    /// Ô phóng to chữ khi bấm phím — mặc định BẬT (KeyboardView.keyPreviewKey).
-    @AppStorage("keyPreviewEnabled", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var keyPreview = true
-    @AppStorage("reEditWord", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var reEditWord = true
-    @AppStorage("swipeTyping", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var swipeTyping = false
-    /// Công tắc con (giai đoạn 3) — mặc định BẬT, xem KeyboardSettings.swipeEnglish.
-    @AppStorage("swipeEnglish", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var swipeEnglish = true
-    /// Decoder FUTO Swipe (thử nghiệm) — mặc định TẮT, xem KeyboardSettings.swipeFuto.
-    @AppStorage("swipeFuto", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var swipeFuto = false
-    /// Chọn phím theo ngữ cảnh (thử nghiệm) — mặc định BẬT, xem KeyboardSettings.smartTouch.
-    @AppStorage("smartTouch", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var smartTouch = true
-    /// Tự sửa từ gõ sai (thử nghiệm) — mặc định TẮT, xem KeyboardSettings.autoCorrect.
-    @AppStorage("autoCorrect", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var autoCorrect = false
-    /// Vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh — mặc định TẮT (KeyboardSettings.spaceSwipeLanguage).
-    @AppStorage("spaceSwipeLanguage", store: UserDefaults(suiteName: "group.com.viettelex"))
-    private var spaceSwipeLanguage = false
-
-    var body: some View {
-        Section {
-            settingToggle("Tự khôi phục từ tiếng Anh", "Từ không phải tiếng Việt tự trả về như đã gõ (google, github…).", isOn: $autoRestore)
-            settingToggle("Kiểm tra chính tả khi gõ", "Ngừng bỏ dấu ngay khi từ không thể là tiếng Việt.", isOn: $liveSpellCheck)
-            settingToggle("Sửa dấu từ đã gõ", "Xoá dấu cách ngay sau một từ để gõ tiếp dấu cho từ đó (tháy ␣ ⌫ a → thấy); hoặc đặt con trỏ ngay sau từ rồi gõ phím dấu s f r x j: viêt + j → việt (VNI: số 1–5, 0).", isOn: $reEditWord)
-        } header: { Text("Chính tả") }
-
-        ShortcutsSection()
-
-        Section {
-            // Thanh gợi ý bật = tự học từ hay dùng (learnWords đi theo, không
-            // còn toggle riêng — quyết định 2026-07-24)
-            settingToggle("Thanh gợi ý", "Gợi ý từ + emoji, tự học từ bạn hay dùng (chỉ trên máy).", isOn: $showSuggestions)
-            settingToggle("Lọc từ nhạy cảm khỏi gợi ý", "Không chủ động gợi ý từ tục — gõ tay và học vẫn bình thường.", isOn: $filterSensitive)
-            if showSuggestions {
-                settingToggle("Gợi ý emoji", "Emoji hợp với từ đang gõ (yêu → ❤️).", isOn: $emojiSuggest)
-                settingToggle("Chip số", "Sau khi gõ số: đọc thành chữ, định dạng tiền, tính phép tính (2+3 → 5).", isOn: $numberChips)
-                settingToggle("Nút Dán", "Vừa copy xong thì thanh gợi ý hiện nút Dán (cần Toàn quyền).", isOn: $pasteButton)
-                if PlusGate.isUnlocked(.sentenceDiacritics) {
-                    settingToggle("Chip “Thêm dấu”", "Sau dấu cách, nếu câu vừa gõ không dấu thì hiện chip “Thêm dấu” — một chạm thêm dấu cả câu. Tắt mặc định: bàn phím phải đọc lại câu ở mỗi dấu cách.", isOn: $addTonesChip)
-                }
-            }
-            settingToggle("Mẫu câu", "Nút ☰ trên bàn phím chèn nhanh câu soạn sẵn — quản lý ở tab Mẫu Câu.", isOn: $templatesEnabled)
-            NavigationLink {
-                UserDictView()
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Từ điển cá nhân")
-                    Text("Xem, tìm, xoá từ đã học; thêm tên riêng, thuật ngữ.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-            }
-            Button("Xóa từ đã học", role: .destructive) {
-                // Xoá file + đổi mốc userlmResetAt ⇒ bàn phím bỏ bảng trong RAM lần hiện kế tiếp.
-                UserDictStore.eraseAll()
-            }
-        } header: { Text("Gợi ý") }
-
-        Section {
-            NavigationLink {
-                ThemeSettingsView()
-            } label: {
-                Label("Theme & ảnh nền", systemImage: "paintpalette")
-            }
-            settingToggle("Hiện logo Vᴛ", "Logo mờ ở góc phải phím space.", isOn: $showSpaceLogo)
-            settingToggle("Vuốt phím cách để đổi Tiếng Việt / Tiếng Anh", "Vuốt nhanh phím cách sang trái hoặc phải để đổi. Tiếng Anh: gõ nguyên văn (không bỏ dấu), gợi ý và gõ vuốt theo từ điển tiếng Anh, logo phím cách thành E. Giữ phím cách rồi kéo vẫn là di con trỏ.", isOn: $spaceSwipeLanguage)
-            settingToggle("Phóng to chữ khi bấm", "Ô chữ lớn nổi lên trên phím vừa chạm (như iPhone). Tắt cho gọn và nhẹ máy hơn.", isOn: $keyPreview)
-            settingToggle("Rung phím", "Rung nhẹ mỗi lần chạm phím.", isOn: $hapticFeedback)
-            if hapticFeedback {
-                FullAccessNotice(reason: "Rung phím")
-            }
-            Stepper(value: $rowHeightAdjust, in: -10...10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Chiều cao hàng phím")
-                    Text(rowHeightAdjust == 0
-                         ? "Chuẩn"
-                         : String(format: "%+d pt mỗi hàng (%+d pt cả bàn phím)",
-                                  // hàng số cao ¾ hàng chữ ⇒ tổng ×4,75 khi bật
-                                  rowHeightAdjust,
-                                  Int((Double(rowHeightAdjust) * (numberRow ? 4.75 : 4)).rounded())))
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-            }
-            settingToggle("Hàng phím số", "Thêm hàng 1 2 3 … 0 phía trên hàng chữ — gõ số không cần chuyển sang bàn phím 123. Bàn phím cao thêm khoảng ¾ hàng.", isOn: $numberRow)
-            // iPad có ký tự phụ vuốt xuống riêng ⇒ chỉ iPhone.
-            if UIDevice.current.userInterfaceIdiom == .phone {
-                if !numberRow {
-                    settingToggle("Giữ phím hàng trên để ra số", "Giữ q w e … p một chút để gõ 1 2 3 … 0 — số nhỏ ở góc phím. Chỉ dùng khi tắt Hàng phím số.", isOn: $longPressNumbers)
-                }
-                settingToggle("Giữ phím hàng 2, 3 để ra ký tự đặc biệt", "Giữ a … l, z … m để gõ @ # $ _ & - + ( ) * \" % : / ! ? — ký hiệu nhỏ ở góc phím. Giữ , để ra . khi bật một trong các công tắc giữ phím.", isOn: $longPressSymbols)
-            }
-            if UIDevice.current.userInterfaceIdiom == .phone {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Chế độ một tay")
-                    Picker("Chế độ một tay", selection: $oneHandMode) {
-                        Text("Tắt").tag("off")
-                        Text("Trái").tag("left")
-                        Text("Phải").tag("right")
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    Text("Thu hẹp bàn phím về một bên. Trên bàn phím: giữ lâu nút ☰ (mẫu câu) trên thanh gợi ý để bật/tắt nhanh; nút ở dải trống để đổi bên hoặc thoát.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-            }
-        } header: { Text("Giao diện") } footer: {
-            Text("Cài đặt áp dụng ngay lần mở bàn phím kế tiếp.")
-        }
-
-        Section {
-            settingToggle("Chọn phím thông minh", "Chạm lệch sát mép giữa hai phím thì bàn phím chọn phím hợp với chữ đang gõ (như bàn phím iPhone) — bớt gõ trượt sang phím bên cạnh. Chạm giữa phím luôn ra đúng phím đó; chữ đã gõ không bao giờ bị tự sửa.", isOn: $smartTouch)
-            settingToggle("Tự sửa từ gõ sai", "Sửa khi gõ dấu cách nếu chữ vừa gõ không phải từ hợp lệ (chạm trượt sang phím kề: tpoi → tôi). Chỉ sửa khi chắc chắn; không đụng từ tiếng Anh, từ bạn hay dùng, Thay thế văn bản, ô mật khẩu/email/web. ⌫ ngay sau đó để trả lại chữ gốc — từ đó sẽ không bị sửa nữa.", isOn: $autoCorrect)
-            settingToggle("Gõ vuốt", "Vuốt qua các chữ không dấu rồi nhấc tay: v→i→e→t ra “việt”. Gõ tiếp phím dấu (s f r x j) để đổi dấu, ⌫ ngay sau đó xoá cả từ, thanh gợi ý có các cách viết khác. Chỉ trên iPhone; tắt khi dùng VoiceOver và ở ô email/mật khẩu/URL.", isOn: $swipeTyping)
-            if swipeTyping {
-                settingToggle("Vuốt từ tiếng Anh", "Vuốt ra cả từ tiếng Anh xen trong câu: check, mail, file, meeting… Khi một nét vuốt vừa là từ Việt vừa là từ Anh (the/thế, can/cần), bàn phím ưu tiên tiếng Việt — trừ khi đang gõ tiếng Anh — và luôn để phương án kia trên thanh gợi ý.", isOn: $swipeEnglish)
-                settingToggle("Mô hình neural gõ vuốt", "Thêm mạng neural nhận dạng nét vuốt (chạy hoàn toàn trên máy) để chấm cùng bộ giải mã hiện có. Tốn thêm khoảng 3 MB bộ nhớ khi bàn phím mở.", isOn: $swipeFuto)
-                NavigationLink {
-                    SwipePracticeView()
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Luyện vuốt")
-                        Text("Vuốt thử từng từ trên bàn phím mẫu, xem bàn phím đọc đúng bao nhiêu.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
-                }
-                // Ghi công BẮT BUỘC theo FUTO Model Weights License 1.0 ("visible notice …
-                // within the product's settings") — Phil 27/09/2026: chỉ hiện ở đây (dưới công
-                // tắc, khi đã bật Gõ vuốt), chữ nhỏ mờ. KHÔNG xoá. Xem docs/DATA-SOURCES.md.
-                Link(destination: URL(string: "https://github.com/ptrinh/viettelex/blob/main/docs/DATA-SOURCES.md#futo-swipe")!) {
-                    Text("powered by FUTO Swipe")
-                }
-                .font(.caption2).foregroundStyle(.tertiary)
-            }
-        } header: { Text("Thử nghiệm") } footer: {
-            Text("Tính năng đang thử — áp dụng lần mở bàn phím kế tiếp.")
-        }
-    }
-}
+// Tab Tính Năng: TinhNangSections + các trang con ở FeaturePages.swift.
 
 /// Debug mode (25/09/2026): lấy log "gõ nhanh rớt chữ" không cần cáp/Console.
 /// Bàn phím ghi touchlog.txt vào App Group (cần Full Access). Log hiện NGAY trong

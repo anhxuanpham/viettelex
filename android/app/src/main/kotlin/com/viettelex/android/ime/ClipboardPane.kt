@@ -35,7 +35,7 @@ class ClipboardPane(context: Context, private val theme: ImeTheme) : FrameLayout
     private fun dp(v: Float) = theme.dp(v).toInt()
 
     init {
-        setBackgroundColor(theme.bg)
+        setBackgroundColor(theme.paneBg)
         isClickable = true              // chạm vùng trống không rơi xuống phím
         val col = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         val header = LinearLayout(context).apply {
@@ -56,7 +56,7 @@ class ClipboardPane(context: Context, private val theme: ImeTheme) : FrameLayout
         list.removeAllViews()
         if (items.isEmpty()) {
             val msg = when {
-                !enabled -> "Lịch sử clipboard đang tắt — bật trong app VietTelex › Tính Năng › Riêng tư."
+                !enabled -> "Lịch sử clipboard đang tắt — bật trong app VietTelex › Tính Năng › Riêng tư & clipboard."
                 incognito -> "Đang ẩn danh — không lưu mục mới."
                 else -> "Chưa có mục nào — copy gì đó rồi mở lại. Mục không ghim tự xoá sau 1 giờ."
             }

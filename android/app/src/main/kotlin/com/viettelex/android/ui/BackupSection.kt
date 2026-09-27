@@ -79,8 +79,8 @@ fun SaoLuuSection() {
         }
     }
 
-    VTSection(header = "Sao lưu & đổi máy",
-        footer = "File gồm cài đặt, gõ tắt, mẫu câu (và từ đã học nếu chọn) — mở được trên VietTelex Android, iPhone, iPad. Nhập file: cài đặt theo file, gõ tắt và mẫu câu được gộp thêm. Android cũng tự sao lưu cài đặt vào Google (Sao lưu của hệ thống) khi bạn bật.") {
+    VTSection(header = "File sao lưu",
+        footer = "File gồm cài đặt, gõ tắt, mẫu câu (và từ đã học nếu chọn) — mở được trên Android, iPhone, iPad. Nhập: cài đặt theo file, gõ tắt và mẫu câu được gộp thêm. Android cũng tự sao lưu cài đặt vào Google khi bạn bật Sao lưu của hệ thống.") {
         SettingToggle("Kèm từ đã học khi xuất file",
             "Từ bàn phím đã học (tần suất gõ) — riêng tư, chỉ bật khi file do chính bạn giữ.", includeLearned) { includeLearned = it }
         RowDivider()

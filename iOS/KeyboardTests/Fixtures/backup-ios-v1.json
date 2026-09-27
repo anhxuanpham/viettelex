@@ -35,6 +35,8 @@
     "filterSensitive" : true,
     "freeMarking" : true,
     "hapticFeedback" : true,
+    "keyLabelTransparency" : 20,
+    "keyboardTransparency" : 40,
     "liveSpellCheck" : true,
     "longPressNumbers" : true,
     "longPressSymbols" : false,
