@@ -10,12 +10,15 @@ import java.util.Locale
  * iOS/KeyboardTests/Fixtures/text-tools.txt. Duyệt theo code point, phân loại theo
  * General Category; kết quả luôn NFC (đầu vào NFC hay NFD đều nhận).
  */
-enum class TextTool(val label: String) {
+enum class TextTool(val viLabel: String) {
     UPPER("HOA"),
     LOWER("thường"),
     TITLE("Hoa Đầu Từ"),
     SENTENCE("Hoa đầu câu"),
     STRIP_DIACRITICS("Xoá dấu");
+
+    /** Nhãn theo ngôn ngữ giao diện ([L10n]); [viLabel] = khoá dịch. */
+    val label: String get() = tr(viLabel)
 
     /** Tên trong fixture chung (khớp rawValue bên Swift). */
     val id: String get() = when (this) {

@@ -60,6 +60,8 @@ import java.io.File
 import java.util.BitSet
 import java.net.HttpURLConnection
 import java.net.URL
+import com.viettelex.keyboard.tr
+import com.viettelex.keyboard.L10n
 
 /**
  * Bàn phím VietTelex (port iOS KeyboardViewController — phần nối dây; logic nằm ở
@@ -144,6 +146,8 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     /** Pref đổi từ lần so theme trước ⇒ phải dựng lại ImeTheme để so chữ ký. */
     private var themeStale = true
     private var themeUiMode = -1
+    /** Ngôn ngữ giao diện lúc dựng input view hiện tại ([L10n]). */
+    private var viewLang = L10n.DEFAULT
 
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         settingsCache = null
@@ -219,6 +223,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         st.listener = this
         val r = ImeRootView(this, th, kb, st, balloon, trail)
         keyboard = kb; strip = st; root = r
+        viewLang = L10n.lang
         kb.setSwitcherHint(switcherHintVisible)
         styleWindow(th, r)
         if (BuildConfig.DEBUG) Log.d(TAG, "perf onCreateInputView ${SystemClock.elapsedRealtime() - t0} ms")
@@ -245,7 +250,11 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         // Đổi theme/ảnh nền trong app → dựng lại input view (màu/Paint tạo sẵn trong view).
         // Chỉ dựng ImeTheme để so khi pref đổi hoặc sáng/tối hệ thống đổi (không mỗi lần focus ô).
         val uiMode = resources.configuration.uiMode
-        if (theme != null && (themeStale || uiMode != themeUiMode) && freshTheme().signature != theme?.signature)
+        // Ngôn ngữ giao diện (Tính Năng → Ngôn ngữ): đọc MỘT lần mỗi lần hiện bàn phím; view đang
+        // giữ chữ dựng sẵn (Dán, Khôi phục, …) ⇒ đổi ngôn ngữ thì dựng lại view. 0 chi phí mỗi phím.
+        L10n.load { prefs.getString(it, null) }
+        if (theme != null && (viewLang != L10n.lang ||
+                ((themeStale || uiMode != themeUiMode) && freshTheme().signature != theme?.signature)))
             setInputView(onCreateInputView())
         themeStale = false; themeUiMode = uiMode
         val kb = keyboard ?: return
@@ -761,7 +770,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         when (out) {
             is TextToolRunner.Outcome.Applied -> {
                 toolUndo = out.undo
-                strip?.showRestore(true, getString(com.viettelex.android.R.string.ime_undo))
+                strip?.showRestore(true, tr("Hoàn tác"))
             }
             TextToolRunner.Outcome.FailSafe -> TouchLog.write("failsafe: text tool ${tool.id} tail mismatch → skip")
             else -> {}
@@ -967,7 +976,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         val limit = PlusGate.pinnedClipLimit
         if (h.togglePin(text, limit)) { saveClipHistory(); refreshClipboardPane() }
         else if (limit != null && h.contains(text)) {
-            clipPane?.showNotice("Tối đa $limit mục ghim — VietTelex Plus ghim không giới hạn.")
+            clipPane?.showNotice(tr("Tối đa %d mục ghim — VietTelex Plus ghim không giới hạn.", limit))
         }
     }
 

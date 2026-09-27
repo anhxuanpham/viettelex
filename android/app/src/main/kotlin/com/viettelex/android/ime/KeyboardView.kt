@@ -27,6 +27,7 @@ import com.viettelex.keyboard.TextTool
 import com.viettelex.keyboard.TouchGeometry
 import com.viettelex.keyboard.TouchLog
 import kotlin.math.abs
+import com.viettelex.keyboard.tr
 
 /**
  * Vùng PHÍM của bàn phím (port iOS KeyboardView, phần rows): MỘT View vẽ mọi phím
@@ -148,10 +149,10 @@ class KeyboardView(
     private fun refreshTemplatesPane() {
         if (textToolsMode) {
             templatesPane.setItems(emptyList())
-            templatesPane.setExtras(listOf("‹ Mẫu câu" to TOOLS_BACK) + TextTool.entries.map { it.label to it.id }, gear = false)
+            templatesPane.setExtras(listOf(tr("‹ Mẫu câu") to TOOLS_BACK) + TextTool.entries.map { it.label to it.id }, gear = false)
         } else {
             templatesPane.setItems(templates)
-            templatesPane.setExtras(if (textToolsEnabled) listOf("Aa Công cụ văn bản" to TOOLS_ENTRY) else emptyList(), gear = true)
+            templatesPane.setExtras(if (textToolsEnabled) listOf(tr("Aa Công cụ văn bản") to TOOLS_ENTRY) else emptyList(), gear = true)
         }
         if (plane == Plane.TEMPLATES) rebuild()
     }

@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
         PlusPrefs.install(this)
+        com.viettelex.android.shared.UiLang.install(this)   // ngôn ngữ giao diện (mặc định Tiếng Việt)
         plus = PlusController(
             store = PlayPlusStore(this) { this },
             writeFlag = { PlusPrefs.writePurchased(this, it) },

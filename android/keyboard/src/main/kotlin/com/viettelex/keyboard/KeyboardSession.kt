@@ -1225,8 +1225,9 @@ class KeyboardSession(
     }
 
     companion object {
-        const val ADD_TONES_LABEL = "Thêm dấu"
-        const val UNDO_TONES_LABEL = "↩\uFE0E Hoàn tác"
+        /** Nhãn chip theo ngôn ngữ giao diện ([L10n.lang] đặt một lần mỗi lần hiện bàn phím). */
+        val ADD_TONES_LABEL: String get() = tr("Thêm dấu")
+        val UNDO_TONES_LABEL: String get() = "↩\uFE0E " + tr("Hoàn tác")
         /** freq giả cho từ thêm tay trong pool hoàn thiện = trần freq lexicon (255). */
         const val MANUAL_FREQ = 255
         val EMAIL_SUFFIXES = listOf("gmail.com", "yahoo.com", "outlook.com")

@@ -12,6 +12,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.viettelex.keyboard.ClipboardHistory
+import com.viettelex.keyboard.tr
 
 /**
  * Bảng lịch sử clipboard — phủ đúng vùng phím (ImeRootView overlay), mở bằng nút 📋 trên
@@ -44,7 +45,7 @@ class ClipboardPane(context: Context, private val theme: ImeTheme) : FrameLayout
             setPadding(dp(12f), dp(4f), dp(4f), dp(2f))
         }
         header.addView(label("Clipboard", 15f, bold = true), LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(button("Xoá hết") { listener?.onClipClearAll() })
+        header.addView(button(tr("Xoá hết")) { listener?.onClipClearAll() })
         header.addView(button("ABC") { listener?.onClipClose() })
         col.addView(header, LinearLayout.LayoutParams(-1, -2))
         col.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -56,9 +57,9 @@ class ClipboardPane(context: Context, private val theme: ImeTheme) : FrameLayout
         list.removeAllViews()
         if (items.isEmpty()) {
             val msg = when {
-                !enabled -> "Lịch sử clipboard đang tắt — bật trong app VietTelex › Tính Năng › Riêng tư & clipboard."
-                incognito -> "Đang ẩn danh — không lưu mục mới."
-                else -> "Chưa có mục nào — copy gì đó rồi mở lại. Mục không ghim tự xoá sau 1 giờ."
+                !enabled -> tr("Lịch sử clipboard đang tắt — bật trong app VietTelex › Tính Năng › Riêng tư & clipboard.")
+                incognito -> tr("Đang ẩn danh — không lưu mục mới.")
+                else -> tr("Chưa có mục nào — copy gì đó rồi mở lại. Mục không ghim tự xoá sau 1 giờ.")
             }
             list.addView(label(msg, 14f, alpha = 0.6f).apply {
                 setPadding(dp(16f), dp(16f), dp(16f), dp(16f)); gravity = Gravity.CENTER
@@ -66,7 +67,7 @@ class ClipboardPane(context: Context, private val theme: ImeTheme) : FrameLayout
             return
         }
         for (it in items) list.addView(row(it))
-        if (incognito) list.addView(label("Đang ẩn danh — không lưu mục mới.", 12f, alpha = 0.6f).apply {
+        if (incognito) list.addView(label(tr("Đang ẩn danh — không lưu mục mới."), 12f, alpha = 0.6f).apply {
             setPadding(dp(16f), dp(6f), dp(16f), dp(8f))
         })
     }
@@ -92,14 +93,14 @@ class ClipboardPane(context: Context, private val theme: ImeTheme) : FrameLayout
         val text = label(item.text.replace('\n', ' ').take(300), 15f).apply {
             maxLines = 2; ellipsize = TextUtils.TruncateAt.END
             setPadding(0, dp(6f), dp(4f), dp(6f))
-            contentDescription = "Dán: ${item.text.take(80)}"
+            contentDescription = tr("Dán: %s", item.text.take(80))
         }
         r.addView(text, LinearLayout.LayoutParams(0, -2, 1f))
         r.setOnClickListener { listener?.onClipPick(item.text) }
         r.addView(button(if (item.pinned) "📌" else "Ghim", alpha = if (item.pinned) 1f else 0.6f) {
             listener?.onClipTogglePin(item.text)
-        }.apply { contentDescription = if (item.pinned) "Bỏ ghim" else "Ghim" })
-        r.addView(button("✕", alpha = 0.6f) { listener?.onClipRemove(item.text) }.apply { contentDescription = "Xoá mục" })
+        }.apply { contentDescription = if (item.pinned) tr("Bỏ ghim") else tr("Ghim") })
+        r.addView(button("✕", alpha = 0.6f) { listener?.onClipRemove(item.text) }.apply { contentDescription = tr("Xoá mục") })
         val lp = LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(8f), dp(3f), dp(8f), dp(3f)) }
         r.layoutParams = lp
         return r

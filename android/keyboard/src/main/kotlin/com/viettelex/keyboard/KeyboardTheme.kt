@@ -143,7 +143,7 @@ fun ThemePalette.withTransparency(keyboard: Int, labels: Int, systemDark: Boolea
     return p
 }
 
-enum class KeyboardTheme(val id: String, val title: String, val isPlus: Boolean) {
+enum class KeyboardTheme(val id: String, val viTitle: String, val isPlus: Boolean) {
     SYSTEM("system", "Hệ thống", false),
     OLED("oled", "Tối OLED", false),
     /** Trợ năng → luôn miễn phí. */
@@ -153,6 +153,9 @@ enum class KeyboardTheme(val id: String, val title: String, val isPlus: Boolean)
     SKY("sky", "Trời xanh", true),
     LAVENDER("lavender", "Oải hương", true),
     GLASS("glass", "Kính", true);
+
+    /** Tên hiển thị theo ngôn ngữ giao diện ([L10n]); [viTitle] = khoá dịch. */
+    val title: String get() = tr(viTitle)
 
     /**
      * Palette cố định của theme; SYSTEM trả null (IME dùng màu Material You trong

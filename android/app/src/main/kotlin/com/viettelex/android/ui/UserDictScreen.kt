@@ -35,6 +35,7 @@ import com.viettelex.keyboard.Keys
 import com.viettelex.keyboard.UserLangModel
 import java.io.File
 import java.util.concurrent.Executor
+import com.viettelex.keyboard.tr
 
 /**
  * Từ điển cá nhân: xem/tìm/xoá từ bàn phím đã học, thêm tay tên riêng/thuật ngữ.
@@ -76,13 +77,13 @@ fun UserDictDialog(onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(Modifier.fillMaxSize().background(c.groupedBg).safeDrawingPadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Từ điển cá nhân", style = VTType.headline, color = c.label, modifier = Modifier.weight(1f))
-                Text("Xong", style = VTType.body, color = c.accent, modifier = Modifier.clickable(onClick = onDismiss))
+                Text(tr("Từ điển cá nhân"), style = VTType.headline, color = c.label, modifier = Modifier.weight(1f))
+                Text(tr("Xong"), style = VTType.body, color = c.accent, modifier = Modifier.clickable(onClick = onDismiss))
             }
             LazyColumn(Modifier.fillMaxSize()) {
                 item {
-                    VTSection(header = "Thêm từ", footer = notice
-                        ?: "Tên riêng, thuật ngữ… (một từ, chỉ chữ cái). Từ thêm tay được gợi ý ngay khi gõ vài chữ đầu.") {
+                    VTSection(header = tr("Thêm từ"), footer = notice
+                        ?: tr("Tên riêng, thuật ngữ… (một từ, chỉ chữ cái). Từ thêm tay được gợi ý ngay khi gõ vài chữ đầu.")) {
                         val canAdd = newWord.isNotBlank()
                         VTRow {
                             VTTextField(newWord, { newWord = it; notice = null }, "VD: Kubernetes", modifier = Modifier.weight(1f))
@@ -90,9 +91,9 @@ fun UserDictDialog(onDismiss: () -> Unit) {
                                 Modifier.padding(start = 8.dp).size(28.dp).clickable(enabled = canAdd) {
                                     if (model.addWord(newWord)) {
                                         UserDictStore.commit(ctx, model)
-                                        notice = "Đã thêm “${newWord.trim()}”."
+                                        notice = tr("Đã thêm “%s”.", newWord.trim())
                                         newWord = ""; rev++
-                                    } else notice = "Chỉ nhận một từ gồm chữ cái (tối đa ${UserLangModel.MANUAL_MAX_LEN} ký tự)."
+                                    } else notice = tr("Chỉ nhận một từ gồm chữ cái (tối đa %s ký tự).", UserLangModel.MANUAL_MAX_LEN)
                                 },
                                 contentAlignment = Alignment.Center,
                             ) { GlyphIcon(Glyph.Plus, if (canAdd) c.accent else c.tertiary, 24.dp) }
@@ -100,13 +101,13 @@ fun UserDictDialog(onDismiss: () -> Unit) {
                     }
                 }
                 item {
-                    VTSection(header = "Tìm") {
-                        VTRow { VTTextField(query, { query = it }, "Tìm từ…") }
+                    VTSection(header = tr("Tìm")) {
+                        VTRow { VTTextField(query, { query = it }, tr("Tìm từ…")) }
                     }
                 }
                 item {
                     Text(
-                        (if (query.isBlank()) "Từ đã học ($total)" else "Kết quả (${entries.size})").uppercase(),
+                        (if (query.isBlank()) tr("Từ đã học (%s)", total) else tr("Kết quả (%s)", entries.size)).uppercase(),
                         style = VTType.footnote, color = c.secondary,
                         modifier = Modifier.padding(start = 32.dp, end = 32.dp, bottom = 7.dp),
                     )
@@ -122,7 +123,7 @@ fun UserDictDialog(onDismiss: () -> Unit) {
                         if (!first) RowDivider()
                         VTRow {
                             Text(e.word, style = VTType.body, color = c.label, modifier = Modifier.weight(1f))
-                            Text(if (e.manual) "thêm tay" else "${e.count}", style = VTType.footnote, color = c.secondary)
+                            Text(if (e.manual) tr("thêm tay") else "${e.count}", style = VTType.footnote, color = c.secondary)
                             Box(
                                 Modifier.padding(start = 12.dp).size(28.dp).clickable {
                                     if (model.removeWord(e.word)) { UserDictStore.commit(ctx, model); rev++ }
@@ -135,14 +136,14 @@ fun UserDictDialog(onDismiss: () -> Unit) {
                 if (entries.isEmpty()) item {
                     VTSection {
                         VTRow {
-                            Text(if (query.isBlank()) "Chưa có từ nào — gõ bằng VietTelex để bàn phím học." else "Không có từ khớp.",
+                            Text(if (query.isBlank()) tr("Chưa có từ nào — gõ bằng VietTelex để bàn phím học.") else tr("Không có từ khớp."),
                                 style = VTType.body, color = c.secondary)
                         }
                     }
                 }
                 item {
                     Box(Modifier.height(24.dp).width(1.dp))
-                    VTSection(footer = "Xoá một từ cũng xoá các cặp/bộ ba từ đi kèm nó. Mọi dữ liệu chỉ nằm trên máy.") {
+                    VTSection(footer = tr("Xoá một từ cũng xoá các cặp/bộ ba từ đi kèm nó. Mọi dữ liệu chỉ nằm trên máy.")) {
                         VTRow(onClick = {
                             if (!confirmErase) { confirmErase = true; return@VTRow }
                             UserDictStore.eraseAll(ctx)
@@ -150,7 +151,7 @@ fun UserDictDialog(onDismiss: () -> Unit) {
                             // model của màn này: nạp lại (file đã xoá ⇒ rỗng)
                             model.reloadAfterExternalErase(); rev++
                         }) {
-                            Text(if (confirmErase) "Chạm lần nữa để xoá tất cả" else "Xoá tất cả từ đã học",
+                            Text(if (confirmErase) tr("Chạm lần nữa để xoá tất cả") else tr("Xoá tất cả từ đã học"),
                                 style = VTType.body, color = c.red)
                         }
                     }

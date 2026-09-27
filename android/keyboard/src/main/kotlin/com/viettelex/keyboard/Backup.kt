@@ -23,6 +23,8 @@ import java.time.temporal.ChronoUnit
 sealed class SettingKind {
     data class Bool(val default: Boolean) : SettingKind()
     data class IntRange(val default: Int, val range: kotlin.ranges.IntRange) : SettingKind()
+    /** Chuỗi thuộc tập [allowed] (vd uiLanguage "vi"/"en"); giá trị lạ bỏ qua. */
+    data class Choice(val default: String, val allowed: Set<String>) : SettingKind()
 }
 
 object BackupSettings {
@@ -59,11 +61,12 @@ object BackupSettings {
         Spec(Keys.LONG_PRESS_SYMBOLS, SettingKind.Bool(false)),
         Spec(Keys.KEYBOARD_TRANSPARENCY, SettingKind.IntRange(0, 0..100)),
         Spec(Keys.KEY_LABEL_TRANSPARENCY, SettingKind.IntRange(0, 0..100)),
+        Spec(Keys.UI_LANGUAGE, SettingKind.Choice(L10n.DEFAULT, L10n.supported)),
     )
     val byKey: Map<String, Spec> = all.associateBy { it.key }
 }
 
-/** Giá trị setting: Boolean hoặc Int (đã kẹp phạm vi). */
+/** Giá trị setting: Boolean, Int (đã kẹp phạm vi) hoặc String ([SettingKind.Choice]). */
 typealias BackupSettingsMap = Map<String, Any>
 
 /** Từ đã học — cùng cấu trúc [UserLangModel] (tri key = "p2\u0001p1"). */
@@ -105,9 +108,9 @@ data class BackupPayload(
 class BackupException(val reason: Reason, val fileVersion: Int = 0) : Exception(reason.name) {
     enum class Reason { NOT_JSON, NOT_BACKUP, TOO_NEW }
     val userMessage: String get() = when (reason) {
-        Reason.NOT_JSON -> "File không phải JSON hợp lệ."
-        Reason.NOT_BACKUP -> "Không phải file sao lưu VietTelex."
-        Reason.TOO_NEW -> "File sao lưu từ phiên bản mới hơn (định dạng $fileVersion) — hãy cập nhật VietTelex."
+        Reason.NOT_JSON -> tr("File không phải JSON hợp lệ.")
+        Reason.NOT_BACKUP -> tr("Không phải file sao lưu VietTelex.")
+        Reason.TOO_NEW -> tr("File sao lưu từ phiên bản mới hơn (định dạng %d) — hãy cập nhật VietTelex.", fileVersion)
     }
 }
 
@@ -148,6 +151,7 @@ object BackupCodec {
                 when (val kind = spec.kind) {
                     is SettingKind.Bool -> (raw as? Boolean)?.let { out[k] = it }
                     is SettingKind.IntRange -> intValue(raw)?.let { out[k] = it.coerceIn(kind.range) }
+                    is SettingKind.Choice -> (raw as? String)?.takeIf { it in kind.allowed }?.let { out[k] = it }
                 }
             }
             out
@@ -214,11 +218,11 @@ object BackupMerge {
 
     fun summary(p: BackupPayload, templatesAdded: Int, shortcutsChanged: Int): String {
         val parts = ArrayList<String>()
-        p.settings?.takeIf { it.isNotEmpty() }?.let { parts.add("${it.size} cài đặt") }
-        if (p.shortcuts != null) parts.add("$shortcutsChanged gõ tắt")
-        if (p.templates != null) parts.add("$templatesAdded mẫu câu mới")
-        p.learnedWords?.takeIf { !it.isEmpty }?.let { parts.add("${it.uni.size} từ đã học") }
-        return if (parts.isEmpty()) "File không có dữ liệu để nhập." else "Đã nhập " + parts.joinToString(", ") + "."
+        p.settings?.takeIf { it.isNotEmpty() }?.let { parts.add(tr("%d cài đặt", it.size)) }
+        if (p.shortcuts != null) parts.add(tr("%d gõ tắt", shortcutsChanged))
+        if (p.templates != null) parts.add(tr("%d mẫu câu mới", templatesAdded))
+        p.learnedWords?.takeIf { !it.isEmpty }?.let { parts.add(tr("%d từ đã học", it.uni.size)) }
+        return if (parts.isEmpty()) tr("File không có dữ liệu để nhập.") else tr("Đã nhập %s.", parts.joinToString(", "))
     }
 }
 
@@ -237,6 +241,7 @@ object BackupPrefs {
         for (spec in BackupSettings.all) when (val k = spec.kind) {
             is SettingKind.Bool -> out[spec.key] = (read(spec.key) as? Boolean) ?: k.default
             is SettingKind.IntRange -> out[spec.key] = ((read(spec.key) as? Number)?.toInt() ?: k.default).coerceIn(k.range)
+            is SettingKind.Choice -> out[spec.key] = (read(spec.key) as? String)?.takeIf { it in k.allowed } ?: k.default
         }
         return out
     }

@@ -60,7 +60,8 @@ class BackupTests {
         val p = BackupCodec.decode(fixture("backup-ios-v1"))
         assertEquals("ios", p.platform)
         assertEquals(Instant.parse("2026-09-27T08:00:00Z"), p.createdAt)
-        assertEquals(30, p.settings!!.size)             // emojiSuggest/pasteButton chỉ iOS, bị bỏ qua
+        assertEquals(31, p.settings!!.size)             // emojiSuggest/pasteButton chỉ iOS, bị bỏ qua
+        assertEquals("en", p.settings!![Keys.UI_LANGUAGE])   // ngôn ngữ giao diện (chuỗi) đi qua sao lưu
         assertEquals(40, p.settings!!["keyboardTransparency"])
         assertEquals(20, p.settings!!["keyLabelTransparency"])
         assertEquals(false, p.settings!!["autoCapitalize"])
@@ -119,7 +120,8 @@ class BackupTests {
             "keyboardTransparency" to 250, "keyLabelTransparency" to 35,
             BackupPrefs.SHORTCUTS_KEY to "# VietTelex — bảng gõ tắt\nko: không\n")
         val p = BackupPrefs.snapshot({ prefs[it] }, listOf(TemplateItem("", "a")), null)
-        assertEquals(31, p.settings!!.size)
+        assertEquals(32, p.settings!!.size)
+        assertEquals("vi", p.settings!![Keys.UI_LANGUAGE])   // chưa chọn ⇒ mặc định Tiếng Việt
         assertEquals(100, p.settings!!["keyboardTransparency"])   // kẹp 0…100
         assertEquals(35, p.settings!!["keyLabelTransparency"])
         assertEquals(true, p.settings!!["smartTouch"])
@@ -141,6 +143,7 @@ class BackupTests {
         assertEquals(false, plan.writes["reEditWords"])
         assertEquals(-3, plan.writes["rowHeightAdjust"])
         assertEquals(false, plan.writes[Keys.AUTO_CAPITALIZE])
+        assertEquals("en", plan.writes[Keys.UI_LANGUAGE])
         assertNull(plan.writes["hardwareTelex"])   // file iOS không có ⇒ không đụng
         // Pref gõ tắt ghi đúng dạng IME đọc: chuỗi YAML của ShortcutFile.
         assertTrue((plan.writes[Keys.SHORTCUTS] as String).startsWith(ShortcutFile.HEADER))
@@ -163,6 +166,23 @@ class BackupTests {
         assertEquals(BackupPrefs.settings { a[it] }, BackupPrefs.settings { b[it] })
         assertEquals(mapOf("vn" to "Việt Nam"), BackupPrefs.shortcutsFromPref(b[BackupPrefs.SHORTCUTS_KEY]))
         assertEquals(listOf(TemplateItem("x", "một")), plan.templates)
+    }
+
+    /** uiLanguage: khứ hồi qua file; giá trị lạ / sai kiểu bị bỏ qua khi nhập, pref lạ ⇒ "vi". */
+    @Test fun uiLanguageBackupRoundTrip() {
+        val a = mapOf<String, Any?>(Keys.UI_LANGUAGE to "en")
+        val p = BackupCodec.decode(BackupCodec.encode(BackupPrefs.snapshot({ a[it] }, emptyList(), null)))
+        assertEquals("en", p.settings!![Keys.UI_LANGUAGE])
+        val b = HashMap<String, Any?>()
+        b.putAll(BackupPrefs.plan(p, { b[it] }, emptyList()).writes)
+        assertEquals("en", b[Keys.UI_LANGUAGE])
+        assertEquals("en", L10n.normalize(b[Keys.UI_LANGUAGE]))
+
+        val bad = BackupCodec.decode("""{"format":"viettelex-backup","version":1,"settings":{"uiLanguage":"fr","simpleTelex":false}}""")
+        assertNull(bad.settings!![Keys.UI_LANGUAGE])
+        val wrongType = BackupCodec.decode("""{"format":"viettelex-backup","version":1,"settings":{"uiLanguage":true}}""")
+        assertNull(wrongType.settings!![Keys.UI_LANGUAGE])
+        assertEquals("vi", BackupPrefs.settings { if (it == Keys.UI_LANGUAGE) "de" else null }[Keys.UI_LANGUAGE])
     }
 
     @Test fun shortcutsPrefToleratesGarbage() {

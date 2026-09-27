@@ -74,6 +74,9 @@ object Keys {
     const val LONG_PRESS_SYMBOLS = "longPressSymbols"
     /** String "off" | "left" | "right" — chế độ một tay (điện thoại; tên như iOS App Group). */
     const val ONE_HAND_MODE = "oneHandMode"
+    /** String "vi" | "en" — ngôn ngữ giao diện app + chữ trên bàn phím ([L10n]). Mặc định "vi"
+     *  LUÔN (không theo ngôn ngữ máy); tên như iOS App Group. */
+    const val UI_LANGUAGE = "uiLanguage"
     /** String "left" | "right" — bên dùng gần nhất (giữ lâu icon con trỏ bật lại bên này). */
     const val ONE_HAND_LAST = "oneHandLastSide"
     /** String JSON `[{"label":…,"text":…}]`; vắng ⇒ mặc định từ assets/ios-mau-cau.yml. */

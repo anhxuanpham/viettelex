@@ -59,6 +59,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
+import com.viettelex.keyboard.tr
 
 /**
  * Ảnh nền: app thu nhỏ (inSampleSize + scale ≤1080px, xoay theo EXIF), mờ (hộp 3 lượt),
@@ -159,7 +160,7 @@ fun ThemeRow(onOpen: () -> Unit) {
     val ctx = LocalContext.current
     val current = remember { loadThemeSettings(ctx).theme.title }
     VTRow(onClick = onOpen) {
-        Text("Theme & ảnh nền", style = VTType.body, color = c.label, modifier = Modifier.weight(1f))
+        Text(tr("Theme & ảnh nền"), style = VTType.body, color = c.label, modifier = Modifier.weight(1f))
         Text("$current ›", style = VTType.body, color = c.secondary)
     }
 }
@@ -190,7 +191,7 @@ fun ThemePage(onBack: () -> Unit) {
 
     fun afterWrite(ok: Boolean, enable: Boolean) {
         busy = false
-        if (!ok) { error = "Không đọc được ảnh này."; return }
+        if (!ok) { error = tr("Không đọc được ảnh này."); return }
         error = null
         wall = WallpaperStore.preview(ctx)
         update(s.copy(wallpaper = if (enable) true else s.wallpaper, version = System.currentTimeMillis()))
@@ -211,13 +212,13 @@ fun ThemePage(onBack: () -> Unit) {
     val active = s.wallpaperActive(wall != null)
     val pal = (s.effectiveTheme.palette(dark) ?: previewPalette(KeyboardTheme.SYSTEM, dark)).let { if (active) it.overWallpaper() else it }
         .withTransparency(s.keyboardTransparency, s.labelTransparency, dark)
-    VTSection(footer = "Áp dụng lần mở bàn phím kế tiếp.") {
+    VTSection(footer = tr("Áp dụng lần mở bàn phím kế tiếp.")) {
         KeyboardPreview(pal, if (active) wall else null, s.dim, large = true, backdrop = KeyboardTransparency.systemBackdrop(dark),
             modifier = Modifier.fillMaxWidth().height(180.dp))
     }
 
     if (!ThemeGate.allowsWallpaper) {
-        VTSection(footer = "Theme có nhãn Plus và ảnh nền thuộc VietTelex Plus (Giới Thiệu → VietTelex Plus). Hệ thống, Tối OLED và Tương phản cao luôn miễn phí.") {}
+        VTSection(footer = tr("Theme có nhãn Plus và ảnh nền thuộc VietTelex Plus (Giới Thiệu → VietTelex Plus). Hệ thống, Tối OLED và Tương phản cao luôn miễn phí.")) {}
     }
 
     VTSection(header = "Theme") {
@@ -240,22 +241,22 @@ fun ThemePage(onBack: () -> Unit) {
         }
     }
 
-    VTSection(header = "Ảnh nền · Plus",
-        footer = "Ảnh được thu nhỏ và nén ngay trên máy, không gửi đi đâu. Lớp phủ giúp chữ trên phím dễ đọc.") {
+    VTSection(header = tr("Ảnh nền · Plus"),
+        footer = tr("Ảnh được thu nhỏ và nén ngay trên máy, không gửi đi đâu. Lớp phủ giúp chữ trên phím dễ đọc.")) {
         VTRow(onClick = if (busy || !ThemeGate.allowsWallpaper) null else {
             { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
         }) {
-            Text(if (wall != null) "Đổi ảnh nền" else "Chọn ảnh nền", style = VTType.body,
+            Text(if (wall != null) tr("Đổi ảnh nền") else tr("Chọn ảnh nền"), style = VTType.body,
                 color = if (ThemeGate.allowsWallpaper) c.accent else c.secondary)
         }
         if (wall != null) {
             RowDivider()
-            SettingToggle("Dùng ảnh nền", null, s.wallpaper) { update(s.copy(wallpaper = it)) }
+            SettingToggle(tr("Dùng ảnh nền"), null, s.wallpaper) { update(s.copy(wallpaper = it)) }
             RowDivider()
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text("Độ tối lớp phủ: ${s.dim}%", style = VTType.body, color = c.label)
+                Text(tr("Độ tối lớp phủ: %s%%", s.dim), style = VTType.body, color = c.label)
                 Slider(value = s.dim.toFloat(), onValueChange = { update(s.copy(dim = (it / 5).toInt() * 5)) }, valueRange = 0f..80f)
-                Text("Độ mờ ảnh: ${s.blur}", style = VTType.body, color = c.label)
+                Text(tr("Độ mờ ảnh: %s", s.blur), style = VTType.body, color = c.label)
                 Slider(value = s.blur.toFloat(), onValueChange = { s = s.copy(blur = it.toInt()) }, valueRange = 0f..20f,
                     onValueChangeFinished = {
                         busy = true
@@ -270,51 +271,50 @@ fun ThemePage(onBack: () -> Unit) {
             VTRow(onClick = {
                 WallpaperStore.remove(ctx); wall = null
                 update(s.copy(wallpaper = false, version = System.currentTimeMillis()))
-            }) { Text("Xoá ảnh nền", style = VTType.body, color = c.red) }
+            }) { Text(tr("Xoá ảnh nền"), style = VTType.body, color = c.red) }
         }
-        if (busy) VTRow { Text("Đang xử lý ảnh…", style = VTType.footnote, color = c.secondary) }
+        if (busy) VTRow { Text(tr("Đang xử lý ảnh…"), style = VTType.footnote, color = c.secondary) }
         error?.let { VTRow { Text(it, style = VTType.footnote, color = c.red) } }
     }
 
-    VTSection(header = "Độ trong suốt",
-        footer = "Phím: nền, ảnh nền, nền và viền phím — 100% chỉ còn chữ (thấy app phía sau). " +
-            "Ký tự: chữ và biểu tượng trên phím — 100% là phím trơn không chữ.") {
+    VTSection(header = tr("Độ trong suốt"),
+        footer = tr("Phím: nền, ảnh nền, nền và viền phím — 100% chỉ còn chữ (thấy app phía sau). Ký tự: chữ và biểu tượng trên phím — 100% là phím trơn không chữ.")) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-            Text("Độ trong suốt phím: ${s.keyboardTransparency}%", style = VTType.body, color = c.label)
+            Text(tr("Độ trong suốt phím: %s%%", s.keyboardTransparency), style = VTType.body, color = c.label)
             Slider(value = s.keyboardTransparency.toFloat(), valueRange = 0f..100f,
                 onValueChange = { update(s.copy(keyboardTransparency = Math.round(it / 5) * 5)) })
-            Text("Độ trong suốt ký tự: ${s.labelTransparency}%", style = VTType.body, color = c.label)
+            Text(tr("Độ trong suốt ký tự: %s%%", s.labelTransparency), style = VTType.body, color = c.label)
             Slider(value = s.labelTransparency.toFloat(), valueRange = 0f..100f,
                 onValueChange = { update(s.copy(labelTransparency = Math.round(it / 5) * 5)) })
         }
     }
 
     // Tính Năng → Giao diện gộp luôn chiều cao hàng + logo (không thuộc "Khôi phục giao diện gốc").
-    VTSection(header = "Bàn phím") {
+    VTSection(header = tr("Bàn phím")) {
         var adj by rememberIntPref(Keys.ROW_HEIGHT_ADJUST, Prefs.D.rowHeightAdjust)
         VTRow {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Chiều cao hàng phím", style = VTType.body, color = c.label)
+                Text(tr("Chiều cao hàng phím"), style = VTType.body, color = c.label)
                 Text(
-                    if (adj == 0) "Chuẩn" else String.format(java.util.Locale.ROOT, "%+d dp mỗi hàng (%+d dp cả bàn phím)", adj, adj * 4),
+                    if (adj == 0) tr("Chuẩn") else String.format(java.util.Locale.ROOT, tr("%+d dp mỗi hàng (%+d dp cả bàn phím)"), adj, adj * 4),
                     style = VTType.footnote, color = c.secondary,
                 )
             }
             IosStepper(adj, -10..10) { adj = it }
         }
         RowDivider()
-        BoolToggle(Keys.SHOW_SPACE_LOGO, Prefs.D.showSpaceLogo, "Hiện logo Vᴛ", "Logo mờ ở góc phải phím cách.")
+        BoolToggle(Keys.SHOW_SPACE_LOGO, Prefs.D.showSpaceLogo, tr("Hiện logo Vᴛ"), tr("Logo mờ ở góc phải phím cách."))
     }
 
-    VTSection(footer = "Về theme Hệ thống, tắt ảnh nền (ảnh vẫn giữ để bật lại), độ tối/mờ và độ trong suốt về mặc định. Chiều cao hàng và logo giữ nguyên.") {
+    VTSection(footer = tr("Về theme Hệ thống, tắt ảnh nền (ảnh vẫn giữ để bật lại), độ tối/mờ và độ trong suốt về mặc định. Chiều cao hàng và logo giữ nguyên.")) {
         VTRow(onClick = if (s.isDefault || busy) null else { { confirmReset = true } }) {
-            Text("Khôi phục giao diện gốc", style = VTType.body, color = if (s.isDefault) c.secondary else c.red)
+            Text(tr("Khôi phục giao diện gốc"), style = VTType.body, color = if (s.isDefault) c.secondary else c.red)
         }
     }
     if (confirmReset) AlertDialog(
         onDismissRequest = { confirmReset = false },
-        title = { Text("Khôi phục giao diện gốc?") },
-        text = { Text("Theme, ảnh nền và độ trong suốt về mặc định. Ảnh nền không bị xoá.") },
+        title = { Text(tr("Khôi phục giao diện gốc?")) },
+        text = { Text(tr("Theme, ảnh nền và độ trong suốt về mặc định. Ảnh nền không bị xoá.")) },
         confirmButton = { TextButton(onClick = {
             confirmReset = false
             val blurChanged = s.blur != 0
@@ -327,8 +327,8 @@ fun ThemePage(onBack: () -> Unit) {
                     afterWrite(ok, enable = false)
                 }
             }
-        }) { Text("Khôi phục", color = c.red) } },
-        dismissButton = { TextButton(onClick = { confirmReset = false }) { Text("Huỷ") } },
+        }) { Text(tr("Khôi phục"), color = c.red) } },
+        dismissButton = { TextButton(onClick = { confirmReset = false }) { Text(tr("Huỷ")) } },
     )
 }
 
