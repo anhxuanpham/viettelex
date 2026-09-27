@@ -13,7 +13,7 @@ class KeyboardThemeTests {
     private val c = ThemeColor
     private var savedPaywall = false
 
-    @Before fun setUp() { savedPaywall = PlusGate.paywallEnabled }
+    @Before fun setUp() { savedPaywall = PlusGate.paywallEnabled; PlusGate.paywallEnabled = false }   // test gating tự bật
     @After fun tearDown() {
         PlusGate.paywallEnabled = savedPaywall
         PlusGate.install({ null }, debugBuild = false)

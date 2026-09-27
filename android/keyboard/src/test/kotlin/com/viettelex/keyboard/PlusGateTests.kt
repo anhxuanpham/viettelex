@@ -59,7 +59,7 @@ class PlusGateTests {
     }
 
     @Test fun configDefaults() {
-        assertFalse("chưa tạo sản phẩm → phải mở mặc định", PlusConfig.PAYWALL_ENABLED)
+        assertTrue("bản 1.2 bán Plus (27/09)", PlusConfig.PAYWALL_ENABLED)
         assertEquals("plus", PlusConfig.PLUS_PRODUCT_ID)
         assertEquals(4, PlusConfig.ALL_PRODUCT_IDS.toSet().size)
     }

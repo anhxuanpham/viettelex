@@ -8,7 +8,9 @@ import org.junit.Test
 
 /** Luồng session: chip số trên bar, ghi lịch sử clipboard, chế độ ẩn danh. */
 class ClipboardSessionTests {
-    @Before fun setUp() = TestAssets.install()
+    // Luồng tính năng (chip STK/OTP là Plus) chạy với paywall mở; gating kiểm ở PlusGateTests.
+    @Before fun setUp() { TestAssets.install(); PlusGate.paywallEnabled = false }
+    @org.junit.After fun tearDown() { PlusGate.paywallEnabled = PlusConfig.PAYWALL_ENABLED }
 
     private class FakeClip(var text: String? = null) : ClipboardSource {
         override var changeCount = 0

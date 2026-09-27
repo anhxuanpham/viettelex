@@ -8,9 +8,10 @@ object PlusConfig {
     /**
      * CÔNG TẮC THANH TOÁN. `false` = chưa bán: [PlusGate] mở MỌI tính năng Plus
      * cho mọi người. Chỉ bật `true` sau khi đã tạo sản phẩm trên Play Console
-     * (xem android/store/PRODUCTS.md).
+     * (xem android/store/PRODUCTS.md). BẬT 27/09/2026 (Phil) cho bản 1.2 — upload bản này
+     * lên track nội bộ để Play mở mục sản phẩm, TẠO 4 sản phẩm rồi mới phát hành rộng.
      */
-    const val PAYWALL_ENABLED = false
+    const val PAYWALL_ENABLED = true
 
     /** In-app, mua một lần (acknowledge, không consume). Giá: 69.000đ. */
     const val PLUS_PRODUCT_ID = "plus"
