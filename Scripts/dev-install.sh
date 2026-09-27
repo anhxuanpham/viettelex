@@ -25,8 +25,9 @@ xcodebuild -project VietTelex.xcodeproj -scheme VietTelex \
            build | grep -E "BUILD" || true
 
 APP="$DERIVED/Build/Products/Release/VietTelex.app"
+source Scripts/icloud-profile.sh      # → $ENTITLEMENTS (+ embedded.provisionprofile nếu có)
 codesign --force --options runtime \
-         --entitlements App/Resources/VietTelex.entitlements \
+         --entitlements "$ENTITLEMENTS" \
          --sign "$SIGN_ID" "$APP"
 
 pkill -x VietTelex 2>/dev/null || true

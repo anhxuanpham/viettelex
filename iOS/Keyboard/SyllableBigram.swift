@@ -130,7 +130,7 @@ final class SyllableBigram {
     /// id vnlexicon của âm tiết `word` (đã normalize), nil nếu không có.
     static func id(of word: String) -> Int? {
         let w = normalize(word)
-        guard let f = SwipeLexicon.index(of: SwipeTyping.fold(w)) else { return nil }
+        guard let f = SwipeLexicon.index(of: SwipeLexicon.fold(w)) else { return nil }
         let forms = SwipeLexicon.forms
         for id in Int(forms.idStart[f])..<Int(forms.idStart[f + 1]) where VNSuggest.display(id) == w {
             return id

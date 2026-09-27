@@ -293,3 +293,21 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 
 "A shortcut key can’t contain spaces (max 64 characters)." = "Chữ tắt không được chứa khoảng trắng (tối đa 64 ký tự).";
 "Click a row to edit. Keys may be symbols or digits (->, √√, k2) — they expand on space/Enter. Case follows your typing: ko → không, Ko → Không, KO → KHÔNG. ⌥↩ adds a line break. ⌫ right after an expansion restores what you typed." = "Bấm một dòng để sửa. Chữ tắt có thể là ký hiệu/số (->, √√, k2) — nở khi gõ dấu cách/Enter. Hoa thường theo cách gõ: ko → không, Ko → Không, KO → KHÔNG. ⌥↩ để xuống dòng trong nội dung. ⌫ ngay sau khi nở trả lại chữ đã gõ.";
+/* Công cụ văn bản + đồng bộ iCloud */
+"Add tones to selection" = "Thêm dấu cho vùng chọn";
+"UPPERCASE" = "HOA";
+"lowercase" = "thường";
+"Title Case" = "Hoa Đầu Từ";
+"Sentence case" = "Hoa đầu câu";
+"Remove tones" = "Xoá dấu";
+"Text tools" = "Công cụ văn bản";
+"Select text in any app, then pick a tool from the VietTelex menu: add tones to unaccented text (toi di hoc → tôi đi học), UPPERCASE, lowercase, Title Case, Sentence case, remove tones." = "Bôi đen chữ ở app bất kỳ rồi chọn công cụ trong menu VietTelex: thêm dấu cho đoạn không dấu (toi di hoc → tôi đi học), HOA, thường, Hoa Đầu Từ, Hoa đầu câu, xoá dấu.";
+"Show text tools in the VietTelex menu" = "Hiện công cụ văn bản trong menu VietTelex";
+"Add-tones hotkey" = "Phím tắt Thêm dấu";
+"Off" = "Tắt";
+"Works in any app, even when another input source is active. Needs Accessibility permission (copies the selection, then pastes the result — your clipboard is restored)." = "Dùng được ở mọi app, kể cả khi đang dùng bộ gõ khác. Cần quyền Trợ năng (copy vùng chọn rồi dán kết quả — clipboard của bạn được trả lại).";
+"iCloud sync" = "Đồng bộ iCloud";
+"Sync typing settings and shortcuts with iPhone/iPad" = "Đồng bộ cài đặt gõ và gõ tắt với iPhone/iPad";
+"Same Apple ID as the VietTelex iOS app. Syncs Telex options and the shortcut table (not sentence templates or learned words). On first sync, values already in iCloud win." = "Cùng Apple ID với app VietTelex trên iOS. Đồng bộ tuỳ chọn Telex và bảng gõ tắt (không gồm mẫu câu, từ đã học). Lần đồng bộ đầu, giá trị đã có trên iCloud được giữ.";
+"Not available in this build (it isn’t signed with iCloud)." = "Bản này chưa hỗ trợ (chưa được ký kèm iCloud).";
+"This Mac isn’t signed in to iCloud." = "Máy Mac này chưa đăng nhập iCloud.";

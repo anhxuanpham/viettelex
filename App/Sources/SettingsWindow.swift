@@ -92,6 +92,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         }
         window = nil
         model = nil
+        // Sửa trong Cài đặt (setting, gõ tắt) lên iCloud — no-op khi đồng bộ tắt.
+        ICloudSync.shared.syncNow()
         // Per-session memoization only: an app installed WHILE Settings was closed must
         // show up next time it opens (the caches are "apps don't come and go while a
         // window is open", not "…for the life of the process").
@@ -125,6 +127,14 @@ final class SettingsModel: ObservableObject {
     @Published var collisionPrefersVietnamese: Bool { didSet { AppState.shared.collisionPrefersVietnamese = collisionPrefersVietnamese } }
     @Published var stickyInputSource: Bool { didSet { AppState.shared.stickyInputSource = stickyInputSource } }
     @Published var switchHotkey: String { didSet { AppState.shared.switchHotkey = switchHotkey } }
+    @Published var textToolsInMenu: Bool { didSet { AppState.shared.textToolsInMenu = textToolsInMenu } }
+    @Published var addTonesHotkey: String {
+        didSet {
+            AppState.shared.addTonesHotkey = addTonesHotkey
+            TextActionHotkey.apply(addTonesHotkey)
+        }
+    }
+    @Published var icloudSync: Bool { didSet { ICloudSync.shared.setEnabled(icloudSync) } }
     /// "vt" / "star". didSet ghi đè MenuIcon.pdf ngay (hiệu lực sau restart máy);
     /// menuIconApplied bật để view hiện dòng "cần khởi động lại".
     @Published var menuIcon: String {
@@ -205,6 +215,9 @@ final class SettingsModel: ObservableObject {
         collisionPrefersVietnamese = AppState.shared.collisionPrefersVietnamese
         stickyInputSource = AppState.shared.stickyInputSource
         switchHotkey = AppState.shared.switchHotkey
+        textToolsInMenu = AppState.shared.textToolsInMenu
+        addTonesHotkey = AppState.shared.addTonesHotkey
+        icloudSync = ICloudSync.shared.isEnabled
         menuIcon = AppState.shared.menuIcon
         bracketVowels = AppState.shared.bracketVowels
         // A layout uninstalled since it was chosen (system update, removed third-party
@@ -720,6 +733,30 @@ struct GeneralTab: View {
                 Toggle(model.loc("Context-based decision"), isOn: $model.contextualEnglish)
                 Text(model.loc("After an English word, an ambiguous next word whose keys spell an English word is kept English instead of Vietnamese — “he is” → “he is”, not “he í”. After a Vietnamese or unclear word it stays Vietnamese — “sao í”."))
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            Section(header: Label(model.loc("Text tools"), systemImage: "textformat")) {
+                Text(model.loc("Select text in any app, then pick a tool from the VietTelex menu: add tones to unaccented text (toi di hoc → tôi đi học), UPPERCASE, lowercase, Title Case, Sentence case, remove tones."))
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle(model.loc("Show text tools in the VietTelex menu"), isOn: $model.textToolsInMenu)
+                Picker(model.loc("Add-tones hotkey"), selection: $model.addTonesHotkey) {
+                    ForEach(TextActionHotkey.choices, id: \.id) { c in
+                        Text(c.id == "off" ? model.loc("Off") : c.label).tag(c.id)
+                    }
+                }
+                Text(model.loc("Works in any app, even when another input source is active. Needs Accessibility permission (copies the selection, then pastes the result — your clipboard is restored)."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section(header: Label(model.loc("iCloud sync"), systemImage: "icloud")) {
+                Toggle(model.loc("Sync typing settings and shortcuts with iPhone/iPad"), isOn: $model.icloudSync)
+                    .disabled(!ICloudSync.hasEntitlement)
+                Text(model.loc(ICloudSync.hasEntitlement
+                    ? "Same Apple ID as the VietTelex iOS app. Syncs Telex options and the shortcut table (not sentence templates or learned words). On first sync, values already in iCloud win."
+                    : "Not available in this build (it isn’t signed with iCloud)."))
+                    .font(.caption).foregroundStyle(.secondary)
+                if model.icloudSync, !ICloudSync.shared.iCloudAvailable {
+                    Text("⚠️ " + model.loc("This Mac isn’t signed in to iCloud."))
+                        .font(.caption).foregroundStyle(.orange)
+                }
             }
             // No Section header: the Picker's own label already says "Language" —
             // two identical labels stacked read as a bug.

@@ -10,6 +10,10 @@ import Cocoa
 import InputMethodKit
 import Carbon.HIToolbox
 
+// `VietTelex --add-tones`: process con của Thêm dấu (TextActions.swift) — làm xong thoát
+// ngay, trước MỌI thứ khác (không IMKServer, không tap, không SingleInstance).
+TextActionTransform.runHelperIfRequested()
+
 // Held for the process lifetime.
 var telexServer: IMKServer?
 var inputSourceObserver: NSObjectProtocol?
@@ -85,6 +89,11 @@ StickyInputSource.shared.start()
 // MenuIcon.pdf quay về mặc định — áp lại lựa chọn đã lưu ở mỗi lần khởi động
 // (no-op khi nội dung đã đúng, tức bundle chỉ bị chạm khi user thật sự đổi icon).
 MenuIconSwitcher.applyIfNeeded(choice: AppState.shared.menuIcon)
+
+// Phím tắt Thêm dấu (mặc định tắt) + đồng bộ iCloud (mặc định tắt, cần entitlement):
+// cả hai no-op khi tắt.
+TextActionHotkey.apply(AppState.shared.addTonesHotkey)
+ICloudSync.shared.start()
 
 // Accessibility permission toggled (System Settings): react IMMEDIATELY, not on the
 // next keystroke. Revoke while the tap is live used to leave a tap macOS keeps
