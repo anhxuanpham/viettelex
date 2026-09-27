@@ -13,7 +13,7 @@ class TemplatesTests {
     @Test fun testParseDefaultsFile() {
         val items = Templates.parseYAML(KeyboardData.text(Keys.ASSET_TEMPLATES_YAML))
         assertEquals(TemplateItem("👋", "Chào buổi sáng"), items.first())
-        assertEquals(TemplateItem("IP❓", "https://api.ipify.org"), items.last())
+        assertEquals(TemplateItem("🌐 IP", "https://api.ipify.org"), items.last())
         assertTrue(Templates.isDynamic(items.last().text))
     }
 
@@ -47,6 +47,27 @@ class TemplatesTests {
         assertEquals("Đã thêm 1/1 mẫu.", Templates.merge(cur, listOf(TemplateItem("", "c"))).second)
         assertNull(Templates.add(cur, "", " a "))
         assertEquals(TemplateItem("👋", "b"), Templates.add(cur, " 👋 ", " b\n")!!.last())
+    }
+
+    /** Lỗi iOS 27/09/2026: label emoji + câu có "→"/"&" bấm ⊕ không thêm, không báo. */
+    @Test fun testTryAddReportedStringAndReasons() {
+        val cur = Templates.parseYAML("- \"👋 | Chào buổi sáng\"\n- \"Cảm ơn bạn\"")
+        val text = "Vào Cài đặt → Avatar iCloud → Phương tiện & Mục mua"
+        val r = Templates.tryAdd(cur, "Ig😊", text)
+        assertTrue(r is Templates.AddResult.Added)
+        val list = (r as Templates.AddResult.Added).list
+        assertEquals(TemplateItem("Ig😊", text), list.last())
+        assertNull(Templates.addNotice(r))
+        // Lưu JSON rồi đọc lại giữ nguyên emoji / "→" / "&".
+        assertEquals(list, Templates.fromJson(Templates.toJson(list)))
+        // Ký tự đặc biệt khác vẫn thêm được.
+        assertTrue(Templates.tryAdd(cur, "a|b", "x | y \"z\" \\ 😀‍🔥") is Templates.AddResult.Added)
+        // Không thêm ⇒ luôn có lý do.
+        assertEquals(Templates.AddResult.EmptyText, Templates.tryAdd(cur, "Ig😊", "  \n "))
+        val dup = Templates.tryAdd(list, "", "  $text ")
+        assertEquals(Templates.AddResult.Duplicate(2), dup)
+        assertTrue(Templates.addNotice(dup)!!.contains("dòng 3"))
+        assertTrue(Templates.addNotice(Templates.AddResult.EmptyText)!!.isNotEmpty())
     }
 
     @Test fun testDynamicBody() {

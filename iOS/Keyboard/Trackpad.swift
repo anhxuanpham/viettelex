@@ -82,6 +82,34 @@ struct TrackpadGesture {
     }
 }
 
+/// Gom các bước trackpad trong CÙNG một khung hình thành một lệnh (thuần, test ở
+/// TrackpadTests). Mỗi `adjustTextPosition` là một lệnh gửi sang app host (XPC) và kéo
+/// theo selectionWill/DidChange từ host — touch 120Hz + tăng tốc có thể sinh nhiều bước
+/// mỗi frame. KeyboardView đẩy bước vào đây, CADisplayLink xả ≤1 lệnh/trục mỗi frame.
+/// Bước liên tiếp cùng trục cộng dồn; đổi trục giữa frame giữ thứ tự (ngang rồi dọc…).
+struct TrackpadCoalescer {
+    private(set) var pending: [TrackpadGesture.Step] = []
+
+    var isEmpty: Bool { pending.isEmpty }
+
+    mutating func add(_ step: TrackpadGesture.Step) {
+        guard step.count != 0 else { return }
+        if let last = pending.last, last.axis == step.axis {
+            let sum = last.count + step.count
+            pending.removeLast()
+            if sum != 0 { pending.append(.init(axis: step.axis, count: sum)) }
+        } else {
+            pending.append(step)
+        }
+    }
+
+    /// Lấy hết bước đã gom (thường 0–1 phần tử) và xoá hàng đợi.
+    mutating func drain() -> [TrackpadGesture.Step] {
+        defer { pending.removeAll(keepingCapacity: true) }
+        return pending
+    }
+}
+
 enum VerticalMove {
     /// Dời (UTF-16 — đơn vị NSString mà UITextInput/adjustTextPosition dùng) để lên
     /// (`lines` < 0) / xuống `lines` dòng LOGIC (ký tự xuống dòng), giữ cột tính theo

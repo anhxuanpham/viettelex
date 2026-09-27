@@ -352,9 +352,11 @@ final class EngineBridge {
     private func letterCore(_ ch: Character, proxy: TextProxyLike) {
         let ownBoundary = lastWasOwnBoundary
         lastWasOwnBoundary = false
-        if engine.isEmpty, !ownBoundary, settings.reEditWord, reachBackAllowed, isReEditKey(ch),
-           seedWordBeforeCaret(then: ch, proxy: proxy) {
-            return                                    // sửa từ trên màn hình: không huỷ được
+        if engine.isEmpty, !ownBoundary, settings.reEditWord, reachBackAllowed {
+            if isReEditKey(ch), seedWordBeforeCaret(then: ch, proxy: proxy) {
+                return                                // sửa từ trên màn hình: không huỷ được
+            }
+            if continueWordBeforeCaret(ch, proxy: proxy) { return }
         }
         let before = engine.composed
         let snapshot = engine
@@ -645,6 +647,38 @@ final class EngineBridge {
         TouchLog.edit(bs: bs, insertLen: insert.count, insert: insert)
         for _ in 0..<bs { proxy.deleteBackward() }
         if !insert.isEmpty { proxy.insertText(insert) }
+        return true
+    }
+
+    /// Engine rỗng mà con trỏ đứng NGAY SAU một mẩu từ (⌫ lùi vào chữ cũ, host gán lại
+    /// text làm mất composition, con trỏ vừa dời tới cuối từ…): phím chữ này là phím
+    /// TIẾP của từ đó, không phải đầu từ mới. Seed engine bằng mẩu từ rồi feed `ch` —
+    /// CHỈ khi kết quả là nối thêm đúng một ký tự (không biến đổi chữ đã có: "to" + o
+    /// vẫn ra "too" như quyết định 26/09/2026; mũ/dấu qua đường seedWordBeforeCaret).
+    /// Không làm vậy thì "ph|" + a i r thành từ riêng "ải" (raw "air") và lúc chốt bị
+    /// tự khôi phục tiếng Anh → "phair" (video người dùng Messenger 27/09/2026).
+    private func continueWordBeforeCaret(_ ch: Character, proxy: TextProxyLike) -> Bool {
+        guard ch.isLetter, !proxy.hasSelection,
+              let ctx = proxy.contextBeforeInput,
+              let word = CompositionSync.trailingWord(ctx) else { return false }
+        if let after = proxy.contextAfterInput, let next = after.first, next.isLetter {
+            return false                               // đang ở giữa từ
+        }
+        let snapshot = engine
+        guard engine.seed(word) else { engine = snapshot; return false }
+        let action = engine.feed(ch)
+        guard engine.composed == word + String(ch),
+              safeToApply(action, expected: word, proxy: proxy) else {
+            engine = snapshot
+            return false
+        }
+        apply(action, literal: String(ch), proxy: proxy)
+        if case .replace(let bs, let insert) = action {
+            letterUndo = LetterUndo(engine: snapshot, removed: String(word.suffix(bs)),
+                                    inserted: insert, ownBoundary: false)
+        } else {
+            letterUndo = LetterUndo(engine: snapshot, removed: "", inserted: String(ch), ownBoundary: false)
+        }
         return true
     }
 

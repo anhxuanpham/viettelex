@@ -110,10 +110,14 @@ enum KeyboardTheme: String, CaseIterable {
         let blue = RGBA(r: 0, g: 0.478, b: 1)   // ≈ systemBlue
         switch self {
         case .system:
-            // Giá trị cũ của KeyboardView (plainFill/specialFill) — không đổi hình.
+            // Sáng: giá trị cũ của KeyboardView. Tối: theo bàn phím STOCK iOS 27 (đo pixel
+            // ảnh chụp simulator iPhone 17, English US, dark, 27/09/2026): nền #202020, MỌI
+            // phím (chữ, shift, ⌫, 123, space, return) #444444, chữ trắng. Trước đây
+            // #6B6B6B (phím chữ iOS ≤ 18, KeyboardKit standardButtonBackground dark) — sáng
+            // hơn hẳn stock iOS 26/27 (góp ý user). Đè phím: sẫm lại về phía nền.
             return systemDark
-                ? KeyboardPalette(background: nil, keyFill: RGBA(r: 0.42, g: 0.42, b: 0.42),
-                                  specialFill: RGBA(r: 0.26, g: 0.26, b: 0.26), ink: .white,
+                ? KeyboardPalette(background: nil, keyFill: RGBA(hex: 0x444444),
+                                  specialFill: RGBA(hex: 0x2E2E2E), ink: .white,
                                   trail: RGBA.white.alpha(0.55), barInk: .white,
                                   balloon: RGBA(r: 0.35, g: 0.35, b: 0.35),
                                   accent: blue, accentInk: .white, keyBorder: nil, isDark: true)

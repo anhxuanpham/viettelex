@@ -49,7 +49,8 @@ final class KeyboardThemeTests: XCTestCase {
         XCTAssertNil(light.background)
         XCTAssertFalse(light.isDark)
         let dark = KeyboardTheme.system.palette(systemDark: true)
-        XCTAssertEqual(dark.keyFill, RGBA(r: 0.42, g: 0.42, b: 0.42))
+        // Tối: theo stock iOS 27 đo pixel (phím #444444 trên nền #202020) — xem UXFeedbackTests.
+        XCTAssertEqual(dark.keyFill, RGBA(hex: 0x444444))
         XCTAssertEqual(dark.ink, .white)
         XCTAssertTrue(dark.isDark)
     }

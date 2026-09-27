@@ -325,6 +325,9 @@ fun TinhNangTab() {
         RowDivider()
         BoolToggle(Keys.HAPTIC_FEEDBACK, Prefs.D.hapticFeedback, "Rung phím", "Rung nhẹ mỗi lần chạm phím.")
         RowDivider()
+        BoolToggle(Keys.KEY_PREVIEW, Prefs.D.keyPreview, "Phóng to chữ khi bấm",
+            "Hiện ô chữ lớn phía trên phím khi chạm. Tắt nếu thấy rối mắt.")
+        RowDivider()
         var adj by rememberIntPref(Keys.ROW_HEIGHT_ADJUST, Prefs.D.rowHeightAdjust)
         VTRow {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -385,6 +388,8 @@ fun MauCauTab() {
     var newLabel by rememberSaveable { mutableStateOf("") }
     var newText by rememberSaveable { mutableStateOf("") }
     var notice by remember { mutableStateOf<String?>(null) }
+    /** Kết quả bấm ⊕ ở "Thêm mới" — hiện ngay dưới ô nhập. */
+    var addNotice by remember { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf<Int?>(null) }
     var editLabel by remember { mutableStateOf("") }
     var editText by remember { mutableStateOf("") }
@@ -429,7 +434,7 @@ fun MauCauTab() {
                             Box(
                                 Modifier.padding(start = 8.dp).size(28.dp).clickable(enabled = canSave) {
                                     val r = Templates.edit(templates, i, editLabel, editText)
-                                    if (r != null) { persist(r); editing = null } else notice = "Mẫu câu này đã có."
+                                    if (r != null) { persist(r); editing = null } else addNotice = "Không lưu được: mẫu câu này trùng một dòng khác."
                                 },
                                 contentAlignment = Alignment.Center,
                             ) { GlyphIcon(Glyph.Check, if (canSave) c.accent else c.tertiary, 24.dp) }
@@ -453,24 +458,33 @@ fun MauCauTab() {
         val trimmed = newText.trim()
         val canAdd = trimmed.isNotEmpty()
         VTRow {
-            VTTextField(newLabel, { newLabel = it }, "👋", center = true, modifier = Modifier.width(44.dp))
+            VTTextField(newLabel, { newLabel = it; addNotice = null }, "👋", center = true, modifier = Modifier.width(44.dp))
             Box(Modifier.padding(horizontal = 10.dp).width(0.5.dp).height(28.dp).background(c.separator))
-            VTTextField(newText, { newText = it }, "Thêm mẫu câu…", maxLines = 3, modifier = Modifier.weight(1f))
+            VTTextField(newText, { newText = it; addNotice = null }, "Thêm mẫu câu…", maxLines = 3, modifier = Modifier.weight(1f))
             Box(
-                Modifier.padding(start = 8.dp).size(28.dp).clickable(enabled = canAdd) {
-                    Templates.add(templates, newLabel, newText)?.let {
-                        persist(it)
-                        newLabel = ""; newText = ""
+                // Luôn bấm được: không thêm ⇒ báo lý do (không im lặng — lỗi iOS 27/09/2026).
+                Modifier.padding(start = 8.dp).size(28.dp).clickable {
+                    when (val r = Templates.tryAdd(templates, newLabel, newText)) {
+                        is Templates.AddResult.Added -> {
+                            persist(r.list)
+                            newLabel = ""; newText = ""
+                            addNotice = "Đã thêm mẫu câu (dòng ${r.list.size})."
+                        }
+                        else -> addNotice = Templates.addNotice(r)
                     }
                 },
                 contentAlignment = Alignment.Center,
             ) { GlyphIcon(Glyph.Plus, if (canAdd) c.accent else c.tertiary, 24.dp) }
         }
+        addNotice?.let {
+            RowDivider()
+            VTRow { Text(it, style = VTType.footnote, color = c.secondary) }
+        }
     }
 
     VTSection(
         header = "Mẫu câu động (https://)",
-        footer = "Mẫu có nội dung bắt đầu bằng https:// sẽ fetch dữ liệu NGAY LÚC BẤM và chèn kết quả (tối đa 1000 bytes) — ví dụ IP❓ chèn địa chỉ IP hiện tại. Không có mạng thì bấm sẽ chèn chính URL.",
+        footer = "Mẫu có nội dung bắt đầu bằng https:// sẽ fetch dữ liệu NGAY LÚC BẤM và chèn kết quả (tối đa 1000 bytes) — ví dụ 🌐 IP chèn địa chỉ IP hiện tại. Không có mạng thì bấm sẽ chèn chính URL.",
         plain = true,
     ) {}
 

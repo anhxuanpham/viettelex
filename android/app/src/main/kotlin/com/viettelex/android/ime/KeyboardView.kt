@@ -6,6 +6,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.os.SystemClock
+import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.View
 import android.view.animation.DecelerateInterpolator
@@ -46,6 +47,13 @@ class KeyboardView(
 
     interface Listener {
         fun onKey(key: Key)
+        /**
+         * Trackpad: bước đã gom theo frame (≤ 1 lần/frame). Mặc định = phím MoveCursor;
+         * IME dời con trỏ NHẸ (không auto-shift/gợi ý mỗi bước) tới [onTrackpadEnd].
+         */
+        fun onTrackpadMove(delta: Int, vertical: Boolean) { onKey(Key.MoveCursor(delta, vertical)) }
+        /** Nhả trackpad (sau bước cuối): IME cập nhật auto-shift + gợi ý một lần. */
+        fun onTrackpadEnd() {}
         /** Giữ ⌫ > 3 s — xoá theo từ. */
         fun onDeleteWord()
         /** Vuốt trái trên ⌫ vừa vượt ngưỡng; false ⇒ không hỗ trợ ở ô này (bỏ lượt vuốt). */
@@ -95,6 +103,8 @@ class KeyboardView(
     private var inputKind = InputKind.NORMAL
     private var needsGlobe = false
     private var showLogo = true
+    /** Ô phóng to chữ khi bấm (Keys.KEY_PREVIEW); tắt ⇒ không show balloon phím chữ/ký tự. */
+    var keyPreview = true
     private var templatesEnabled = true
     private var templates: List<TemplateItem> = emptyList()
 
@@ -213,6 +223,13 @@ class KeyboardView(
     private var trackpad = false
     private var spaceKey: LaidKey? = null
     private val trackpadGesture = TrackpadGesture()
+    /** Gom bước theo frame: ≤ 1 lệnh dời con trỏ (IPC) mỗi vsync. */
+    private val trackpadBatch = TrackpadBatcher()
+    private var trackpadFramePosted = false
+    private val trackpadFrame = Choreographer.FrameCallback {
+        trackpadFramePosted = false
+        trackpadBatch.drain()?.let { sendTrackpadStep(it) }
+    }
     private var spacePtr = -1
     private var bsPtr = -1
     private var bsHoldStart = 0L
@@ -736,7 +753,7 @@ class KeyboardView(
         when (k.kind) {
             KeyKind.LETTER -> {
                 feedback.click(Feedback.LETTER, this)
-                showBalloon(k, if (shift == Shift.OFF) k.label else k.upper)
+                if (keyPreview) showBalloon(k, if (shift == Shift.OFF) k.label else k.upper)
                 val ch = (if (shift == Shift.OFF) k.label else k.upper)[0]
                 val shiftWas = shift
                 emit(Key.Letter(ch))
@@ -748,7 +765,7 @@ class KeyboardView(
             }
             KeyKind.CHAR -> {
                 feedback.click(Feedback.LETTER, this)
-                showBalloon(k, k.label)
+                if (keyPreview) showBalloon(k, k.label)
                 commits.arm(k, textFire(k.insert))
             }
             KeyKind.PAD -> {
@@ -845,7 +862,11 @@ class KeyboardView(
                 if (trackpad) {
                     // dp: cùng ngưỡng với iOS (pt). Trục/tăng tốc: TrackpadGesture.
                     trackpadGesture.move(x / d, y / d, SystemClock.uptimeMillis())?.let {
-                        emit(Key.MoveCursor(it.count, vertical = it.axis == TrackpadGesture.Axis.V))
+                        trackpadBatch.add(it)?.let { prev -> sendTrackpadStep(prev) }
+                        if (!trackpadFramePosted) {
+                            trackpadFramePosted = true
+                            Choreographer.getInstance().postFrameCallback(trackpadFrame)
+                        }
                     }
                 } else if (movedFar) removeCallbacks(spaceHoldRun)
             }
@@ -1087,6 +1108,7 @@ class KeyboardView(
         val k = spaceKey ?: return
         if (spacePtr < 0) return
         trackpad = true
+        trackpadBatch.clear()
         trackpadGesture.begin(lastX[spacePtr] / d, lastY[spacePtr] / d, SystemClock.uptimeMillis())
         balloon.hide(); balloonOwner = null
         // Nhả ra KHÔNG có dấu cách (stock), kể cả khi chưa di con trỏ.
@@ -1105,8 +1127,16 @@ class KeyboardView(
         return super.dispatchTouchEvent(e)
     }
 
+    private fun sendTrackpadStep(s: TrackpadGesture.Step) {
+        if (plane == Plane.EMOJI_SEARCH) return
+        listener?.onTrackpadMove(s.count, s.axis == TrackpadGesture.Axis.V)
+    }
+
     private fun endTrackpad() {
         trackpad = false
+        if (trackpadFramePosted) { Choreographer.getInstance().removeFrameCallback(trackpadFrame); trackpadFramePosted = false }
+        trackpadBatch.drain()?.let { sendTrackpadStep(it) }
+        listener?.onTrackpadEnd()
         invalidate()
     }
 
@@ -1160,7 +1190,7 @@ class KeyboardView(
         private const val MAX_PTR = 32
         const val DOUBLE_SPACE_MS = 350L
         const val SHIFT_DOUBLE_MS = 300L
-        const val SPACE_HOLD_MS = 400L
+        const val SPACE_HOLD_MS = 300L
         const val BS_HOLD_MS = 500L
         const val BS_INTERVAL = 90L
         const val GLOBE_HOLD_MS = 500L

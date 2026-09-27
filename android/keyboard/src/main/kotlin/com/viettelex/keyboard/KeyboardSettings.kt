@@ -54,6 +54,8 @@ data class KeyboardSettings(
     // Phần UI (iOS đọc rải rác trong KeyboardView) — gom về đây cho IME.
     var templatesEnabled: Boolean = true,
     var showSpaceLogo: Boolean = true,
+    /** Ô phóng to chữ khi bấm phím — mặc định BẬT; tắt ⇒ không tạo/vẽ balloon. */
+    var keyPreview: Boolean = true,
     /** −10…10 dp mỗi hàng. */
     var rowHeightAdjust: Int = 0,
     /** Hàng phím số 1…0 trên hàng chữ — mặc định TẮT. */
@@ -98,6 +100,7 @@ data class KeyboardSettings(
             if (s.shortcutsEnabled) s.shortcuts = ShortcutTable(ShortcutFile.parse(get(Keys.SHORTCUTS) as? String))
             s.templatesEnabled = b(Keys.TEMPLATES_ENABLED, s.templatesEnabled)
             s.showSpaceLogo = b(Keys.SHOW_SPACE_LOGO, s.showSpaceLogo)
+            s.keyPreview = b(Keys.KEY_PREVIEW, s.keyPreview)
             s.debugTouchLog = b(Keys.DEBUG_TOUCH_LOG, s.debugTouchLog)
             s.numberRow = b(Keys.NUMBER_ROW, s.numberRow)
             s.oneHandMode = (get(Keys.ONE_HAND_MODE) as? String)?.takeIf { it == "left" || it == "right" } ?: "off"

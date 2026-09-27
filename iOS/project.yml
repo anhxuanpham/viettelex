@@ -121,6 +121,7 @@ targets:
       - Keyboard/KeyCommitQueue.swift
       - Keyboard/AdjacentKeyFixer.swift
       - Keyboard/TouchGeometry.swift
+      - Keyboard/KeyGeometry.swift
       - Keyboard/TouchLog.swift
       - Keyboard/SuggestionSupport.swift
       - Keyboard/SuggestionSlots.swift
@@ -138,6 +139,7 @@ targets:
       - Keyboard/SwipeGesture.swift
       - Keyboard/SwipeTyping.swift
       - App/Backup/BackupFormat.swift
+      - App/TemplateEdit.swift
       - App/Backup/SyncMerge.swift
       - App/Backup/BackupStore.swift
       - Keyboard/SwipeEnglish.swift
