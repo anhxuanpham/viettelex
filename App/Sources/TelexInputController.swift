@@ -2063,24 +2063,6 @@ final class TelexInputController: IMKInputController {
         strategy.toolTip = VTLocalized("Click: open the Typing modes table + copy debug info")
         menu.addItem(strategy)
 
-        // Công cụ văn bản cho vùng chọn (TextActions.swift). Mỗi mục một selector: IMK
-        // chuyển lệnh menu qua process khác nên không dựa vào tag/representedObject.
-        if AppState.shared.textToolsInMenu {
-            let tools: [(TextAction, Selector)] = [
-                (.addTones, #selector(textActionAddTones(_:))),
-                (.upper, #selector(textActionUpper(_:))),
-                (.lower, #selector(textActionLower(_:))),
-                (.title, #selector(textActionTitle(_:))),
-                (.sentence, #selector(textActionSentence(_:))),
-                (.stripDiacritics, #selector(textActionStrip(_:))),
-            ]
-            for (action, sel) in tools {
-                let item = NSMenuItem(title: VTLocalized(action.titleKey), action: sel, keyEquivalent: "")
-                item.target = self
-                menu.addItem(item)
-            }
-        }
-
         // Everything else lives in the Settings window (Chung + Gõ tắt tabs). The menu
         // stays minimal: status + Settings.
         let settings = NSMenuItem(title: VTLocalized("Settings…"), action: #selector(openSettings(_:)), keyEquivalent: "")
@@ -2093,6 +2075,30 @@ final class TelexInputController: IMKInputController {
                                      action: #selector(openSystemKeyboardSettings(_:)), keyEquivalent: "")
         sysSettings.target = self
         menu.addItem(sysSettings)
+
+        // Công cụ văn bản cho vùng chọn (TextActions.swift) gom vào MỘT menu con "Công cụ"
+        // dưới Cài đặt hệ thống… (maintainer 27/09/2026: 6 mục phẳng làm menu vướng). Mỗi
+        // mục một selector: IMK chuyển lệnh menu qua process khác nên không dựa vào
+        // tag/representedObject.
+        if AppState.shared.textToolsInMenu {
+            let tools: [(TextAction, Selector)] = [
+                (.addTones, #selector(textActionAddTones(_:))),
+                (.upper, #selector(textActionUpper(_:))),
+                (.lower, #selector(textActionLower(_:))),
+                (.title, #selector(textActionTitle(_:))),
+                (.sentence, #selector(textActionSentence(_:))),
+                (.stripDiacritics, #selector(textActionStrip(_:))),
+            ]
+            let sub = NSMenu(title: VTLocalized("Tools"))
+            for (action, sel) in tools {
+                let item = NSMenuItem(title: VTLocalized(action.titleKey), action: sel, keyEquivalent: "")
+                item.target = self
+                sub.addItem(item)
+            }
+            let toolsItem = NSMenuItem(title: VTLocalized("Tools"), action: nil, keyEquivalent: "")
+            toolsItem.submenu = sub
+            menu.addItem(toolsItem)
+        }
 
         return menu
     }

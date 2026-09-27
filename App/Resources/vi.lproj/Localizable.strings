@@ -302,7 +302,8 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 "Sentence case" = "Hoa đầu câu";
 "Remove tones" = "Xoá dấu";
 "Text tools" = "Công cụ văn bản";
-"Select text in any app, then pick a tool from the VietTelex menu: add tones to unaccented text (toi di hoc → tôi đi học), UPPERCASE, lowercase, Title Case, Sentence case, remove tones." = "Bôi đen chữ ở app bất kỳ rồi chọn công cụ trong menu VietTelex: thêm dấu cho đoạn không dấu (toi di hoc → tôi đi học), HOA, thường, Hoa Đầu Từ, Hoa đầu câu, xoá dấu.";
+"Tools" = "Công cụ";
+"Select text in any app, then pick a tool from the VietTelex menu: add tones to unaccented text (toi di hoc → tôi đi học), UPPERCASE, lowercase, Title Case, Sentence case, remove tones." = "Bôi đen chữ ở app bất kỳ rồi chọn trong menu VietTelex → Công cụ: thêm dấu cho đoạn không dấu (toi di hoc → tôi đi học), HOA, thường, Hoa Đầu Từ, Hoa đầu câu, xoá dấu.";
 "Show text tools in the VietTelex menu" = "Hiện công cụ văn bản trong menu VietTelex";
 "Add-tones hotkey" = "Phím tắt Thêm dấu";
 "Off" = "Tắt";
