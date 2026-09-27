@@ -565,7 +565,7 @@ fun GioiThieuTab(plus: com.viettelex.android.plus.PlusController, onOpenPlus: ()
     }
     PlusEntryRow(plus, onOpenPlus)
     VTSection(header = "Tài nguyên") {
-        LinkRow(Glyph.Info, "Hướng dẫn sử dụng") { openUrl(ctx, "https://viettelex.com/hdsd") }
+        LinkRow(Glyph.Info, "Hướng dẫn sử dụng") { openUrl(ctx, "https://viettelex.com/hdsd/?os=android") }
         RowDivider(52.dp)
         LinkRow(Glyph.Globe, "Website") { openUrl(ctx, "https://ptrinh.github.io/viettelex/") }
         RowDivider(52.dp)
