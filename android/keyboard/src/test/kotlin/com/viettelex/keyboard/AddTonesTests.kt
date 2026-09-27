@@ -1,6 +1,7 @@
 package com.viettelex.keyboard
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -186,7 +187,27 @@ class AddTonesTests {
     // ---- tích hợp KeyboardSession: chip Thêm dấu / Hoàn tác ----
 
     private fun session(): KeyboardSession =
-        KeyboardSession(UserLangModel()).also { it.startInput(KeyboardSettings(), FieldTraits()) }
+        KeyboardSession(UserLangModel()).also { it.startInput(KeyboardSettings(addTonesChip = true), FieldTraits()) }
+
+    /** Mặc định chip TẮT: không mời, và dấu cách không đọc context thêm lần nào so với tắt thanh chip số. */
+    @Test fun chipOffByDefaultAndCostsNothing() {
+        assertFalse(KeyboardSettings().addTonesChip)
+        assertFalse(KeyboardSettings.load { null }.addTonesChip)
+        val s = KeyboardSession(UserLangModel()).also { it.startInput(KeyboardSettings(), FieldTraits()) }
+        val p = MockProxy()
+        p.insertText("khong co gi ")
+        p.contextReads = 0
+        val set = s.suggestionsNow(p)!!
+        assertNull(set.action)
+        // Lượt gợi ý sau dấu cách: chỉ nút Dán (clipboard null ⇒ 0) — AddTones không đọc gì.
+        assertEquals(0, p.contextReads)
+        s.acceptSuggestion(SuggestionSet.ADD_TONES_TOKEN, p)     // token lạc (không có chip) ⇒ không đổi
+        assertEquals("khong co gi ", p.text)
+    }
+
+    @Test fun chipSwitchLoadsFromPrefs() {
+        assertTrue(KeyboardSettings.load { if (it == Keys.ADD_TONES_CHIP) true else null }.addTonesChip)
+    }
 
     @Test fun sessionOfferApplyAndUndoChip() {
         val s = session(); val p = MockProxy()

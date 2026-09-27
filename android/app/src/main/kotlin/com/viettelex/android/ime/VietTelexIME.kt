@@ -126,18 +126,34 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     private var accessibility: AccessibilityManager? = null
     private val touchExplorationListener = AccessibilityManager.TouchExplorationStateChangeListener { updateSwipeTyping() }
 
+    /**
+     * Cache setting (prefs.all + parse gõ tắt ≈ vài trăm µs–ms) — trước đây đọc lại 2–3 lần mỗi
+     * lần focus ô (onStartInput + onStartInputView + theme). App/IME cùng process nên mọi thay
+     * đổi pref đi qua [prefListener] ⇒ xoá cache ở đó.
+     */
+    private var settingsCache: KeyboardSettings? = null
+    private fun settings(): KeyboardSettings = settingsCache ?: VTPrefs.settings(prefs).also { settingsCache = it }
+    /** Mẫu câu đã nạp (asset YAML / pref JSON) — nạp lười lần đầu cần, xoá khi pref đổi. */
+    private var templatesCache: List<TemplateItem>? = null
+    /** Pref đổi từ lần so theme trước ⇒ phải dựng lại ImeTheme để so chữ ký. */
+    private var themeStale = true
+    private var themeUiMode = -1
+
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        settingsCache = null
+        themeStale = true
+        if (key == Keys.USER_TEMPLATES || key == Keys.TEMPLATES_ENABLED) templatesCache = null
         // App vừa "Xóa từ đã học": bỏ model trong RAM NGAY (không bao giờ ghi đè lại).
         if (key == Keys.USERLM_RESET_AT) model.reloadAfterExternalErase()
         // Bật/tắt gõ vuốt trong app khi bàn phím đang mở (ô Thử gõ).
-        else if (key == Keys.SWIPE_TYPING) { swipeSetting = VTPrefs.settings(prefs).swipeTyping; updateSwipeTyping() }
-        else if (key == Keys.SWIPE_ENGLISH) session.swipeEnglish = VTPrefs.settings(prefs).swipeEnglish
-        else if (key == Keys.SMART_TOUCH) { smartTouchSetting = VTPrefs.settings(prefs).smartTouch; warmSmartTouch() }
-        else if (key == Keys.HARDWARE_TELEX) hwSetting = VTPrefs.settings(prefs).hardwareTelex
+        else if (key == Keys.SWIPE_TYPING) { swipeSetting = settings().swipeTyping; updateSwipeTyping() }
+        else if (key == Keys.SWIPE_ENGLISH) session.swipeEnglish = settings().swipeEnglish
+        else if (key == Keys.SMART_TOUCH) { smartTouchSetting = settings().smartTouch; warmSmartTouch() }
+        else if (key == Keys.HARDWARE_TELEX) hwSetting = settings().hardwareTelex
         // Bật/tắt kiểu gõ trong app khi bàn phím đang mở (ô Thử gõ) → áp ngay, không đợi mở lại.
-        else if (key in Keys.ENGINE_KEYS) session.bridge.applySettings(VTPrefs.settings(prefs))
+        else if (key in Keys.ENGINE_KEYS) session.bridge.applySettings(settings())
         // Tắt lịch sử clipboard trong app: bỏ bản RAM (app đã xoá file).
-        else if (key == Keys.CLIPBOARD_HISTORY) syncClipHistory(VTPrefs.settings(prefs).clipboardHistory)
+        else if (key == Keys.CLIPBOARD_HISTORY) syncClipHistory(settings().clipboardHistory)
     }
 
     override fun onCreate() {
@@ -213,11 +229,15 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         val t0 = SystemClock.elapsedRealtime()
         super.onStartInputView(info, restarting)
         // Đổi theme/ảnh nền trong app → dựng lại input view (màu/Paint tạo sẵn trong view).
-        if (theme != null && freshTheme().signature != theme?.signature) setInputView(onCreateInputView())
+        // Chỉ dựng ImeTheme để so khi pref đổi hoặc sáng/tối hệ thống đổi (không mỗi lần focus ô).
+        val uiMode = resources.configuration.uiMode
+        if (theme != null && (themeStale || uiMode != themeUiMode) && freshTheme().signature != theme?.signature)
+            setInputView(onCreateInputView())
+        themeStale = false; themeUiMode = uiMode
         val kb = keyboard ?: return
         val st = strip ?: return
         val th = theme ?: return
-        val settings = VTPrefs.settings(prefs)
+        val settings = settings()
         DebugLog.configure(this, settings.debugTouchLog)
         // Đã gõ phím cứng trên ô này (onStartInput đã dựng ô, tracker/engine đang sống):
         // KHÔNG dựng lại từ EditorInfo cũ (initialSel đã lỗi thời) — chỉ lo phần giao diện.
@@ -248,7 +268,8 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         kb.setOneHand(if (th.tablet) OneHandSide.OFF else OneHandSide.fromPref(settings.oneHandMode))
         kb.setEditHasSelection(info.initialSelStart >= 0 && info.initialSelStart != info.initialSelEnd)
         st.setExtras(clipButton = settings.clipboardHistory, incognito = session.incognito, open = false)
-        val templates = if (settings.templatesEnabled) VTPrefs.templates(this, prefs) else emptyList()
+        val templates = if (settings.templatesEnabled)
+            templatesCache ?: VTPrefs.templates(this, prefs).also { templatesCache = it } else emptyList()
         kb.configure(field.returnLabel, field.kind, needsGlobe(), settings.showSpaceLogo,
             settings.templatesEnabled, templates,
             th.dp(KeyLayout.keyAreaDp(th.tablet, th.landscape, settings.rowHeightAdjust, settings.numberRow)),
@@ -330,6 +351,20 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         session.finishInput()
     }
 
+    /**
+     * Hệ thống thiếu RAM khi bàn phím đang ẩn: nhả dữ liệu dựng lại được (trie chọn phím thông
+     * minh, decoder gõ vuốt, cache mẫu câu) — lần hiện kế tự dựng lại trên worker.
+     */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        @Suppress("DEPRECATION")
+        if (level < android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND || inputShown) return
+        TelexKeyPrior.release()
+        synchronized(swipeLock) { swipeDecoder = null }
+        templatesCache = null
+        settingsCache = null
+    }
+
     override fun onComputeInsets(outInsets: InputMethodService.Insets) {
         super.onComputeInsets(outInsets)
         // Toàn khung input view nhận touch — chạm vào khe không rơi sang app (§5).
@@ -373,7 +408,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         fieldReady = false
         hwTyped = false
         hwConsumed.clear()
-        val settings = VTPrefs.settings(prefs)
+        val settings = settings()
         hwSetting = settings.hardwareTelex
         if (hwSetting && hardKeyboardPresent()) configureField(attribute, settings)
     }
@@ -407,7 +442,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
      */
     private fun onHardwareKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (!hwSetting || currentInputConnection == null) return false
-        if (!fieldReady) configureField(currentInputEditorInfo ?: return false, VTPrefs.settings(prefs))
+        if (!fieldReady) configureField(currentInputEditorInfo ?: return false, settings())
         if (!hwSetting || field.isSecure || field.passthrough || field.rawKeys) return false
         val meta = event.metaState
         val k = HardwareKeys.classify(keyCode, meta, event.getUnicodeChar(meta))
@@ -470,7 +505,8 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
 
     /** Dựng trie prior (~vài chục ms) trên worker một lần; chưa xong ⇒ router cũ. */
     private fun warmSmartTouch() {
-        if (smartTouchSetting && TelexKeyPrior.sharedIfReady == null) worker().post { TelexKeyPrior.warmUp() }
+        if (!smartTouchSetting) { TelexKeyPrior.release(); return }   // tắt ⇒ nhả trie (0 RAM)
+        if (TelexKeyPrior.sharedIfReady == null) worker().post { if (smartTouchSetting) TelexKeyPrior.warmUp() }
     }
 
     /** Gọi lúc chạm phím chữ (main): P(phím | từ đang gõ), null = không đổi phím. */
@@ -492,8 +528,10 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
             synchronized(swipeLock) { swipeDecoder = null }
             return
         }
-        if (swipeDecoder == null) synchronized(swipeLock) { swipeDecoder = SwipeDecoder() }
+        val fresh = swipeDecoder == null
+        if (fresh) synchronized(swipeLock) { swipeDecoder = SwipeDecoder() }
         session.setSwipeTyping(true)
+        if (fresh) keyboard?.swipeTyping = false   // decoder mới (sau onTrimMemory) ⇒ phát lại layout
         keyboard?.swipeTyping = true      // → onSwipeLayout khi plane chữ đã dựng
     }
 

@@ -76,6 +76,8 @@ class UserLangModel(
     private val knownCache = HashMap<String, Boolean>()
     private var topCacheK = 0
     private var topCache: List<String>? = null
+    /** Khoá (chữ thường) của [topCache], cùng thứ tự — để [bumpTop] cập nhật tăng dần. */
+    private var topKeys: ArrayList<String>? = null
 
     companion object {
         const val UNI_CAP = 3000
@@ -267,7 +269,7 @@ class UserLangModel(
         val w = word.lowercase()
         uni[w] = (uni[w] ?: 0) + weight
         uniTotal += weight
-        topCache = null
+        bumpTop(w)
         var biKey: String? = null
         var triKey: String? = null
         val p1 = after?.lowercase()
@@ -420,13 +422,37 @@ class UserLangModel(
         topCache?.let { if (topCacheK >= limit) return it.take(limit) }
         val sorted = uni.entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
         val out = ArrayList<String>(limit)
+        val keys = ArrayList<String>(limit + 1)
         for ((w, _) in sorted) {
             if (!suggestable(w)) continue
-            out.add(manual[w] ?: w)
+            out.add(manual[w] ?: w); keys.add(w)
             if (out.size >= limit) break
         }
-        topCache = out; topCacheK = limit
+        topCache = out; topCacheK = limit; topKeys = keys
         return out
+    }
+
+    /**
+     * [record] vừa TĂNG uni[w]: cập nhật top-K tại chỗ thay vì bỏ cache (trước đây mỗi dấu cách
+     * sắp xếp lại cả ≤3000 mục trên main thread ở lượt gợi ý kế). Đếm chỉ tăng ⇒ tập top-K chỉ
+     * có thể thêm đúng [w]; thứ tự như [topWords] (đếm giảm dần, rồi khoá tăng dần).
+     */
+    private fun bumpTop(w: String) {
+        val keys = topKeys ?: run { topCache = null; return }
+        if (topCache == null) return
+        val had = keys.remove(w)
+        if (!suggestable(w)) { if (had) topCache = null; return }
+        val c = uni[w] ?: 0
+        var i = 0
+        while (i < keys.size) {
+            val o = keys[i]; val oc = uni[o] ?: 0
+            if (oc < c || (oc == c && o > w)) break
+            i++
+        }
+        if (i >= topCacheK) { if (had) topCache = null; return }   // (không xảy ra khi đếm chỉ tăng)
+        keys.add(i, w)
+        while (keys.size > topCacheK) keys.removeAt(keys.size - 1)
+        topCache = keys.map { manual[it] ?: it }
     }
 
     /** Từ kế tiếp sau (prev2, prev1): tri ⊕ bi ⊕ uni ⊕ seed với shrinkage. */
