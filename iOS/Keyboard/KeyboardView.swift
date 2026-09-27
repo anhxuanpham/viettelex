@@ -466,6 +466,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         var paste = false               // thẻ Dán thay bar (vừa copy, xem controller)
         var pasteIsImage = false        // clipboard là ẢNH: bàn phím không chèn được → chỉ hướng dẫn
         var restoreLabel: String? = nil // ô "Khôi phục" sau vuốt ⌫ xoá theo từ (slot đầu)
+        var restorePayload: String? = nil // payload ô restoreLabel (nil = restoreToken; toolUndoToken = hoàn tác công cụ văn bản)
         var number: String? = nil       // chip số (NumberChips) — luôn ở slot GIỮA, payload numberToken
         var isEmpty: Bool {
             literal == nil && word == nil && word2 == nil && emojis.isEmpty && nextWords.isEmpty
@@ -580,9 +581,23 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// Bubble ⚙️ cuối lưới → controller mở tab Mẫu Câu của app.
     var onOpenTemplates: (() -> Void)?
 
+    // MARK: công cụ văn bản (Plus) — lối vào là chip đầu lưới mẫu câu (burger).
+    // iOS không có bảng sửa văn bản; đây là chỗ ít đụng code nhất: chạm "Aa Công cụ
+    // văn bản" → lưới đổi sang danh sách thao tác, chạm thao tác → về bàn phím chữ.
+
+    /// PlusGate.isUnlocked(.textTools) — controller đặt mỗi lần hiện bàn phím.
+    var textToolsEnabled = false {
+        didSet { if oldValue != textToolsEnabled, templatesActive { rebuild() } }
+    }
+    var onTextTool: ((TextTool) -> Void)?
+    private var textToolsMode = false
+    private static let textToolsEntryID = "\u{E000}tools"
+    private static let textToolsBackID = "\u{E000}back"
+
     private func toggleTemplates() {
         guard templatesEnabled else { return }
         Self.clickModifier()
+        textToolsMode = false
         plane = templatesActive ? .letters : .templates
         lastSuggestionSig = ""
         rebuild()
@@ -604,6 +619,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     static let restoreToken = "\u{E000}restore"
     /// Payload chip số: controller giữ NumberChip (đuôi cần thay + chữ chèn).
     static let numberToken = "\u{E000}number"
+    /// Payload ô "↩︎ Hoàn tác" sau khi áp công cụ văn bản.
+    static let toolUndoToken = "\u{E000}toolUndo"
 
     func showSuggestions(_ set: SuggestionSet) {
         guard suggestionsEnabled, !barCollapsed else { return }
@@ -628,7 +645,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             texts[1] = (n, Self.numberToken)
         }
         if let r = set.restoreLabel {
-            texts = [(r, Self.restoreToken), texts[0], texts[1]]
+            texts = [(r, set.restorePayload ?? Self.restoreToken), texts[0], texts[1]]
         }
         // Nội dung không đổi (nextWords thường ổn định giữa các phím) → bỏ qua
         // toàn bộ ghi UI: setTitle trên bar fillProportionally kéo theo một
@@ -1017,9 +1034,32 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// [ABC][space][return] để quay lại như plane số.
     private func buildTemplates() {
         rowsContainer.distribution = .fill
-        let chips = TemplateChipsView(items: userTemplates, dark: dark,
+        let tools = textToolsEnabled && textToolsMode
+        if !textToolsEnabled { textToolsMode = false }
+        let extras: [(display: String, id: String)] = tools
+            ? [("\u{2039} Mẫu câu", Self.textToolsBackID)] + TextTool.allCases.map { ($0.label, $0.rawValue) }
+            : (textToolsEnabled ? [("Aa Công cụ văn bản", Self.textToolsEntryID)] : [])
+        let chips = TemplateChipsView(items: tools ? [] : userTemplates, extras: extras,
+                                      showGear: !tools, dark: dark,
                                       plainFill: plainFill,
                                       ink: dark ? .white : .black,
+                                      onExtra: { [weak self] id in
+            guard let self else { return }
+            switch id {
+            case Self.textToolsEntryID, Self.textToolsBackID:
+                Self.clickModifier()
+                self.textToolsMode = id == Self.textToolsEntryID
+                self.rebuild()
+            default:
+                guard let tool = TextTool(rawValue: id) else { return }
+                Self.clickModifier()
+                self.textToolsMode = false
+                self.plane = .letters
+                self.rebuild()
+                self.styleBurger()
+                self.onTextTool?(tool)
+            }
+        },
                                       onTap: { [weak self] text in
             guard let self else { return }
             Self.clickLetter()
@@ -1044,16 +1084,25 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// Lưới bubble mẫu câu — flow layout tự dàn dòng, self-sizing chips.
     private final class TemplateChipsView: UIView, UICollectionViewDataSource, UICollectionViewDelegate {
         private let items: [(label: String, text: String)]
+        /// Chip đặc biệt đứng ĐẦU lưới (công cụ văn bản) — chạm gửi id qua onExtra.
+        private let extras: [(display: String, id: String)]
+        private let showGear: Bool
+        private let onExtra: (String) -> Void
         private let dark: Bool
         private let fill: UIColor
         private let ink: UIColor
         private let onTap: (String) -> Void
         private let onGear: () -> Void
 
-        init(items: [(label: String, text: String)], dark: Bool,
-             plainFill: UIColor, ink: UIColor,
+        init(items: [(label: String, text: String)],
+             extras: [(display: String, id: String)] = [], showGear: Bool = true,
+             dark: Bool, plainFill: UIColor, ink: UIColor,
+             onExtra: @escaping (String) -> Void = { _ in },
              onTap: @escaping (String) -> Void, onGear: @escaping () -> Void) {
             self.items = items
+            self.extras = extras
+            self.showGear = showGear
+            self.onExtra = onExtra
             self.dark = dark
             self.fill = plainFill
             self.ink = ink
@@ -1085,24 +1134,31 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
 
         // +1: bubble ⚙️ luôn ở cuối — mở tab Mẫu Câu trong app.
         func collectionView(_ cv: UICollectionView, numberOfItemsInSection s: Int) -> Int {
-            items.count + 1
+            extras.count + items.count + (showGear ? 1 : 0)
         }
 
         func collectionView(_ cv: UICollectionView, cellForItemAt ip: IndexPath) -> UICollectionViewCell {
             let cell = cv.dequeueReusableCell(withReuseIdentifier: "chip", for: ip) as! ChipCell
-            if ip.item == items.count {
+            let i = ip.item - extras.count
+            if ip.item < extras.count {
+                cell.set(display: extras[ip.item].display, fill: fill, ink: ink, dark: dark)
+                cell.accessibilityLabel = nil
+            } else if i == items.count {
                 cell.set(display: "⚙️", fill: fill, ink: ink, dark: dark)
                 cell.accessibilityLabel = "Quản lý mẫu câu"
             } else {
-                let item = items[ip.item]
+                let item = items[i]
                 cell.set(display: item.label.isEmpty ? item.text : item.label,
                          fill: fill, ink: ink, dark: dark)
+                cell.accessibilityLabel = nil
             }
             return cell
         }
 
         func collectionView(_ cv: UICollectionView, didSelectItemAt ip: IndexPath) {
-            if ip.item == items.count { onGear() } else { onTap(items[ip.item].text) }
+            let i = ip.item - extras.count
+            if ip.item < extras.count { onExtra(extras[ip.item].id) }
+            else if i == items.count { onGear() } else { onTap(items[i].text) }
         }
 
         private final class ChipCell: UICollectionViewCell {

@@ -17,6 +17,7 @@ import com.viettelex.keyboard.SwipeLayout
 import com.viettelex.keyboard.SwipePath
 import com.viettelex.keyboard.SwipeSuggest
 import com.viettelex.keyboard.TemplateItem
+import com.viettelex.keyboard.TextTool
 import com.viettelex.keyboard.TouchGeometry
 import com.viettelex.keyboard.TouchLog
 import kotlin.math.abs
@@ -55,6 +56,8 @@ class KeyboardView(
         fun onDismissKeyboard()
         fun onTemplate(item: TemplateItem)
         fun onOpenTemplates()
+        /** Chạm một thao tác công cụ văn bản (Plus) trong lưới mẫu câu. */
+        fun onTextTool(tool: TextTool)
         fun onPlaneChanged(plane: Plane)
         /** Recents emoji (đọc/ghi pref). */
         fun emojiRecents(): List<String>
@@ -84,6 +87,26 @@ class KeyboardView(
     private var showLogo = true
     private var templatesEnabled = true
     private var templates: List<TemplateItem> = emptyList()
+
+    /**
+     * Công cụ văn bản (PlusGate TEXT_TOOLS) — lối vào TẠM là chip đầu lưới mẫu câu (☰) vì
+     * bảng sửa văn bản (EditPanel) chưa vào main. Khi gộp bảng sửa: gọi thẳng
+     * [Listener.onTextTool] (VietTelexIME.onTextTool) từ nút "Công cụ văn bản" của bảng.
+     */
+    var textToolsEnabled = false
+        set(v) { if (field != v) { field = v; if (!v) textToolsMode = false; refreshTemplatesPane() } }
+    private var textToolsMode = false
+
+    private fun refreshTemplatesPane() {
+        if (textToolsMode) {
+            templatesPane.setItems(emptyList())
+            templatesPane.setExtras(listOf("‹ Mẫu câu" to TOOLS_BACK) + TextTool.entries.map { it.label to it.id }, gear = false)
+        } else {
+            templatesPane.setItems(templates)
+            templatesPane.setExtras(if (textToolsEnabled) listOf("Aa Công cụ văn bản" to TOOLS_ENTRY) else emptyList(), gear = true)
+        }
+        if (plane == Plane.TEMPLATES) rebuild()
+    }
     var keyAreaPx = theme.dp(218f); private set
 
     private var keys: List<LaidKey> = emptyList()
@@ -250,7 +273,8 @@ class KeyboardView(
         inputKind = kind
         plane = kind.padPlane ?: Plane.LETTERS
         if (plane == Plane.LETTERS && shift == Shift.ON) shift = Shift.OFF
-        templatesPane.setItems(templates)
+        textToolsMode = false
+        refreshTemplatesPane()
         rebuild()
         listener?.onPlaneChanged(plane)
     }
@@ -275,6 +299,7 @@ class KeyboardView(
         if (p == Plane.LETTERS && shift == Shift.ON) shift = Shift.OFF
         if (p == Plane.EMOJI) emojiPane.open(listener?.emojiRecents() ?: emptyList())
         if (p == Plane.TEMPLATES) templatesPane.resetScroll()
+        if (textToolsMode) { textToolsMode = false; refreshTemplatesPane() }
         rebuild()
         listener?.onPlaneChanged(p)
     }
@@ -867,6 +892,20 @@ class KeyboardView(
         listener?.onTemplate(item)
     }
     internal fun paneGear() = listener?.onOpenTemplates()
+    internal fun paneExtra(id: String) {
+        when (id) {
+            TOOLS_ENTRY, TOOLS_BACK -> {
+                textToolsMode = id == TOOLS_ENTRY
+                templatesPane.resetScroll()
+                refreshTemplatesPane()
+            }
+            else -> {
+                val tool = TextTool.byId(id) ?: return
+                setPlane(Plane.LETTERS)
+                listener?.onTextTool(tool)
+            }
+        }
+    }
 
     override fun computeScroll() {
         if (plane == Plane.EMOJI) emojiPane.computeScroll()
@@ -882,5 +921,7 @@ class KeyboardView(
         const val BS_INTERVAL = 90L
         const val GLOBE_HOLD_MS = 500L
         const val RETURN_HOLD_MS = 450L
+        private const val TOOLS_ENTRY = "\uE000tools"
+        private const val TOOLS_BACK = "\uE000back"
     }
 }

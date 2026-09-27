@@ -17,6 +17,8 @@ final class KeyboardViewController: UIInputViewController {
     private var wordSwipeSnapshot: (context: String?, composed: String)?
     /// Chuỗi vừa vuốt xoá + đuôi phần còn lại → ô "Khôi phục" (một lượt).
     private var wordSwipeRestore: (text: String, tail: String)?
+    /// Công cụ văn bản vừa áp → ô "↩︎ Hoàn tác" / ⌫ ngay sau (một lượt).
+    private var textToolUndo: TextTools.Undo?
     private var filterSensitive = true
     /// Gõ vuốt (thử nghiệm): công tắc trong app; `swipe` chỉ tạo khi bật (0 RAM khi tắt).
     private var swipeSetting = false
@@ -63,6 +65,7 @@ final class KeyboardViewController: UIInputViewController {
         keyboard.onBarToggle = { [weak self] in self?.updateSuggestions() }
         keyboard.onTemplate = { [weak self] in self?.insertTemplate($0) }
         keyboard.onOpenTemplates = { [weak self] in self?.openTemplatesInApp() }
+        keyboard.onTextTool = { [weak self] in self?.applyTextTool($0) }
         keyboard.translatesAutoresizingMaskIntoConstraints = false
         // Như KeyboardView: nền trong suốt = touch xuyên sang app host (rớt phím).
         view.backgroundColor = KeyboardView.touchableClear
@@ -96,6 +99,8 @@ final class KeyboardViewController: UIInputViewController {
         externalChangePending = false
         lastKeyWasEmailTrigger = false
         restoreUndo = nil; undoOfferActive = false
+        textToolUndo = nil
+        keyboard.textToolsEnabled = PlusGate.isUnlocked(.textTools)
         let settings = KeyboardSettings.load()
         learnEnabled = settings.learnWords
         filterSensitive = settings.filterSensitive
@@ -118,6 +123,8 @@ final class KeyboardViewController: UIInputViewController {
         reportStatusToApp()
         keyboard.onSuggestion = { [weak self] item in
             guard let self else { return }
+            if item == KeyboardView.toolUndoToken { self.undoTextTool(); return }
+            self.textToolUndo = nil
             if item == KeyboardView.restoreToken { self.restoreWordSwipe() }
             else if self.acceptSwipeAlternative(item) { return }
             else { self.acceptSuggestion(item) }
@@ -323,6 +330,10 @@ final class KeyboardViewController: UIInputViewController {
         let proxy = Proxy(p: textDocumentProxy)
         // textWillChange tới mà textDidChange chưa kịp → đối chiếu ngay trước phím.
         if externalChangePending { syncComposition("key") }
+        if textToolUndo != nil {               // ⌫ ngay sau công cụ văn bản = hoàn tác
+            if case .backspace = key { undoTextTool(); return }
+            textToolUndo = nil
+        }
         wordSwipeRestore = nil                 // ô "Khôi phục" chỉ sống tới phím kế
         learnSettledSwipe()                    // từ vuốt chốt bởi phím trước — giờ mới chắc
         let openAccepted = bridge.openWordAccepted   // từ vuốt chọn trên bar → weight 2
@@ -758,6 +769,10 @@ final class KeyboardViewController: UIInputViewController {
             set.literal = u.composed
         }
         if composed.isEmpty, wordSwipeRestore != nil { set.restoreLabel = "\u{21A9}\u{FE0E} Khôi phục" }
+        if composed.isEmpty, textToolUndo != nil {
+            set.restoreLabel = "\u{21A9}\u{FE0E} Hoàn tác"
+            set.restorePayload = KeyboardView.toolUndoToken
+        }
         // Ngữ cảnh email/domain: "phuc@" → gợi đuôi mail; "github." → gợi TLD.
         // Đọc proxy (XPC) chỉ khi phím vừa gõ là @/. — không phải mọi boundary.
         if composed.isEmpty, lastKeyWasEmailTrigger,
@@ -1223,6 +1238,45 @@ extension KeyboardViewController {
         lastWord = nil; lastWord2 = nil
         restoreUndo = nil; undoOfferActive = false
         textDocumentProxy.insertText(r.text)
+        KeyboardView.clickModifier()
+        updateAutoShift(); updateSuggestions()
+    }
+}
+
+// MARK: công cụ văn bản (Plus) — TextTools/TextToolRunner là logic thuần, đây chỉ là glue.
+extension KeyboardViewController {
+    /// Nguồn: selectedText (iOS 16+) nếu có, không thì đoạn trước con trỏ (tới xuống dòng).
+    fileprivate func applyTextTool(_ tool: TextTool) {
+        guard PlusGate.isUnlocked(.textTools) else { return }
+        applyingEdit = true
+        defer { applyingEdit = false }
+        // Từ đang soạn đã nằm trong ô (iOS chèn thẳng) — engine bỏ nó như sau khi dán.
+        bridge.reset()
+        lastWord = nil; lastWord2 = nil
+        restoreUndo = nil; undoOfferActive = false
+        wordSwipeRestore = nil
+        textToolUndo = nil
+        var selected: String?
+        if #available(iOS 16.0, *) { selected = textDocumentProxy.selectedText }
+        let outcome = TextToolRunner.apply(tool, proxy: Proxy(p: textDocumentProxy), selectedText: selected)
+        switch outcome {
+        case .applied(let u): textToolUndo = u
+        case .failsafe: TouchLog.write("failsafe: text tool \(tool.rawValue) context mismatch/NFD → skip")
+        case .unchanged, .noSource: break
+        }
+        updateAutoShift(); updateSuggestions()
+    }
+
+    fileprivate func undoTextTool() {
+        guard let u = textToolUndo else { return }
+        textToolUndo = nil
+        applyingEdit = true
+        defer { applyingEdit = false }
+        if !TextToolRunner.undo(u, proxy: Proxy(p: textDocumentProxy)) {
+            TouchLog.write("failsafe: text tool undo context moved → skip")
+        }
+        bridge.reset()
+        lastWord = nil; lastWord2 = nil
         KeyboardView.clickModifier()
         updateAutoShift(); updateSuggestions()
     }

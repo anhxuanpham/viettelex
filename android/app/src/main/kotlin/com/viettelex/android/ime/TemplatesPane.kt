@@ -22,12 +22,16 @@ class TemplatesPane(
     private val theme: ImeTheme,
     private val feedback: Feedback,
 ) {
-    private class Chip(val item: TemplateItem?, val shown: String) {
+    /** [extraId] != null: chip đặc biệt (công cụ văn bản) — chạm gửi id qua [KeyboardView.paneExtra]. */
+    private class Chip(val item: TemplateItem?, val shown: String, val extraId: String? = null) {
         var l = 0f; var t = 0f; var r = 0f; var b = 0f
     }
 
     private val d = theme.density
     private var items: List<TemplateItem> = emptyList()
+    /** Chip đứng ĐẦU lưới: (hiển thị, id). */
+    private var extras: List<Pair<String, String>> = emptyList()
+    private var showGear = true
     private var chips: List<Chip> = emptyList()
     private var width = 0f
     private var bottom = 0f
@@ -52,6 +56,13 @@ class TemplatesPane(
         width = 0f   // ép dàn lại ở layout kế
     }
 
+    /** Đổi nội dung chip đặc biệt; [gear] = còn bubble ⚙️ cuối (tắt khi đang ở danh sách công cụ). */
+    fun setExtras(list: List<Pair<String, String>>, gear: Boolean) {
+        if (list == extras && gear == showGear) return
+        extras = list; showGear = gear
+        width = 0f
+    }
+
     fun resetScroll() { scrollY = 0f; scroller.forceFinished(true) }
 
     fun contains(x: Float, y: Float) = y < bottom
@@ -64,13 +75,14 @@ class TemplatesPane(
         val fm = textPaint.fontMetrics
         val lineH = fm.descent - fm.ascent
         val chipH = padV * 2 + lineH
-        val list = ArrayList<Chip>(items.size + 1)
+        val list = ArrayList<Chip>(extras.size + items.size + 1)
+        for ((shown, id) in extras) list += Chip(null, shown, id)
         for (it in items) {
             val s = if (it.label.isEmpty()) it.text else it.label
             val oneLine = s.replace('\n', ' ')
             list += Chip(it, TextUtils.ellipsize(oneLine, textPaint, maxLabel, TextUtils.TruncateAt.END).toString())
         }
-        list += Chip(null, "⚙️")
+        if (showGear) list += Chip(null, "⚙️")
         // flow layout: inset 8/6, khoảng cách chip 6, dòng 8
         val left = 6 * d; val right = w - 6 * d
         var y = 8 * d
@@ -159,7 +171,9 @@ class TemplatesPane(
             val hit = chips.firstOrNull { downX >= it.l - 3 * d && downX < it.r + 3 * d && cy >= it.t - 4 * d && cy < it.b + 4 * d }
             if (hit != null && abs(x - downX) < 24 * d && abs(y - downY) < 24 * d) {
                 val item = hit.item
-                if (item == null) { feedback.click(Feedback.MODIFIER, host); host.paneGear() }
+                val extra = hit.extraId
+                if (extra != null) { feedback.click(Feedback.MODIFIER, host); host.paneExtra(extra) }
+                else if (item == null) { feedback.click(Feedback.MODIFIER, host); host.paneGear() }
                 else { feedback.click(Feedback.LETTER, host); host.paneTemplate(item) }
             }
         }

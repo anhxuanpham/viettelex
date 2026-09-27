@@ -237,6 +237,8 @@ class IcProxy(
             return !conn()?.selectedText().isNullOrEmpty()
         }
 
+    override fun selectedText(): String? = conn()?.selectedText()?.toString()?.takeIf { it.isNotEmpty() }
+
     /** 2 UTF-16 đủ cho một code point ngoài BMP. */
     override fun contextAfterInput(): String? = conn()?.textAfter(2)?.toString()
 

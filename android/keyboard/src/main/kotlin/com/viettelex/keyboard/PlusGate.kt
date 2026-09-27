@@ -38,7 +38,7 @@ enum class PlusFeature(val title: String, val detail: String) {
     SENTENCE_DIACRITICS("Thêm dấu cả câu", "Gõ không dấu cả câu, một chạm thêm dấu."),
     ADVANCED_CLIPBOARD("Clipboard nâng cao", "Ghim không giới hạn, chip tách số tài khoản, số điện thoại, mã OTP."),
     CLOUD_SYNC("Đồng bộ", "Cài đặt, gõ tắt và từ đã học theo bạn sang máy khác."),
-    TEXT_TOOLS("Công cụ văn bản", "Đổi HOA/thường, xoá dấu, đổi bảng mã TCVN3/VNI."),
+    TEXT_TOOLS("Công cụ văn bản", "Đổi HOA/thường, hoa đầu từ/đầu câu, xoá dấu tiếng Việt."),
     THANKS_BADGE("Huy hiệu cảm ơn", "Dấu ★ nhỏ trong app — lời cảm ơn vì đã ủng hộ."),
 }
 

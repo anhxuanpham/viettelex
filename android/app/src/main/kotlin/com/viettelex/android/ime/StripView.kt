@@ -80,7 +80,8 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
     // --- vuốt ⌫: xem trước đoạn sẽ xoá / ô Khôi phục (đè nội dung bar tới khi gỡ) ---
     private var swipePreview: String? = null
     private var restoreOffer = false
-    private val restoreText = "↩\uFE0E " + context.getString(R.string.ime_restore)
+    private val restoreDefault = "↩\uFE0E " + context.getString(R.string.ime_restore)
+    private var restoreText = restoreDefault
     private val chipText = TextPaint(theme.text(14f, medium = true))
     private val chipTextOff = theme.centerOffset(chipText)
 
@@ -134,10 +135,12 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
         invalidate()
     }
 
-    /** Ô "↩︎ Khôi phục" một lượt sau vuốt ⌫ xoá. */
-    fun showRestore(on: Boolean) {
-        if (on == restoreOffer) return
+    /** Ô "↩︎ Khôi phục" một lượt sau vuốt ⌫ xoá; [label] khác (vd "Hoàn tác" công cụ văn bản). */
+    fun showRestore(on: Boolean, label: String? = null) {
+        val text = label?.let { "↩\uFE0E $it" } ?: restoreDefault
+        if (on == restoreOffer && text == restoreText) return
         restoreOffer = on
+        restoreText = text
         invalidate()
     }
 

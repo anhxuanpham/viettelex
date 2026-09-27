@@ -51,7 +51,7 @@ enum PlusFeature: String, CaseIterable, Identifiable {
     case advancedClipboard
     /// Đồng bộ cài đặt/gõ tắt/từ đã học qua iCloud.
     case iCloudSync
-    /// Công cụ văn bản: HOA/thường, xoá dấu, đổi bảng mã TCVN3/VNI.
+    /// Công cụ văn bản: HOA/thường/Hoa Đầu Từ/Hoa đầu câu, xoá dấu (Keyboard/TextTools.swift).
     case textTools
     /// Huy hiệu cảm ơn người ủng hộ.
     case thanksBadge
@@ -75,7 +75,7 @@ enum PlusFeature: String, CaseIterable, Identifiable {
         case .sentenceDiacritics: return "Gõ không dấu cả câu, một chạm thêm dấu."
         case .advancedClipboard: return "Ghim không giới hạn, chip tách số tài khoản, số điện thoại, mã OTP."
         case .iCloudSync: return "Cài đặt, gõ tắt và từ đã học theo bạn sang máy khác."
-        case .textTools: return "Đổi HOA/thường, xoá dấu, đổi bảng mã TCVN3/VNI."
+        case .textTools: return "Đổi HOA/thường, hoa đầu từ/đầu câu, xoá dấu tiếng Việt."
         case .thanksBadge: return "Dấu ★ nhỏ trong app — lời cảm ơn vì đã ủng hộ."
         }
     }

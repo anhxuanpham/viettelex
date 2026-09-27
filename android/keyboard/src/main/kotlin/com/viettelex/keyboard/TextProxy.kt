@@ -37,6 +37,8 @@ interface TextProxy {
     val hasSelection: Boolean get() = false
     /** Vài ký tự SAU con trỏ; null nếu không đọc được. */
     fun contextAfterInput(): String? = null
+    /** Chữ đang chọn (getSelectedText) — công cụ văn bản; null = không chọn / không đọc được. */
+    fun selectedText(): String? = null
 }
 
 /** Main-thread scheduler (Android: Handler main looper). */
