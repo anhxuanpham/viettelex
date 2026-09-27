@@ -48,8 +48,8 @@ object Templates {
         val out = current.toMutableList()
         for (item in imported) if (out.none { it.text == item.text }) out.add(item)
         val added = out.size - current.size
-        val notice = "Đã thêm $added/${imported.size} mẫu" +
-            if (imported.size > added) " (trùng bị bỏ qua)." else "."
+        val notice = if (imported.size > added) tr("Đã thêm %d/%d mẫu (trùng bị bỏ qua).", added, imported.size)
+            else tr("Đã thêm %d/%d mẫu.", added, imported.size)
         return out to notice
     }
 
@@ -90,8 +90,8 @@ object Templates {
     /** Câu báo cho người dùng khi không thêm được (null = đã thêm). */
     fun addNotice(r: AddResult): String? = when (r) {
         is AddResult.Added -> null
-        AddResult.EmptyText -> "Chưa có nội dung mẫu câu — nhập câu vào ô bên phải rồi bấm ⊕."
-        is AddResult.Duplicate -> "Mẫu câu này đã có (dòng ${r.index + 1}) — không thêm lại."
+        AddResult.EmptyText -> tr("Chưa có nội dung mẫu câu — nhập câu vào ô bên phải rồi bấm ⊕.")
+        is AddResult.Duplicate -> tr("Mẫu câu này đã có (dòng %d) — không thêm lại.", r.index + 1)
     }
 
     /** Mẫu động: fetch lúc chạm. */

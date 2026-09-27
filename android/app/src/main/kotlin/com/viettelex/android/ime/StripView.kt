@@ -17,6 +17,7 @@ import com.viettelex.keyboard.SlotTapLatch
 import com.viettelex.keyboard.SuggestionSet
 import com.viettelex.keyboard.SuggestionSlots
 import kotlin.math.abs
+import com.viettelex.keyboard.tr
 
 /**
  * Strip gợi ý (spec §6.6, §7.1): [☰ 52][ "nguyên văn" | từ 1 | từ 2 / ≤3 emoji ][⌄ 52],
@@ -84,8 +85,8 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
     private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pasteTitle = theme.text(14f, medium = true, align = Paint.Align.LEFT)
     private val pasteSub = theme.text(12f, color = theme.withAlpha(theme.ink, 0.7f), align = Paint.Align.LEFT)
-    private val pasteTitleText = context.getString(R.string.ime_paste_title)
-    private val pasteSubText = context.getString(R.string.ime_paste_sub)
+    private val pasteTitleText = tr("Dán")
+    private val pasteSubText = tr("Nội dung vừa copy")
     private var pasteIconCx = 0f; private var pasteTextX = 0f; private var pasteSubX = 0f
     private var pasteL = 0f; private var pasteR = 0f; private var pasteT = 0f; private var pasteB = 0f
     private var pasteShowSub = true
@@ -100,7 +101,7 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
     private var restoreOffer = false
     /** Hoàn tác thêm dấu (SuggestionSlots tầng 1) — vẽ cùng kiểu pill ô Khôi phục. */
     private var actionPill: BarChip? = null
-    private val restoreDefault = "↩\uFE0E " + context.getString(R.string.ime_restore)
+    private val restoreDefault = "↩\uFE0E " + tr("Khôi phục")
     private var restoreText = restoreDefault
     private val chipText = TextPaint(theme.text(14f, medium = true))
     private val chipTextOff = theme.centerOffset(chipText)

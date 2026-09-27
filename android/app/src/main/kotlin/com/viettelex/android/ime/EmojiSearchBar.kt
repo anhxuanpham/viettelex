@@ -5,6 +5,7 @@ import android.graphics.Paint
 import android.text.TextUtils
 import android.text.TextPaint
 import kotlin.math.abs
+import com.viettelex.keyboard.tr
 
 /**
  * Hàng trên của plane EMOJI_SEARCH (port iOS EmojiSearchBar), vẽ thẳng trên Canvas của
@@ -122,8 +123,8 @@ class EmojiSearchBar(private val host: KeyboardView, private val theme: ImeTheme
     fun reset() { ptr = -1; dragging = false }
 
     companion object {
-        const val HINT = "Tìm emoji"
-        const val EMPTY_HINT = "Gõ để tìm: tim, chó, cười…"
-        const val NO_RESULT = "Không thấy emoji"
+        val HINT get() = tr("Tìm emoji")
+        val EMPTY_HINT get() = tr("Gõ để tìm: tim, chó, cười…")
+        val NO_RESULT get() = tr("Không thấy emoji")
     }
 }

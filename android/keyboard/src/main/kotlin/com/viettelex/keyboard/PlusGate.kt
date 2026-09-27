@@ -33,13 +33,17 @@ object PlusConfig {
  * ý/emoji/bigram, gõ vuốt, gõ tắt cơ bản, mẫu câu, hàng số, một tay, vuốt ⌫,
  * trackpad, theme hệ thống + sáng/tối + tương phản cao, sao lưu/nhập file.
  */
-enum class PlusFeature(val title: String, val detail: String) {
+enum class PlusFeature(val viTitle: String, val viDetail: String) {
     PREMIUM_THEMES("Theme cao cấp & ảnh nền", "Thêm bộ màu bàn phím và đặt ảnh riêng làm nền."),
     SENTENCE_DIACRITICS("Thêm dấu cả câu", "Gõ không dấu cả câu, một chạm thêm dấu."),
     ADVANCED_CLIPBOARD("Clipboard nâng cao", "Ghim không giới hạn, chip tách số tài khoản, số điện thoại, mã OTP."),
     CLOUD_SYNC("Đồng bộ", "Cài đặt, gõ tắt và từ đã học theo bạn sang máy khác."),
     TEXT_TOOLS("Công cụ văn bản", "Đổi HOA/thường, hoa đầu từ/đầu câu, xoá dấu tiếng Việt."),
-    THANKS_BADGE("Huy hiệu cảm ơn", "Dấu ★ nhỏ trong app — lời cảm ơn vì đã ủng hộ."),
+    THANKS_BADGE("Huy hiệu cảm ơn", "Dấu ★ nhỏ trong app — lời cảm ơn vì đã ủng hộ.");
+
+    /** Hiển thị theo ngôn ngữ giao diện ([L10n]). */
+    val title: String get() = tr(viTitle)
+    val detail: String get() = tr(viDetail)
 }
 
 /**

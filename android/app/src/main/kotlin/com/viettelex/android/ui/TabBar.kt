@@ -36,12 +36,15 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.viettelex.keyboard.tr
 
-enum class AppTab(val title: String, val glyph: Glyph) {
-    KieuGo("Kiểu Gõ", Glyph.Keyboard),
-    TinhNang("Tính Năng", Glyph.Sliders),
-    MauCau("Mẫu Câu", Glyph.Quote),
-    GioiThieu("Giới Thiệu", Glyph.Info),
+enum class AppTab(val viTitle: String, val glyph: Glyph) {
+    KieuGo("Kiểu Gõ", Glyph.Keyboard), // l10n-key
+    TinhNang("Tính Năng", Glyph.Sliders), // l10n-key
+    MauCau("Mẫu Câu", Glyph.Quote), // l10n-key
+    GioiThieu("Giới Thiệu", Glyph.Info); // l10n-key
+
+    val title: String get() = tr(viTitle)
 }
 
 /**

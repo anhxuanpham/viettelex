@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.viettelex.keyboard.tr
 
 data class PlusUiState(
     val plus: StoreProduct? = null,
@@ -40,7 +41,7 @@ class PlusController(
     /** Kết nối + tải giá + đồng bộ giao dịch. Gọi khi mở app / onResume. */
     suspend fun refresh(loadProducts: Boolean = true) {
         if (!store.connect()) {
-            if (loadProducts) msg("Không kết nối được Google Play.")
+            if (loadProducts) msg(tr("Không kết nối được Google Play."))
             return
         }
         if (loadProducts) {
@@ -58,12 +59,12 @@ class PlusController(
     suspend fun restore() {
         _state.update { it.copy(restoring = true) }
         try {
-            if (!store.connect()) { msg("Không kết nối được Google Play."); return }
+            if (!store.connect()) { msg(tr("Không kết nối được Google Play.")); return }
             val owned = store.queryPurchases()
-            if (owned == null) { msg("Không truy vấn được giao dịch. Thử lại sau."); return }
+            if (owned == null) { msg(tr("Không truy vấn được giao dịch. Thử lại sau.")); return }
             val ok = process(owned, thankTips = false)
             setPurchased(ok)
-            msg(if (ok) "Đã khôi phục VietTelex Plus." else "Không tìm thấy giao dịch Plus nào với tài khoản Google này.")
+            msg(if (ok) tr("Đã khôi phục VietTelex Plus.") else tr("Không tìm thấy giao dịch Plus nào với tài khoản Google này."))
         } finally {
             _state.update { it.copy(restoring = false) }
         }
@@ -72,7 +73,7 @@ class PlusController(
     fun buy(productId: String) {
         if (_state.value.busyProductId != null) return
         if (!store.launchPurchase(productId)) {
-            msg("Chưa mở được thanh toán. Kiểm tra kết nối rồi thử lại.")
+            msg(tr("Chưa mở được thanh toán. Kiểm tra kết nối rồi thử lại."))
             return
         }
         _state.update { it.copy(busyProductId = productId) }
@@ -85,14 +86,14 @@ class PlusController(
                 // Danh sách này chỉ gồm giao dịch mới ⇒ chỉ mở, không thu hồi.
                 if (process(u.list, thankTips = true)) {
                     setPurchased(true)
-                    msg("Đã mở khoá VietTelex Plus. Cảm ơn bạn!")
+                    msg(tr("Đã mở khoá VietTelex Plus. Cảm ơn bạn!"))
                 } else if (u.list.any { it.state == StorePurchase.State.PENDING && PlusConfig.PLUS_PRODUCT_ID in it.productIds }) {
-                    msg("Giao dịch đang chờ thanh toán. Plus sẽ tự mở khi hoàn tất.")
+                    msg(tr("Giao dịch đang chờ thanh toán. Plus sẽ tự mở khi hoàn tất."))
                 }
             }
             PurchaseUpdate.AlreadyOwned -> restore()
             PurchaseUpdate.Cancelled -> Unit
-            is PurchaseUpdate.Error -> msg("Giao dịch không thành công (mã ${u.code}). Bạn chưa bị trừ tiền.")
+            is PurchaseUpdate.Error -> msg(tr("Giao dịch không thành công (mã %s). Bạn chưa bị trừ tiền.", u.code))
         }
     }
 
@@ -109,7 +110,7 @@ class PlusController(
                 if (!p.acknowledged) store.acknowledge(p.token)
             }
             if (p.productIds.any { it in PlusConfig.TIP_PRODUCT_IDS }) {
-                if (store.consume(p.token) && thankTips) msg("Cảm ơn bạn đã ủng hộ VietTelex! ❤️")
+                if (store.consume(p.token) && thankTips) msg(tr("Cảm ơn bạn đã ủng hộ VietTelex! ❤️"))
             }
         }
         return plus

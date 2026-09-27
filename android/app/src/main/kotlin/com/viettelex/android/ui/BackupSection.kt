@@ -20,6 +20,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.viettelex.keyboard.tr
 
 /**
  * Xuất/nhập file sao lưu một tệp (JSON, cùng định dạng iOS — [BackupCodec]) qua SAF.
@@ -68,28 +69,28 @@ fun SaoLuuSection() {
             val json = BackupIO.export(ctx, includeLearned)
             ctx.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(json.toByteArray()) }
         }.isSuccess
-        notice = if (ok) "Đã xuất file sao lưu." else "Không ghi được file."
+        notice = if (ok) tr("Đã xuất file sao lưu.") else tr("Không ghi được file.")
     }
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         val text = runCatching { ctx.contentResolver.openInputStream(uri)?.use { it.bufferedReader().readText() } }.getOrNull()
         notice = when {
-            text == null -> "Không đọc được file."
+            text == null -> tr("Không đọc được file.")
             else -> try { BackupIO.import(ctx, text) } catch (e: BackupException) { e.userMessage }
         }
     }
 
-    VTSection(header = "File sao lưu",
-        footer = "File gồm cài đặt, gõ tắt, mẫu câu (và từ đã học nếu chọn) — mở được trên Android, iPhone, iPad. Nhập: cài đặt theo file, gõ tắt và mẫu câu được gộp thêm. Android cũng tự sao lưu cài đặt vào Google khi bạn bật Sao lưu của hệ thống.") {
-        SettingToggle("Kèm từ đã học khi xuất file",
-            "Từ bàn phím đã học (tần suất gõ) — riêng tư, chỉ bật khi file do chính bạn giữ.", includeLearned) { includeLearned = it }
+    VTSection(header = tr("File sao lưu"),
+        footer = tr("File gồm cài đặt, gõ tắt, mẫu câu (và từ đã học nếu chọn) — mở được trên Android, iPhone, iPad. Nhập: cài đặt theo file, gõ tắt và mẫu câu được gộp thêm. Android cũng tự sao lưu cài đặt vào Google khi bạn bật Sao lưu của hệ thống.")) {
+        SettingToggle(tr("Kèm từ đã học khi xuất file"),
+            tr("Từ bàn phím đã học (tần suất gõ) — riêng tư, chỉ bật khi file do chính bạn giữ."), includeLearned) { includeLearned = it }
         RowDivider()
-        LinkRow(Glyph.Export, "Xuất file sao lưu…") {
+        LinkRow(Glyph.Export, tr("Xuất file sao lưu…")) {
             val day = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Date())
             exporter.launch("viettelex-sao-luu-$day.json")
         }
         RowDivider(52.dp)
-        LinkRow(Glyph.Import, "Nhập file sao lưu…") { importer.launch(arrayOf("application/json", "text/*", "application/octet-stream")) }
+        LinkRow(Glyph.Import, tr("Nhập file sao lưu…")) { importer.launch(arrayOf("application/json", "text/*", "application/octet-stream")) }
         notice?.let {
             RowDivider()
             VTRow { Text(it, style = VTType.footnote, color = c.secondary) }

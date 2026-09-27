@@ -2,6 +2,7 @@ package com.viettelex.android.ime
 
 import com.viettelex.keyboard.TextTool
 import java.text.BreakIterator
+import com.viettelex.keyboard.tr
 
 /**
  * Bảng sửa văn bản (mở bằng icon con trỏ trên thanh gợi ý): thay chỗ phím chữ bằng lưới
@@ -48,11 +49,11 @@ object EditPanel {
 
     /** Nhãn ngắn trên hàng công cụ (5 ô chung hàng) — khớp iOS TextEditing.toolTitle. */
     fun toolTitle(t: TextTool): String = when (t) {
-        TextTool.UPPER -> "HOA"
-        TextTool.LOWER -> "thường"
-        TextTool.TITLE -> "Hoa Từ"
-        TextTool.SENTENCE -> "Hoa câu"
-        TextTool.STRIP_DIACRITICS -> "Xoá dấu"
+        TextTool.UPPER -> tr("HOA")
+        TextTool.LOWER -> tr("thường")
+        TextTool.TITLE -> tr("Hoa Từ")
+        TextTool.SENTENCE -> tr("Hoa câu")
+        TextTool.STRIP_DIACRITICS -> tr("Xoá dấu")
     }
 
     fun label(a: EditAction): String = when (a) {
@@ -62,14 +63,14 @@ object EditPanel {
         EditAction.DOWN -> "↓"
         EditAction.LINE_START -> "⇤"
         EditAction.LINE_END -> "⇥"
-        EditAction.SELECT -> "Chọn"
-        EditAction.SELECT_WORD -> "Chọn từ"
-        EditAction.SELECT_ALL -> "Chọn hết"
-        EditAction.COPY -> "Sao chép"
-        EditAction.CUT -> "Cắt"
-        EditAction.PASTE -> "Dán"
-        EditAction.UNDO -> "Hoàn tác"
-        EditAction.REDO -> "Làm lại"
+        EditAction.SELECT -> tr("Chọn")
+        EditAction.SELECT_WORD -> tr("Chọn từ")
+        EditAction.SELECT_ALL -> tr("Chọn hết")
+        EditAction.COPY -> tr("Sao chép")
+        EditAction.CUT -> tr("Cắt")
+        EditAction.PASTE -> tr("Dán")
+        EditAction.UNDO -> tr("Hoàn tác")
+        EditAction.REDO -> tr("Làm lại")
         EditAction.DELETE -> ""          // icon ⌫
         EditAction.CLOSE -> "ABC"
     }

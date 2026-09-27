@@ -70,6 +70,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import com.viettelex.keyboard.tr
 
 /**
  * Kho nét vuốt luyện tập: JSON Lines trong noBackupFilesDir (không sao lưu đám mây, không
@@ -93,7 +94,7 @@ private object TraceStore {
         val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.export", out)
         val send = Intent(Intent.ACTION_SEND).setType("application/json")
             .putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        ctx.startActivity(Intent.createChooser(send, "Xuất nét vuốt").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        ctx.startActivity(Intent.createChooser(send, tr("Xuất nét vuốt")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 }
 
@@ -150,11 +151,11 @@ fun SwipePracticeDialog(onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(Modifier.fillMaxSize().background(c.groupedBg).safeDrawingPadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Luyện vuốt", style = VTType.headline, color = c.label, modifier = Modifier.weight(1f))
-                Text("Xong", style = VTType.body, color = c.accent, modifier = Modifier.clickable(onClick = onDismiss))
+                Text(tr("Luyện vuốt"), style = VTType.headline, color = c.label, modifier = Modifier.weight(1f))
+                Text(tr("Xong"), style = VTType.body, color = c.accent, modifier = Modifier.clickable(onClick = onDismiss))
             }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                VTSection(footer = if (target.lang == SwipeLang.EN) "Từ tiếng Anh — vuốt đúng từng chữ." else "Vuốt qua các chữ không dấu rồi nhấc tay.") {
+                VTSection(footer = if (target.lang == SwipeLang.EN) tr("Từ tiếng Anh — vuốt đúng từng chữ.") else tr("Vuốt qua các chữ không dấu rồi nhấc tay.")) {
                     Column(Modifier.fillMaxWidth().padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(target.word, style = VTType.largeTitle, color = c.label)
@@ -162,23 +163,23 @@ fun SwipePracticeDialog(onDismiss: () -> Unit) {
                         val r = result
                         Text(when {
                             r == null -> " "
-                            r.first -> "✓ Đúng"
-                            else -> "✗ Bàn phím đọc thành “${r.second}” — thử lại"
+                            r.first -> tr("✓ Đúng")
+                            else -> tr("✗ Bàn phím đọc thành “%s” — thử lại", r.second)
                         }, style = VTType.subheadline, color = if (r?.first == false) c.red else c.green)
                     }
                     RowDivider()
                     VTRow {
-                        Text(if (tries == 0) "Phiên này: chưa vuốt" else "Phiên này: $hits/$tries đúng (${hits * 100 / tries}%)",
+                        Text(if (tries == 0) tr("Phiên này: chưa vuốt") else tr("Phiên này: %s/%s đúng (%s%%)", hits, tries, hits * 100 / tries),
                             style = VTType.body, color = c.label, modifier = Modifier.weight(1f))
-                        Text("Bỏ qua", style = VTType.body, color = c.accent, modifier = Modifier.clickable { result = null; index++ })
+                        Text(tr("Bỏ qua"), style = VTType.body, color = c.accent, modifier = Modifier.clickable { result = null; index++ })
                     }
                 }
-                VTSection(header = "Dữ liệu", footer = "Nét vuốt chỉ nằm trên máy này (không sao lưu, không tự gửi đi). Xuất JSON để gửi cho nhà phát triển nếu bạn muốn giúp gõ vuốt chính xác hơn.") {
-                    SettingToggle("Lưu nét vuốt trên máy", if (stored > 0) "Đã lưu $stored nét." else "Tắt: chỉ luyện, không lưu gì.", save) { save = it }
+                VTSection(header = tr("Dữ liệu"), footer = tr("Nét vuốt chỉ nằm trên máy này (không sao lưu, không tự gửi đi). Xuất JSON để gửi cho nhà phát triển nếu bạn muốn giúp gõ vuốt chính xác hơn.")) {
+                    SettingToggle(tr("Lưu nét vuốt trên máy"), if (stored > 0) tr("Đã lưu %s nét.", stored) else tr("Tắt: chỉ luyện, không lưu gì."), save) { save = it }
                     if (stored > 0) {
                         RowDivider()
                         VTRow(onClick = { scope.launch(Dispatchers.IO) { TraceStore.share(ctx) } }) {
-                            Text("Xuất JSON…", style = VTType.body, color = c.accent)
+                            Text(tr("Xuất JSON…"), style = VTType.body, color = c.accent)
                         }
                         RowDivider()
                         VTRow(onClick = {
@@ -186,7 +187,7 @@ fun SwipePracticeDialog(onDismiss: () -> Unit) {
                             confirmDelete = false
                             scope.launch(Dispatchers.IO) { TraceStore.delete(ctx); stored = 0 }
                         }) {
-                            Text(if (confirmDelete) "Chạm lần nữa để xoá $stored nét" else "Xoá nét đã lưu", style = VTType.body, color = c.red)
+                            Text(if (confirmDelete) tr("Chạm lần nữa để xoá %s nét", stored) else tr("Xoá nét đã lưu"), style = VTType.body, color = c.red)
                         }
                     }
                 }
