@@ -433,6 +433,16 @@ final class KeyboardViewController: UIInputViewController {
             }
             if !bridge.isComposing { lastWord = nil; lastWord2 = nil }  // xoá lấn vào chữ cũ → context mờ
         }
+        // Chip số: chỉ đọc context khi vừa có chữ số/phép tính trong token này hoặc
+        // token ngay trước ("2 tỷ", "1250000 ") — không trả XPC cho mọi phím chữ.
+        switch key {
+        case .text(let s), .replaceLastLetter(let s):
+            numberSpaces = s.first.map { $0.isNumber || "=+-*/×÷:%().,".contains($0) } == true ? 0 : 99
+        case .space, .doubleSpacePeriod: numberSpaces += 1
+        case .backspace: numberSpaces = 0
+        case .letter: break
+        default: numberSpaces = 99
+        }
         switch key {
         case .space, .doubleSpacePeriod: lastInsertWasSpace = true
         default: lastInsertWasSpace = false
@@ -480,6 +490,10 @@ final class KeyboardViewController: UIInputViewController {
     /// Phím vừa gõ là "@" hoặc "." → rule email/TLD mới có thể ăn; chỉ khi đó
     /// mới đáng trả giá XPC đọc documentContextBeforeInput.
     private var lastKeyWasEmailTrigger = false
+    /// Số dấu cách kể từ chữ số/phép tính cuối (≤1 → đáng đọc context tìm chip số).
+    private var numberSpaces = 99
+    /// Chip số đang hiện (đuôi cần thay + chữ chèn) — payload KeyboardView.numberToken.
+    private var numberChip: NumberChip?
     /// (raw đã chốt, dạng có dấu) khi auto-restore ghi đè — backspace ngay sau đó
     /// mở lại lối thoát: slot literal hiện dạng có dấu để 1 tap đổi từ.
     private var restoreUndo: (raw: String, composed: String)?
@@ -727,6 +741,7 @@ final class KeyboardViewController: UIInputViewController {
         guard suggestionsActive, keyboard?.isBarCollapsed != true else { return }
         let composed = bridge.composedWord
         var set = KeyboardView.SuggestionSet()
+        numberChip = nil
         // Ngay sau vuốt: phương án khác (biến thể dấu + dạng không dấu hạng 2/3) —
         // chỉ khi từ vuốt còn mở và chưa bị sửa.
         if let s = swipeSuggest {
@@ -803,8 +818,18 @@ final class KeyboardViewController: UIInputViewController {
                 .prefix(3).map { caseForContext(DisplayCase.apply($0)) }
             set.nextWords = padWords(Array(top), need: 3)
         }
+        set.number = refreshNumberChip()
         if composed.isEmpty, pasteOffer() { set.paste = true; set.pasteIsImage = pasteIsImage }
         keyboard.showSuggestions(set)
+    }
+
+    /// Chip số cho token trước con trỏ (NumberChips — đọc chữ / định dạng tiền / máy tính).
+    private func refreshNumberChip() -> String? {
+        numberChip = nil
+        guard numberSpaces <= 1,
+              let before = textDocumentProxy.documentContextBeforeInput else { return nil }
+        numberChip = NumberChips.chip(before: before)
+        return numberChip?.display
     }
 
     /// Phần main của gợi ý khi đang gõ dở: pool (VNSuggest) + fix đã tính nền.
@@ -843,6 +868,7 @@ final class KeyboardViewController: UIInputViewController {
             // lên slot chính (tap để thay, không tự thay).
             set.word = fix
         }
+        set.number = refreshNumberChip()
         // thử cụm 2 từ trước ("hoàn thành", "sinh nhật") rồi mới tới từ đơn.
         // Emoji KHÔNG bị lọc nhạy cảm (user 2026-07-24: gõ "cứt"/"shit"
         // phải ra 💩) — filter chỉ chặn gợi ý TỪ, emoji là cách nói giảm.
@@ -937,6 +963,10 @@ final class KeyboardViewController: UIInputViewController {
             updateSuggestions()
             return
         }
+        if item == KeyboardView.numberToken {
+            acceptNumberChip()
+            return
+        }
         // Undo auto-restore: caret đang đứng ngay sau từ raw đã chốt (space vừa
         // bị backspace) → thay cả từ raw bằng dạng có dấu + space.
         if undoOfferActive, let u = restoreUndo, item == u.composed,
@@ -977,6 +1007,30 @@ final class KeyboardViewController: UIInputViewController {
         KeyboardView.clickModifier()
         updateAutoShift()
         updateSuggestions()
+    }
+}
+
+extension KeyboardViewController {
+    /// Chạm chip số: thay đúng đuôi đã tính (kiểm lại context trước khi xoá — lệch thì bỏ).
+    fileprivate func acceptNumberChip() {
+        defer {
+            KeyboardView.clickModifier()
+            updateAutoShift()
+            updateSuggestions()
+        }
+        guard let c = numberChip else { return }
+        numberChip = nil
+        let before = textDocumentProxy.documentContextBeforeInput ?? ""
+        guard before.hasSuffix(c.replace) else {
+            TouchLog.write("failsafe: number chip context mismatch → skip")
+            return
+        }
+        for _ in 0..<c.replace.count { textDocumentProxy.deleteBackward() }
+        textDocumentProxy.insertText(c.insert)
+        bridge.reset()
+        lastWord = nil; lastWord2 = nil
+        restoreUndo = nil; undoOfferActive = false
+        numberSpaces = 0            // kết quả mới cũng là số → chip kế trong chuỗi (tiền → chữ)
     }
 }
 

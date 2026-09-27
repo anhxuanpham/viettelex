@@ -86,6 +86,66 @@ class UserLangModel(
         private const val VERSION = 1
         private const val WEEK_MS = 7L * 86_400_000L
 
+        private fun readTablesFile(f: File): Tables? {
+            if (!f.exists()) return null
+            return try {
+                DataInputStream(BufferedInputStream(FileInputStream(f), 32 * 1024)).use { d ->
+                    if (d.readInt() != MAGIC) return null
+                    if (d.readInt() != VERSION) return null
+                    val lastDecay = d.readLong()
+                    val nu = d.readInt()
+                    val uni = HashMap<String, Int>(nu * 2)
+                    repeat(nu) { uni[d.readUTF()] = d.readInt() }
+                    fun nested(): HashMap<String, HashMap<String, Int>> {
+                        val n = d.readInt()
+                        val m = HashMap<String, HashMap<String, Int>>(n * 2)
+                        repeat(n) {
+                            val k = d.readUTF(); val c = d.readInt()
+                            val inner = HashMap<String, Int>(c * 2)
+                            repeat(c) { inner[d.readUTF()] = d.readInt() }
+                            m[k] = inner
+                        }
+                        return m
+                    }
+                    val bi = nested(); val tri = nested()
+                    Tables(uni, bi, tri, lastDecay)
+                }
+            } catch (e: Exception) { null }
+        }
+
+        private fun writeFile(uni: Map<String, Int>, bi: Map<String, Map<String, Int>>,
+                              tri: Map<String, Map<String, Int>>, lastDecay: Long, f: File) {
+            val tmp = File(f.parentFile, f.name + ".tmp")
+            try {
+                DataOutputStream(BufferedOutputStream(FileOutputStream(tmp), 32 * 1024)).use { d ->
+                    d.writeInt(MAGIC); d.writeInt(VERSION); d.writeLong(lastDecay)
+                    d.writeInt(uni.size)
+                    for ((k, v) in uni) { d.writeUTF(k); d.writeInt(v) }
+                    for (m in listOf(bi, tri)) {
+                        d.writeInt(m.size)
+                        for ((k, inner) in m) {
+                            d.writeUTF(k); d.writeInt(inner.size)
+                            for ((w, c) in inner) { d.writeUTF(w); d.writeInt(c) }
+                        }
+                    }
+                }
+                if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
+            } catch (_: Exception) { tmp.delete() }
+        }
+
+        /** Sao lưu: đọc userlm.bin thành [LearnedWords]; null nếu vắng/hỏng. */
+        fun readLearned(f: File): LearnedWords? = readTablesFile(f)?.let { LearnedWords(it.uni, it.bi, it.tri) }
+
+        /**
+         * Nhập sao lưu: gộp [lw] vào file (count lớn hơn, giữ lastDecay). Gọi TRƯỚC khi
+         * báo IME nạp lại ([reloadAfterExternalErase] qua pref userlmResetAt).
+         */
+        fun mergeLearnedIntoFile(lw: LearnedWords, f: File, now: Long = System.currentTimeMillis()) {
+            val cur = readTablesFile(f)
+            val merged = (cur?.let { LearnedWords(it.uni, it.bi, it.tri) } ?: LearnedWords()).merged(lw)
+            writeFile(merged.uni, merged.bi, merged.tri, cur?.lastDecay ?: now, f)
+        }
+
         /** Từ "học được": chữ cái thuần, ≤12, không chuỗi lặp ≥3 ("heeeyyy"). */
         fun learnable(w: String): Boolean {
             if (w.isEmpty()) return false
@@ -290,32 +350,7 @@ class UserLangModel(
 
     // MARK: persistence
 
-    private fun readTables(f: File): Tables? {
-        if (!f.exists()) return null
-        return try {
-            DataInputStream(BufferedInputStream(FileInputStream(f), 32 * 1024)).use { d ->
-                if (d.readInt() != MAGIC) return null
-                if (d.readInt() != VERSION) return null
-                val lastDecay = d.readLong()
-                val nu = d.readInt()
-                val uni = HashMap<String, Int>(nu * 2)
-                repeat(nu) { uni[d.readUTF()] = d.readInt() }
-                fun nested(): HashMap<String, HashMap<String, Int>> {
-                    val n = d.readInt()
-                    val m = HashMap<String, HashMap<String, Int>>(n * 2)
-                    repeat(n) {
-                        val k = d.readUTF(); val c = d.readInt()
-                        val inner = HashMap<String, Int>(c * 2)
-                        repeat(c) { inner[d.readUTF()] = d.readInt() }
-                        m[k] = inner
-                    }
-                    return m
-                }
-                val bi = nested(); val tri = nested()
-                Tables(uni, bi, tri, lastDecay)
-            }
-        } catch (e: Exception) { null }
-    }
+    private fun readTables(f: File): Tables? = readTablesFile(f)
 
     private class Snapshot(val uni: Map<String, Int>, val bi: Map<String, Map<String, Int>>,
                            val tri: Map<String, Map<String, Int>>, val lastDecay: Long)
@@ -328,22 +363,7 @@ class UserLangModel(
 
     private fun write(s: Snapshot, f: File, gen: Int) {
         if (gen != loadGenerationSnapshot()) return   // đã bị erase/reload: không ghi đè
-        val tmp = File(f.parentFile, f.name + ".tmp")
-        try {
-            DataOutputStream(BufferedOutputStream(FileOutputStream(tmp), 32 * 1024)).use { d ->
-                d.writeInt(MAGIC); d.writeInt(VERSION); d.writeLong(s.lastDecay)
-                d.writeInt(s.uni.size)
-                for ((k, v) in s.uni) { d.writeUTF(k); d.writeInt(v) }
-                for (m in listOf(s.bi, s.tri)) {
-                    d.writeInt(m.size)
-                    for ((k, inner) in m) {
-                        d.writeUTF(k); d.writeInt(inner.size)
-                        for ((w, c) in inner) { d.writeUTF(w); d.writeInt(c) }
-                    }
-                }
-            }
-            if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
-        } catch (_: Exception) { tmp.delete() }
+        writeFile(s.uni, s.bi, s.tri, s.lastDecay, f)
     }
 
     @Volatile private var volatileGen = 0

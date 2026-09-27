@@ -466,8 +466,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         var paste = false               // thẻ Dán thay bar (vừa copy, xem controller)
         var pasteIsImage = false        // clipboard là ẢNH: bàn phím không chèn được → chỉ hướng dẫn
         var restoreLabel: String? = nil // ô "Khôi phục" sau vuốt ⌫ xoá theo từ (slot đầu)
+        var number: String? = nil       // chip số (NumberChips) — luôn ở slot GIỮA, payload numberToken
         var isEmpty: Bool {
             literal == nil && word == nil && word2 == nil && emojis.isEmpty && nextWords.isEmpty
+                && number == nil
         }
     }
 
@@ -600,6 +602,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     static let pasteImageToken = "\u{E000}pasteImage"
     /// Payload ô "Khôi phục" (chèn lại đoạn vừa vuốt ⌫ xoá).
     static let restoreToken = "\u{E000}restore"
+    /// Payload chip số: controller giữ NumberChip (đuôi cần thay + chữ chèn).
+    static let numberToken = "\u{E000}number"
 
     func showSuggestions(_ set: SuggestionSet) {
         guard suggestionsEnabled, !barCollapsed else { return }
@@ -613,6 +617,15 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             if let l = set.literal { texts[0] = ("\u{201C}\(l)\u{201D}", l) }
             if let w = set.word { texts[1] = (w, w) }
             if set.emojis.isEmpty, let w2 = set.word2 { texts[2] = (w2, w2) }
+        }
+        // Chip số chiếm ĐÚNG 1 slot (giữa): literal giữ slot 0; từ bị đẩy sang slot 2.
+        if let n = set.number {
+            if set.nextWords.isEmpty {
+                texts[2] = set.emojis.isEmpty ? texts[1] : nil
+            } else {
+                texts[2] = texts[1]
+            }
+            texts[1] = (n, Self.numberToken)
         }
         if let r = set.restoreLabel {
             texts = [(r, Self.restoreToken), texts[0], texts[1]]

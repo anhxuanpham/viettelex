@@ -1,0 +1,61 @@
+{
+  "createdAt" : "2026-09-27T08:00:00Z",
+  "format" : "viettelex-backup",
+  "learnedWords" : {
+    "bi" : {
+      "cảm" : {
+        "ơn" : 5
+      }
+    },
+    "tri" : {
+      "cảm\u0001ơn" : {
+        "nhiều" : 3
+      }
+    },
+    "uni" : {
+      "cảm" : 7,
+      "nhiều" : 4,
+      "ơn" : 6
+    }
+  },
+  "minReaderVersion" : 1,
+  "platform" : "ios",
+  "settings" : {
+    "autoFixAdjacent" : true,
+    "autoRestore" : true,
+    "contextualEnglish" : true,
+    "filterSensitive" : true,
+    "freeMarking" : true,
+    "hapticFeedback" : true,
+    "liveSpellCheck" : true,
+    "modernTone" : true,
+    "numberRow" : true,
+    "quickTelex" : false,
+    "reEditWords" : false,
+    "rowHeightAdjust" : -3,
+    "showSpaceLogo" : false,
+    "shortcutsEnabled" : true,
+    "showSuggestions" : true,
+    "simpleTelex" : true,
+    "swipeEnglish" : true,
+    "swipeTyping" : true,
+    "teencode" : false,
+    "templatesEnabled" : true
+  },
+  "shortcuts" : {
+    "ko" : "không",
+    "stk" : "số tài khoản",
+    "đc" : "được"
+  },
+  "templates" : [
+    {
+      "label" : "👋",
+      "text" : "Chào buổi sáng"
+    },
+    {
+      "label" : "",
+      "text" : "Anh nói \"ok\" nhé\nDòng 2"
+    }
+  ],
+  "version" : 1
+}
