@@ -40,6 +40,17 @@ final class TelexInputController: IMKInputController {
     /// 5k, 10k) — gõ tắt `h→giờ` không được nở ở đó, chỉ nở khi từ đứng riêng
     /// ("5 h"). Digit là boundary trong Telex nên từ "h" không tự biết nó dính số.
     private var wordGluedToDigit = false
+    /// Gõ tắt khoá ký hiệu/số ("->", "√√", "k2"): cụm đã chốt liền trước từ hiện tại,
+    /// dựng từ phím mình thấy (không đọc màn hình mỗi phím). Chỉ là bộ lọc rẻ — trước
+    /// khi thay, màn hình LUÔN được đọc lại (tryTokenShortcut). Reset ở mọi sự kiện có
+    /// thể dời con trỏ.
+    private var shortcutTail = ShortcutTail()
+    /// ⌫ ngay sau khi nở gõ tắt → trả lại chữ đã gõ (một lần, chỉ in-place, verify màn
+    /// hình). Bị tiêu thụ bởi BẤT KỲ phím thật nào tới sau.
+    private var shortcutUndo: ShortcutUndo?
+    /// boundary() vừa nở gõ tắt: (chữ trên màn hình trước khi nở, nội dung). Caller
+    /// biết ký tự ranh giới nên là nơi dựng shortcutUndo.
+    private var expandedAtBoundary: (typed: String, expansion: String)?
     private var onLen = 0         // UTF-16 length of the composition on screen
     private var tracking = false  // is anchor/onLen valid for the current word?
     private var selToClear = 0    // selection length to overwrite on the first insert
@@ -334,9 +345,15 @@ final class TelexInputController: IMKInputController {
         // BEFORE processing, so this key starts a fresh word anchored at the REAL
         // caret. Same recovery as the mouse-click .telexResetComposition path,
         // which is exactly why clicking into the next cell already worked.
+        // Gõ tắt hoàn tác: chỉ ⌫ NGAY SAU lần nở mới được dùng — mọi phím thật tới đây
+        // (sau khi đã lọc echo của chính mình ở trên) đều tiêu thụ nó.
+        let pendingShortcutUndo = shortcutUndo
+        shortcutUndo = nil
+
         if NavKeyWitness.consume(keycode: Int64(event.keyCode)) {
             logDecision("nav key swallowed by app → composition dropped before this key")
             dropComposition(cause: "nav-key-swallowed")
+            shortcutTail.reset()
             onLen = 0
         }
 
@@ -359,7 +376,7 @@ final class TelexInputController: IMKInputController {
         // `<input type="password">` case, which does NOT switch secure input on and was
         // therefore composed into normally (field report 2026-07-27).
         if SecureFieldDetector.isSecure {
-            engine.reset(); tracking = false; onLen = 0
+            engine.reset(); tracking = false; onLen = 0; shortcutTail.reset()
             logDecision("handle \(AppState.shared.currentBundleID ?? "?"): secure FIELD → passthrough (no compose)")
             return false
         }
@@ -415,9 +432,19 @@ final class TelexInputController: IMKInputController {
                 tracking = false
                 spMode = "marked"
                 logDecision("marked composition killed by modifier+Delete (single press)")
+                shortcutTail.reset()
                 return true
             }
-            endComposition(client); return false
+            endComposition(client)
+            // ⌥+phím gõ ra KÝ TỰ ("√", "≠" — khoá gõ tắt như "√√") vẫn là chữ nằm trước
+            // con trỏ; mọi tổ hợp khác (⌘/⌃, ⌥⌫, ⌥←) dời/xoá chữ ⇒ cụm không còn biết.
+            if mods == .option, event.keyCode != kDelete,
+               let s = ShortcutScreen.insertedText(event.characters) {
+                shortcutTail.append(s)
+            } else {
+                shortcutTail.reset()
+            }
+            return false
         }
 
         // No internal enable/disable: if VietTelex is the active input source we always
@@ -498,6 +525,7 @@ final class TelexInputController: IMKInputController {
             // autocomplete corrupts the text, so raw passthrough is the lesser evil.
             // Do not "fix" this by gating on Accessibility.isTrusted.
             spMode = "tap-defer"
+            shortcutTail.reset()   // tap (hoặc không ai) xử lý phím này — mình không thấy chữ
             // tapAlive/quar/tripped: a tap-defer while the tap is dead is the "raw
             // ASCII, status OK" failure — without these three fields the log cannot
             // distinguish "tap composed this key" from "nobody did" (2026-07-30).
@@ -534,6 +562,13 @@ final class TelexInputController: IMKInputController {
         case kDelete:
             wordGluedToDigit = false
             if engine.isEmpty {
+                // ⌫ ngay sau khi nở gõ tắt: trả lại đúng chữ đã gõ + ranh giới — chỉ
+                // khi màn hình khớp y hệt (đọc lại), ngược lại ⌫ thường.
+                if let u = pendingShortcutUndo, !markedNow, tryUndoShortcut(u, client) {
+                    spMode = "shortcut-undo"
+                    return true
+                }
+                shortcutTail.backspace()
                 // ⌫ on the boundary character the last word ended with puts the caret
                 // back at that word's end, and the user is going to keep editing it
                 // ("tháy" ␣ ⌫ then `a` → "thấy" — issue #40). Re-open it into the buffer
@@ -671,10 +706,17 @@ final class TelexInputController: IMKInputController {
                 newlineKey: newlineKey, shifted: event.modifierFlags.contains(.shift),
                 marked: markedNow, trusted: trustedNow,
                 forwardPlainReturn: forwardPlainReturn)
-            let rewrote = boundary(client, allowShortcuts: Self.shortcutExpansionAllowed(afterDigit: wordGluedToDigit),
+            // Gõ tắt: Return/Enter ("\n") và Tab ("\t") nở cả khoá chữ lẫn khoá ký hiệu;
+            // Esc chỉ khoá chữ (hành vi cũ). Không hoàn tác qua các phím này.
+            let trigger: String? = newlineKey ? "\n" : (event.keyCode == kTab ? "\t" : nil)
+            let allow = ShortcutMatch.triggers(boundary: trigger, glued: wordGluedToDigit)
+            let rewrote = boundary(client, allowShortcuts: allow.word, allowTokenShortcuts: allow.token,
                                    commitSuffix: handling.commitSuffix)
             boundaryCommitInFlight = false
             wordGluedToDigit = false
+            // Enter: dòng mới — cụm bắt đầu lại sau xuống dòng. Tab/Esc: có thể dời
+            // focus / không chèn gì ⇒ cụm không còn biết.
+            if newlineKey { shortcutTail.append("\n") } else { shortcutTail.reset() }
             // Return/Tab/Esc do not put ONE character after the word the way a space
             // does — Enter sends the message in a chat app, Tab moves focus, Esc
             // inserts nothing — so a following ⌫ is not deleting a boundary character
@@ -750,11 +792,23 @@ final class TelexInputController: IMKInputController {
             // code-ish context (arr[i], {json}, (x)); skip auto-restore there so a
             // token isn't "corrected" (auto-restore is off around [ ] { }).
             // The composed word itself is committed unchanged.
-            let boundaryChar = effectiveCharacters(event)?.utf8.first
+            let boundaryText = effectiveCharacters(event)
+            let boundaryChar = boundaryText?.utf8.first
             let wasEdge = edgeTapWord
+            // Gõ tắt (khớp iOS/Android): khoá chữ chỉ nở ở khoảng trắng / dấu câu kết thúc
+            // từ ("ko1", "ko-", "ko@" giữ nguyên), khoá ký hiệu chỉ ở khoảng trắng; phím
+            // không chèn ký tự (mũi tên, F-key) không nở. Từ dính sau số / . _ - / # @
+            // (#82 #87) không nở khoá chữ.
+            let inserted = ShortcutScreen.insertedText(boundaryText)
+            let allow = ShortcutMatch.triggers(boundary: inserted ?? "", glued: wordGluedToDigit)
             let rewrote = boundary(client, suppressAutoRestore: boundaryChar.map(isBracket) ?? false,
-                                   allowShortcuts: Self.shortcutExpansionAllowed(afterDigit: wordGluedToDigit))
-            wordGluedToDigit = Self.gluesShortcutToken(boundaryChar)   // #82 số, #87 / # @
+                                   allowShortcuts: allow.word, allowTokenShortcuts: allow.token)
+            wordGluedToDigit = Self.gluesShortcutToken(boundaryChar)   // #82 số, #87 / # @ . _ -
+            if let s = inserted { shortcutTail.append(s) } else { shortcutTail.reset() }
+            if let x = expandedAtBoundary, !markedNow, !wasEdge {
+                // Một ký tự in được vừa theo sau nội dung nở ⇒ ⌫ kế tiếp được hoàn tác.
+                shortcutUndo = ShortcutUndo.make(typed: x.typed, expansion: x.expansion, boundary: inserted)
+            }
             // Only a key that leaves exactly ONE character after the word may be
             // ⌫-ed back into it (issue #40). Arrow/function keys land here too — they
             // move the caret and insert nothing, so the word is no longer adjacent.
@@ -1252,8 +1306,9 @@ final class TelexInputController: IMKInputController {
     /// empty engine, where it has no vowel to mark and stays literal ("d9o65" → "đô5",
     /// report issue #28 2026-07-27). Telex hides the same fault better (a stray "s"),
     /// so the causes were never worth naming before — now they are.
-    private func dropComposition(cause: String) {
+    private func dropComposition(cause: String, keepShortcutTail: Bool = false) {
         wordGluedToDigit = false
+        if !keepShortcutTail { shortcutTail.reset() }
         if !engine.isEmpty {
             DebugLog.log("composition dropped mid-word (cause=\(cause)) len=\((engine.composed as NSString).length)")
         }
@@ -1604,6 +1659,7 @@ final class TelexInputController: IMKInputController {
     /// In-place text is already on screen (we insert every key), so a reset suffices;
     /// marked text isn't real yet, so finalize it to the composed word first.
     private func endComposition(_ client: IMKTextInput) {
+        if !engine.isEmpty { shortcutTail.append(engine.composed) }   // chữ ở lại màn hình
         if !engine.isEmpty, usesMarkedNow(AppState.shared.currentBundleID) {
             client.insertText(engine.composed, replacementRange: kNoRange)
             client.setMarkedText("", selectionRange: kNoRange, replacementRange: kNoRange)
@@ -1620,6 +1676,7 @@ final class TelexInputController: IMKInputController {
     /// text (no insertText(composed)); unlike boundary it never expands shortcuts or
     /// auto-restores. Whatever was already on screen stays as-is; the engine forgets it.
     private func discardComposition() {
+        shortcutTail.reset()
         engine.reset()
         tracking = false
         onLen = 0
@@ -1646,11 +1703,23 @@ final class TelexInputController: IMKInputController {
     }
 
     private func boundary(_ client: IMKTextInput, suppressAutoRestore: Bool = false,
-                          allowShortcuts: Bool = true, commitSuffix: String = "") -> Bool {
+                          allowShortcuts: Bool = true, allowTokenShortcuts: Bool = false,
+                          commitSuffix: String = "") -> Bool {
         let wasEdge = edgeTapWord
+        expandedAtBoundary = nil
         defer { tracking = false; onLen = 0; edgeTapWord = false }
-        guard !engine.isEmpty else { engine.reset(); return false }
-        let marked = usesMarkedNow(AppState.shared.currentBundleID)
+        let id = AppState.shared.currentBundleID
+        let marked = usesMarkedNow(id)
+        let table = (allowShortcuts || allowTokenShortcuts) ? AppState.shared.shortcutTable : ShortcutTable()
+        guard !engine.isEmpty else {
+            engine.reset()
+            // Khoá ký hiệu/số trên chữ ĐÃ chốt ("->", "√√", "k2"): không có từ đang soạn.
+            if allowTokenShortcuts, !marked, table.hasTokenKeys,
+               tryTokenShortcut(table: table, composed: "", client, id: id) {
+                return true
+            }
+            return false
+        }
         let word = engine.composed
         // Raw keystrokes must be read BEFORE engine.reset() clears them. A shortcut key
         // that contains Telex triggers (s f r x j w, doubled vowels) never survives
@@ -1661,14 +1730,22 @@ final class TelexInputController: IMKInputController {
 
         // Shortcut expansion (bảng gõ tắt) takes precedence over the composed word.
         // Try the composed word first, then fall back to the raw keystrokes so a
-        // shortcut key containing trigger letters still matches. On-screen backspace
-        // count stays `onScreen` (the composed scalar count) either way.
-        if allowShortcuts, !word.isEmpty,
-           let expansion = AppState.shared.shortcuts[word] ?? AppState.shared.shortcuts[rawWord] {
+        // shortcut key containing trigger letters still matches; case follows the
+        // typing (ko → không, Ko → Không, KO → KHÔNG — ShortcutTable.expansion).
+        // On-screen backspace count stays `onScreen` (the composed scalar count).
+        if allowShortcuts, let expansion = table.wordExpansion(composed: word, raw: rawWord) {
             engine.reset()
             if marked { client.insertText(expansion + commitSuffix, replacementRange: kNoRange) }
             else if wasEdge { noteEdgeBurst(SyntheticKeyboard.applyForEdge(backspaces: onScreen, insert: expansion)) }
             else { applyInPlace(bs: onScreen, insert: expansion, client) }
+            shortcutTail.append(expansion + (marked ? commitSuffix : ""))
+            expandedAtBoundary = (word, expansion)
+            return true
+        }
+        // Khoá ký hiệu/số kết thúc bằng từ đang soạn (":D", "1tr" = "1" đã chốt + "tr"):
+        // chỉ in-place (chữ đang soạn đã thật trên màn hình), không edge.
+        if allowTokenShortcuts, !marked, !wasEdge, table.hasTokenKeys,
+           tryTokenShortcut(table: table, composed: word, client, id: id) {
             return true
         }
 
@@ -1680,13 +1757,89 @@ final class TelexInputController: IMKInputController {
             // Commit the marked text (replaces it with the final word). Optional
             // suffix is a newline folded in when Return cannot be re-posted.
             client.insertText(restored + commitSuffix, replacementRange: kNoRange)
+            shortcutTail.append(restored + commitSuffix)
             return true
-        } else if restored != word {
+        }
+        shortcutTail.append(restored)
+        if restored != word {
             if wasEdge { noteEdgeBurst(SyntheticKeyboard.applyForEdge(backspaces: onScreen, insert: restored)) }
             else { applyInPlace(bs: onScreen, insert: restored, client) }
             return true
         }
         return false
+    }
+
+    /// Khoá ký hiệu/số ("->" → "→"): cụm = phần đã chốt liền trước (shortcutTail) +
+    /// `composed` (từ đang soạn, đã nằm trên màn hình ở in-place). Cụm khớp khoá thì
+    /// ĐỌC LẠI màn hình (một lần, chỉ lúc này) và chỉ thay khi chữ ngay trước con trỏ
+    /// đúng là cụm đó và cụm đứng riêng (đầu ô / sau khoảng trắng) — "a->b" hay một
+    /// cụm mình dựng sai đều không đụng. Chỉ in-place: app marked không bảo đảm tôn
+    /// trọng replacementRange trên chữ đã chốt. Trả true = đã thay (engine đã reset).
+    private func tryTokenShortcut(table: ShortcutTable, composed: String,
+                                  _ client: IMKTextInput, id: String?) -> Bool {
+        guard case let .token(token, expansion)? = ShortcutMatch.find(
+            in: table, composed: composed, raw: composed, run: shortcutTail.run,
+            allowWord: false, allowToken: true) else { return false }
+        guard Self.replacesCommittedText(id) else {
+            DebugLog.log("shortcut token \(id ?? "?"): app not proven in-place → skip")
+            return false
+        }
+        let sel = client.selectedRange()
+        guard sel.location != NSNotFound, sel.length == 0,
+              let window = ShortcutScreen.readWindow(caret: sel.location, text: token),
+              let sub = client.attributedSubstring(from: window),
+              let range = ShortcutScreen.tokenRange(caret: sel.location, token: token,
+                                                    window: sub.string, windowStart: window.location)
+        else {
+            DebugLog.log("shortcut token \(id ?? "?"): screen disagrees → skip")
+            return false
+        }
+        // Ô Slate-class ghim In-place: replacementRange ở offset 0 bị APPEND (xem
+        // edgeTapEligible) — không đụng, thà để nguyên cụm.
+        if AppState.shared.manualMode(id) == .inPlace, range.location <= 1 {
+            DebugLog.log("shortcut token \(id ?? "?"): offset \(range.location) in pinned In-place → skip")
+            return false
+        }
+        engine.reset()
+        engine.noteExternalWord(english: false)
+        client.insertText(expansion, replacementRange: range)
+        shortcutTail.replaceRun(with: expansion)
+        expandedAtBoundary = (token, expansion)
+        logDecision("shortcut token \(id ?? "?"): -\(range.length) +\((expansion as NSString).length)")
+        return true
+    }
+
+    /// Thay chữ ĐÃ CHỐT bằng insertText(replacementRange) chỉ ở app đã CHỨNG MINH tôn
+    /// trọng replacementRange (built-in/learned in-place, hoặc user ghim In-place) —
+    /// app chưa phân loại có thể APPEND ("->" thành "->→"). Cùng tinh thần re-edit.
+    private static func replacesCommittedText(_ id: String?) -> Bool {
+        AppState.shared.isLearnedInPlace(id) || AppState.shared.manualMode(id) == .inPlace
+    }
+
+    /// ⌫ ngay sau khi nở: màn hình phải kết thúc ĐÚNG bằng nội dung + ranh giới (đọc
+    /// lại) → thay bằng chữ đã gõ + ranh giới. false ⇒ ⌫ thường. Chỉ gọi khi engine
+    /// rỗng và không ở marked.
+    private func tryUndoShortcut(_ u: ShortcutUndo, _ client: IMKTextInput) -> Bool {
+        let id = AppState.shared.currentBundleID
+        guard Self.replacesCommittedText(id) else { return false }
+        let sel = client.selectedRange()
+        guard sel.location != NSNotFound, sel.length == 0,
+              let window = ShortcutScreen.readWindow(caret: sel.location, text: u.onScreen),
+              let sub = client.attributedSubstring(from: window),
+              let range = ShortcutScreen.undoRange(caret: sel.location, undo: u,
+                                                   window: sub.string, windowStart: window.location)
+        else {
+            DebugLog.log("shortcut undo \(id ?? "?"): screen disagrees → plain ⌫")
+            return false
+        }
+        if AppState.shared.manualMode(id) == .inPlace, range.location <= 1 { return false }
+        client.insertText(u.restored, replacementRange: range)
+        engine.reset()               // cũng xoá re-open snapshot: ⌫ sau đó là ⌫ thường
+        tracking = false; onLen = 0
+        shortcutTail.reset()
+        shortcutTail.append(u.restored)
+        logDecision("shortcut undo \(id ?? "?"): -\(range.length) +\((u.restored as NSString).length)")
+        return true
     }
 
     // MARK: - IMK lifecycle
@@ -1768,8 +1921,11 @@ final class TelexInputController: IMKInputController {
             // precedes the next keystroke, so its main-queue block is enqueued before
             // IMK delivers that key to handle() through the same main run loop.
             resetObserver = NotificationCenter.default.addObserver(
-                forName: .telexResetComposition, object: nil, queue: .main) { [weak self] _ in
-                self?.dropComposition(cause: "resetComposition-notification")
+                forName: .telexResetComposition, object: nil, queue: .main) { [weak self] note in
+                // ⌥+phím ra ký tự ("√") cũng bắn thông báo này từ tap — chữ vẫn nằm trước
+                // con trỏ nên cụm gõ tắt được giữ (tap đánh dấu trong userInfo).
+                let keepTail = (note.userInfo?[TerminalTapController.keepsShortcutTailKey] as? Bool) == true
+                self?.dropComposition(cause: "resetComposition-notification", keepShortcutTail: keepTail)
                 self?.fieldVerified = false
                 self?.fieldForcedMarked = false
                 self?.fieldVerifyStrikes = 0
@@ -1800,6 +1956,7 @@ final class TelexInputController: IMKInputController {
             // mid-word — "t","r" became "trồi". Expansion belongs to EXPLICIT
             // boundaries only (space/punctuation/Return/Tab).
             boundary(client, allowShortcuts: false)
+            shortcutTail.reset()   // app tự chốt (omnibox…): không biết chắc chữ trước con trỏ
             // A FORCED commit, not a boundary key: nothing was inserted after the word,
             // so the next ⌫ is deleting the word's own last letter and must not re-open
             // it (see tryReopenLastCommit).
@@ -2338,10 +2495,13 @@ final class TelexInputController: IMKInputController {
     /// là cùng lớp token với "5h": từ dính liền sau ký tự MỞ TOKEN thì không phải một
     /// từ đứng riêng. Nhóm ký tự mở token = chữ số (#82) + `/` `#` `@` (`/cmd`,
     /// `#tag`, `@mention`). Pure — pinned by ShortcutAfterDigitTests.
+    /// Mở rộng khớp iOS/Android ShortcutTable.isGlued: cả ký tự NỐI token `. _ - : \ ~
+    /// & = + %` (URL, email, tên file, `a-ko`, `x.ko`) — từ dính sau chúng không nở.
     static func gluesShortcutToken(_ c: UInt8?) -> Bool {
         guard let c else { return false }
-        return isAsciiDigit(c) || c == UInt8(ascii: "/") || c == UInt8(ascii: "#") || c == UInt8(ascii: "@")
+        return isAsciiDigit(c) || shortcutGlueBytes.contains(c)
     }
+    private static let shortcutGlueBytes: Set<UInt8> = Set("/#@._-:\\~&=+%".utf8)
 
     func strategyLabel(_ id: String?, localized: Bool) -> String {
         // Remote-desktop canvas (native RDP / browser-hosted CRD): IME is off.

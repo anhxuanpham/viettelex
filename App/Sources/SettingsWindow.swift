@@ -502,7 +502,8 @@ final class SettingsModel: ObservableObject {
 
     func addShortcut(key: String, value: String) {
         let k = key.trimmingCharacters(in: .whitespaces)
-        guard !k.isEmpty else { return }
+        // Khoá: không khoảng trắng, ≤ 64 ký tự (ký hiệu/số được: "->", "√√", "k2").
+        guard ShortcutTable.isValidKey(k), !value.isEmpty else { return }
         AppState.shared.upsertShortcut(key: k, value: value)
         reloadShortcuts()
     }
@@ -525,7 +526,16 @@ extension View {
 }
 
 // id = key: selection survives reloads, and a row can be looked up by its key.
-struct ShortcutRow: Identifiable { var id: String { key }; let key: String; let value: String }
+struct ShortcutRow: Identifiable {
+    var id: String { key }
+    let key: String
+    let value: String
+    /// Nội dung nhiều dòng hiện trên MỘT dòng bảng: xuống dòng → " ⏎ ".
+    var displayValue: String { Self.oneLine(value) }
+    static func oneLine(_ s: String) -> String {
+        s.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\n", with: " ⏎ ")
+    }
+}
 
 /// One row of the mode table. `id` = bundle id (stable across reloads). The label
 /// columns are precomputed at reload so the Table can sort by them (KeyPathComparator
@@ -1347,7 +1357,7 @@ struct ShortcutsTab: View {
         VStack(alignment: .leading, spacing: 8) {
             Table(model.shortcuts, selection: $selection) {
                 TableColumn(model.loc("Type"), value: \.key)
-                TableColumn(model.loc("Becomes"), value: \.value)
+                TableColumn(model.loc("Becomes"), value: \.displayValue)
                 TableColumn("") { row in
                     Button(role: .destructive) { model.removeShortcut(row.key) } label: {
                         Image(systemName: "trash")
@@ -1368,17 +1378,25 @@ struct ShortcutsTab: View {
                 editingKey = key
             }
 
-            HStack {
+            HStack(alignment: .top) {
                 TextField(model.loc("type"), text: $newKey).frame(width: 120)
-                TextField(model.loc("becomes"), text: $newValue)
+                // Nhiều dòng: ⌥↩ (hoặc ⌃↩) xuống dòng trong ô, ↩ để lưu.
+                TextField(model.loc("becomes"), text: $newValue, axis: .vertical)
+                    .lineLimit(1...5)
+                    .onSubmit { if canSave { save() } }
                 Button { save() } label: {
                     Label(model.loc(isEditing ? "Update" : "Add"),
                           systemImage: isEditing ? "checkmark.circle" : "plus.circle")
                 }
-                    .disabled(newKey.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(!canSave)
             }
-            Text(model.loc("Click a row to edit."))
+            if keyInvalid {
+                Text(model.loc("A shortcut key can’t contain spaces (max 64 characters)."))
+                    .font(.caption).foregroundStyle(.red)
+            }
+            Text(model.loc("Click a row to edit. Keys may be symbols or digits (->, √√, k2) — they expand on space/Enter. Case follows your typing: ko → không, Ko → Không, KO → KHÔNG. ⌥↩ adds a line break. ⌫ right after an expansion restores what you typed."))
                 .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             HStack {
                 Button { importPlist() } label: { Label(model.loc("Import…"), systemImage: "square.and.arrow.up.on.square") }
@@ -1388,9 +1406,13 @@ struct ShortcutsTab: View {
         }
     }
 
+    private var trimmedKey: String { newKey.trimmingCharacters(in: .whitespaces) }
+    private var keyInvalid: Bool { !trimmedKey.isEmpty && !ShortcutTable.isValidKey(trimmedKey) }
+    private var canSave: Bool { ShortcutTable.isValidKey(trimmedKey) && !newValue.isEmpty }
+
     private func save() {
-        let key = newKey.trimmingCharacters(in: .whitespaces)
-        guard !key.isEmpty else { return }
+        let key = trimmedKey
+        guard canSave else { return }
         // Overwriting a DIFFERENT entry than the one being edited needs a confirm —
         // otherwise a typo in the key field silently clobbers an existing shortcut.
         if AppState.shared.shortcuts[key] != nil, editingKey != key {

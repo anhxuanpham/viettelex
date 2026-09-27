@@ -20,7 +20,10 @@ final class ShortcutAfterDigitTests: XCTestCase {
     /// mention là token như "5h": từ dính sau `/` `#` `@` không được nở gõ tắt.
     func testTokenOpenersGlue() {
         for c in "/#@0123456789".utf8 { XCTAssertTrue(TelexInputController.gluesShortcutToken(c), String(UnicodeScalar(c))) }
-        for c in " (.,-h\n:".utf8 { XCTAssertFalse(TelexInputController.gluesShortcutToken(c), String(UnicodeScalar(c))) }
+        // Gõ tắt khớp iOS/Android (27/09/2026): ký tự NỐI token (URL, email, tên file,
+        // "a-ko", "x.ko") cũng dính — như ShortcutTable.isGlued bên iOS.
+        for c in "._-:\\~&=+%".utf8 { XCTAssertTrue(TelexInputController.gluesShortcutToken(c), String(UnicodeScalar(c))) }
+        for c in " (,h\n!?)".utf8 { XCTAssertFalse(TelexInputController.gluesShortcutToken(c), String(UnicodeScalar(c))) }
         XCTAssertFalse(TelexInputController.gluesShortcutToken(nil))
     }
 }
