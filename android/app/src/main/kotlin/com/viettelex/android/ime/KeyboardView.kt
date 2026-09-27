@@ -579,7 +579,7 @@ class KeyboardView(
             val (cx, cy) = railCenter(i)
             railFill.color = if (railPressed == i) specialPressed else theme.specialFill
             c.drawCircle(cx, cy, rad, railFill)
-            icon(c, if (i == 0) ImeIcons.SWAP else ImeIcons.EXPAND, cx, cy, 20f, theme.ink, 255)
+            icon(c, if (i == 0) ImeIcons.SWAP else ImeIcons.EXPAND, cx, cy, 20f, theme.ink, (255 * theme.labelAlpha).toInt())
         }
     }
 
@@ -647,7 +647,8 @@ class KeyboardView(
             c.drawRoundRect(k.left + h, k.top + h, k.right - h, k.bottom - h, r, r, bp)
         }
 
-        val contentAlpha = if (trackpad) 51 else 255   // 0.2
+        // 0.2 khi trackpad; × độ trong suốt ký tự (alpha paint — không offscreen).
+        val contentAlpha = ((if (trackpad) 51 else 255) * theme.labelAlpha).toInt()
         val cx = k.centerX; val cy = k.centerY
         when (k.kind) {
             KeyKind.LETTER -> {

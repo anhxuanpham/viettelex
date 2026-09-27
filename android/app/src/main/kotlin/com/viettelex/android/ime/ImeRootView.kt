@@ -9,7 +9,7 @@ import kotlin.math.roundToInt
 
 /**
  * Gốc input view: [KeyboardView] (vùng phím) · [StripView] (strip gợi ý, phủ 4 dp lên
- * mép phím) · [BalloonView] (overlay). Nền ĐỤC toàn khung, cộng inset nav/gesture bar
+ * mép phím) · [BalloonView] (overlay). Nền theme toàn khung (trong suốt được — độ trong suốt phím), cộng inset nav/gesture bar
  * ở đáy (cùng màu bàn phím, spec §6.1). Multi-touch tách theo view con.
  */
 @SuppressLint("ViewConstructor")
@@ -30,8 +30,11 @@ class ImeRootView(
         if (theme.palette.wallpaper) java.io.File(context.filesDir, com.viettelex.keyboard.Keys.WALLPAPER_FILE) else null
     private var wallpaper: android.graphics.Bitmap? = null
     private val wallMatrix = android.graphics.Matrix()
-    private val wallPaint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
-    private val dimColor = theme.withAlpha(theme.palette.wallpaperOverlay, theme.settings.dim / 100f)
+    // Độ trong suốt phím: alpha paint của bitmap + lớp phủ (không layer offscreen).
+    private val wallPaint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG).apply {
+        alpha = (theme.palette.surfaceAlpha * 255).toInt()
+    }
+    private val dimColor = theme.withAlpha(theme.palette.wallpaperOverlay, theme.settings.dim / 100f * theme.palette.surfaceAlpha)
 
     init {
         val bottom = theme.palette.bgBottom

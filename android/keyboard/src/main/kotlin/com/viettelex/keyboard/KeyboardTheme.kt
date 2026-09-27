@@ -61,7 +61,15 @@ data class ThemePalette(
     val isDark: Boolean,
     /** true ⇒ nền là ảnh nền (IME vẽ bitmap + lớp phủ thay cho [bg]). */
     val wallpaper: Boolean = false,
+    /** Chữ/icon trên phím (ĐỤC) sau độ trong suốt phím; null = [ink]. Balloon/popup giữ [ink]. */
+    val keyLabel: Int? = null,
+    /** Alpha chữ/icon trên phím (độ trong suốt ký tự) — IME nhân vào alpha lúc vẽ. */
+    val labelAlpha: Float = 1f,
+    /** Hệ số alpha của ảnh nền + lớp phủ (1 = như cũ). */
+    val surfaceAlpha: Float = 1f,
 ) {
+    val keyInk: Int get() = keyLabel ?: ink
+
     /** Lớp phủ ảnh nền: đen cho theme tối, trắng cho theme sáng. */
     val wallpaperOverlay: Int get() = if (isDark) ThemeColor.BLACK else ThemeColor.WHITE
 
@@ -82,6 +90,57 @@ data class ThemePalette(
     }
 
     companion object { const val WALLPAPER_KEY_ALPHA = 0.8f }
+}
+
+/**
+ * Độ trong suốt (Cài đặt → Giao diện), hai thanh độc lập 0…100% — y hệt iOS
+ * (KeyboardTransparency trong iOS/Keyboard/KeyboardTheme.swift):
+ * - phím: nền/ảnh nền + nền phím + viền; 100% = phím vô hình, chỉ còn chữ.
+ * - ký tự: chữ/icon/nhãn phụ trên phím; 100% = phím trơn không chữ.
+ * Áp bằng alpha của MÀU lúc dựng theme — không alpha nhóm, 0 chi phí mỗi phím.
+ */
+object KeyboardTransparency {
+    /** Chữ phím ≥ 18sp = "chữ lớn" WCAG → 3:1; dưới ngưỡng mới đổi sang đen/trắng. */
+    const val MIN_LABEL_CONTRAST = 3.0
+
+    fun clamp(v: Int) = v.coerceIn(0, 100)
+    /** 0% → 1 (như cũ), 100% → 0. */
+    fun alpha(pct: Int) = 1f - clamp(pct) / 100f
+
+    /**
+     * Thứ lộ ra sau cửa sổ IME trong suốt: cửa sổ app (nền windowBackground — thường
+     * trắng / tối Material). Không đo được từ IME → ước lượng theo sáng/tối hệ thống.
+     */
+    fun systemBackdrop(dark: Boolean) = if (dark) ThemeColor.rgb(0x121212) else ThemeColor.rgb(0xFFFFFF)
+
+    /** Giữ [ink] nếu còn đọc được trên [bg]; không thì đen/trắng (cái tương phản hơn). */
+    fun readable(ink: Int, bg: Int): Int {
+        val c = ThemeColor
+        if (c.contrast(ink, bg) >= MIN_LABEL_CONTRAST) return ink
+        val alt = if (c.contrast(c.WHITE, bg) >= c.contrast(c.BLACK, bg)) c.WHITE else c.BLACK
+        return if (c.contrast(alt, bg) > c.contrast(ink, bg)) alt else ink
+    }
+}
+
+fun ThemePalette.withTransparency(keyboard: Int, labels: Int, systemDark: Boolean): ThemePalette {
+    val t = KeyboardTransparency
+    val k = t.clamp(keyboard); val l = t.clamp(labels)
+    if (k == 0 && l == 0) return this
+    var p = copy(labelAlpha = t.alpha(l))
+    if (k > 0) {
+        val s = t.alpha(k)
+        val c = ThemeColor
+        fun f(x: Int) = c.withAlpha(x, s)
+        p = p.copy(bg = f(bg), bgBottom = bgBottom?.let(::f), keyFill = f(keyFill), specialFill = f(specialFill),
+            action = f(action), chip = f(chip), keyBorder = keyBorder?.let(::f), surfaceAlpha = s)
+        // Nền thật sau chữ ≈ lớp nền mới trên cửa sổ app (ảnh nền: tông lớp phủ).
+        val sys = t.systemBackdrop(systemDark)
+        val behind = c.over(if (wallpaper) c.withAlpha(wallpaperOverlay, s) else p.bg, sys)
+        val label = t.readable(ink, c.over(p.keyFill, behind))
+        p = p.copy(keyLabel = label, actionInk = t.readable(actionInk, c.over(p.action, behind)),
+            isDark = if (label != ink) c.luminance(label) > 0.5 else isDark)
+    }
+    return p
 }
 
 enum class KeyboardTheme(val id: String, val title: String, val isPlus: Boolean) {
@@ -162,12 +221,23 @@ data class ThemeSettings(
     val blur: Int = 0,
     /** Đổi mỗi lần lưu ảnh → IME bỏ bitmap cũ. */
     val version: Long = 0,
+    /** Độ trong suốt phím / ký tự 0…100 (miễn phí, mọi theme). */
+    val keyboardTransparency: Int = 0,
+    val labelTransparency: Int = 0,
 ) {
+    /**
+     * "Khôi phục giao diện gốc": mọi chỉnh ở màn Giao diện về mặc định. Ảnh nền chỉ bỏ
+     * chọn (file giữ để bật lại); version giữ nguyên (không vứt bitmap cache vô cớ).
+     */
+    fun resetToDefaults() = ThemeSettings(version = version)
+    val isDefault: Boolean get() = this == resetToDefaults()
+
     val effectiveTheme: KeyboardTheme get() = if (ThemeGate.allows(theme)) theme else KeyboardTheme.SYSTEM
     fun wallpaperActive(fileExists: Boolean) = wallpaper && fileExists && ThemeGate.allowsWallpaper
 
     fun toMap(): Map<String, Any> = mapOf(Keys.KEYBOARD_THEME to theme.id, Keys.WALLPAPER_ENABLED to wallpaper,
-        Keys.WALLPAPER_DIM to dim, Keys.WALLPAPER_BLUR to blur, Keys.WALLPAPER_VERSION to version)
+        Keys.WALLPAPER_DIM to dim, Keys.WALLPAPER_BLUR to blur, Keys.WALLPAPER_VERSION to version,
+        Keys.KEYBOARD_TRANSPARENCY to keyboardTransparency, Keys.KEY_LABEL_TRANSPARENCY to labelTransparency)
 
     companion object {
         fun load(get: (String) -> Any?) = ThemeSettings(
@@ -176,6 +246,8 @@ data class ThemeSettings(
             dim = ((get(Keys.WALLPAPER_DIM) as? Number)?.toInt() ?: 30).coerceIn(0, 80),
             blur = ((get(Keys.WALLPAPER_BLUR) as? Number)?.toInt() ?: 0).coerceIn(0, 20),
             version = (get(Keys.WALLPAPER_VERSION) as? Number)?.toLong() ?: 0,
+            keyboardTransparency = KeyboardTransparency.clamp((get(Keys.KEYBOARD_TRANSPARENCY) as? Number)?.toInt() ?: 0),
+            labelTransparency = KeyboardTransparency.clamp((get(Keys.KEY_LABEL_TRANSPARENCY) as? Number)?.toInt() ?: 0),
         )
     }
 }

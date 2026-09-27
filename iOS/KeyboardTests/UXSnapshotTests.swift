@@ -42,5 +42,20 @@ final class UXSnapshotTests: XCTestCase {
             // Giữ phím ra số / ký hiệu (issue #98): nhãn nhỏ góc trên-phải.
             try shot("alternates-\(s)", dark: dark) { $0.configureKeyAlternates(numbers: true, symbols: true) }
         }
+        // Độ trong suốt phím / ký tự 0/50/100% (Hệ thống + Hồng đào) — ghi App Group rồi trả lại.
+        let d = UserDefaultsProvider.shared
+        let keys = [ThemeSettings.themeKey, KeyboardTransparency.keyboardKey, KeyboardTransparency.labelKey]
+        let saved = keys.map { d?.object(forKey: $0) }
+        defer { for (k, v) in zip(keys, saved) { d?.set(v, forKey: k) } }
+        for theme in [KeyboardTheme.system, .peach] {
+            for dark in [true, false] {
+                for (k, l) in [(0, 0), (50, 0), (100, 0), (0, 50), (0, 100), (50, 50)] {
+                    d?.set(theme.rawValue, forKey: ThemeSettings.themeKey)
+                    d?.set(k, forKey: KeyboardTransparency.keyboardKey)
+                    d?.set(l, forKey: KeyboardTransparency.labelKey)
+                    try shot("transp-\(theme.rawValue)-k\(k)-l\(l)-\(dark ? "dark" : "light")", dark: dark) { _ in }
+                }
+            }
+        }
     }
 }

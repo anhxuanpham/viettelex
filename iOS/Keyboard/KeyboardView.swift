@@ -124,7 +124,9 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private var themeSettings = ThemeSettings()
     private var plainFill: UIColor { palette.keyFill.ui }
     private var specialFill: UIColor { palette.specialFill.ui }
-    private var ink: UIColor { palette.ink.ui }
+    /// Chữ/icon trên phím (đã áp độ trong suốt ký tự). Balloon/popup dùng `palette.ink`.
+    private var ink: UIColor { palette.keyInk.ui }
+    private func inkFaded(_ a: Double) -> UIColor { palette.keyInk.alpha(a).ui }
     /// Nền theme + ảnh nền + lớp phủ: 3 view phẳng dưới hàng phím (không blur,
     /// không bóng). Ẩn hết ở theme nền trong suốt → giữ touchableClear như cũ.
     private let themeBackdrop = UIView()
@@ -958,7 +960,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         if incognitoOn, let space = spaceBar, space.window != nil {
             let f = convert(space.bounds, from: space)
             incognitoBadge.isHidden = false
-            incognitoBadge.tintColor = ink.withAlphaComponent(0.4)
+            incognitoBadge.tintColor = inkFaded(0.4)
             incognitoBadge.frame = CGRect(x: f.minX + 6, y: f.midY - 9, width: 18, height: 18)
             bringSubviewToFront(incognitoBadge)
         } else if incognitoBadgeMade {
@@ -1138,9 +1140,11 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         themeBackdrop.backgroundColor = palette.background?.ui
         themeBackdrop.isHidden = palette.background == nil
         wallpaperView.isHidden = !wallpaperActive
+        // Độ trong suốt phím: alpha của một UIImageView lá (không sublayer) → không offscreen.
+        wallpaperView.alpha = CGFloat(palette.surfaceAlpha)
         wallpaperDim.isHidden = !wallpaperActive
         wallpaperDim.backgroundColor = palette.wallpaperOverlay
-            .alpha(Double(themeSettings.dim) / 100).ui
+            .alpha(Double(themeSettings.dim) / 100 * palette.surfaceAlpha).ui
         if !wallpaperActive {
             wallpaperView.image = nil          // nhả bitmap ngay khi tắt ảnh nền
             wallpaperLoadedFor = .zero
@@ -1229,8 +1233,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             // Shift ON/CAPS = phím đảo màu (nền trắng, glyph đen) như stock —
             // cả dark mode, nếu không ON và OFF trông y hệt nhau.
             if shift != .off {
-                b.backgroundColor = .white
-                b.tintColor = .black
+                b.backgroundColor = shiftOnFill
+                b.tintColor = shiftOnInk
             } else {
                 b.backgroundColor = plainFill
                 b.tintColor = ink
@@ -1241,6 +1245,11 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                           for: .normal)
     }
     private weak var capsKey: KeyButton?
+    /// Shift ON = phím trắng glyph đen; phím trong suốt quá nửa thì glyph theo chữ phím.
+    private var shiftOnFill: UIColor { RGBA.white.alpha(palette.surfaceAlpha).ui }
+    private var shiftOnInk: UIColor {
+        palette.surfaceAlpha >= 0.5 ? RGBA.black.alpha(palette.keyInk.a).ui : ink
+    }
 
 
     // MARK: chế độ một tay (iPhone)
@@ -1474,7 +1483,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let chips = TemplateChipsView(items: tools ? [] : userTemplates, extras: extras,
                                       showGear: !tools, dark: dark,
                                       plainFill: plainFill,
-                                      ink: ink,
+                                      ink: palette.barInk.ui,
                                       onExtra: { [weak self] id in
             guard let self else { return }
             switch id {
@@ -1938,7 +1947,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             let accent = palette.accent.ui
             ret.backgroundColor = accent
             ret.normalBackground = accent
-            ret.pressedBackground = accent.withAlphaComponent(0.7)
+            ret.pressedBackground = palette.accent.alpha(0.7).ui
             ret.setTitleColor(palette.accentInk.ui, for: .normal)
             ret.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
             // "go"/"search" (Safari, Gmail…): stock hiện MŨI TÊN → trắng, không chữ.
@@ -2026,7 +2035,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             || UserDefaultsProvider.shared?.bool(forKey: "showSpaceLogo") == true
         if showLogo {
             let hint = UIImageView(image: spaceLogoImage())
-            hint.tintColor = ink.withAlphaComponent(0.16)
+            hint.tintColor = inkFaded(0.16)
             hint.contentMode = .scaleAspectFit
             hint.translatesAutoresizingMaskIntoConstraints = false
             spaceLogo = hint
@@ -2366,7 +2375,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             let l = UILabel()
             l.text = sec
             l.font = .systemFont(ofSize: 13)
-            l.textColor = ink.withAlphaComponent(0.4)
+            l.textColor = inkFaded(0.4)
             l.translatesAutoresizingMaskIntoConstraints = false
             l.isUserInteractionEnabled = false
             b.addSubview(l)
@@ -2381,7 +2390,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             let l = UILabel()
             l.text = alt
             l.font = .systemFont(ofSize: 10, weight: .medium)
-            l.textColor = ink.withAlphaComponent(0.45)
+            l.textColor = inkFaded(0.45)
             l.translatesAutoresizingMaskIntoConstraints = false
             l.isUserInteractionEnabled = false
             l.isAccessibilityElement = false
@@ -2499,7 +2508,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // cho balloon leo vào đó thay vì kẹp sát -6.
         let topLimit: CGFloat = (rowsTopConstraint?.constant ?? 0) > 0 ? 0 : -6
         if balloon.superview == nil { addSubview(balloon) }
-        balloon.present(keyRect: f, text: text, fill: palette.balloon.ui, ink: ink, topLimit: topLimit)
+        balloon.present(keyRect: f, text: text, fill: palette.balloon.ui, ink: palette.ink.ui, topLimit: topLimit)
     }
     private func hideBalloon() { if balloonMade { balloon.isHidden = true } }
 
@@ -2560,8 +2569,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         b.setImage(UIImage(systemName: symbol), for: .normal)
         b.accessibilityLabel = "Shift"
         if shift != .off {
-            b.backgroundColor = .white
-            b.tintColor = .black
+            b.backgroundColor = shiftOnFill
+            b.tintColor = shiftOnInk
         } else {
             b.tintColor = ink
         }
@@ -2718,7 +2727,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             wordSwipePill = pill
         }
         pill.text = n > 0 ? "\u{232B} \(n) từ" : "Huỷ"
-        pill.textColor = ink
+        pill.textColor = palette.ink.ui
         pill.backgroundColor = palette.balloon.ui
         if pill.superview == nil { addSubview(pill) }
         bringSubviewToFront(pill)
@@ -3182,7 +3191,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let l = UILabel()
         l.text = KeyAlternates.commaAlt
         l.font = .systemFont(ofSize: 10, weight: .medium)
-        l.textColor = ink.withAlphaComponent(0.45)
+        l.textColor = inkFaded(0.45)
         l.translatesAutoresizingMaskIntoConstraints = false
         l.isUserInteractionEnabled = false
         l.isAccessibilityElement = false

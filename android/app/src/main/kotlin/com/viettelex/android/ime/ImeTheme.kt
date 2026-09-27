@@ -10,6 +10,7 @@ import androidx.core.content.ContextCompat
 import com.viettelex.android.R
 import com.viettelex.keyboard.ThemePalette
 import com.viettelex.keyboard.ThemeSettings
+import com.viettelex.keyboard.withTransparency
 
 /**
  * Màu + Paint dùng chung cho mọi view IME. Dựng một lần mỗi lần tạo input view
@@ -29,7 +30,7 @@ class ImeTheme(ctx: Context, val settings: ThemeSettings = ThemeSettings(), wall
      * Token theme (module :keyboard, [KeyboardTheme]). Hệ thống = màu Material You
      * trong resources như trước; theme khác/ảnh nền ghi đè.
      */
-    val palette: ThemePalette = run {
+    private val basePalette: ThemePalette = run {
         val base = settings.effectiveTheme.palette(systemDark) ?: ThemePalette(
             bg = ContextCompat.getColor(ctx, R.color.ime_bg),
             keyFill = ContextCompat.getColor(ctx, R.color.ime_key),
@@ -44,11 +45,21 @@ class ImeTheme(ctx: Context, val settings: ThemeSettings = ThemeSettings(), wall
             isDark = systemDark)
         if (settings.wallpaperActive(wallpaperFile)) base.overWallpaper() else base
     }
+    /** Sau hai thanh độ trong suốt (phím / ký tự) — áp một lần ở đây, không mỗi phím. */
+    val palette: ThemePalette = basePalette.withTransparency(settings.keyboardTransparency,
+        settings.labelTransparency, systemDark)
     val dark = palette.isDark
     val bg = palette.bg
     val keyFill = palette.keyFill
     val specialFill = palette.specialFill
-    val ink = palette.ink
+    /** Chữ/icon trên phím, strip, pane (đã đổi đen/trắng nếu nền trong suốt lộ nền khác tông). */
+    val ink = palette.keyInk
+    /** Chữ balloon/popup — nền balloon không trong suốt nên giữ màu theme gốc. */
+    val balloonInk = palette.ink
+    /** Alpha chữ/icon trên phím (độ trong suốt ký tự). */
+    val labelAlpha = palette.labelAlpha
+    /** Nền pane phủ lên vùng phím (clipboard) — luôn đục, không để phím lộ qua. */
+    val paneBg = basePalette.bg
     val balloonFill = palette.balloon
     val popupFill = palette.popup
     /** Nền phím enter/hành động (pill màu nhấn) + màu icon trên nó. */
@@ -60,7 +71,8 @@ class ImeTheme(ctx: Context, val settings: ThemeSettings = ThemeSettings(), wall
     /** Viền phím (tương phản cao / kính) — null = không viền. */
     val keyBorder = palette.keyBorder
     /** Nhận diện theme để IME biết khi nào phải dựng lại input view. */
-    val signature = "${settings.effectiveTheme.id}|$systemDark|${palette.wallpaper}|${settings.dim}|${settings.version}"
+    val signature = "${settings.effectiveTheme.id}|$systemDark|${palette.wallpaper}|${settings.dim}|${settings.version}" +
+        "|${settings.keyboardTransparency}|${settings.labelTransparency}"
 
     /** Màu khi đè phím: phủ ink 12% kiểu state layer Material. */
     fun pressed(color: Int): Int = blend(color, ink, 0.12f)

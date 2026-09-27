@@ -57,6 +57,8 @@ enum BackupSettings {
         Spec(key: "spaceSwipeLanguage", kind: .bool(false)),
         Spec(key: "longPressNumbers", kind: .bool(true)),
         Spec(key: "longPressSymbols", kind: .bool(false)),
+        Spec(key: "keyboardTransparency", kind: .int(0, 0...100)),
+        Spec(key: "keyLabelTransparency", kind: .int(0, 0...100)),
     ]
     static let byKey: [String: Spec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
 }

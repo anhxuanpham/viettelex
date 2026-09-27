@@ -23,7 +23,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Slider
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -45,11 +47,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.viettelex.keyboard.KeyboardTheme
+import com.viettelex.keyboard.KeyboardTransparency
 import com.viettelex.keyboard.Keys
 import com.viettelex.keyboard.ThemeGate
 import com.viettelex.keyboard.ThemePalette
 import com.viettelex.keyboard.ThemeSettings
 import com.viettelex.keyboard.WallpaperMath
+import com.viettelex.keyboard.withTransparency
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -143,6 +147,8 @@ private fun saveThemeSettings(ctx: Context, s: ThemeSettings) {
         putInt(Keys.WALLPAPER_DIM, s.dim)
         putInt(Keys.WALLPAPER_BLUR, s.blur)
         putLong(Keys.WALLPAPER_VERSION, s.version)
+        putInt(Keys.KEYBOARD_TRANSPARENCY, s.keyboardTransparency)
+        putInt(Keys.KEY_LABEL_TRANSPARENCY, s.labelTransparency)
     }.apply()
 }
 
@@ -179,6 +185,7 @@ fun ThemePage(onBack: () -> Unit) {
     var wall by remember { mutableStateOf(WallpaperStore.preview(ctx)) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var confirmReset by remember { mutableStateOf(false) }
     fun update(n: ThemeSettings) { s = n; saveThemeSettings(ctx, n) }
 
     fun afterWrite(ok: Boolean, enable: Boolean) {
@@ -203,8 +210,9 @@ fun ThemePage(onBack: () -> Unit) {
 
     val active = s.wallpaperActive(wall != null)
     val pal = (s.effectiveTheme.palette(dark) ?: previewPalette(KeyboardTheme.SYSTEM, dark)).let { if (active) it.overWallpaper() else it }
+        .withTransparency(s.keyboardTransparency, s.labelTransparency, dark)
     VTSection(footer = "Áp dụng lần mở bàn phím kế tiếp.") {
-        KeyboardPreview(pal, if (active) wall else null, s.dim, large = true,
+        KeyboardPreview(pal, if (active) wall else null, s.dim, large = true, backdrop = KeyboardTransparency.systemBackdrop(dark),
             modifier = Modifier.fillMaxWidth().height(180.dp))
     }
 
@@ -267,20 +275,61 @@ fun ThemePage(onBack: () -> Unit) {
         if (busy) VTRow { Text("Đang xử lý ảnh…", style = VTType.footnote, color = c.secondary) }
         error?.let { VTRow { Text(it, style = VTType.footnote, color = c.red) } }
     }
+
+    VTSection(header = "Độ trong suốt",
+        footer = "Phím: nền bàn phím, ảnh nền, nền và viền phím — 100% là phím vô hình, chỉ còn chữ (nền phía sau là app đang gõ). " +
+            "Ký tự: chữ và biểu tượng trên phím — 100% là phím trơn không chữ (khung phóng to khi chạm vẫn hiện).") {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Text("Độ trong suốt phím: ${s.keyboardTransparency}%", style = VTType.body, color = c.label)
+            Slider(value = s.keyboardTransparency.toFloat(), valueRange = 0f..100f,
+                onValueChange = { update(s.copy(keyboardTransparency = Math.round(it / 5) * 5)) })
+            Text("Độ trong suốt ký tự: ${s.labelTransparency}%", style = VTType.body, color = c.label)
+            Slider(value = s.labelTransparency.toFloat(), valueRange = 0f..100f,
+                onValueChange = { update(s.copy(labelTransparency = Math.round(it / 5) * 5)) })
+        }
+    }
+
+    VTSection(footer = "Về theme Hệ thống, tắt ảnh nền (ảnh vẫn giữ để bật lại), độ tối/mờ và độ trong suốt về mặc định.") {
+        VTRow(onClick = if (s.isDefault || busy) null else { { confirmReset = true } }) {
+            Text("Khôi phục giao diện gốc", style = VTType.body, color = if (s.isDefault) c.secondary else c.red)
+        }
+    }
+    if (confirmReset) AlertDialog(
+        onDismissRequest = { confirmReset = false },
+        title = { Text("Khôi phục giao diện gốc?") },
+        text = { Text("Mọi chỉnh sửa trên màn này về mặc định. Ảnh nền không bị xoá.") },
+        confirmButton = { TextButton(onClick = {
+            confirmReset = false
+            val blurChanged = s.blur != 0
+            update(s.resetToDefaults())
+            // Ảnh đang lưu đã mờ theo độ cũ → dựng lại bản không mờ từ ảnh gốc.
+            if (blurChanged && wall != null) {
+                busy = true
+                scope.launch {
+                    val ok = withContext(Dispatchers.Default) { runCatching { WallpaperStore.reblur(ctx, 0) }.getOrDefault(false) }
+                    afterWrite(ok, enable = false)
+                }
+            }
+        }) { Text("Khôi phục", color = c.red) } },
+        dismissButton = { TextButton(onClick = { confirmReset = false }) { Text("Huỷ") } },
+    )
 }
 
 /** Bàn phím thu nhỏ vẽ bằng đúng token theme. */
 @Composable
-private fun KeyboardPreview(p: ThemePalette, wallpaper: ImageBitmap?, dim: Int, large: Boolean, modifier: Modifier) {
+private fun KeyboardPreview(p: ThemePalette, wallpaper: ImageBitmap?, dim: Int, large: Boolean, modifier: Modifier,
+                            backdrop: Int? = null) {
     Box(modifier) {
         val bottom = p.bgBottom
         Canvas(Modifier.fillMaxSize()) {
+            // Nền trong suốt: lộ app phía sau (giả lập bằng màu nền app sáng/tối).
+            backdrop?.let { drawRect(Color(it)) }
             if (bottom != null) drawRect(Brush.verticalGradient(listOf(Color(p.bg), Color(bottom))))
             else drawRect(Color(p.bg))
         }
         if (wallpaper != null) {
-            Image(wallpaper, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            Canvas(Modifier.fillMaxSize()) { drawRect(Color(p.wallpaperOverlay).copy(alpha = dim / 100f)) }
+            Image(wallpaper, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alpha = p.surfaceAlpha)
+            Canvas(Modifier.fillMaxSize()) { drawRect(Color(p.wallpaperOverlay).copy(alpha = dim / 100f * p.surfaceAlpha)) }
         }
         Canvas(Modifier.fillMaxSize()) {
             val pad = if (large) 6.dp.toPx() else 3.dp.toPx()
@@ -291,7 +340,7 @@ private fun KeyboardPreview(p: ThemePalette, wallpaper: ImageBitmap?, dim: Int, 
             fun key(x: Float, y: Float, w: Float, fill: Int) {
                 drawRoundRect(Color(fill), Offset(x, y), Size(w, kh), CornerRadius(r))
                 p.keyBorder?.let { drawRoundRect(Color(it), Offset(x, y), Size(w, kh), CornerRadius(r), style = Stroke(1.dp.toPx())) }
-                if (large) drawCircle(Color(p.ink).copy(alpha = 0.8f), minOf(w, kh) * 0.09f, Offset(x + w / 2, y + kh / 2))
+                if (large) drawCircle(Color(p.keyInk).copy(alpha = 0.8f * p.labelAlpha), minOf(w, kh) * 0.09f, Offset(x + w / 2, y + kh / 2))
             }
             val counts = intArrayOf(10, 9, 7)
             for (row in 0..2) {

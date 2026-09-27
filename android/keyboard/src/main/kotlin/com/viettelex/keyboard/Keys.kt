@@ -81,6 +81,9 @@ object Keys {
     const val WALLPAPER_DIM = "wallpaperDim"
     const val WALLPAPER_BLUR = "wallpaperBlur"
     const val WALLPAPER_VERSION = "wallpaperVersion"
+    /** Độ trong suốt phím (nền + phím) / ký tự trên phím, 0…100. */
+    const val KEYBOARD_TRANSPARENCY = "keyboardTransparency"
+    const val KEY_LABEL_TRANSPARENCY = "keyLabelTransparency"
     /** Lịch sử clipboard (mặc định TẮT — riêng tư). */
     const val CLIPBOARD_HISTORY = "clipboardHistory"
     /** Chế độ ẩn danh thủ công: không học từ, không lưu clipboard. */

@@ -57,6 +57,13 @@ struct KeyboardPalette: Equatable {
     var keyBorder: RGBA?
     /// Chữ sáng trên nền tối → icon hệ thống, emoji plane, … đi theo nhánh tối.
     var isDark: Bool
+    /// Chữ/icon TRÊN PHÍM sau hai thanh trượt độ trong suốt; nil = `ink`.
+    /// `ink` giữ nguyên cho balloon/popup — phản hồi khi gõ luôn rõ.
+    var keyLabel: RGBA? = nil
+    /// Hệ số alpha cho ảnh nền + lớp phủ + bóng phím (1 = như cũ).
+    var surfaceAlpha: Double = 1
+
+    var keyInk: RGBA { keyLabel ?? ink }
 
     /// Có ảnh nền: phím hơi trong để ảnh lộ ra; lớp phủ (dim) do view vẽ riêng.
     /// Độ trong được chọn sao cho chữ vẫn ≥ 4.5:1 (WCAG AA) kể cả trên ảnh TỆ NHẤT
@@ -80,6 +87,66 @@ struct KeyboardPalette: Equatable {
     }
     /// Màu lớp phủ ảnh nền: tối cho theme tối, sáng cho theme sáng.
     var wallpaperOverlay: RGBA { isDark ? .black : .white }
+}
+
+/// Độ trong suốt (Cài đặt → Giao diện), hai thanh độc lập 0…100%:
+/// - phím: nền theme/ảnh nền + nền phím + viền + bóng; 100% = phím vô hình, chỉ còn chữ.
+/// - ký tự: chữ/icon/nhãn phụ trên phím; 100% = phím trơn không chữ.
+/// Áp bằng alpha của MÀU lúc dựng palette — không alpha nhóm (không offscreen pass,
+/// không làm mờ chữ theo), 0 chi phí mỗi phím. Balloon/popup không đổi.
+/// Android giữ y hệt ở android/keyboard/.../KeyboardTheme.kt.
+enum KeyboardTransparency {
+    static let keyboardKey = "keyboardTransparency"
+    static let labelKey = "keyLabelTransparency"
+    /// Chữ trên phím ≥ 18pt = "chữ lớn" WCAG → ngưỡng 3:1. Dưới ngưỡng (vì nền đã
+    /// trong suốt, lộ nền khác tông) mới đổi sang đen/trắng.
+    static let minLabelContrast = 3.0
+
+    static func clamp(_ v: Int) -> Int { max(0, min(100, v)) }
+    /// 0% → 1 (như cũ), 100% → 0.
+    static func alpha(_ pct: Int) -> Double { 1 - Double(clamp(pct)) / 100 }
+
+    /// Nền hệ thống sau input view: iOS luôn có lớp kính bàn phím (không gỡ được) —
+    /// tối đo từ stock iOS 27 (#202020), sáng xấp xỉ kính sáng.
+    static func systemBackdrop(dark: Bool) -> RGBA { dark ? RGBA(hex: 0x202020) : RGBA(hex: 0xD4D6DC) }
+
+    /// Giữ `ink` nếu còn đọc được trên `bg`; không thì đen/trắng (cái tương phản hơn).
+    static func readable(_ ink: RGBA, on bg: RGBA) -> RGBA {
+        guard RGBA.contrast(ink, bg) < minLabelContrast else { return ink }
+        let alt: RGBA = RGBA.contrast(.white, bg) >= RGBA.contrast(.black, bg) ? .white : .black
+        return RGBA.contrast(alt, bg) > RGBA.contrast(ink, bg) ? alt : ink
+    }
+}
+
+extension KeyboardPalette {
+    func withTransparency(keyboard: Int, labels: Int, systemDark: Bool,
+                          wallpaper: Bool) -> KeyboardPalette {
+        typealias T = KeyboardTransparency
+        let k = T.clamp(keyboard), l = T.clamp(labels)
+        guard k > 0 || l > 0 else { return self }
+        var p = self
+        var label = ink
+        if k > 0 {
+            let s = T.alpha(k)
+            p.surfaceAlpha = s
+            p.background = background?.alpha(s)
+            p.keyFill = keyFill.alpha(s)
+            p.specialFill = specialFill.alpha(s)
+            p.accent = accent.alpha(s)
+            p.keyBorder = keyBorder?.alpha(s)
+            // Nền thật sau chữ ≈ lớp nền mới trên backdrop hệ thống (ảnh nền: tông lớp phủ).
+            let sys = T.systemBackdrop(dark: systemDark)
+            let behind = (wallpaper ? wallpaperOverlay.alpha(s) : p.background)?.over(sys) ?? sys
+            label = T.readable(ink, on: p.keyFill.over(behind))
+            p.barInk = T.readable(barInk, on: behind)
+            p.accentInk = T.readable(accentInk, on: p.accent.over(behind))
+            if label != ink { p.isDark = label.luminance > 0.5 }
+        }
+        let la = T.alpha(l)
+        p.keyLabel = label.alpha(la)
+        p.accentInk = p.accentInk.alpha(la)
+        return p
+    }
 }
 
 enum KeyboardTheme: String, CaseIterable {
@@ -203,6 +270,18 @@ struct ThemeSettings: Equatable {
     var dim = 30
     var blur = 0
     var version: Double = 0
+    /// Độ trong suốt phím / ký tự 0…100 (miễn phí, mọi theme).
+    var keyboardTransparency = 0
+    var labelTransparency = 0
+
+    /// "Khôi phục giao diện gốc": mọi chỉnh ở màn Giao diện về mặc định. Ảnh nền chỉ
+    /// bỏ chọn (file giữ nguyên để bật lại); version giữ nguyên (không vứt cache vô cớ).
+    func resetToDefaults() -> ThemeSettings {
+        var s = ThemeSettings()
+        s.version = version
+        return s
+    }
+    var isDefault: Bool { self == resetToDefaults() }
 
     static func load(_ d: UserDefaults?) -> ThemeSettings {
         var s = ThemeSettings()
@@ -212,6 +291,8 @@ struct ThemeSettings: Equatable {
         if d.object(forKey: dimKey) != nil { s.dim = max(0, min(80, d.integer(forKey: dimKey))) }
         s.blur = max(0, min(20, d.integer(forKey: blurKey)))
         s.version = d.double(forKey: versionKey)
+        s.keyboardTransparency = KeyboardTransparency.clamp(d.integer(forKey: KeyboardTransparency.keyboardKey))
+        s.labelTransparency = KeyboardTransparency.clamp(d.integer(forKey: KeyboardTransparency.labelKey))
         return s
     }
 
@@ -221,6 +302,8 @@ struct ThemeSettings: Equatable {
         d?.set(dim, forKey: Self.dimKey)
         d?.set(blur, forKey: Self.blurKey)
         d?.set(version, forKey: Self.versionKey)
+        d?.set(keyboardTransparency, forKey: KeyboardTransparency.keyboardKey)
+        d?.set(labelTransparency, forKey: KeyboardTransparency.labelKey)
     }
 
     /// Theme thực dùng sau cổng Plus (hết quyền → về Hệ thống, không crash/không trắng).
@@ -232,6 +315,8 @@ struct ThemeSettings: Equatable {
 
     func palette(systemDark: Bool, wallpaperActive: Bool) -> KeyboardPalette {
         let p = effectiveTheme.palette(systemDark: systemDark)
-        return wallpaperActive ? p.overWallpaper() : p
+        return (wallpaperActive ? p.overWallpaper() : p)
+            .withTransparency(keyboard: keyboardTransparency, labels: labelTransparency,
+                              systemDark: systemDark, wallpaper: wallpaperActive)
     }
 }

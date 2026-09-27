@@ -19,6 +19,7 @@ struct ThemeSettingsView: View {
     @State private var wallpaperImage: UIImage? = Self.loadPreviewImage()
     @State private var busy = false
     @State private var error: String?
+    @State private var confirmReset = false
 
     private static func loadPreviewImage() -> UIImage? {
         guard let url = Wallpaper.url, let cg = Wallpaper.downsample(url: url, maxPixel: 800) else { return nil }
@@ -33,7 +34,7 @@ struct ThemeSettingsView: View {
                 ThemePreview(palette: settings.palette(systemDark: scheme == .dark,
                                                        wallpaperActive: settings.wallpaperActive(fileExists: hasWallpaperFile)),
                              wallpaper: settings.wallpaperActive(fileExists: hasWallpaperFile) ? wallpaperImage : nil,
-                             dim: settings.dim, large: true)
+                             dim: settings.dim, large: true, systemDark: scheme == .dark)
                     .frame(height: 190)
                     .listRowInsets(EdgeInsets())
             } footer: {
@@ -88,9 +89,31 @@ struct ThemeSettingsView: View {
             } footer: {
                 Text("Ảnh được thu nhỏ và nén ngay trên máy, không gửi đi đâu. Lớp phủ giúp chữ trên phím dễ đọc.")
             }
+
+            Section {
+                percentSlider("Độ trong suốt phím", \.keyboardTransparency)
+                percentSlider("Độ trong suốt ký tự", \.labelTransparency)
+            } header: {
+                Text("Độ trong suốt")
+            } footer: {
+                Text("Phím: nền bàn phím, ảnh nền, nền và viền phím — 100% là phím vô hình, chỉ còn chữ. Ký tự: chữ và biểu tượng trên phím — 100% là phím trơn không chữ (khung phóng to khi chạm vẫn hiện). iOS luôn giữ lớp kính mờ của hệ thống phía sau bàn phím, nên 100% là lộ lớp kính đó chứ không nhìn xuyên hẳn xuống app.")
+            }
+
+            Section {
+                Button("Khôi phục giao diện gốc", role: .destructive) { confirmReset = true }
+                    .disabled(settings.isDefault)
+            } footer: {
+                Text("Về theme Hệ thống, tắt ảnh nền (ảnh vẫn giữ để bật lại), độ tối/mờ và độ trong suốt về mặc định.")
+            }
         }
         .navigationTitle("Giao diện bàn phím")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("Khôi phục giao diện gốc?", isPresented: $confirmReset, titleVisibility: .visible) {
+            Button("Khôi phục", role: .destructive) { resetAppearance() }
+            Button("Huỷ", role: .cancel) {}
+        } message: {
+            Text("Mọi chỉnh sửa trên màn này về mặc định. Ảnh nền không bị xoá.")
+        }
         .onChange(of: pickerItem) { item in
             guard let item else { return }
             importWallpaper(item)
@@ -137,6 +160,23 @@ struct ThemeSettingsView: View {
     }
 
     private func save() { settings.save(groupDefaults) }
+
+    private func percentSlider(_ title: String, _ kp: WritableKeyPath<ThemeSettings, Int>) -> some View {
+        VStack(alignment: .leading) {
+            Text("\(title): \(settings[keyPath: kp])%")
+            Slider(value: Binding(get: { Double(settings[keyPath: kp]) },
+                                  set: { settings[keyPath: kp] = Int($0); save() }),
+                   in: 0...100, step: 5)
+                .accessibilityValue("\(settings[keyPath: kp])%")
+        }
+    }
+
+    private func resetAppearance() {
+        let blurChanged = settings.blur != 0
+        settings = settings.resetToDefaults()
+        // Ảnh đang lưu đã mờ theo độ cũ → dựng lại bản không mờ từ ảnh gốc.
+        if blurChanged { rerenderBlur() } else { save() }
+    }
 
     private func importWallpaper(_ item: PhotosPickerItem) {
         busy = true; error = nil
@@ -208,29 +248,33 @@ struct ThemePreview: View {
     let wallpaper: UIImage?
     let dim: Int
     let large: Bool
+    /// Tông backdrop hệ thống giả lập (lộ ra khi nền trong suốt).
+    var systemDark: Bool? = nil
 
     private static let rows = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                background
+                systemBackdrop
+                if let bg = palette.background { Color(bg.ui) }
                 if let wallpaper {
                     Image(uiImage: wallpaper).resizable().scaledToFill()
                         .frame(width: geo.size.width, height: geo.size.height).clipped()
-                    Color(palette.wallpaperOverlay.alpha(Double(dim) / 100).ui)
+                        .opacity(palette.surfaceAlpha)
+                    Color(palette.wallpaperOverlay.alpha(Double(dim) / 100 * palette.surfaceAlpha).ui)
                 }
                 keys(in: geo.size)
             }
         }
     }
 
-    @ViewBuilder private var background: some View {
-        if let bg = palette.background {
-            Color(bg.ui)
+    /// Giả lập backdrop hệ thống (lộ ra ở theme nền trong suốt / khi chỉnh độ trong suốt).
+    @ViewBuilder private var systemBackdrop: some View {
+        if palette.background?.a == 1 {
+            EmptyView()
         } else {
-            // Nền trong suốt (Hệ thống/Kính): giả lập backdrop hệ thống.
-            LinearGradient(colors: palette.isDark
+            LinearGradient(colors: systemDark ?? palette.isDark
                            ? [Color(white: 0.16), Color(white: 0.10)]
                            : [Color(red: 0.82, green: 0.84, blue: 0.87), Color(red: 0.76, green: 0.78, blue: 0.82)],
                            startPoint: .top, endPoint: .bottom)
@@ -268,7 +312,7 @@ struct ThemePreview: View {
             .overlay(RoundedRectangle(cornerRadius: r)
                 .stroke(Color(palette.keyBorder?.ui ?? .clear), lineWidth: palette.keyBorder == nil ? 0 : 1))
             .overlay(Text(label).font(.system(size: label.count > 1 ? 11 : 15))
-                .foregroundColor(Color((ink ?? palette.ink).ui)))
+                .foregroundColor(Color((ink ?? palette.keyInk).ui)))
             .frame(width: max(w, 1), height: max(h, 1))
     }
 }

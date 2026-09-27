@@ -21,6 +21,7 @@ final class BackupTests: XCTestCase {
         s["hapticFeedback"] = .bool(true); s["modernTone"] = .bool(true); s["numberRow"] = .bool(true)
         s["reEditWords"] = .bool(false); s["showSpaceLogo"] = .bool(false); s["swipeTyping"] = .bool(true)
         s["rowHeightAdjust"] = .int(-3); s["autoCapitalize"] = .bool(false)
+        s["keyboardTransparency"] = .int(40); s["keyLabelTransparency"] = .int(20)
         return BackupPayload(
             createdAt: iso.date(from: "2026-09-27T08:00:00Z"), platform: "ios", settings: s,
             shortcuts: ["ko": "không", "stk": "số tài khoản", "đc": "được"],

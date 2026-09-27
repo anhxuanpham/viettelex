@@ -35,7 +35,7 @@ class ClipboardPane(context: Context, private val theme: ImeTheme) : FrameLayout
     private fun dp(v: Float) = theme.dp(v).toInt()
 
     init {
-        setBackgroundColor(theme.bg)
+        setBackgroundColor(theme.paneBg)
         isClickable = true              // chạm vùng trống không rơi xuống phím
         val col = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         val header = LinearLayout(context).apply {
