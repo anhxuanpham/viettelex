@@ -1581,7 +1581,9 @@ enum SyntheticKeyboard {
     static func applyForEdge(backspaces: Int, insert text: String) -> (backspaces: Int, chunks: [String]) {
         if tripped || !Accessibility.isTrusted { return (0, []) }
         apply(backspaces: backspaces, insert: text, mode: .backspace)
-        return (max(0, backspaces), text.isEmpty ? [] : unicodeInsertChunks(text))
+        // Line breaks go out as a Shift+Return keystroke (isLineBreakChunk), not as a
+        // unicode chunk — its echo carries "\r", never the chunk, so it is not booked.
+        return (max(0, backspaces), text.isEmpty ? [] : unicodeInsertChunks(text).filter { !isLineBreakChunk($0) })
     }
 
     /// Does this edit need the U+202F placeholder dance? Only `.emptyReset`, only a real
@@ -1714,8 +1716,37 @@ enum SyntheticKeyboard {
         text.map(String.init)
     }
 
+    /// Is this insert chunk a line break? Only a gõ tắt expansion can carry one (engine
+    /// output never does). A unicode-string "\n" event is not a Return to most apps
+    /// (Terminal forwards a raw LF, Chromium may drop it), so a line break is posted
+    /// as a real Shift+Return instead: the key chat composers (Chromium/Electron,
+    /// private source — see makeBoundaryRepost) treat as "newline, don't send", Word
+    /// as a line break, and a terminal as Return. Pure — pinned by tests.
+    static func isLineBreakChunk(_ chunk: String) -> Bool {
+        chunk == "\n" || chunk == "\r\n" || chunk == "\r"
+    }
+
     private static func postUnicode(_ text: String) {
-        for chunk in unicodeInsertChunks(text) { postUnicodeChunk(chunk) }
+        for chunk in unicodeInsertChunks(text) {
+            if isLineBreakChunk(chunk) { postShiftReturn() } else { postUnicodeChunk(chunk) }
+        }
+    }
+
+    /// Shift+Return from the private (magic-stamped) source — a line break inside an
+    /// inserted gõ tắt expansion (see isLineBreakChunk).
+    private static func postShiftReturn() {
+        #if DEBUG
+        _testChunkSizes.append(0)          // 0 = line break (test seam)
+        #endif
+        guard source != nil else { return }            // Layer 2: never post unstamped (see postSelectLeft)
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_Return), keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_Return), keyDown: false)
+        else { return }
+        down.flags = .maskShift
+        up.flags = .maskShift
+        notePostedKeyDown()
+        stamp(down); down.post(tap: .cgSessionEventTap)
+        stamp(up);   up.post(tap: .cgSessionEventTap)
     }
 
     #if DEBUG
@@ -2106,6 +2137,18 @@ final class TerminalTapController {
     private var lastDeleteNs: UInt64 = 0
     // Phím trước từ hiện tại là chữ số → không nở gõ tắt cho từ đó (issue #82, "5h").
     private var lastTapKeyWasDigit = false
+    /// Gõ tắt khoá ký hiệu/số ("->", "k2"): cụm đã chốt liền trước từ hiện tại, dựng
+    /// từ chính các phím tap thấy (xem ShortcutTail). Terminal không có AX text để đọc
+    /// lại, nên tap CHỈ nở khi cụm được NEO (đầu cụm ngay sau khoảng trắng/Enter mình
+    /// thấy gõ) — cùng mức tin cậy với việc tap ⌫-gõ-lại từ đang soạn. TAP-thread.
+    private var shortcutTail = ShortcutTail()
+    /// ⌫ ngay sau khi nở → trả lại chữ đã gõ (một lần). Phím thật nào tới cũng tiêu thụ.
+    private var shortcutUndo: ShortcutUndo?
+    /// emitBoundary vừa nở: (chữ trên màn hình trước khi nở, nội dung).
+    private var tapExpanded: (typed: String, expansion: String)?
+    /// userInfo của .telexResetComposition: true = phím là ⌥+ký tự ("√") — chữ vẫn ở
+    /// trước con trỏ, IMKit giữ cụm gõ tắt.
+    static let keepsShortcutTailKey = "keepsShortcutTail"
 
     /// TRUE → the Spotlight overlay owns the keys and no one may compose: the
     /// routing verdict (from the app BEHIND the overlay) says tap-family, but a
@@ -2431,6 +2474,7 @@ final class TerminalTapController {
 
         if type == .leftMouseDown || type == .rightMouseDown {
             engine.reset()
+            shortcutTail.reset(); shortcutUndo = nil   // con trỏ đã dời
             lastTapKeyWasBoundary = false   // click at a word's end re-arms re-edit
             lastTapKeyWasDigit = false
             chordRecognizer.disarm()        // click giữa lúc giữ chord = không phải toggle
@@ -2449,6 +2493,10 @@ final class TerminalTapController {
             SyntheticKeyboard.noteObservedSynthetic()
             return pass
         }
+
+        // Gõ tắt hoàn tác: chỉ ⌫ NGAY SAU lần nở — mọi phím thật khác tiêu thụ nó.
+        let pendingShortcutUndo = shortcutUndo
+        shortcutUndo = nil
 
         // One read of the activation latch for the whole key (it is a locked computed
         // property; the stamp below and the self-heal further down both need it).
@@ -2480,7 +2528,7 @@ final class TerminalTapController {
             defer { pendingEngineReset = false }
             return pendingEngineReset
         }
-        if needsEngineReset { engine.reset() }
+        if needsEngineReset { engine.reset(); shortcutTail.reset() }
         if wakeWatchdog {
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.watchdog != nil else { return }
@@ -2527,6 +2575,7 @@ final class TerminalTapController {
             // cheap Int compare so an idle machine (VietTelex installed, ABC active)
             // still pays nothing per key.
             if !engine.isEmpty || engine.canReopenLastCommit { engine.reset() }
+            shortcutTail.reset()
             return pass
         }
 
@@ -2541,10 +2590,20 @@ final class TerminalTapController {
             // An empty engine can still hold the re-open snapshot, and ⌘A + ⌫ deletes a
             // SELECTION, not the boundary character that snapshot assumes — so the
             // no-op skip now tests for it too, still without leaving the fast path.
+            // Gõ tắt: ⌥+phím ra KÝ TỰ ("√" — khoá "√√") vẫn là chữ trước con trỏ (từ
+            // đang soạn cũng ở lại màn hình); mọi tổ hợp khác dời/xoá chữ ⇒ bỏ cụm.
+            let optionText = Self.optionOnlyText(event, flags: flags)
+            if let t = optionText {
+                shortcutTail.append(engine.composed)
+                shortcutTail.append(t)
+            } else {
+                shortcutTail.reset()
+            }
             if !engine.isEmpty || engine.canReopenLastCommit { engine.reset() }
             // ALWAYS notify: the IMKit controller's engine state is invisible from here,
             // so we cannot gate this on our own emptiness.
-            NotificationCenter.default.post(name: .telexResetComposition, object: nil)
+            NotificationCenter.default.post(name: .telexResetComposition, object: nil,
+                                            userInfo: optionText != nil ? [Self.keepsShortcutTailKey: true] : nil)
             // The chord itself is resolved by the APP, through macOS's live layout —
             // never by us, so pinning a layout could not reach it and ⌘R on a pinned
             // QWERTY fired ⌘P while macOS sat on Colemak (VTX fork's measurement).
@@ -2584,7 +2643,7 @@ final class TerminalTapController {
             case .selection: emitMode = .selection
             case .tap: emitMode = .backspace
             case .emptyReset: emitMode = .emptyReset
-            default: engine.reset(); return pass
+            default: engine.reset(); shortcutTail.reset(); return pass
             }
         } else if let mode = Self.emitMode(for: tapKeyRouting,
                                           selectionMode: AppState.shared.selectionEmitMode(id)) {
@@ -2613,9 +2672,10 @@ final class TerminalTapController {
             // common case, so plain typing in pinned apps never reaches the
             // manualMode lookup.
             SyntheticKeyboard.postBoundaryCopy(of: event)
+            shortcutTail.reset()
             return nil
         } else {
-            engine.reset(); return pass
+            engine.reset(); shortcutTail.reset(); return pass
         }
         // Spotlight overlay WITHOUT an explicit tap-family pin: the routing verdict
         // above belongs to the app BEHIND the overlay (FrontmostApp stays iTerm/
@@ -2630,19 +2690,19 @@ final class TerminalTapController {
         // routed to a tap-family app — plain in-place apps still never pay for it.
         if Self.spotlightOverlayForcesRaw(visible: SpotlightDetector.isVisible,
                                           manualPin: spotlightManual) {
-            engine.reset(); return pass
+            engine.reset(); shortcutTail.reset(); return pass
         }
         // Secure input (native password prompts) OR an AX-reported password field (web
         // login forms, which do NOT switch secure input on): never compose, never emit —
         // pass the raw key through untouched. See SecureFieldDetector.
         if IsSecureEventInputEnabled() || SecureFieldDetector.isSecure {
-            engine.reset(); return pass
+            engine.reset(); shortcutTail.reset(); return pass
         }
         // An app that rejects synthetic input has a window up (Little Snitch alert):
         // the key may land THERE, and every backspace-retype would be refused and
         // flagged — pass raw instead (SyntheticInputGuard).
         if SyntheticInputGuard.isActive {
-            engine.reset(); return pass
+            engine.reset(); shortcutTail.reset(); return pass
         }
 
         // Reflect the current "bỏ dấu tự do" setting (feed/backspace/boundary all
@@ -2666,6 +2726,9 @@ final class TerminalTapController {
             lastTapKeyWasDigit = false
             lastDeleteNs = DispatchTime.now().uptimeNanoseconds
             if engine.isEmpty {
+                // ⌫ ngay sau khi nở gõ tắt: trả lại đúng chữ đã gõ + ranh giới (một lần).
+                if let u = pendingShortcutUndo, tryUndoShortcutTap(u, id: id) { return nil }
+                shortcutTail.backspace()
                 // ⌫ on the boundary character the last word ended with re-opens that
                 // word ("tháy" ␣ ⌫ then `a` → "thấy" — issue #40); the ⌫ still goes
                 // through and deletes the boundary character either way.
@@ -2710,11 +2773,16 @@ final class TerminalTapController {
             // nothing), so a following ⌫ is not deleting a boundary character and must
             // not re-open the word — see tryReopenLastCommitTap.
             defer { engine.forgetLastCommit() }
-            if engine.isEmpty, SyntheticKeyboard.queueDrained() { return pass }
-            let gluedToDigit = lastTapKeyWasDigit
+            // Gõ tắt: Return/Enter ("\n") và Tab ("\t") nở cả khoá chữ lẫn khoá ký hiệu;
+            // Esc chỉ khoá chữ (hành vi cũ). Sau Enter cụm bắt đầu lại (dòng/prompt
+            // mới); Tab (hoàn thành lệnh shell) / Esc ⇒ cụm không còn biết.
+            let trigger: String? = newlineKey ? "\n" : (keyCode == kTab ? "\t" : nil)
+            defer { if newlineKey { shortcutTail.append("\n") } else { shortcutTail.reset() } }
+            let allow = ShortcutMatch.triggers(boundary: trigger, glued: lastTapKeyWasDigit)
+            let tokenPossible = allow.token && shortcutTail.anchored && !shortcutTail.run.isEmpty
+            if engine.isEmpty, !tokenPossible, SyntheticKeyboard.queueDrained() { return pass }
             lastTapKeyWasDigit = false
-            if emitBoundary(suppressAutoRestore: false,
-                            allowShortcuts: TelexInputController.shortcutExpansionAllowed(afterDigit: gluedToDigit))
+            if emitBoundary(suppressAutoRestore: false, allowShortcuts: allow.word, allowToken: allow.token)
                 || !SyntheticKeyboard.queueDrained() {
                 reemit(keyCode: keyCode, string: nil, original: event)
                 return nil
@@ -2741,6 +2809,7 @@ final class TerminalTapController {
             lastTapKeyWasBoundary = true
             emitBoundary(suppressAutoRestore: false, allowShortcuts: false)
             engine.forgetLastCommit()      // nothing predictable landed after the word
+            shortcutTail.reset()
             return pass
         }
         // Navigation / function keys (←↑→↓, Home/End/PageUp/PageDown, forward-delete,
@@ -2754,6 +2823,7 @@ final class TerminalTapController {
             lastTapKeyWasBoundary = true
             emitBoundary(suppressAutoRestore: false, allowShortcuts: false)
             engine.forgetLastCommit()      // navigation: the caret left the word behind
+            shortcutTail.reset()
             return pass
         }
         // Layout remap: the tap is handed the character macOS produced with ITS
@@ -2784,9 +2854,17 @@ final class TerminalTapController {
             // tapNativeFastPath like the letter fast-path below. (modifyInPlace adds
             // nothing here: with no rewrite pending the untouched event is already
             // exactly what should land, in every emit mode.)
+            // Gõ tắt (khớp iOS/Android): khoá chữ chỉ nở ở khoảng trắng / dấu câu kết thúc
+            // từ, khoá ký hiệu chỉ ở khoảng trắng; từ dính sau số / . _ - / # @ không nở.
+            let boundaryText = String(ch)
+            let allow = ShortcutMatch.triggers(boundary: boundaryText, glued: lastTapKeyWasDigit)
             let rewrote = emitBoundary(suppressAutoRestore: isBracketUnichar(ch.utf16.first ?? unit),
-                                       allowShortcuts: TelexInputController.shortcutExpansionAllowed(afterDigit: lastTapKeyWasDigit))
-            lastTapKeyWasDigit = TelexInputController.gluesShortcutToken(ch.asciiValue)   // #82 số, #87 / # @
+                                       allowShortcuts: allow.word, allowToken: allow.token)
+            lastTapKeyWasDigit = TelexInputController.gluesShortcutToken(ch.asciiValue)   // #82 số, #87 / # @ . _ -
+            shortcutTail.append(boundaryText)
+            if let x = tapExpanded, emitMode == .backspace {
+                shortcutUndo = ShortcutUndo.make(typed: x.typed, expansion: x.expansion, boundary: boundaryText)
+            }
             // A plain ascii boundary (space, punctuation, digit) leaves exactly ONE
             // character after the word, which is what makes the next ⌫ re-openable
             // (issue #40). Anything else — an option-key symbol, a multi-scalar
@@ -2985,8 +3063,10 @@ final class TerminalTapController {
     /// Emit a shortcut expansion / auto-restore rewrite for the composed word. Returns
     /// true if anything was rewritten (caller then re-emits the boundary key after it).
     @discardableResult
-    private func emitBoundary(suppressAutoRestore: Bool, allowShortcuts: Bool = true) -> Bool {
-        guard !engine.isEmpty else { engine.reset(); return false }
+    private func emitBoundary(suppressAutoRestore: Bool, allowShortcuts: Bool = true,
+                              allowToken: Bool = false) -> Bool {
+        tapExpanded = nil
+        let table = (allowShortcuts || allowToken) ? AppState.shared.shortcutTable : ShortcutTable()
         // Capture BOTH forms before reset() wipes them. The composed word is what's on
         // screen (drives the backspace count); the raw keystrokes are what the user
         // actually typed.
@@ -2997,20 +3077,85 @@ final class TerminalTapController {
         // keystrokes. A shortcut key containing Telex triggers (s f r x j w, doubled
         // vowels) is transformed by composition and so can NEVER match on `composed`
         // ("ddc" composes to "đc"); the raw form recovers it. Backspaces are always the
-        // on-screen composed scalar count regardless of which form matched.
-        if allowShortcuts,
-           let expansion = (word.isEmpty ? nil : AppState.shared.shortcuts[word])
-                        ?? AppState.shared.shortcuts[rawWord] {
+        // on-screen composed scalar count regardless of which form matched. Case
+        // follows the typing (ko/Ko/KO — ShortcutTable.expansion). Then SYMBOL/DIGIT
+        // keys ("->", "k2", ":D") against the whole run before the caret — only when
+        // the run is anchored (ShortcutTail): no AX text to re-read in a terminal.
+        let run = shortcutTail.anchored ? shortcutTail.run : ""
+        switch ShortcutMatch.find(in: table, composed: word, raw: rawWord, run: run,
+                                  allowWord: allowShortcuts, allowToken: allowToken && shortcutTail.anchored) {
+        case let .word(expansion)?:
             engine.reset()
             SyntheticKeyboard.apply(backspaces: onScreen, insert: expansion, mode: emitMode)
+            shortcutTail.append(expansion)
+            tapExpanded = (word, expansion)
             return true
+        case let .token(token, expansion)?:
+            engine.reset()
+            engine.noteExternalWord(english: false)
+            // ⌫ theo KÝ TỰ: mỗi ký tự của cụm là một phím mình thấy gõ; từ đang soạn
+            // (nếu có) tính theo scalar như mọi lần tap ⌫-gõ-lại.
+            let bs = run.count + onScreen
+            SyntheticKeyboard.apply(backspaces: bs, insert: expansion, mode: emitMode)
+            shortcutTail.replaceRun(with: expansion)
+            tapExpanded = (token, expansion)
+            DebugLog.log("shortcut token(tap): bs=\(bs) ins=\(expansion.count)")
+            return true
+        case nil:
+            break
         }
+        guard !engine.isEmpty else { engine.reset(); return false }
         let restore = AppState.shared.autoRestore && !suppressAutoRestore
         if case let .replace(bs, insert) = engine.commitBoundary(autoRestore: restore) {
             SyntheticKeyboard.apply(backspaces: bs, insert: insert, mode: emitMode)
+            shortcutTail.append(String(String.UnicodeScalarView(word.unicodeScalars.dropLast(bs))) + insert)
             return true
         }
+        shortcutTail.append(word)
         return false
+    }
+
+    /// ⌫ ngay sau khi nở (tap): xoá nội dung + ranh giới, gõ lại chữ đã gõ + ranh giới.
+    /// Chỉ .backspace (omnibox/Office có autocomplete/ô tự viết lại chữ), chỉ nội dung
+    /// một dòng (xuống dòng trong terminal = lệnh đã chạy). Có AX text (trang web) thì
+    /// ĐỌC LẠI và chỉ làm khi khớp y hệt; không có (terminal thuần) thì tin dòng phím
+    /// như mọi lần tap ⌫-gõ-lại — ⌫ này là phím NGAY SAU lần nở do chính tap phát ra.
+    private func tryUndoShortcutTap(_ u: ShortcutUndo, id: String?) -> Bool {
+        guard emitMode == .backspace, !u.expansion.contains(where: { $0.isNewline }) else { return false }
+        if let caret = AXTextEdit.readCaret() {
+            let len = (u.onScreen as NSString).length
+            guard caret >= len, let text = AXTextEdit.readString(at: caret - len, length: len),
+                  Array(text.utf16) == Array(u.onScreen.utf16) else {
+                DebugLog.log("shortcut undo(tap) \(id ?? "?"): screen disagrees → plain ⌫")
+                return false
+            }
+        } else if AppState.shared.usesAxDetect(id) {
+            // Trình duyệt mà AX không đọc được: không chắc màn hình — ⌫ thường.
+            return false
+        }
+        engine.reset()
+        SyntheticKeyboard.apply(backspaces: u.onScreen.count, insert: u.restored, mode: emitMode)
+        shortcutTail.reset()
+        shortcutTail.append(u.restored)
+        DebugLog.log("shortcut undo(tap) \(id ?? "?"): bs=\(u.onScreen.count) ins=\(u.restored.count)")
+        return true
+    }
+
+    /// Ký tự một tổ hợp CHỈ-⌥ gõ ra ("√" = ⌥V), nil cho mọi tổ hợp khác (⌘/⌃, ⌥⌫,
+    /// ⌥← …). Chỉ đọc chuỗi của event khi đúng là ⌥ đơn — chord thường không tốn gì.
+    static func optionOnlyText(_ event: CGEvent, flags: CGEventFlags) -> String? {
+        guard flags.contains(.maskAlternate), !flags.contains(.maskCommand), !flags.contains(.maskControl),
+              event.getIntegerValueField(.keyboardEventKeycode) != 51 else { return nil }
+        var len = 0
+        var slots: (UniChar, UniChar, UniChar, UniChar) = (0, 0, 0, 0)
+        let s: String? = withUnsafeMutableBytes(of: &slots) { raw in
+            let buf = raw.bindMemory(to: UniChar.self)
+            event.keyboardGetUnicodeString(maxStringLength: 4, actualStringLength: &len,
+                                           unicodeString: buf.baseAddress)
+            guard len >= 1, let base = buf.baseAddress else { return nil }
+            return String(utf16CodeUnits: base, count: len)
+        }
+        return ShortcutScreen.insertedText(s)
     }
 
     private func reemit(keyCode: Int, string: String?, original: CGEvent? = nil) {

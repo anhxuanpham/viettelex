@@ -290,3 +290,6 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 
 "%@ is on a password field" = "%@ đang ở ô mật khẩu";
 "macOS pauses every input method in password fields — normal. Click another field to type Vietnamese again" = "macOS tạm tắt mọi bộ gõ trong ô mật khẩu — bình thường. Bấm sang ô khác là gõ tiếng Việt lại được";
+
+"A shortcut key can’t contain spaces (max 64 characters)." = "Chữ tắt không được chứa khoảng trắng (tối đa 64 ký tự).";
+"Click a row to edit. Keys may be symbols or digits (->, √√, k2) — they expand on space/Enter. Case follows your typing: ko → không, Ko → Không, KO → KHÔNG. ⌥↩ adds a line break. ⌫ right after an expansion restores what you typed." = "Bấm một dòng để sửa. Chữ tắt có thể là ký hiệu/số (->, √√, k2) — nở khi gõ dấu cách/Enter. Hoa thường theo cách gõ: ko → không, Ko → Không, KO → KHÔNG. ⌥↩ để xuống dòng trong nội dung. ⌫ ngay sau khi nở trả lại chữ đã gõ.";

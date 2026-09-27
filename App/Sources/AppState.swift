@@ -72,6 +72,8 @@ final class AppState: @unchecked Sendable {
 
     // In-memory caches (loaded once). All guarded by `lock` (see above).
     private var shortcutsCache: [String: String]
+    // Bảng đã lọc + cờ hasTokenKeys, dựng lại MỖI lần bảng đổi (không phải mỗi ranh giới từ).
+    private var shortcutTableCache: ShortcutTable
     private var fallbackAppsCache: Set<String>
     private var probedAppsCache: Set<String>
     private var manualModesCache: [String: String]
@@ -134,6 +136,7 @@ final class AppState: @unchecked Sendable {
         _bracketVowels = (defaults.object(forKey: Key.bracketVowels) as? Bool) ?? false
         _switchHotkey = (defaults.object(forKey: "switchHotkey") as? String) ?? "off"
         shortcutsCache = (defaults.dictionary(forKey: Key.shortcuts) as? [String: String]) ?? [:]
+        shortcutTableCache = ShortcutTable(shortcutsCache)
         fallbackAppsCache = Set(defaults.stringArray(forKey: Key.fallbackApps) ?? [])
         probedAppsCache = Set(defaults.stringArray(forKey: Key.probedApps) ?? [])
         manualModesCache = (defaults.dictionary(forKey: Key.manualModes) as? [String: String]) ?? [:]
@@ -514,19 +517,28 @@ final class AppState: @unchecked Sendable {
     /// Read-only snapshot used at word boundaries (no disk hit).
     var shortcuts: [String: String] { lock.withLock { shortcutsCache } }
 
+    /// Bảng tra lúc gõ (giữ hoa/thường, khoá ký hiệu — xem Shortcuts.swift). Struct
+    /// COW: đọc chỉ là một lần lock + retain, không lọc lại bảng mỗi ranh giới.
+    var shortcutTable: ShortcutTable { lock.withLock { shortcutTableCache } }
+
     func setShortcuts(_ dict: [String: String]) {
-        lock.withLock { shortcutsCache = dict }
+        let table = ShortcutTable(dict)
+        lock.withLock { shortcutsCache = dict; shortcutTableCache = table }
         defaults.set(dict, forKey: Key.shortcuts)
     }
 
     func upsertShortcut(key: String, value: String) {
         guard !key.isEmpty else { return }
         let snapshot = lock.withLock { shortcutsCache[key] = value; return shortcutsCache }
+        let table = ShortcutTable(snapshot)
+        lock.withLock { shortcutTableCache = table }
         defaults.set(snapshot, forKey: Key.shortcuts)
     }
 
     func removeShortcut(key: String) {
         let snapshot = lock.withLock { shortcutsCache.removeValue(forKey: key); return shortcutsCache }
+        let table = ShortcutTable(snapshot)
+        lock.withLock { shortcutTableCache = table }
         defaults.set(snapshot, forKey: Key.shortcuts)
     }
 
@@ -1160,22 +1172,86 @@ func VTLocalized(_ key: String) -> String {
 
 
 /// Universal shortcut-table parser: accepts every format users bring from other
-/// IMEs (field request 2026-07-22) — plist/XML, JSON, flat YAML ("key: value"),
-/// and plain text ("key:value", ";" or "#" comments). Returns
-/// nil when nothing parseable is found.
+/// IMEs (field request 2026-07-22) — JSON, flat YAML ("key: value"), and plain
+/// text ("key:value", ";" or "#" comments). Returns nil when nothing parseable is
+/// found. CÙNG định dạng với iOS ShortcutFile / Android Shortcuts.kt (một file dùng
+/// chung Mac ↔ iPhone ↔ Android), gồm phần mở rộng tương thích ngược: nội dung
+/// nhiều dòng trong ngoặc kép với `\n`; khoá chứa ":" (hoặc mở đầu # ; // " ')
+/// trong ngoặc kép. Cũng là parser của typing-modes.yml (khoá = bundle id).
 enum ShortcutImporter {
+    static let header = "# VietTelex — bảng gõ tắt"
+
     /// Flat-YAML export — human-readable, round-trips through parse(), and
-    /// other IMEs' users can eyeball-edit it. Values with YAML-special leading
-    /// chars or wrapping spaces get double quotes.
+    /// other IMEs' users can eyeball-edit it. Byte-identical to iOS/Android for
+    /// ordinary tables (sample-shortcuts.yml).
     static func exportYAML(_ shortcuts: [String: String]) -> String {
-        var out = "# VietTelex — bảng gõ tắt\n"
+        var out = header + "\n"
         for key in shortcuts.keys.sorted() {
             let value = shortcuts[key]!
-            let needsQuotes = value.hasPrefix(" ") || value.hasSuffix(" ")
-                || value.hasPrefix("'") || value.hasPrefix("\"") || value.hasPrefix("#")
-            out += needsQuotes ? "\(key): \"\(value)\"\n" : "\(key): \(value)\n"
+            out += "\(quoteKeyIfNeeded(key)): \(quoteValueIfNeeded(value))\n"
         }
         return out
+    }
+
+    private static func quoteKeyIfNeeded(_ k: String) -> String {
+        let needs = k.contains(":") || k.hasPrefix("#") || k.hasPrefix(";") || k.hasPrefix("//")
+            || k.hasPrefix("\"") || k.hasPrefix("'")
+        return needs ? "\"" + escape(k) + "\"" : k
+    }
+
+    private static func quoteValueIfNeeded(_ v: String) -> String {
+        if v.contains("\n") || v.contains("\r") { return "\"" + escape(v) + "\"" }
+        // YAML-special leading chars or wrapping spaces get double quotes — ESCAPED,
+        // since parse() unescapes every double-quoted value (identity for ordinary
+        // text; a bare `\` or `"` inside would otherwise not survive the round trip).
+        let needs = v.hasPrefix(" ") || v.hasSuffix(" ") || v.hasPrefix("'") || v.hasPrefix("\"") || v.hasPrefix("#")
+        return needs ? "\"" + escape(v) + "\"" : v
+    }
+
+    private static func escape(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\r\n", with: "\\n")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\n")
+    }
+
+    private static func unescape(_ s: String) -> String {
+        guard s.contains("\\") else { return s }
+        var out = ""
+        var it = s.makeIterator()
+        while let c = it.next() {
+            guard c == "\\" else { out.append(c); continue }
+            guard let n = it.next() else { out.append("\\"); break }
+            switch n {
+            case "n": out.append("\n")
+            case "t": out.append("\t")
+            case "\\": out.append("\\")
+            case "\"": out.append("\"")
+            default: out.append("\\"); out.append(n)
+            }
+        }
+        return out
+    }
+
+    /// `"…"` ở đầu chuỗi → (nội dung đã unescape, phần còn lại). nil nếu không đóng nháy.
+    private static func quotedPrefix(_ s: Substring) -> (String, Substring)? {
+        var i = s.index(after: s.startIndex)
+        var raw = ""
+        while i < s.endIndex {
+            let c = s[i]
+            if c == "\\" {
+                let n = s.index(after: i)
+                guard n < s.endIndex else { return nil }
+                raw.append(c); raw.append(s[n])
+                i = s.index(after: n)
+                continue
+            }
+            if c == "\"" { return (unescape(raw), s[s.index(after: i)...]) }
+            raw.append(c)
+            i = s.index(after: i)
+        }
+        return nil
     }
 
     static func parse(_ data: Data) -> [String: String]? {
@@ -1185,18 +1261,32 @@ enum ShortcutImporter {
             return dict
         }
         // 2. Line-based: plain txt ("key:value", ";" comments) and flat YAML
-        //    ("key: value", "#" comments). One entry per line, first ":" splits.
-        guard let text = String(data: data, encoding: .utf8) else { return nil }
+        //    ("key: value", "#" comments). One entry per line, first ":" splits —
+        //    unless the key is double-quoted (it may contain ":").
+        guard var text = String(data: data, encoding: .utf8) else { return nil }
+        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
         var out: [String: String] = [:]
-        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: true) {
+        for rawLine in text.split(omittingEmptySubsequences: true,
+                                  whereSeparator: { $0 == "\n" || $0 == "\r\n" || $0 == "\r" }) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             if line.isEmpty || line.hasPrefix(";") || line.hasPrefix("#") || line.hasPrefix("//") { continue }
-            guard let colon = line.firstIndex(of: ":") else { continue }
-            let key = String(line[..<colon]).trimmingCharacters(in: .whitespaces)
-            var value = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
-            // YAML niceties: strip a matching pair of quotes
-            if value.count >= 2,
-               (value.hasPrefix("\"") && value.hasSuffix("\"")) || (value.hasPrefix("'") && value.hasSuffix("'")) {
+            var key: String
+            var rest: Substring
+            if line.hasPrefix("\""), let (k, after) = quotedPrefix(Substring(line)) {
+                let r = after.drop(while: { $0 == " " || $0 == "\t" })
+                guard r.first == ":" else { continue }
+                key = k; rest = r.dropFirst()
+            } else {
+                guard let colon = line.firstIndex(of: ":") else { continue }
+                key = String(line[..<colon]).trimmingCharacters(in: .whitespaces)
+                rest = line[line.index(after: colon)...]
+            }
+            key = key.trimmingCharacters(in: .whitespaces)
+            var value = rest.trimmingCharacters(in: .whitespaces)
+            // YAML niceties: strip a matching pair of quotes ("…" also unescapes \n \" \\)
+            if value.count >= 2, value.hasPrefix("\""), value.hasSuffix("\"") {
+                value = unescape(String(value.dropFirst().dropLast()))
+            } else if value.count >= 2, value.hasPrefix("'"), value.hasSuffix("'") {
                 value = String(value.dropFirst().dropLast())
             }
             // Key filter serves three masters: SHORTCUT keys (typed abbreviations —
@@ -1207,8 +1297,7 @@ enum ShortcutImporter {
             // 2026-07-31), and REJECTING junk formats (a plist's DOCTYPE line splits
             // on ":" into a key WITH spaces — the whitespace test is what keeps
             // parse() answering nil for plist XML now that the cap is 64).
-            guard !key.isEmpty, !value.isEmpty, key.count <= 64,
-                  !key.contains(where: { $0.isWhitespace }) else { continue }
+            guard ShortcutTable.isValidKey(key), !value.isEmpty else { continue }
             out[key] = value
         }
         return out.isEmpty ? nil : out
