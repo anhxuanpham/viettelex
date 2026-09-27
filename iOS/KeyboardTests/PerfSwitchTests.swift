@@ -4,6 +4,10 @@ import UIKit
 /// Công tắc hiệu năng (27/09/2026): tính năng phụ TẮT ⇒ không đọc context / không nạp dữ
 /// liệu / không lên lịch việc mỗi phím. Chạy controller thật với proxy giả (KeyboardBenchTests.Rig).
 final class PerfSwitchTests: XCTestCase {
+    // Chip "Thêm dấu" là Plus — test công tắc hiệu năng với paywall mở; gating ở PlusTests.
+    private var savedPaywall = false
+    override func setUp() { super.setUp(); savedPaywall = PlusGate.paywallEnabled; PlusGate.paywallEnabled = false }
+    override func tearDown() { PlusGate.paywallEnabled = savedPaywall; super.tearDown() }
 
     func testNewSettingsDefaultsAndLoad() {
         let s = KeyboardSettings()

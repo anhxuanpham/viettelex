@@ -14,6 +14,7 @@ final class KeyboardThemeTests: XCTestCase {
         super.setUp()
         savedDefaults = PlusGate.defaults
         savedPaywall = PlusGate.paywallEnabled
+        PlusGate.paywallEnabled = false   // mặc định test = mở (test gating tự bật)
         suite = "themeplus-\(UUID().uuidString)"
         PlusGate.defaults = UserDefaults(suiteName: suite)!
     }

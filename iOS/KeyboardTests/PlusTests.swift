@@ -74,7 +74,7 @@ final class PlusGateTests: XCTestCase {
         XCTAssertEqual(PlusConfig.plusProductID, "com.viettelex.ios.plus")
         XCTAssertEqual(PlusConfig.tipProductIDs.count, 3)
         XCTAssertEqual(Set(PlusConfig.allProductIDs).count, 4)
-        XCTAssertFalse(PlusConfig.paywallEnabled, "chưa tạo sản phẩm trên store → phải mở mặc định")
+        XCTAssertTrue(PlusConfig.paywallEnabled, "đã tạo 4 sản phẩm trên App Store Connect (27/09) → bán thật")
     }
 }
 
