@@ -104,4 +104,20 @@ class VNITests {
         s.typeKeys(p, "1 ")
         assertEquals("tiếng ", p.text)
     }
+
+    // MARK: gõ tắt + VNI — khớp dạng đã qua engine VNI; số là phím dấu TRONG từ, không phải
+    // "chữ tắt dính sau số" (#82).
+    private val vniShortcuts = vni.copy(shortcuts = ShortcutTable(mapOf("ko" to "không", "đc" to "được", "dc" to "đi chơi")))
+
+    @Test fun shortcutsExpandInVNI() {
+        assertEquals("không ", type("ko ", settings = vniShortcuts))
+        assertEquals("được ", type("d9c ", settings = vniShortcuts))          // khoá "đc"
+        assertEquals("xin được.", type("xin d9c.", settings = vniShortcuts))
+        assertEquals("đi chơi ", type("dc ", settings = vniShortcuts))        // raw "d9c" ≠ "dc"
+        assertEquals("2 không ", type("2 ko ", settings = vniShortcuts))
+    }
+
+    @Test fun shortcutGluedAfterRealNumberStaysInVNI() {
+        assertEquals("2ko ", type("2ko ", settings = vniShortcuts))           // #82: số NGOÀI từ
+    }
 }

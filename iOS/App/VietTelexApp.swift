@@ -853,6 +853,8 @@ struct TinhNangSections: View {
             settingToggle("Sửa dấu từ đã gõ", "Xoá dấu cách ngay sau một từ để gõ tiếp dấu cho từ đó (tháy ␣ ⌫ a → thấy); hoặc đặt con trỏ ngay sau từ rồi gõ phím dấu s f r x j: viêt + j → việt (VNI: số 1–5, 0).", isOn: $reEditWord)
         } header: { Text("Chính tả") }
 
+        ShortcutsSection()
+
         Section {
             // Thanh gợi ý bật = tự học từ hay dùng (learnWords đi theo, không
             // còn toggle riêng — quyết định 2026-07-24)

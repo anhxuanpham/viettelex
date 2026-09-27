@@ -111,4 +111,24 @@ final class VNIBridgeTests: XCTestCase {
         b3.letter("s", proxy: p3)
         XCTAssertEqual(p3.text, "tiêng s")
     }
+
+    // MARK: gõ tắt + VNI — khớp dạng đã qua engine VNI; số là phím dấu TRONG từ, không phải
+    // "chữ tắt dính sau số" (#82).
+    private var vniShortcuts: KeyboardSettings {
+        var s = vni
+        s.shortcuts = ShortcutTable(["ko": "không", "đc": "được", "dc": "đi chơi"])
+        return s
+    }
+
+    func testShortcutsExpandInVNI() {
+        XCTAssertEqual(type("ko ", settings: vniShortcuts), "không ")
+        XCTAssertEqual(type("d9c ", settings: vniShortcuts), "được ")         // khoá "đc"
+        XCTAssertEqual(type("xin d9c.", settings: vniShortcuts), "xin được.")
+        XCTAssertEqual(type("dc ", settings: vniShortcuts), "đi chơi ")       // raw "d9c" ≠ "dc"
+        XCTAssertEqual(type("2 ko ", settings: vniShortcuts), "2 không ")
+    }
+
+    func testShortcutGluedAfterRealNumberStaysInVNI() {
+        XCTAssertEqual(type("2ko ", settings: vniShortcuts), "2ko ")          // #82: số NGOÀI từ
+    }
 }

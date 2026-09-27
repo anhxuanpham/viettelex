@@ -237,7 +237,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
             capSentences = field.capSentences, suggestionsAllowed = field.suggestionsAllowed,
             capWords = field.capWords, capCharacters = field.capCharacters,
             initialCaps = info.initialCapsMode != 0, noLearning = field.noLearning,
-            packageName = info.packageName))
+            packageName = info.packageName, urlField = proxy.uriField))
         hwSetting = settings.hardwareTelex
         fieldReady = true
     }

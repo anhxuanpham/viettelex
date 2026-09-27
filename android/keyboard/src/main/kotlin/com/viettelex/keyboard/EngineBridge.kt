@@ -14,6 +14,16 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
     /** Ô không autocorrect (mã/username): gõ LITERAL, bỏ engine. */
     var passthrough = false
 
+    /** Cho phép gõ tắt ở ô này (session TẮT ở ô URL/omnibox). Mật khẩu/email đã passthrough. */
+    var shortcutsAllowed = true
+
+    /** Lần bung gõ tắt gần nhất — ⌫ NGAY SAU đó trả lại đúng chữ đã gõ (một lần). */
+    private class ExpansionUndo(val typed: String, val expansion: String, val boundary: String)
+    private var expansionUndo: ExpansionUndo? = null
+    /** boundary() vừa rồi đã bung gõ tắt (session: không mời hoàn tác khôi phục, học nội dung). */
+    var expandedAtLastBoundary = false
+        private set
+
     /**
      * Ký tự ngay trước con trỏ là ranh giới CHÍNH MÌNH vừa chèn ⇒ không có từ nào để nạp
      * lại, khỏi đọc context (IPC) ở chữ đầu mỗi từ.
@@ -67,6 +77,7 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
      * đã chèn ⇒ không sửa gì, trả false (caller tự xử lý).
      */
     fun undoLastLetter(proxy: TextProxy): Boolean {
+        expansionUndo = null
         if (!undo.valid) return false
         undo.valid = false
         if (!proxy.confirmTail(undo.inserted)) return false
@@ -85,6 +96,7 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
      */
     fun adoptWord(word: String): Boolean {
         undo.valid = false
+        expansionUndo = null
         afterOwnBoundary = false
         val ok = engine.seed(word)
         if (!ok) engine.reset()
@@ -97,6 +109,7 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
      */
     fun adoptLiteral() {
         undo.valid = false
+        expansionUndo = null
         afterOwnBoundary = false
         engine.reset()
         engine.forgetLastCommit()
@@ -125,6 +138,7 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
     /** Phím chữ (đã theo shift). */
     fun letter(ch: Char, proxy: TextProxy) {
         undo.valid = false
+        expansionUndo = null
         if (proxy.isSecure || passthrough) {
             checkpoint(afterOwnBoundary)
             proxy.insertText(ch.toString())
@@ -174,12 +188,17 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
      * Space / return / dấu câu: boundary → auto-restore rồi chèn [text]. Trả từ ĐÃ
      * CHỐT (sau auto-restore) để model học đúng thứ nằm trên màn hình.
      */
-    fun boundary(text: String, proxy: TextProxy, lineBreak: Boolean = false): String {
+    fun boundary(text: String, proxy: TextProxy, lineBreak: Boolean = false, expand: Boolean = true): String {
         // [lineBreak]: [text] là "\n" chèn thật ([TextProxy.insertLineBreak]), không gửi action.
+        // [expand] = false: không gõ tắt (từ vuốt — từ từ điển, không phải chữ tắt).
         fun put(text: String) = if (lineBreak) proxy.insertLineBreak() else proxy.insertText(text)
         undo.valid = false
+        expansionUndo = null
+        expandedAtLastBoundary = false
         if (proxy.isSecure || passthrough) { put(text); return "" }
         afterOwnBoundary = text.isNotEmpty() && !Character.isLetterOrDigit(text.codePointBefore(text.length))
+        // Gõ tắt TRƯỚC tự khôi phục tiếng Anh.
+        if (expand) tryExpandShortcut(text, proxy, ::put)?.let { return it }
         val before = engine.composed
         val action = engine.commitBoundary(settings.autoRestore)
         if (action is TelexAction.Replace && action.backspaces > 0 && !proxy.confirmTail(before)) {
@@ -228,6 +247,10 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
      */
     fun backspace(proxy: TextProxy): Boolean {
         undo.valid = false
+        expansionUndo?.let { u ->
+            expansionUndo = null
+            if (undoExpansion(u, proxy)) return false
+        }
         if (proxy.isSecure || passthrough) { proxy.deleteBackward(); return false }
         afterOwnBoundary = false
         if (engine.isEmpty) {
@@ -269,10 +292,79 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
     }
 
     /** Bỏ snapshot mở lại (Enter có thể đã gửi tin / xuống dòng mà ⌫ không đảo được). */
-    fun forgetLastCommit() = engine.forgetLastCommit()
+    fun forgetLastCommit() { engine.forgetLastCommit(); expansionUndo = null }
 
     /** Đổi ô / con trỏ dời / ẩn bàn phím → quên từ + ngữ cảnh tiếng Anh. */
-    fun reset() { engine.reset(); engine.resetContext(); afterOwnBoundary = false; undo.valid = false }
+    fun reset() { engine.reset(); engine.resetContext(); afterOwnBoundary = false; undo.valid = false; expansionUndo = null }
+
+    // MARK: gõ tắt (port iOS EngineBridge.tryExpandShortcut)
+
+    /**
+     * Bung gõ tắt ở ranh giới [text] nếu khớp ([ShortcutTable]): xoá chữ đã gõ (chỉ khi chữ
+     * trước con trỏ đúng là nó — confirmTail, không xoá mù), chèn nội dung rồi ranh giới qua
+     * [put]. Trả nội dung đã bung, null = không bung.
+     */
+    private fun tryExpandShortcut(text: String, proxy: TextProxy, put: (String) -> Unit): String? {
+        val table = settings.shortcuts
+        if (!settings.shortcutsEnabled || !shortcutsAllowed || table.isEmpty) return null
+        if (!engine.isEmpty && ShortcutTable.triggersWord(text)) {
+            val composed = engine.composed
+            val e = table.wordExpansion(composed, engine.rawKeystrokes)
+            if (e != null) {
+                val ctx = proxy.contextBeforeInput()
+                if (ShortcutTable.isGlued(composed, ctx) || !proxy.confirmTail(composed)) return null
+                return applyExpansion(composed, e, text, proxy, put)
+            }
+        }
+        if (table.hasTokenKeys && ShortcutTable.triggersToken(text) && !proxy.hasSelection) {
+            val ctx = proxy.contextBeforeInput() ?: return null
+            val (token, e) = table.tokenExpansion(ctx) ?: return null
+            if (!engine.isEmpty && !token.endsWith(engine.composed)) return null
+            return applyExpansion(token, e, text, proxy, put)
+        }
+        return null
+    }
+
+    private fun applyExpansion(typed: String, expansion: String, text: String, proxy: TextProxy,
+                               put: (String) -> Unit): String {
+        engine.reset()
+        engine.forgetLastCommit()                 // ⌫ không mở lại chữ tắt qua engine
+        engine.noteExternalWord(false)
+        val n = Cp.count(typed)
+        TouchLog.edit(n, Cp.count(expansion), expansion)
+        proxy.deleteCodePoints(n)
+        proxy.insertText(expansion)
+        put(text)
+        expandedAtLastBoundary = true
+        // Enter có thể đã gửi tin — không hứa hoàn tác qua nó.
+        if (!text.contains('\n')) expansionUndo = ExpansionUndo(typed, expansion, text)
+        return expansion
+    }
+
+    /** ⌫ ngay sau khi bung: màn hình phải kết thúc ĐÚNG bằng nội dung + ranh giới. */
+    private fun undoExpansion(u: ExpansionUndo, proxy: TextProxy): Boolean {
+        if (proxy.isSecure || passthrough || proxy.hasSelection) return false
+        val tail = u.expansion + u.boundary
+        val ctx = proxy.contextBeforeInput()
+        if (ctx == null || !ctx.endsWith(tail)) {
+            TouchLog.write("shortcut undo: screen disagrees → ⌫ thường")
+            return false
+        }
+        proxy.deleteCodePoints(Cp.count(tail))
+        proxy.insertText(u.typed + u.boundary)
+        engine.reset()
+        engine.forgetLastCommit()
+        afterOwnBoundary = u.boundary.isNotEmpty() && !Character.isLetterOrDigit(u.boundary.codePointBefore(u.boundary.length))
+        TouchLog.write("shortcut undo: -${Cp.count(u.expansion)} +${Cp.count(u.typed)}")
+        return true
+    }
+
+    /** Nội dung sẽ bung nếu gõ ranh giới ngay bây giờ (thanh gợi ý). Chỉ khoá chữ. */
+    val shortcutPreview: String?
+        get() {
+            if (!settings.shortcutsEnabled || !shortcutsAllowed || passthrough || engine.isEmpty || settings.shortcuts.isEmpty) return null
+            return settings.shortcuts.wordExpansion(engine.composed, engine.rawKeystrokes)
+        }
 
     val isComposing: Boolean get() = !engine.isEmpty
     val composedWord: String get() = engine.composed
