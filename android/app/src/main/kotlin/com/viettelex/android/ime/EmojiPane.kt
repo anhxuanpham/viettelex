@@ -15,7 +15,8 @@ import kotlin.math.ceil
  * Plane emoji (port iOS EmojiPlane, spec §10.1) vẽ thẳng trên Canvas của
  * [KeyboardView] — không RecyclerView/ViewGroup. Lưới cuộn NGANG column-major 5 hàng
  * liên tục qua category, tiêu đề section xám trên cột đầu, hàng dưới
- * [ABC][9 icon category][⌫]. Chỉ vẽ cột đang thấy.
+ * [ABC][🔍][9 icon category][^‿^][⌫]. Chỉ vẽ cột đang thấy. 🔍 → plane EMOJI_SEARCH
+ * (KeyboardView); ^‿^ → tab kaomoji / ký tự đặc biệt (cuộn dọc, chạm chèn nguyên văn).
  */
 class EmojiPane(
     private val host: KeyboardView,
@@ -78,6 +79,20 @@ class EmojiPane(
     }
     private val animRun = Runnable { tick() }
 
+    // --- tab kaomoji ---
+    private var kaomoji = false
+    private var kaoScrollY = 0f
+    private var kaoContentH = 0f
+    private class Chip(val text: String, var l: Float, var t: Float, var r: Float, var b: Float)
+    private class KaoHeader(val title: String, var y: Float)
+    private val chips = ArrayList<Chip>()
+    private val kaoHeaders = ArrayList<KaoHeader>()
+    private val chipPaint = theme.text(17f)
+    private val chipOff = theme.centerOffset(chipPaint)
+    private val chipFill = theme.fill(theme.keyFill)
+    private val kaoTabPaint = theme.text(12f, bold = true)
+    private val kaoTabOff = theme.centerOffset(kaoTabPaint)
+
     fun open(recents: List<String>) {
         dismissPopup()
         val list = ArrayList<Section>(10)
@@ -87,6 +102,7 @@ class EmojiPane(
         scrollX = 0f
         scroller.forceFinished(true)
         pendingIcon = -1
+        kaomoji = false; kaoScrollY = 0f
         relayoutSections()
         highlighted = iconIndex(sectionOnScreen())
     }
@@ -104,9 +120,37 @@ class EmojiPane(
         headerBase = collTop - headerPaint.fontMetrics.ascent
         val abcW = 44 * d; val side = 8 * d; val gap = 2 * d
         iconsLeft = side + abcW + gap
-        iconW = (w - 2 * side - 2 * abcW - 2 * gap) / 9f
+        iconW = (w - 2 * side - 2 * abcW - 2 * gap) / SLOTS
         relayoutSections()
+        layoutKaomoji()
     }
+
+    /** Dàn dòng các viên kaomoji theo bề ngang (toạ độ nội dung, chưa trừ kaoScrollY). */
+    private fun layoutKaomoji() {
+        chips.clear(); kaoHeaders.clear()
+        if (width == 0f) return
+        val side = 8 * d; val gap = 6 * d; val h = 34 * d
+        var y = collTop + 2 * d
+        for (g in EmojiData.kaomoji) {
+            kaoHeaders += KaoHeader(g.name.uppercase(), y - headerPaint.fontMetrics.ascent)
+            y += 18 * d
+            var x = side
+            for (item in g.items) {
+                val w = minOf(maxOf(chipPaint.measureText(item) + 20 * d, h), width - 2 * side)
+                if (x + w > width - side && x > side) { x = side; y += h + gap }
+                chips += Chip(item, x, y, x + w, y + h)
+                x += w + gap
+            }
+            y += h + 12 * d
+        }
+        kaoContentH = y
+        kaoScrollY = kaoScrollY.coerceIn(0f, maxKaoScroll())
+    }
+
+    private fun maxKaoScroll() = maxOf(0f, kaoContentH - (rowTop - theme.dp(1f)))
+
+    /** Test hook: các mục kaomoji theo thứ tự hiển thị. */
+    internal val kaomojiItems: List<String> get() = chips.map { it.text }
 
     private fun relayoutSections() {
         if (width == 0f) return
@@ -133,6 +177,7 @@ class EmojiPane(
     // MARK: vẽ
 
     fun draw(c: Canvas) {
+        if (kaomoji) { drawKaomoji(c); drawCategoryRow(c); return }
         val w = width
         c.save()
         c.clipRect(0f, 0f, w, rowTop - theme.dp(1f))
@@ -163,12 +208,33 @@ class EmojiPane(
         popup?.let { drawPopup(c, it) }
     }
 
+    private fun drawKaomoji(c: Canvas) {
+        c.save()
+        c.clipRect(0f, 0f, width, rowTop - theme.dp(1f))
+        for (h in kaoHeaders) c.drawText(h.title, 10 * d, h.y - kaoScrollY, headerPaint)
+        val r = 8 * d
+        for (ch in chips) {
+            val t = ch.t - kaoScrollY
+            if (t > rowTop || ch.b - kaoScrollY < 0) continue
+            c.drawRoundRect(ch.l, t, ch.r, ch.b - kaoScrollY, r, r, chipFill)
+            c.drawText(ch.text, (ch.l + ch.r) / 2, (t + ch.b - kaoScrollY) / 2 + chipOff, chipPaint)
+        }
+        c.restore()
+    }
+
     private fun drawCategoryRow(c: Canvas) {
         val cy = (rowTop + rowBottom) / 2
         c.drawText("ABC", 8 * d + 22 * d, cy + abcOff, abcPaint)
+        // slot 0 = 🔍, 1…9 = category, 10 = kaomoji
+        iconPaint.color = theme.withAlpha(theme.ink, 0.55f)
+        ImeIcons.draw(c, ImeIcons.SEARCH, iconsLeft + 0.5f * iconW, cy, 18f * d, iconPaint)
+        val kx = iconsLeft + (SLOTS - 0.5f) * iconW
+        if (kaomoji) { val hw = minOf(iconW / 2 - d, 16 * d); c.drawRoundRect(kx - hw, cy - 13 * d, kx + hw, cy + 13 * d, 13 * d, 13 * d, hiPaint) }
+        kaoTabPaint.color = if (kaomoji) theme.ink else theme.withAlpha(theme.ink, 0.55f)
+        c.drawText("^‿^", kx, cy + kaoTabOff, kaoTabPaint)
         for (i in 0 until 9) {
-            val cx = iconsLeft + (i + 0.5f) * iconW
-            val on = i == highlighted
+            val cx = iconsLeft + (i + 1.5f) * iconW
+            val on = i == highlighted && !kaomoji
             if (on) { val hw = minOf(iconW / 2 - d, 16 * d); c.drawRoundRect(cx - hw, cy - 13 * d, cx + hw, cy + 13 * d, 13 * d, 13 * d, hiPaint) }
             iconPaint.color = if (on) theme.ink else theme.withAlpha(theme.ink, 0.55f)
             ImeIcons.draw(c, ImeIcons.CATEGORY[i], cx, cy, 19.5f * d, iconPaint)
@@ -207,6 +273,7 @@ class EmojiPane(
     }
 
     private fun jumpToCategory(icon: Int) {
+        kaomoji = false
         val s = sectionIndex(icon) ?: return
         if (sections[s].emoji.isEmpty()) return
         pendingIcon = icon
@@ -224,6 +291,13 @@ class EmojiPane(
     }
 
     fun computeScroll() {
+        if (kaomoji) {
+            if (scroller.computeScrollOffset()) {
+                kaoScrollY = scroller.currY.toFloat().coerceIn(0f, maxKaoScroll())
+                host.postInvalidateOnAnimation()
+            }
+            return
+        }
         if (scroller.computeScrollOffset()) {
             scrollX = scroller.currX.toFloat().coerceIn(0f, maxScroll())
             onScrolled()
@@ -248,6 +322,7 @@ class EmojiPane(
         if (y >= rowTop - 2 * d) {
             when {
                 x < iconsLeft -> { feedback.click(Feedback.MODIFIER, host); host.paneABC() }
+                x >= iconsLeft && x < iconsLeft + iconW -> { feedback.click(Feedback.MODIFIER, host); host.paneSearch() }
                 x >= width - 8 * d - 44 * d - 2 * d -> {
                     feedback.click(Feedback.DELETE, host)
                     host.paneBackspace()
@@ -262,19 +337,30 @@ class EmojiPane(
         if (gridPtr >= 0) return    // một ngón cuộn/tap lưới
         gridPtr = pid
         dragging = false
-        downX = x; downY = y; lastTouchX = x
+        downX = x; downY = y; lastTouchX = x; lastTouchY = y
         scroller.forceFinished(true)
         velocity?.recycle()
         velocity = VelocityTracker.obtain()
         host.removeCallbacks(holdRun)
-        host.postDelayed(holdRun, 350)
+        if (!kaomoji) host.postDelayed(holdRun, 350)
     }
 
     /** KeyboardView chuyển MotionEvent thật cho VelocityTracker (không tổng hợp event). */
     fun track(e: android.view.MotionEvent) { if (gridPtr >= 0) velocity?.addMovement(e) }
 
+    private var lastTouchY = 0f
+
     fun move(pid: Int, x: Float, y: Float) {
         if (pid != gridPtr) return
+        if (kaomoji) {
+            if (!dragging && abs(y - downY) > touchSlop) { dragging = true; lastTouchY = y }
+            if (dragging) {
+                val ny = (kaoScrollY + (lastTouchY - y)).coerceIn(0f, maxKaoScroll())
+                lastTouchY = y
+                if (ny != kaoScrollY) { kaoScrollY = ny; host.invalidate() }
+            }
+            return
+        }
         if (!dragging && abs(x - downX) > touchSlop) {
             dragging = true
             pendingIcon = -1
@@ -306,8 +392,9 @@ class EmojiPane(
             delPtr -> { delPtr = -1; host.removeCallbacks(delStartRun); host.removeCallbacks(delTickRun); return }
             iconPtr -> {
                 iconPtr = -1
-                if (!cancelled && y >= rowTop - 8 * d && x >= iconsLeft && x < iconsLeft + 9 * iconW) {
-                    jumpToCategory(((x - iconsLeft) / iconW).toInt().coerceIn(0, 8))
+                val slot = ((x - iconsLeft) / iconW).toInt()
+                if (!cancelled && y >= rowTop - 8 * d && x >= iconsLeft && slot in 1 until SLOTS) {
+                    if (slot == SLOTS - 1) showKaomoji() else jumpToCategory(slot - 1)
                 }
                 return
             }
@@ -315,6 +402,21 @@ class EmojiPane(
                 gridPtr = -1
                 host.removeCallbacks(holdRun)
                 val v = velocity
+                if (kaomoji) {
+                    if (dragging && v != null) {
+                        v.computeCurrentVelocity(1000, maxFling)
+                        scroller.fling(0, kaoScrollY.toInt(), 0, -v.getYVelocity(pid).toInt(), 0, 0, 0, maxKaoScroll().toInt())
+                        host.postInvalidateOnAnimation()
+                    } else if (!cancelled && !dragging) {
+                        kaomojiAt(downX, downY)?.let { s ->
+                            feedback.click(Feedback.LETTER, host)
+                            host.paneKaomoji(s)
+                        }
+                    }
+                    velocity?.recycle(); velocity = null
+                    dragging = false
+                    return
+                }
                 if (dragging && v != null) {
                     v.computeCurrentVelocity(1000, maxFling)
                     val vx = -v.getXVelocity(pid)
@@ -347,6 +449,20 @@ class EmojiPane(
             highlighted = iconIndex(sectionOnScreen())
         }
         host.invalidate()
+    }
+
+    private fun showKaomoji() {
+        kaomoji = true
+        scroller.forceFinished(true)
+        dismissPopup()
+        host.invalidate()
+    }
+
+    /** Kaomoji tại điểm chạm (toạ độ view) — internal cho test. */
+    internal fun kaomojiAt(x: Float, y: Float): String? {
+        if (y >= rowTop - 2 * d) return null
+        val cy = y + kaoScrollY
+        return chips.firstOrNull { x >= it.l && x < it.r && cy >= it.t && cy < it.b }?.text
     }
 
     private fun emojiAt(x: Float, y: Float): String? {
@@ -411,5 +527,7 @@ class EmojiPane(
 
     companion object {
         private const val HEADER_BAND = 14f
+        /** Hàng dưới giữa ABC và ⌫: 🔍 + 9 category + kaomoji. */
+        private const val SLOTS = 11
     }
 }

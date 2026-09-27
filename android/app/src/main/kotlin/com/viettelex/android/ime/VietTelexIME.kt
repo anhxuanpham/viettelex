@@ -22,6 +22,7 @@ import com.viettelex.android.BuildConfig
 import com.viettelex.android.shared.DebugLog
 import com.viettelex.android.shared.VTPrefs
 import com.viettelex.keyboard.Cancellable
+import com.viettelex.keyboard.EmojiData
 import com.viettelex.keyboard.EmojiRecents
 import com.viettelex.keyboard.FieldTraits
 import com.viettelex.keyboard.Key
@@ -121,6 +122,10 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         super.onCreate()
         prefs = VTPrefs.of(this)
         KeyboardData.install(AssetBlobs.provider(assets))
+        // Emoji mới hơn mức API chắc có → hỏi font hệ thống (ẩn emoji máy không vẽ được).
+        EmojiData.trusted = EmojiData.trustedVersion(Build.VERSION.SDK_INT)
+        val glyphPaint = android.graphics.Paint()
+        EmojiData.glyphCheck = { e -> synchronized(glyphPaint) { glyphPaint.hasGlyph(e) } }
         DebugLog.configure(this, prefs.getBoolean(Keys.DEBUG_TOUCH_LOG, false))
         model = UserLangModel(File(filesDir, Keys.USERLM_FILE), mainThread)
         clipboard = AndroidClipboard(this)
@@ -199,6 +204,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
             initialCaps = info.initialCapsMode != 0, noLearning = field.noLearning,
             packageName = info.packageName))
         feedback.hapticsEnabled = settings.hapticFeedback
+        kb.searchSettings = settings
         swipeSetting = settings.swipeTyping
         // Chỉ ô chữ ghi COMMIT thường: không secure/passthrough (URI, email, mật khẩu hiện,
         // filter), không TYPE_NULL, không ô URL, không app phải ghi bằng key event.

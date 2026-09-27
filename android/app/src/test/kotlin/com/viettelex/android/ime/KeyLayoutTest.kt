@@ -30,6 +30,20 @@ class KeyLayoutTest {
         near(KeyLayout.stripDp(false, false), 0f)
     }
 
+    @Test fun emojiSearchIsLettersBelowHeader() {
+        // Ô tìm emoji: hàng trên 1/5 trống cho EmojiSearchBar, plane chữ đủ phím bên dưới.
+        val head = KeyLayout.searchHeaderPx(H)
+        near(head, H / 5f)
+        val keys = build(Plane.EMOJI_SEARCH)
+        val letters = build(Plane.LETTERS)
+        assertEquals(letters.map { it.kind to it.label }, keys.map { it.kind to it.label })
+        assertTrue(keys.all { it.top >= head && it.bottom <= H + 0.01f })
+        val q = keys.first { it.label == "q" }
+        // chạm giữa phím q (plane tìm) → q, như plane chữ
+        assertEquals("q", KeyLayout.hit(keys, Plane.EMOJI_SEARCH, q.centerX, q.centerY, 0f, d)?.label)
+        assertEquals(keys.indices.toList(), keys.map { it.index })
+    }
+
     @Test fun lettersRowsAndIndent() {
         val keys = build(Plane.LETTERS)
         val row1 = keys.filter { it.kind == KeyKind.LETTER && it.label in "qwertyuiop" }

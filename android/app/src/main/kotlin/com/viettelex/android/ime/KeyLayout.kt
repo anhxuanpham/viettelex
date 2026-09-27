@@ -7,6 +7,8 @@ package com.viettelex.android.ime
  * bao giờ trong onDraw.
  */
 enum class Plane { LETTERS, NUMBERS, SYMBOLS, EMOJI, TEMPLATES,
+    /** Ô tìm emoji (hàng trên, EmojiSearchBar) + plane chữ thu thấp bên dưới. */
+    EMOJI_SEARCH,
     /** Bàn số điện thoại kiểu Gboard (TYPE_CLASS_PHONE). */
     PHONE,
     /** Bàn số kiểu Gboard (TYPE_CLASS_NUMBER / DATETIME). */
@@ -105,6 +107,9 @@ object KeyLayout {
         return base + rowHeightAdjust.coerceIn(-10, 10) * 4f
     }
 
+    /** Chiều cao hàng ô tìm emoji (plane EMOJI_SEARCH): 1/5 vùng phím. */
+    fun searchHeaderPx(keyAreaPx: Float) = keyAreaPx / 5f
+
     fun stripDp(suggestionsEnabled: Boolean, collapsed: Boolean): Float =
         if (!suggestionsEnabled) 0f else if (collapsed) COLLAPSED_STRIP else OPEN_STRIP
 
@@ -140,6 +145,14 @@ object KeyLayout {
                 bottomRow(out, c, c.keyAreaPx - rowH, rowH, planeKey = "ABC", clearInsteadOfEmoji = true)
             }
             Plane.EMOJI -> Unit   // EmojiPane tự vẽ
+            Plane.EMOJI_SEARCH -> {
+                // Plane chữ đầy đủ trong phần dưới; hàng trên (1/5) là ô tìm + kết quả.
+                val head = searchHeaderPx(c.keyAreaPx)
+                for (k in build(c.copy(plane = Plane.LETTERS, keyAreaPx = c.keyAreaPx - head))) {
+                    k.top += head; k.bottom += head
+                    out += k
+                }
+            }
             Plane.PHONE, Plane.NUMPAD -> numberPad(out, c, rowH)
         }
         for (i in out.indices) out[i].index = i
@@ -345,7 +358,7 @@ object KeyLayout {
      */
     fun hit(keys: List<LaidKey>, plane: Plane, x: Float, y: Float, yOffsetPx: Float, d: Float): LaidKey? {
         val py = y - yOffsetPx
-        if (plane == Plane.LETTERS) {
+        if (plane == Plane.LETTERS || plane == Plane.EMOJI_SEARCH) {
             var inCore = false
             for (i in keys.indices) {
                 val k = keys[i]

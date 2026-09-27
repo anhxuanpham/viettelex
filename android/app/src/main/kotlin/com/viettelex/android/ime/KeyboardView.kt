@@ -10,6 +10,8 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.animation.DecelerateInterpolator
 import com.viettelex.android.R
+import com.viettelex.keyboard.EmojiSearch
+import com.viettelex.keyboard.EmojiSearchSession
 import com.viettelex.keyboard.GestureClassifier
 import com.viettelex.keyboard.Key
 import com.viettelex.keyboard.KeyCommitQueue
@@ -152,6 +154,12 @@ class KeyboardView(
     private val yOffPx = TouchGeometry.yOffset * d
 
     private val emojiPane = EmojiPane(this, theme, feedback)
+    // Tìm emoji (27/09/2026): plane EMOJI_SEARCH = ô tìm + plane chữ; phím vào [search]
+    // (Telex riêng), không tới ô nhập. return / 😊 → về lưới emoji; ?123 → plane số.
+    private val searchBar = EmojiSearchBar(this, theme)
+    private var search = EmojiSearchSession()
+    /** Cài đặt engine cho ô tìm (IME đặt mỗi lần hiện). */
+    var searchSettings = com.viettelex.keyboard.KeyboardSettings()
     private val templatesPane = TemplatesPane(this, theme, feedback)
 
     // --- trackpad / giữ phím ---
@@ -179,12 +187,12 @@ class KeyboardView(
     private val bsTickRun = object : Runnable {
         override fun run() {
             val held = SystemClock.uptimeMillis() - bsHoldStart
-            if (held > 3000) {
+            if (held > 3000 && plane != Plane.EMOJI_SEARCH) {
                 bsTick++
                 if (bsTick % 4 == 1) listener?.onDeleteWord()
             } else {
-                listener?.onKey(Key.Backspace)
-                if (held > 1600) listener?.onKey(Key.Backspace)
+                emit(Key.Backspace)
+                if (held > 1600) emit(Key.Backspace)
             }
             postDelayed(this, BS_INTERVAL)
         }
@@ -207,12 +215,41 @@ class KeyboardView(
         val now = SystemClock.uptimeMillis()
         // Bàn số: space luôn literal (không double-space → ". ").
         val pad = plane == Plane.PHONE || plane == Plane.NUMPAD
-        listener?.onKey(if (!pad && now - lastSpaceTap < DOUBLE_SPACE_MS) Key.DoubleSpacePeriod else Key.Space)
+        emit(if (!pad && now - lastSpaceTap < DOUBLE_SPACE_MS) Key.DoubleSpacePeriod else Key.Space)
         lastSpaceTap = now
     }
-    private val newlineFire: () -> Unit = { listener?.onKey(Key.Newline) }
+    private val newlineFire: () -> Unit = { emit(Key.Newline) }
     private val textFires = HashMap<String, () -> Unit>()
-    private fun textFire(s: String) = textFires.getOrPut(s) { val k = Key.Text(s); { listener?.onKey(k) } }
+    private fun textFire(s: String) = textFires.getOrPut(s) { val k = Key.Text(s); { emit(k) } }
+
+    /** Mọi phím đi qua đây: plane tìm emoji giữ phím cho ô tìm, còn lại tới IME. */
+    private fun emit(k: Key) {
+        if (plane != Plane.EMOJI_SEARCH) { listener?.onKey(k); return }
+        when (k) {
+            is Key.Letter -> search.type(k.ch)
+            is Key.Text -> search.insert(k.text)
+            Key.Space, Key.DoubleSpacePeriod -> search.space()
+            Key.Backspace -> search.backspace()
+            Key.Newline -> { setPlane(Plane.EMOJI); return }
+            else -> return
+        }
+        refreshSearch()
+    }
+
+    private fun refreshSearch() {
+        val q = search.query
+        searchBar.update(q, if (q.isBlank()) listener?.emojiRecents() ?: emptyList() else EmojiSearch.search(q))
+        invalidate()
+    }
+
+    internal fun searchClear() {
+        feedback.click(Feedback.MODIFIER, this)
+        search.clear()
+        refreshSearch()
+    }
+
+    /** Test/debug: query + kết quả đang hiện của ô tìm. */
+    internal val searchState: Pair<String, List<String>> get() = search.query to searchBar.results
 
     init {
         isHapticFeedbackEnabled = true
@@ -249,7 +286,7 @@ class KeyboardView(
 
     /** Auto-shift đầu câu: chỉ nâng OFF→ON, không bao giờ hạ CAPS. */
     fun setAutoShift(on: Boolean) {
-        if (shift == Shift.CAPS) return
+        if (shift == Shift.CAPS || plane == Plane.EMOJI_SEARCH) return
         val want = if (on) Shift.ON else Shift.OFF
         if (shift != want) { shift = want; if (plane == Plane.LETTERS) invalidate() }
     }
@@ -260,6 +297,11 @@ class KeyboardView(
         plane = p
         if (p == Plane.LETTERS && shift == Shift.ON) shift = Shift.OFF
         if (p == Plane.EMOJI) emojiPane.open(listener?.emojiRecents() ?: emptyList())
+        if (p == Plane.EMOJI_SEARCH) {
+            search = EmojiSearchSession(searchSettings)
+            shift = Shift.OFF
+            searchBar.reset()
+        }
         if (p == Plane.TEMPLATES) templatesPane.resetScroll()
         rebuild()
         listener?.onPlaneChanged(p)
@@ -290,6 +332,8 @@ class KeyboardView(
         val paneBottom = if (plane == Plane.TEMPLATES) keyAreaPx - keyAreaPx / 4f else keyAreaPx
         templatesPane.layout(width.toFloat(), paneBottom)
         emojiPane.layout(width.toFloat(), keyAreaPx)
+        searchBar.layout(width.toFloat(), KeyLayout.searchHeaderPx(keyAreaPx))
+        if (plane == Plane.EMOJI_SEARCH) refreshSearch()
         publishSwipeLayout()
         invalidate()
     }
@@ -307,6 +351,7 @@ class KeyboardView(
         cancelAllTouches()
         badgeAnim?.cancel(); badgeAlpha = 0f
         emojiPane.onHidden()
+        searchBar.reset()
         templatesPane.onHidden()
     }
 
@@ -341,6 +386,7 @@ class KeyboardView(
         when (plane) {
             Plane.EMOJI -> { emojiPane.draw(c); return }
             Plane.TEMPLATES -> templatesPane.draw(c)
+            Plane.EMOJI_SEARCH -> searchBar.draw(c)
             else -> Unit
         }
         val ks = keys
@@ -475,6 +521,9 @@ class KeyboardView(
         if (plane == Plane.TEMPLATES && templatesPane.contains(x, y)) {
             commits.flush(); ptrPane[pid] = true; templatesPane.down(pid, x, y); return
         }
+        if (plane == Plane.EMOJI_SEARCH && searchBar.contains(y)) {
+            commits.flush(); ptrPane[pid] = true; searchBar.down(pid, x); return
+        }
         val k = KeyLayout.hit(keys, plane, x, y, TouchGeometry.yOffset * d, d)
         if (TouchLog.enabled) {
             val lag = (SystemClock.uptimeMillis() - e.eventTime).toDouble()
@@ -491,7 +540,7 @@ class KeyboardView(
                 showBalloon(k, if (shift == Shift.OFF) k.label else k.upper)
                 val ch = (if (shift == Shift.OFF) k.label else k.upper)[0]
                 val shiftWas = shift
-                listener?.onKey(Key.Letter(ch))
+                emit(Key.Letter(ch))
                 if (shift == Shift.ON) { shift = Shift.OFF; invalidate() }
                 val since = e.eventTime - lastLetterDownT
                 lastLetterDownT = e.eventTime
@@ -538,7 +587,7 @@ class KeyboardView(
             KeyKind.BACKSPACE -> {
                 feedback.click(Feedback.DELETE, this)
                 press(k)
-                listener?.onKey(Key.Backspace)
+                emit(Key.Backspace)
                 bsPtr = pid; bsRepeating = false
                 bsSwipe = 0; bsSwipeAsked = 0; bsSwipeWords = 0
                 removeCallbacks(bsStartRun); removeCallbacks(bsTickRun)
@@ -562,7 +611,11 @@ class KeyboardView(
     private fun move(pid: Int, x: Float, y: Float) {
         if (pid !in 0 until MAX_PTR) return
         if (ptrPane[pid]) {
-            if (plane == Plane.EMOJI) emojiPane.move(pid, x, y) else templatesPane.move(pid, x, y)
+            when (plane) {
+                Plane.EMOJI -> emojiPane.move(pid, x, y)
+                Plane.EMOJI_SEARCH -> searchBar.move(pid, x)
+                else -> templatesPane.move(pid, x, y)
+            }
             return
         }
         val k = ptrKey[pid] ?: return
@@ -572,7 +625,7 @@ class KeyboardView(
                 if (trackpad) {
                     // dp: cùng ngưỡng với iOS (pt). Trục/tăng tốc: TrackpadGesture.
                     trackpadGesture.move(x / d, y / d, SystemClock.uptimeMillis())?.let {
-                        listener?.onKey(Key.MoveCursor(it.count, vertical = it.axis == TrackpadGesture.Axis.V))
+                        emit(Key.MoveCursor(it.count, vertical = it.axis == TrackpadGesture.Axis.V))
                     }
                 } else if (movedFar) removeCallbacks(spaceHoldRun)
             }
@@ -586,6 +639,7 @@ class KeyboardView(
             ptrPane[pid] = false
             if (plane == Plane.EMOJI) emojiPane.up(pid, x, y, cancelled)
             else if (plane == Plane.TEMPLATES) templatesPane.up(pid, x, y, cancelled)
+            else if (plane == Plane.EMOJI_SEARCH) searchBar.up(pid, x, cancelled)
             return
         }
         if (pid == swipePid) {
@@ -634,7 +688,7 @@ class KeyboardView(
         maxOf(theme.dp(24f), keys.firstOrNull { it.kind == KeyKind.LETTER || it.kind == KeyKind.CHAR }?.width ?: theme.dp(32f))
 
     private fun moveBackspace(k: LaidKey, dx: Float, dy: Float, movedFar: Boolean) {
-        if (bsRepeating) return                       // đang giữ-lặp: giữ nguyên hành vi cũ
+        if (bsRepeating || plane == Plane.EMOJI_SEARCH) return   // giữ-lặp / ô tìm: không vuốt xoá từ
         if (movedFar) removeCallbacks(bsStartRun)
         val step = swipeStepPx()
         val act = SwipeDelete.activatePx(step, theme.dp(16f))
@@ -661,10 +715,11 @@ class KeyboardView(
 
     private fun controlAction(k: LaidKey) {
         when (k.kind) {
-            KeyKind.PLANE -> setPlane(if (plane == Plane.LETTERS) Plane.NUMBERS else inputKind.padPlane ?: Plane.LETTERS)
+            KeyKind.PLANE -> setPlane(if (plane == Plane.LETTERS || plane == Plane.EMOJI_SEARCH) Plane.NUMBERS
+                                      else inputKind.padPlane ?: Plane.LETTERS)
             KeyKind.MORE -> setPlane(if (plane == Plane.NUMBERS) Plane.SYMBOLS else Plane.NUMBERS)
             KeyKind.EMOJI -> setPlane(Plane.EMOJI)
-            KeyKind.CLEAR -> listener?.onKey(Key.ClearField)
+            KeyKind.CLEAR -> emit(Key.ClearField)
             KeyKind.DISMISS -> listener?.onDismissKeyboard()
         }
     }
@@ -838,6 +893,8 @@ class KeyboardView(
     }
     internal fun paneBackspace() = listener?.onKey(Key.Backspace)
     internal fun paneABC() = setPlane(Plane.LETTERS)
+    internal fun paneSearch() = setPlane(Plane.EMOJI_SEARCH)
+    internal fun paneKaomoji(s: String) = listener?.onKey(Key.Text(s))
     internal fun paneTemplate(item: TemplateItem) {
         setPlane(Plane.LETTERS)
         listener?.onTemplate(item)

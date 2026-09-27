@@ -115,11 +115,11 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
     fun setPlane(p: Plane) {
         if (p == plane) return
         plane = p
-        if (p == Plane.EMOJI) paste = false
+        if (p == Plane.EMOJI || p == Plane.EMOJI_SEARCH) paste = false
         invalidate()
     }
 
-    private val barVisible get() = suggestionsEnabled && plane != Plane.EMOJI
+    private val barVisible get() = suggestionsEnabled && plane != Plane.EMOJI && plane != Plane.EMOJI_SEARCH
 
     private fun clearContent() {
         for (i in 0..2) { slotText[i] = null; slotPayload[i] = null; emojiText[i] = null }

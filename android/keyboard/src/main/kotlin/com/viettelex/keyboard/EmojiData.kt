@@ -1,15 +1,132 @@
 package com.viettelex.keyboard
 
-/** Emoji theo 8 category chuẩn Apple cho emoji plane (assets/emojidata.tsv, lazy). */
+import java.nio.ByteBuffer
+
+/**
+ * Dữ liệu bàn phím emoji — assets/emoji.bin (GENERATED bởi Scripts/gen-emoji-data.py từ
+ * emoji-test.txt + CLDR vi; layout xem docstring script, y hệt bản iOS). Đọc tại chỗ trên
+ * ByteBuffer mmap. Emoji theo 8 category chuẩn Apple (thứ tự stock, 🇻🇳 đầu nhóm cờ);
+ * emoji mới hơn mức OS chắc chắn có thì qua [glyphCheck] (IME cài Paint.hasGlyph) — máy
+ * không vẽ được thì ẩn khỏi lưới và kết quả tìm.
+ */
 object EmojiData {
     data class Category(val name: String, val emoji: List<String>)
 
-    /** Đúng thứ tự stock: smileys → flags (cờ 🇻🇳 đầu). */
-    val categories: List<Category> by lazy {
-        KeyboardData.text(Keys.ASSET_EMOJI_DATA).lineSequence().filter { it.isNotBlank() }.map { line ->
-            val tab = line.indexOf('\t')
-            Category(line.substring(0, tab), line.substring(tab + 1).split(' ').filter { it.isNotEmpty() })
-        }.toList()
+    internal val buf: ByteBuffer by lazy {
+        KeyboardData.buffer(Keys.ASSET_EMOJI_DATA).also {
+            require(it.get(0) == 'V'.code.toByte() && it.get(3) == '1'.code.toByte()) { "bad emoji.bin" }
+        }
+    }
+
+    internal fun u32(off: Int): Int = buf.getInt(off)
+    internal fun u16(off: Int): Int = buf.getShort(off).toInt() and 0xFFFF
+    internal fun str(off: Int, len: Int): String {
+        val b = ByteArray(len)
+        for (i in 0 until len) b[i] = buf.get(off + i)
+        return String(b, Charsets.UTF_8)
+    }
+
+    /** Offset tuyệt đối của section [tag] (header: "VTE1" | n | n × (tag, off, len)). */
+    internal fun section(tag: String): Int {
+        val n = u32(4)
+        for (i in 0 until n) {
+            val h = 8 + i * 12
+            if ((0 until 4).all { buf.get(h + it) == tag[it].code.toByte() }) return u32(h + 4)
+        }
+        error("emoji.bin thiếu section $tag")
+    }
+
+    private val emojBase by lazy { section("EMOJ") }
+    private val verBase by lazy { section("EVER") }
+
+    /** Số emoji (id 0 until count). */
+    val count: Int get() = u32(emojBase)
+
+    fun emoji(id: Int): String {
+        val o = emojBase + 4 + id * 4
+        val s = u32(o); val e = u32(o + 4)
+        return str(emojBase + 4 + (count + 1) * 4 + s, e - s)
+    }
+
+    /** Phiên bản Emoji ×10 (E15.1 → 151). */
+    fun version(id: Int): Int = buf.get(verBase + id).toInt() and 0xFF
+
+    data class RawCategory(val name: String, val start: Int, val count: Int)
+
+    val rawCategories: List<RawCategory> by lazy {
+        val b = section("ECAT")
+        val k = u32(b)
+        val names = b + 4 + k * 16
+        List(k) { i ->
+            val r = b + 4 + i * 16
+            RawCategory(str(names + u32(r), u32(r + 4)), u32(r + 8), u32(r + 12))
+        }
+    }
+
+    // --- lọc glyph ---
+
+    /** Kiểm "máy vẽ được emoji này" (IME cài Paint.hasGlyph); null = coi như vẽ được (test JVM). */
+    @Volatile var glyphCheck: ((String) -> Boolean)? = null
+        set(v) { field = v; synchronized(glyphCache) { glyphCache.clear() }; cachedCategories = null }
+    /** Mức Emoji ×10 OS chắc chắn có — dưới/bằng mức này khỏi kiểm glyph (xem [trustedVersion]). */
+    @Volatile var trusted: Int = 170
+    private val glyphCache = HashMap<Int, Boolean>()
+
+    /**
+     * Mức Emoji chắc có theo API — THẬN TRỌNG một bậc (OEM font chậm hơn AOSP): API 26–27 =
+     * Emoji 5.0, 28 = 11, 29 = 12, 30 = 13, 31–32 = 13.1, 33 = 14, 34 = 15, 35 = 15.1, 36 = 16.
+     * Font emoji cập nhật qua Play (API 31+) thì [glyphCheck] thấy luôn emoji mới hơn.
+     */
+    fun trustedVersion(sdk: Int): Int = when {
+        sdk >= 36 -> 150
+        sdk >= 34 -> 140
+        sdk >= 33 -> 130
+        sdk >= 31 -> 120
+        sdk >= 30 -> 110
+        sdk >= 28 -> 50
+        else -> 0
+    }
+
+    fun isSupported(id: Int): Boolean {
+        if (version(id) <= trusted) return true
+        val check = glyphCheck ?: return true
+        synchronized(glyphCache) { glyphCache[id]?.let { return it } }
+        val v = check(emoji(id))
+        synchronized(glyphCache) { glyphCache[id] = v }
+        return v
+    }
+
+    @Volatile private var cachedCategories: List<Category>? = null
+
+    /** Đúng thứ tự stock: smileys → flags (cờ 🇻🇳 đầu); chỉ emoji máy vẽ được. */
+    val categories: List<Category>
+        get() = cachedCategories ?: rawCategories.map { c ->
+            Category(c.name, (c.start until c.start + c.count).filter(::isSupported).map(::emoji))
+        }.also { cachedCategories = it }
+
+    // --- kaomoji ---
+
+    data class KaomojiGroup(val name: String, val items: List<String>)
+
+    /** Nhóm kaomoji / ký tự đặc biệt — chạm để chèn nguyên văn. */
+    val kaomoji: List<KaomojiGroup> by lazy {
+        val b = section("KAOM")
+        val g = u32(b)
+        val head = b + 4 + g * 16
+        val n = u32(head)
+        val offBase = head + 4
+        val strBase = offBase + (n + 1) * 4
+        var namesLen = 0
+        for (i in 0 until g) namesLen += u32(b + 4 + i * 16 + 4)
+        val itemBase = strBase + namesLen
+        List(g) { i ->
+            val r = b + 4 + i * 16
+            val start = u32(r + 8); val cnt = u32(r + 12)
+            KaomojiGroup(str(strBase + u32(r), u32(r + 4)), List(cnt) { j ->
+                val s = u32(offBase + (start + j) * 4); val e = u32(offBase + (start + j) * 4 + 4)
+                str(itemBase + s, e - s)
+            })
+        }
     }
 
     const val RECENTS = "recents"

@@ -20,7 +20,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         case replaceLastLetter(String)
     }
 
-    private enum Plane { case letters, numbers, symbols, emoji, templates }
+    /// emojiSearch = hàng ô tìm emoji + plane chữ (phím chặn vào EmojiSearchSession).
+    private enum Plane { case letters, numbers, symbols, emoji, templates, emojiSearch }
+    /// Plane có phím chữ qua router (chữ thường + chế độ tìm emoji).
+    private var lettersLike: Bool { plane == .letters || plane == .emojiSearch }
 
     /// Gần-trong-suốt nhưng KHÔNG clear: vùng alpha 0 không nhận touch ở cấp hệ thống
     /// (touch rơi sang app host). Dùng cho mọi nền phủ vùng bàn phím.
@@ -309,7 +312,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// layoutSubviews. Chiều cao lấy từ HẰNG SỐ constraint (rowsTop), KHÔNG từ
     /// frame — frame có thể chưa kịp cập nhật trong cùng pass → strip=0 → tịt.
     private func layoutStripZones() {
-        let open = suggestionsEnabled && !barCollapsed && plane != .emoji
+        let open = suggestionsEnabled && !barCollapsed && plane != .emoji && plane != .emojiSearch
         burgerZone.isHidden = !open || !templatesEnabled
         chevronZone.isHidden = !open
         guard open, bounds.width > 0 else { return }
@@ -404,7 +407,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// ẩn đi cho gọn (user 2026-07-24). strip 30pt sát nút; phần dưới hàng
     /// phím cuối là vùng globe/mic hệ thống, không thuộc view mình.
     private func updateSuggestionChrome() {
-        let visible = suggestionsEnabled && plane != .emoji
+        let visible = suggestionsEnabled && plane != .emoji && plane != .emojiSearch
         // Strip mở (bar 20pt + đệm trên) / 14 thu gọn / 0 tắt. Plane emoji GIỮ NGUYÊN
         // chiều cao strip (chỉ ẩn bar): đổi chiều cao bàn phím khi vào emoji làm host
         // relayout dở dang — dải trống + vạch đè hàng emoji đầu (Telegram, 25/09/2026).
@@ -822,7 +825,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
 
     /// Sentence-start auto-shift (only upgrades OFF→ON; never downgrades CAPS).
     func setAutoShift(_ on: Bool) {
-        guard shift != .caps else { return }
+        guard shift != .caps, plane != .emojiSearch else { return }
         let want: ShiftState = on ? .on : .off
         if shift != want { shift = want; applyShiftAppearance() }
     }
@@ -916,14 +919,14 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // đang hiện. Khỏi xé/dựng; chỉ vứt cache các plane khác (inset cũ sai).
         // Emoji/mẫu câu không cache, dựng tự do → vẫn dựng lại như cũ.
         if builtPlane == plane, !styleChanged,
-           plane != .emoji, plane != .templates {
+           plane != .emoji, plane != .templates, plane != .emojiSearch {
             planeCache.removeAll()
             builtWidth = bounds.width
             return
         }
         if sigChanged {
             planeCache.removeAll()
-        } else if let old = builtPlane, old != .emoji, old != .templates {
+        } else if let old = builtPlane, old != .emoji, old != .templates, old != .emojiSearch {
             // KHÔNG cache emoji/templates: cả hai đổi distribution sang .fill và
             // dựng layout tự do; khôi phục từ cache (distribution đã bị reset về
             // .fillEqually + constraint chiều cao hàng đáy còn treo) làm plane
@@ -976,6 +979,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         ], moreKey: "123", altKey: "ABC")
         case .emoji: buildEmoji()
         case .templates: buildTemplates()
+        case .emojiSearch: buildEmojiSearch()
         }
     }
 
@@ -1267,7 +1271,68 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             self.rebuild()
         }
         plane.onBackspace = { [weak self] in self?.tapped(.backspace) }
+        plane.onKaomoji = { [weak self] s in self?.onKey(.text(s)) }
+        plane.onSearch = { [weak self] in
+            guard let self else { return }
+            self.emojiSearch.clear()
+            self.shift = .off
+            self.plane = .emojiSearch
+            self.rebuild()
+        }
         rowsContainer.addArrangedSubview(plane)
+    }
+
+    // MARK: tìm emoji (27/09/2026)
+    // Hàng ô tìm + kết quả chèn lên đầu plane chữ (5 hàng fillEqually — phím thấp
+    // hơn chút, chiều cao bàn phím giữ nguyên để host không relayout). Mọi phím chữ /
+    // space / ⌫ đi vào EmojiSearchSession (Telex riêng), không tới ô nhập; chạm kết
+    // quả mới chèn emoji thật. return / phím emoji → về lưới emoji; 123 → plane số.
+    private var emojiSearch = EmojiSearchSession()
+    private weak var searchBar: EmojiSearchBar?
+
+    private func buildEmojiSearch() {
+        let bar = EmojiSearchBar(dark: dark)
+        bar.onPick = { [weak self] e in
+            Self.clickLetter()
+            EmojiPlane.noteUsed(e)
+            self?.onKey(.text(e))
+        }
+        bar.onClear = { [weak self] in
+            guard let self else { return }
+            Self.clickModifier()
+            self.emojiSearch.clear()
+            self.refreshSearchBar()
+        }
+        searchBar = bar
+        buildLetters()
+        rowsContainer.insertArrangedSubview(bar, at: 0)
+        refreshSearchBar()
+    }
+
+    private func refreshSearchBar() {
+        let q = emojiSearch.query
+        let list = q.trimmingCharacters(in: .whitespaces).isEmpty
+            ? EmojiPlane.recents : EmojiSearch.search(q)
+        searchBar?.update(query: q, results: list)
+    }
+
+    /// Phím trong chế độ tìm: vào ô tìm thay vì ô nhập. true = đã xử lý.
+    private func handleSearchKey(_ key: Key) -> Bool {
+        guard plane == .emojiSearch else { return false }
+        switch key {
+        case .letter(let c): emojiSearch.type(c)
+        case .text(let t): emojiSearch.insert(t)
+        case .space, .doubleSpacePeriod: emojiSearch.space()
+        case .backspace: emojiSearch.backspace()
+        case .replaceLastLetter(let t): emojiSearch.backspace(); emojiSearch.insert(t)
+        case .newline:
+            plane = .emoji
+            rebuild()
+            return true
+        case .moveCursor, .moveLine, .clearField: return true
+        }
+        refreshSearchBar()
+        return true
     }
 
     private func buildPlane(rows planeRows: [[String]], moreKey: String, altKey: String) {
@@ -1321,7 +1386,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         var views: [UIView] = []
         let planeBtn = controlButton(title: planeKey) { [weak self] in
             guard let self else { return }
-            self.plane = (self.plane == .letters) ? .numbers : .letters
+            // Từ ô tìm emoji: 123 ra plane số (thoát tìm).
+            self.plane = (self.plane == .letters || self.plane == .emojiSearch) ? .numbers : .letters
             if self.plane == .letters, self.shift == .on { self.shift = .off }
             self.rebuild()
         }
@@ -1903,7 +1969,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 // Apple accelerates a sustained hold: ~1.6s cadence doubles,
                 // ~3s chuyển sang xoá theo từ (~2.8 từ/s).
                 let held = CACurrentMediaTime() - self.backspaceHoldStart
-                if held > 3.0, let deleteWord = self.onDeleteWord {
+                if held > 3.0, self.plane != .emojiSearch, let deleteWord = self.onDeleteWord {
                     self.wordDeleteTick += 1
                     if self.wordDeleteTick % 4 == 1 { deleteWord() }
                     return
@@ -1943,6 +2009,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
 
     @objc private func backspaceDown(_ sender: UIControl, event: UIEvent) {
         Self.clickDelete()
+        // Ô tìm emoji: ⌫ chỉ xoá trong ô tìm — không chụp context / vuốt xoá từ ô nhập.
+        if plane == .emojiSearch { tapped(.backspace); return }
         onBackspaceTouchDown?()
         let x = event.allTouches?.first(where: { $0.view === sender })?.location(in: self).x
         wordSwipeKey = sender
@@ -2120,7 +2188,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // Phím chữ ưu tiên trong FOOTPRINT thật của nó, kể cả khi hit-area nở của
         // shift/backspace kề bên "cướp" điểm chạm — nếu không, chạm mép z/m thành
         // toggle shift / xoá thay vì ra chữ (nguồn rớt phím ở hàng 3, 2026-07-26).
-        if plane == .letters, letterCoreContains(point) { return self }
+        if lettersLike, letterCoreContains(point) { return self }
         if v is UIControl { return v }
         if v != nil, nearestLetterButton(at: point) != nil { return self }
         return v
@@ -2137,7 +2205,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private func nearestLetterButton(at point: CGPoint) -> UIButton? {
         // Chỉ route touch TRONG vùng phím — touch ở strip gợi ý phía trên là
         // của chevron/slot, router mà cướp thì chevron "bấm mãi không ăn".
-        guard plane == .letters, !letterKeys.isEmpty,
+        guard lettersLike, !letterKeys.isEmpty,
               point.y >= rowsContainer.frame.minY else { return nil }
         var best: (UIButton, CGFloat)?
         for (b, _) in letterKeys {
@@ -2421,7 +2489,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     }
 
 
-    private func tapped(_ key: Key) { onKey(key) }
+    private func tapped(_ key: Key) {
+        if handleSearchKey(key) { return }
+        onKey(key)
+    }
 
     #if DEBUG
     /// Test hook: đi một vòng sang plane số rồi về chữ (về từ planeCache).
@@ -2470,6 +2541,15 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         withExtendedLifetime(token) {}
         return swiped
     }
+    /// Test hook: vào chế độ tìm emoji (như bấm 🔍), gõ từng phím chữ/space qua
+    /// đường tapped thật; trả (query, kết quả đang hiện).
+    func debugEmojiSearch(_ keys: [Key]) -> (query: String, results: [String]) {
+        emojiSearch.clear()
+        plane = .emojiSearch; rebuild()
+        for k in keys { tapped(k) }
+        return (emojiSearch.query, searchBar?.shownResults ?? [])
+    }
+    var debugInEmojiSearch: Bool { plane == .emojiSearch }
     /// Test hook: frame phím chữ (toạ độ self).
     func debugLetterFrame(_ s: String) -> CGRect? {
         letterKeys.first { $0.base == s }.map { convert($0.button.bounds, from: $0.button) }
