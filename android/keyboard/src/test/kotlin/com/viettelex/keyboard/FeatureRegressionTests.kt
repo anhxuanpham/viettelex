@@ -55,6 +55,11 @@ class SettingsRegressionTests {
         assertEquals(10, s.rowHeightAdjust)
         assertEquals(7L, s.userlmResetAt)
     }
+
+    @Test fun testNumberRowDefaultOffAndLoads() {
+        assertFalse(KeyboardSettings.load { null }.numberRow)
+        assertTrue(KeyboardSettings.load { if (it == Keys.NUMBER_ROW) true else null }.numberRow)
+    }
 }
 
 class BridgeContractTests {

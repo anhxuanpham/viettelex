@@ -73,6 +73,14 @@ class ClipboardPane(context: Context, private val theme: ImeTheme) : FrameLayout
 
     fun scrollTop() { scroll.scrollTo(0, 0) }
 
+    /** Thông báo ngắn đầu danh sách (vd đã đủ số mục ghim miễn phí). */
+    fun showNotice(msg: String) {
+        list.addView(label(msg, 13f, alpha = 0.8f).apply {
+            setPadding(dp(16f), dp(6f), dp(16f), dp(6f))
+        }, 0, LinearLayout.LayoutParams(-1, -2))
+        scrollTop()
+    }
+
     private fun row(item: ClipboardHistory.Item): View {
         val r = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL

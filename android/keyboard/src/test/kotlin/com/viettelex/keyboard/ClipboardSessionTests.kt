@@ -84,6 +84,24 @@ class ClipboardSessionTests {
         assertFalse(s.suggestionsNow(p)!!.paste)         // đã dùng ⇒ hết mời
     }
 
+    @Test fun chipsNeedAdvancedClipboardWhenPaywallOn() {
+        PlusGate.install({ null }, debugBuild = false)
+        PlusGate.paywallEnabled = true
+        try {
+            val s = session(); val p = MockProxy()
+            clip.copy("Ma OTP cua quy khach la 482913")
+            val set = s.suggestionsNow(p)!!
+            assertTrue(set.paste)                        // thẻ Dán thường vẫn còn
+            assertTrue(set.clipChips.isEmpty())          // chip = Plus
+            PlusGate.install({ if (it == Keys.PLUS_UNLOCKED) true else null }, debugBuild = false)
+            s.invalidatePasteCache()
+            assertEquals(listOf("Dán OTP 482913"), s.suggestionsNow(p)!!.clipChips.map { it.label })
+        } finally {
+            PlusGate.install({ null }, debugBuild = false)
+            PlusGate.paywallEnabled = PlusConfig.PAYWALL_ENABLED
+        }
+    }
+
     @Test fun plainClipNoChips() {
         val s = session(); val p = MockProxy()
         clip.copy("xin chào cả nhà")

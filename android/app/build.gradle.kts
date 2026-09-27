@@ -46,5 +46,14 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     debugImplementation("androidx.compose.ui:ui-tooling")
     implementation("androidx.compose.ui:ui-tooling-preview")
+    // VietTelex Plus + ủng hộ: Google Play Billing (thư viện chính chủ của Google).
+    implementation("com.android.billingclient:billing:8.0.0")
+    // Billing kéo vài androidx cũ (livedata 2.8.3, fragment 1.1.0) — nâng lên bản mới hơn
+    // (đã có sẵn trong cache Gradle) để build --offline chạy được; chỉ là ràng buộc
+    // phiên bản, không thêm thư viện mới.
+    constraints {
+        implementation("androidx.lifecycle:lifecycle-livedata:2.8.7")
+        implementation("androidx.fragment:fragment:1.5.4")
+    }
     testImplementation("junit:junit:4.13.2")
 }

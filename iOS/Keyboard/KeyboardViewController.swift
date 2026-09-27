@@ -22,7 +22,13 @@ final class KeyboardViewController: UIInputViewController {
     private var swipeSetting = false
     private var swipe: SwipeTyping?
     /// Từ vuốt đang mở + phương án cho thanh gợi ý (hết hiệu lực khi từ đổi / chốt).
-    private var swipeSuggest: (current: String, alts: [String])?
+    /// `english` = các phương án tiếng Anh (chọn ⇒ chèn nguyên văn).
+    private var swipeSuggest: (current: String, alts: [String], english: Set<String>)?
+    /// Công tắc con "Vuốt từ tiếng Anh" (giai đoạn 3).
+    private var swipeEnglishSetting = true
+    /// Vài từ tiếng Anh vừa vuốt ra (chữ thường) — ngữ cảnh ngôn ngữ cho cú vuốt kế
+    /// (từ trùng chuỗi như "the" vuốt ra dạng Anh vẫn mở mạch Anh).
+    private var recentEnglish: [String] = []
     /// Lịch sử clipboard + chip tách số + ẩn danh (ClipboardFeature.swift).
     private let clip = ClipboardFeature()
     private var clipPanel: ClipboardPanel?
@@ -51,6 +57,9 @@ final class KeyboardViewController: UIInputViewController {
         langModel.seedIfEmpty(unigrams: SeedData.unigrams, bigrams: SeedData.bigrams)
         // Load plist chạy nền — bar mở-đầu refresh khi dữ liệu sẵn sàng.
         langModel.onReady = { [weak self] in self?.updateSuggestions() }
+        // Map bảng bigram âm tiết (dùng chung gõ vuốt + thanh gợi ý) ở NỀN: lần chạm đầu
+        // hash vnlexicon (~150KB) để kiểm khớp — đừng để rơi vào main ở gợi ý từ kế tiếp.
+        Self.suggestQueue.async { _ = SyllableBigram.shared }
         keyboard.onDeleteWord = { [weak self] in self?.deleteWordBackward() }
         wireWordSwipe()
         wireSwipeTyping()
@@ -100,8 +109,10 @@ final class KeyboardViewController: UIInputViewController {
         filterSensitive = settings.filterSensitive
         showSuggestionsSetting = settings.showSuggestions
         swipeSetting = settings.swipeTyping
+        swipeEnglishSetting = settings.swipeEnglish
         if !swipeSetting { swipe = nil }              // tắt ⇒ bỏ template (RAM)
         swipeSuggest = nil
+        recentEnglish = []
         // Trait ô (layout, return key, passthrough, bar) — force: mỗi lần hiện áp lại
         // appearance/mẫu câu dù trait y hệt (batchConfigure tự dedupe rebuild).
         refreshFieldTraits(force: true)
@@ -217,6 +228,7 @@ final class KeyboardViewController: UIInputViewController {
         }
         // Omnibox (inline autocomplete tự viết lại chữ): không với lại từ đã chốt.
         bridge.reachBackAllowed = t.keyboardType != .webSearch
+        bridge.shortcutsAllowed = t.keyboardType != .webSearch   // omnibox: không gõ tắt
         // Một lần rebuild cho cả 3 (và 0 lần nếu field giống lần trước).
         keyboard.batchConfigure {
             keyboard.configureReturnKey(type: t.returnKeyType)
@@ -374,7 +386,9 @@ final class KeyboardViewController: UIInputViewController {
             let composedBefore = bridge.composedWord
             let committed = bridge.boundary(" ", proxy: proxy)
             // Auto-restore vừa ghi đè dạng có dấu → nhớ lại cho backspace-undo.
-            restoreUndo = (!composedBefore.isEmpty && committed != composedBefore)
+            // (Gõ tắt vừa bung thì không: ⌫ kế tiếp tự trả lại chữ tắt trong bridge.)
+            restoreUndo = (!composedBefore.isEmpty && committed != composedBefore
+                           && !bridge.expandedAtLastBoundary)
                 ? (raw: committed, composed: composedBefore) : nil
             undoOfferActive = false
             commitAndLearn(committed, accepted: openAccepted)
@@ -675,6 +689,13 @@ final class KeyboardViewController: UIInputViewController {
     /// `accepted` = user bấm nhận suggestion → weight 2 (tín hiệu mạnh hơn).
     private func commitAndLearn(_ word: String, accepted: Bool = false) {
         guard !word.isEmpty else { return }
+        // Nội dung gõ tắt nhiều từ ("mọi người"): học lần lượt từng từ (bigram trong cụm).
+        let parts = ShortcutLearning.words(word)
+        if parts.count != 1 || parts.first != word {
+            for p in parts { commitAndLearn(p, accepted: accepted) }
+            if parts.isEmpty { lastWord = nil; lastWord2 = nil }
+            return
+        }
         if learnEnabled {
             langModel.record(word: word, after: lastWord, prev2: lastWord2,
                              weight: accepted ? 2 : 1)
@@ -757,29 +778,36 @@ final class KeyboardViewController: UIInputViewController {
             // không có phím mới (suggestionGen), cùng bridge + cùng từ đang gõ.
             let req = suggestReq, gen = suggestionGen, b = bridge
             let raw = b.rawWord, predicted = b.predictedCommit, wantFix = b.autoFixAdjacent
+            let prev = lastWord
             Self.suggestQueue.async { [weak self] in
                 let pool = VNSuggest.matches(composed, poolLimit: 24,
                                              excluding: composed.lowercased())
                 let fix = pool.isEmpty && wantFix
                     ? AdjacentKeyFixer.lexiconCorrection(raw: raw, bridge: b) : nil
+                // bigram âm tiết tĩnh theo từ trước (mmap dùng chung với gõ vuốt; tra ~µs)
+                let pmi = SuggestRank.inlinePmi(pool, prev: prev)
                 DispatchQueue.main.async {
                     guard let self, req == self.suggestReq, gen == self.suggestionGen,
                           self.bridge === b, b.composedWord == composed,
                           self.suggestionsActive, self.keyboard?.isBarCollapsed != true
                     else { return }
-                    self.showComposingSuggestions(composed: composed, raw: raw,
-                                                  predicted: predicted, pool: pool, fix: fix)
+                    self.showComposingSuggestions(composed: composed, raw: raw, predicted: predicted,
+                                                  pool: pool, pmi: pmi, fix: fix)
                 }
             }
             return
         } else if let prev = lastWord {
             // vừa space sau một từ → gợi từ KẾ TIẾP (trigram/bigram cá nhân
-            // interpolate với seed)
-            let next = SensitiveWords.filter(
+            // interpolate với seed); thiếu thì lấp bằng bigram tĩnh (người dùng mới)
+            // rồi mới tới topWords
+            let personal = Array(SensitiveWords.filter(
                 langModel.nextWords(after: prev, prev2: lastWord2, limit: 6),
                 enabled: filterSensitive
-            ).prefix(3).map { caseForContext(DisplayCase.apply($0, after: prev)) }
-            set.nextWords = padWords(Array(next), need: 3)
+            ).prefix(3))
+            let next = personal.count >= 3 ? personal : SuggestionFill.pad(personal,
+                with: SensitiveWords.filter(SuggestRank.bigramNext(prev, limit: 6), enabled: filterSensitive),
+                need: 3)
+            set.nextWords = padWords(next.map { caseForContext(DisplayCase.apply($0, after: prev)) }, need: 3)
         } else {
             // field trống chưa gõ gì → từ user hay mở đầu nhất
             let top = SensitiveWords.filter(langModel.topWords(limit: 6),
@@ -801,7 +829,7 @@ final class KeyboardViewController: UIInputViewController {
 
     /// Phần main của gợi ý khi đang gõ dở: pool (VNSuggest) + fix đã tính nền.
     private func showComposingSuggestions(composed: String, raw: String, predicted: String,
-                                          pool: [(word: String, freq: Int)], fix: String?) {
+                                          pool: [VNSuggest.Match], pmi: [Float]?, fix: String?) {
         var set = KeyboardView.SuggestionSet()
         // Slot "nguyên văn" = phương án mà boundary SẼ KHÔNG cho ra —
         // lối thoát cho cả hai chiều collision (user chốt 2026-07-24):
@@ -822,19 +850,11 @@ final class KeyboardViewController: UIInputViewController {
                 } ?? []
                 ctxCacheKey = ctxKey
             }
-            let ctx = ctxCache
-            let typedLen = composed.count
-            func score(_ w: String, _ f: Int) -> Double {
-                log(Double(f) + 1)
-                    + 2.5 * log(Double(langModel.count(of: w)) + 1)
-                    + (ctx.contains(w) ? 4 : 0)
-                    + (w.count == typedLen ? 1.5 : 0)
-            }
-            // score tính 1 lần/ứng viên rồi sort tuple — không gọi lại
-            // trong comparator (2·n·log n lần).
-            let scored = pool.map { ($0.word, score($0.word, $0.freq)) }
+            // + bigram âm tiết tĩnh (SuggestRank — logic thuần, test đo trên heldout)
+            let lm = langModel
             let ranked = SensitiveWords.filter(
-                scored.sorted { $0.1 > $1.1 }.map { $0.0 },
+                SuggestRank.rankInline(pool, pmi: pmi, typedLen: composed.count,
+                                       count: { lm.count(of: $0) }, ctx: ctxCache),
                 enabled: filterSensitive)
             set.word = ranked.first.map { DisplayCase.apply($0, after: lastWord) }
             set.word2 = ranked.dropFirst().first.map { DisplayCase.apply($0, after: lastWord) }
@@ -860,6 +880,12 @@ final class KeyboardViewController: UIInputViewController {
                                  need: 2, typed: composed)
             set.word = words.first
             set.word2 = words.count > 1 ? words.last : nil
+        }
+        // Đang gõ đúng một chữ tắt: slot chính hiện nội dung sẽ bung (chạm = bung ngay).
+        // (Nội dung nhiều dòng không lên bar — chạm sẽ chèn sai; gõ ranh giới vẫn bung.)
+        if let preview = bridge.shortcutPreview, !preview.contains("\n"), set.word != preview {
+            set.word2 = set.word ?? set.word2
+            set.word = preview
         }
         keyboard.showSuggestions(set)
     }
@@ -1029,7 +1055,12 @@ extension KeyboardViewController {
         if clipPanel != nil { closeClipboardPanel(); return }
         let p = ClipboardPanel()
         p.onPaste = { [weak self] t in self?.insertClip(t, chip: false); self?.closeClipboardPanel() }
-        p.onTogglePin = { [weak self] t in self?.clip.togglePin(t); self?.reloadClipboardPanel() }
+        p.onTogglePin = { [weak self] t in
+            guard let self else { return }
+            if self.clip.togglePin(t) { self.reloadClipboardPanel(); return }
+            let limit = self.clip.pinLimit() ?? 0
+            self.reloadClipboardPanel(notice: "Tối đa \(limit) mục ghim — VietTelex Plus ghim không giới hạn.")
+        }
         p.onDelete = { [weak self] t in self?.clip.remove(t); self?.reloadClipboardPanel() }
         p.onClearAll = { [weak self] in self?.clip.clearUnpinned(); self?.reloadClipboardPanel() }
         p.onClose = { [weak self] in self?.closeClipboardPanel() }
@@ -1042,11 +1073,11 @@ extension KeyboardViewController {
         keyboard.setNeedsLayout()
     }
 
-    fileprivate func reloadClipboardPanel() {
+    fileprivate func reloadClipboardPanel(notice: String? = nil) {
         guard let p = clipPanel else { return }
         p.frame = keyboard.keyAreaFrame
         p.reload(items: clip.items(now: Date().timeIntervalSince1970),
-                 dark: keyboard.isDarkAppearance, incognito: clip.incognito)
+                 dark: keyboard.isDarkAppearance, incognito: clip.incognito, notice: notice)
     }
 
     fileprivate func closeClipboardPanel() {
@@ -1080,6 +1111,7 @@ extension KeyboardViewController {
         keyboard.swipeEnabled = on
         if on, swipe == nil { swipe = SwipeTyping() }
         if on { pushSwipeLayout(prepare: true) }
+        if on, swipeEnglishSetting { swipe?.preloadEnglish() }
     }
 
     /// Tâm phím thật → decoder (đổi layout khi xoay/đổi cỡ; trùng thì no-op).
@@ -1092,6 +1124,16 @@ extension KeyboardViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         pushSwipeLayout(prepare: true)
+    }
+
+    private func isRecentEnglish(_ w: String?) -> Bool {
+        guard let w else { return false }
+        return recentEnglish.contains(w.lowercased())
+    }
+
+    private func noteRecentEnglish(_ w: String) {
+        recentEnglish.append(w.lowercased())
+        if recentEnglish.count > 4 { recentEnglish.removeFirst() }
     }
 
     /// Từ vuốt được chốt bởi phím chữ trước (dấu cách treo) — học khi chắc chắn.
@@ -1123,12 +1165,21 @@ extension KeyboardViewController {
         let prev2 = composing ? lastWord : lastWord2
         let ctx = prev.map { langModel.nextWords(after: $0, prev2: prev2, limit: 24) } ?? []
         let lm = langModel
+        // Ngôn ngữ theo 2 từ trước (giai đoạn 3): từ Anh vừa vuốt (nhãn) chắc nhất, rồi bảng
+        // từ của engine; mặc định nghiêng tiếng Việt.
+        let english: SwipeEnglishPrior? = swipeEnglishSetting ? SwipeLangContext.prior(
+            prev1: SwipeLangContext.classify(prev, swipedEnglish: bridge.isLiteralSwipeWordOpen
+                                                 || isRecentEnglish(prev)),
+            prev2: SwipeLangContext.classify(prev2, swipedEnglish: isRecentEnglish(prev2))) : nil
         let out = swipe.finish(path, case: sc, contextWords: ctx, count: { lm.count(of: $0) },
+                               prev: prev, english: english,
                                bridge: bridge, proxy: Proxy(p: textDocumentProxy))
         if let out {
             if let c = out.committed { commitAndLearn(c.word, accepted: c.accepted) }
+            if out.english { noteRecentEnglish(out.word) }
             let alts = SensitiveWords.filter(out.alternatives, enabled: filterSensitive)
-            swipeSuggest = alts.isEmpty || !bridge.isSwipeWordOpen ? nil : (out.word, alts)
+            swipeSuggest = alts.isEmpty || !bridge.isSwipeWordOpen ? nil
+                : (out.word, alts, out.englishAlternatives)
             KeyboardView.clickLetter()
         }
         lastInsertWasSpace = false
@@ -1145,11 +1196,18 @@ extension KeyboardViewController {
         guard let s = swipeSuggest, s.alts.contains(item) else { return false }
         applyingEdit = true
         defer { applyingEdit = false }
-        guard bridge.replaceSwipeWord(with: item, proxy: Proxy(p: textDocumentProxy)) else {
+        let wasEnglish = bridge.isLiteralSwipeWordOpen
+        let itemEnglish = s.english.contains(item)
+        guard bridge.replaceSwipeWord(with: item, literal: itemEnglish,
+                                      proxy: Proxy(p: textDocumentProxy)) else {
             swipeSuggest = nil
             return false
         }
-        swipeSuggest = (item, [s.current] + s.alts.filter { $0 != item })
+        if itemEnglish { noteRecentEnglish(item) }
+        var english = s.english
+        english.remove(item)
+        if wasEnglish { english.insert(s.current) }
+        swipeSuggest = (item, [s.current] + s.alts.filter { $0 != item }, english)
         KeyboardView.clickModifier()
         suggestionGen += 1
         updateSuggestions()

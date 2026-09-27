@@ -44,12 +44,19 @@ class ClipboardHistory(
 
     fun contains(text: String) = list.any { it.text == text }
 
-    fun togglePin(text: String): Boolean {
+    /**
+     * Ghim/bỏ ghim. [limit] = số mục ghim tối đa (null = không giới hạn — Plus
+     * `PlusGate.pinnedClipLimit`); đầy thì KHÔNG ghim thêm, trả false (bỏ ghim luôn được).
+     */
+    fun togglePin(text: String, limit: Int? = null): Boolean {
         val i = list.indexOfFirst { it.text == text }
         if (i < 0) return false
+        if (!list[i].pinned && limit != null && pinnedCount() >= limit) return false
         list[i] = list[i].copy(pinned = !list[i].pinned)
         return true
     }
+
+    fun pinnedCount(): Int = list.count { it.pinned }
 
     fun remove(text: String): Boolean = list.removeAll { it.text == text }
 

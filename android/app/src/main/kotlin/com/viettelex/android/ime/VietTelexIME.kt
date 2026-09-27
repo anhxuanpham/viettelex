@@ -13,6 +13,7 @@ import android.os.Process
 import android.os.SystemClock
 import android.text.InputType
 import android.util.Log
+import android.view.KeyEvent
 import android.view.View
 import android.view.accessibility.AccessibilityManager
 import android.view.inputmethod.EditorInfo
@@ -23,24 +24,29 @@ import com.viettelex.android.shared.DebugLog
 import com.viettelex.android.shared.VTPrefs
 import com.viettelex.keyboard.Cancellable
 import com.viettelex.keyboard.ClipboardHistory
+import com.viettelex.keyboard.PlusGate
 import com.viettelex.keyboard.EmojiRecents
 import com.viettelex.keyboard.FieldTraits
 import com.viettelex.keyboard.Key
 import com.viettelex.keyboard.KeyboardData
 import com.viettelex.keyboard.KeyboardSession
+import com.viettelex.keyboard.KeyboardSettings
 import com.viettelex.keyboard.Keys
 import com.viettelex.keyboard.MainThread
 import com.viettelex.keyboard.SuggestionPlan
 import com.viettelex.keyboard.SwipeDecoder
+import com.viettelex.keyboard.SwipeEnglish
 import com.viettelex.keyboard.SwipeLayout
 import com.viettelex.keyboard.SwipePath
 import com.viettelex.keyboard.SwipeSuggest
+import com.viettelex.keyboard.SyllableBigram
 import com.viettelex.keyboard.WriteMode
 import com.viettelex.keyboard.TemplateItem
 import com.viettelex.keyboard.Templates
 import com.viettelex.keyboard.TouchLog
 import com.viettelex.keyboard.UserLangModel
 import java.io.File
+import java.util.BitSet
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -113,6 +119,8 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         if (key == Keys.USERLM_RESET_AT) model.reloadAfterExternalErase()
         // Bật/tắt gõ vuốt trong app khi bàn phím đang mở (ô Thử gõ).
         else if (key == Keys.SWIPE_TYPING) { swipeSetting = VTPrefs.settings(prefs).swipeTyping; updateSwipeTyping() }
+        else if (key == Keys.SWIPE_ENGLISH) session.swipeEnglish = VTPrefs.settings(prefs).swipeEnglish
+        else if (key == Keys.HARDWARE_TELEX) hwSetting = VTPrefs.settings(prefs).hardwareTelex
         // Bật/tắt kiểu gõ trong app khi bàn phím đang mở (ô Thử gõ) → áp ngay, không đợi mở lại.
         else if (key in Keys.ENGINE_KEYS) session.bridge.applySettings(VTPrefs.settings(prefs))
         // Tắt lịch sử clipboard trong app: bỏ bản RAM (app đã xoá file).
@@ -123,6 +131,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         val t0 = SystemClock.elapsedRealtime()
         super.onCreate()
         prefs = VTPrefs.of(this)
+        com.viettelex.android.plus.PlusPrefs.install(this)   // PlusGate đọc cờ Plus từ prefs chung
         KeyboardData.install(AssetBlobs.provider(assets))
         DebugLog.configure(this, prefs.getBoolean(Keys.DEBUG_TOUCH_LOG, false))
         model = UserLangModel(File(filesDir, Keys.USERLM_FILE), mainThread)
@@ -184,25 +193,10 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         val th = theme ?: return
         val settings = VTPrefs.settings(prefs)
         DebugLog.configure(this, settings.debugTouchLog)
-        field = FieldMapping.map(info.inputType, info.imeOptions, info.packageName,
-            hasActionLabel = info.actionLabel != null, customActionId = info.actionId)
-        proxy.secure = field.isSecure
-        proxy.rawKeys = field.rawKeys
-        proxy.multiLine = field.multiLine
-        proxy.writeMode = com.viettelex.keyboard.WriteMode.forPackage(info.packageName)
-        proxy.actionId = field.actionId
-        proxy.uriField = (info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT &&
-            (info.inputType and InputType.TYPE_MASK_VARIATION) == InputType.TYPE_TEXT_VARIATION_URI
-        startTracking(info)
-        handler.removeCallbacks(autoShiftRun); handler.removeCallbacks(suggestRun)
-        clearSwipeUndo()
-
-        session.startInput(settings, FieldTraits(
-            isSecure = field.isSecure, passthrough = field.passthrough,
-            capSentences = field.capSentences, suggestionsAllowed = field.suggestionsAllowed,
-            capWords = field.capWords, capCharacters = field.capCharacters,
-            initialCaps = info.initialCapsMode != 0, noLearning = field.noLearning,
-            packageName = info.packageName))
+        // Đã gõ phím cứng trên ô này (onStartInput đã dựng ô, tracker/engine đang sống):
+        // KHÔNG dựng lại từ EditorInfo cũ (initialSel đã lỗi thời) — chỉ lo phần giao diện.
+        if (!hwTyped) configureField(info, settings)
+        kb.holdNewline = field.holdNewline   // giữ lâu Enter = xuống dòng (ô nhiều dòng)
         feedback.hapticsEnabled = settings.hapticFeedback
         syncClipHistory(settings.clipboardHistory)
         // Copy lúc process IME chưa sống (listener không thấy) → bù khi hiện, không làm mới mục cũ.
@@ -223,8 +217,8 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         val templates = if (settings.templatesEnabled) VTPrefs.templates(this, prefs) else emptyList()
         kb.configure(field.returnLabel, field.kind, needsGlobe(), settings.showSpaceLogo,
             settings.templatesEnabled, templates,
-            th.dp(KeyLayout.keyAreaDp(th.tablet, th.landscape, settings.rowHeightAdjust)),
-            field.numberSigned, field.numberDecimal)
+            th.dp(KeyLayout.keyAreaDp(th.tablet, th.landscape, settings.rowHeightAdjust, settings.numberRow)),
+            field.numberSigned, field.numberDecimal, settings.numberRow)
         st.setPlane(kb.plane)
         updateSwipeTyping()
         root?.refreshInsets()
@@ -234,6 +228,31 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         applyAutoShift()
         refreshBar()                  // ô trống → gợi mở đầu ngay khi hiện
         if (BuildConfig.DEBUG) Log.d(TAG, "perf onStartInputView ${SystemClock.elapsedRealtime() - t0} ms")
+    }
+
+    /** Ô nhập → FieldMapping, IcProxy, tracker, session. Gọi ở onStartInputView (và onStartInput khi có phím cứng). */
+    private fun configureField(info: EditorInfo, settings: KeyboardSettings) {
+        field = FieldMapping.map(info.inputType, info.imeOptions, info.packageName,
+            hasActionLabel = info.actionLabel != null, customActionId = info.actionId)
+        proxy.secure = field.isSecure
+        proxy.rawKeys = field.rawKeys
+        proxy.multiLine = field.multiLine
+        proxy.writeMode = com.viettelex.keyboard.WriteMode.forPackage(info.packageName)
+        proxy.actionId = field.actionId
+        proxy.uriField = (info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT &&
+            (info.inputType and InputType.TYPE_MASK_VARIATION) == InputType.TYPE_TEXT_VARIATION_URI
+        startTracking(info)
+        handler.removeCallbacks(autoShiftRun); handler.removeCallbacks(suggestRun)
+        clearSwipeUndo()
+
+        session.startInput(settings, FieldTraits(
+            isSecure = field.isSecure, passthrough = field.passthrough,
+            capSentences = field.capSentences, suggestionsAllowed = field.suggestionsAllowed,
+            capWords = field.capWords, capCharacters = field.capCharacters,
+            initialCaps = info.initialCapsMode != 0, noLearning = field.noLearning,
+            packageName = info.packageName, urlField = proxy.uriField))
+        hwSetting = settings.hardwareTelex
+        fieldReady = true
     }
 
     /**
@@ -293,6 +312,90 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         refreshBar()
     }
 
+    // MARK: bàn phím cứng
+
+    /** Công tắc "Telex cho bàn phím cứng" (Keys.HARDWARE_TELEX). */
+    private var hwSetting = true
+    /** configureField đã chạy cho ô hiện tại. */
+    private var fieldReady = false
+    /** Đã tiêu thụ ít nhất một phím cứng trên ô hiện tại. */
+    private var hwTyped = false
+    /** keyCode đã nuốt ở ACTION_DOWN ⇒ nuốt luôn ACTION_UP (app không nhận up mồ côi). */
+    private val hwConsumed = BitSet()
+
+    /**
+     * Có phím cứng thì bàn phím ảo thường KHÔNG hiện (onEvaluateInputViewShown mặc định) ⇒
+     * onStartInputView không chạy: dựng ô ngay ở đây để tracker theo dõi từ đầu. Không có
+     * phím cứng ⇒ để onStartInputView lo như cũ (không tốn gì thêm cho người chỉ gõ chạm).
+     */
+    override fun onStartInput(attribute: EditorInfo, restarting: Boolean) {
+        super.onStartInput(attribute, restarting)
+        fieldReady = false
+        hwTyped = false
+        hwConsumed.clear()
+        val settings = VTPrefs.settings(prefs)
+        hwSetting = settings.hardwareTelex
+        if (hwSetting && hardKeyboardPresent()) configureField(attribute, settings)
+    }
+
+    override fun onFinishInput() {
+        if (hwTyped) session.finishInput()     // bàn phím ảo không hiện ⇒ onFinishInputView không lưu model
+        fieldReady = false
+        hwTyped = false
+        hwConsumed.clear()
+        super.onFinishInput()
+    }
+
+    private fun hardKeyboardPresent(): Boolean {
+        val c = resources.configuration
+        return c.keyboard != android.content.res.Configuration.KEYBOARD_NOKEYS &&
+            c.hardKeyboardHidden != android.content.res.Configuration.HARDKEYBOARDHIDDEN_YES
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean =
+        onHardwareKeyDown(keyCode, event) || super.onKeyDown(keyCode, event)
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode >= 0 && hwConsumed.get(keyCode)) { hwConsumed.clear(keyCode); return true }
+        return super.onKeyUp(keyCode, event)
+    }
+
+    /**
+     * Phím cứng → cùng đường với phím chạm ([onKey]: batch IcProxy, confirmTail, tracker,
+     * WriteMode). Chữ hoa/thường CHỈ theo Shift/CapsLock thật của KeyEvent — không đọc shift
+     * của bàn phím ảo, không auto-shift (Funput #462: shift một lần phải nhả ngay).
+     */
+    private fun onHardwareKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (!hwSetting || currentInputConnection == null) return false
+        if (!fieldReady) configureField(currentInputEditorInfo ?: return false, VTPrefs.settings(prefs))
+        if (!hwSetting || field.isSecure || field.passthrough || field.rawKeys) return false
+        val meta = event.metaState
+        val k = HardwareKeys.classify(keyCode, meta, event.getUnicodeChar(meta))
+        when (k) {
+            HwKey.Pass -> {
+                // Ctrl+C, mũi tên, Tab, Esc…: app tự xử lý; từ đang soạn coi như xong.
+                if (session.bridge.isComposing) session.externalSelectionChange()
+                return false
+            }
+            HwKey.Enter -> {
+                // Chốt từ (auto-restore) rồi để Enter thật tới app: Shift+Enter, "Enter để gửi",
+                // IME action của TextView đều giữ nguyên hành vi bàn phím cứng.
+                clearSwipeUndo()
+                if (proxy.begin()) try { session.commitComposing(proxy) } finally { proxy.end() }
+                resetIfEditFailed()
+                return false
+            }
+            else -> {}
+        }
+        val key = HardwareKeys.sessionKey(k, session.bridge.isComposing) ?: return false
+        hwTyped = true
+        hwConsumed.set(keyCode)
+        onKey(key)
+        // Bàn phím ảo đang hiện song song: shift một-lần của nó nhả NGAY khi gõ chữ cứng.
+        if (key is Key.Letter) keyboard?.setAutoShift(false)
+        return true
+    }
+
     // MARK: phím
 
     override fun onKey(key: Key) {
@@ -339,7 +442,11 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         val dec = swipeDecoder ?: return
         synchronized(swipeLock) { dec.setLayout(layout) }
         // Dựng template nền (~320 KB) — một luồng nhờ swipeLock; decode chờ nếu chưa xong.
-        worker().post { synchronized(swipeLock) { if (swipeDecoder === dec) dec.prepare() } }
+        worker().post {
+            synchronized(swipeLock) { if (swipeDecoder === dec) dec.prepare() }
+            if (session.swipeEnglish) SwipeEnglish.lexicon     // nạp từ điển Anh ở nền (lazy, thread-safe)
+            SyllableBigram.shared   // bảng bigram tĩnh dùng chung (thanh gợi ý cũng dùng)
+        }
     }
 
     override fun onSwipeTypingStart(): Boolean {
@@ -356,7 +463,11 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         val dec = swipeDecoder ?: return
         val ctx = session.swipeContext()
         val t0 = if (TouchLog.enabled) System.nanoTime() else 0L
-        val cands = synchronized(swipeLock) { dec.decode(path, SwipeSuggest.TOP_K, ctx.folded) }
+        // ctx.english != null ⇒ thêm ứng viên tiếng Anh (công tắc "Vuốt từ tiếng Anh"); điểm
+        // cá nhân của từ tiếng Anh = ctx.englishWord (không có bigram tĩnh — chỉ cho âm tiết Việt).
+        val cands = synchronized(swipeLock) {
+            dec.decode(path, SwipeSuggest.TOP_K, ctx.folded, ctx.english, if (ctx.english != null) ctx.englishWord else null)
+        }
         val choice = SwipeSuggest.choose(cands, ctx.word, case)
         if (TouchLog.enabled) TouchLog.write(String.format(java.util.Locale.ROOT, "swipe decode %.1fms pts=%d cands=%d",
             (System.nanoTime() - t0) / 1e6, path.count, cands.size))
@@ -594,7 +705,12 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     }
 
     override fun onClipTogglePin(text: String) {
-        if (session.clipHistory?.togglePin(text) == true) { saveClipHistory(); refreshClipboardPane() }
+        val h = session.clipHistory ?: return
+        val limit = PlusGate.pinnedClipLimit
+        if (h.togglePin(text, limit)) { saveClipHistory(); refreshClipboardPane() }
+        else if (limit != null && h.contains(text)) {
+            clipPane?.showNotice("Tối đa $limit mục ghim — VietTelex Plus ghim không giới hạn.")
+        }
     }
 
     override fun onClipRemove(text: String) {

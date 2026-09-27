@@ -17,6 +17,10 @@ final class ClipboardFeature {
     /// Nội dung clipboard đã biết (đọc được) ứng với changeCount nào.
     private(set) var known: (change: Int, text: String)?
 
+    /// Clipboard nâng cao (Plus): số mục ghim tối đa + chip tách số. Test thay được.
+    var pinLimit: () -> Int? = { PlusGate.pinnedClipLimit }
+    var chipsUnlocked: () -> Bool = { PlusGate.isUnlocked(.advancedClipboard) }
+
     init(fileURL: URL? = ClipboardHistory.defaultFileURL) {
         self.fileURL = fileURL
     }
@@ -63,7 +67,7 @@ final class ClipboardFeature {
 
     /// Chip cho clipboard HIỆN TẠI (changeCount khớp nội dung đã biết, chưa dùng).
     func chips(currentChange: Int, usedChange: Int) -> [ClipChip] {
-        guard !incognito, let k = known, k.change == currentChange, k.change != usedChange else { return [] }
+        guard !incognito, chipsUnlocked(), let k = known, k.change == currentChange, k.change != usedChange else { return [] }
         return ClipDetect.detect(k.text)
     }
 
@@ -74,7 +78,14 @@ final class ClipboardFeature {
         return h.items(now: now)
     }
 
-    func togglePin(_ text: String) { history?.togglePin(text); history?.save() }
+    /// false = đã đủ số mục ghim miễn phí (không đổi gì).
+    @discardableResult
+    func togglePin(_ text: String) -> Bool {
+        guard let h = history else { return false }
+        let ok = h.togglePin(text, limit: pinLimit())
+        if ok { h.save() }
+        return ok
+    }
     func remove(_ text: String) { history?.remove(text); history?.save() }
     func clearUnpinned() { history?.clearUnpinned(); history?.save() }
 }

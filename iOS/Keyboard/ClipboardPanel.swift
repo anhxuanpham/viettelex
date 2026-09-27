@@ -68,7 +68,7 @@ final class ClipboardPanel: UIView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    func reload(items: [ClipItem], dark: Bool, incognito: Bool) {
+    func reload(items: [ClipItem], dark: Bool, incognito: Bool, notice: String? = nil) {
         self.dark = dark
         let ink: UIColor = dark ? .white : .black
         backgroundColor = dark ? UIColor(white: 0.17, alpha: 1) : UIColor(red: 0.82, green: 0.83, blue: 0.86, alpha: 1)
@@ -78,6 +78,7 @@ final class ClipboardPanel: UIView {
         clearButton.isHidden = !items.contains { !$0.pinned }
         titleLabel.text = incognito ? "Clipboard · ẩn danh (không lưu)" : "Clipboard"
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        if let n = notice { stack.addArrangedSubview(note(n, ink: ink)) }
         if items.isEmpty {
             stack.addArrangedSubview(note("Chưa có mục nào. Copy nội dung rồi mở bàn phím để ghi lại.", ink: ink))
         }

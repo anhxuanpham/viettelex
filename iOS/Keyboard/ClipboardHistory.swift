@@ -71,11 +71,18 @@ final class ClipboardHistory {
         return raw.filter(\.pinned) + raw.filter { !$0.pinned }
     }
 
-    func togglePin(_ text: String) {
-        guard let i = raw.firstIndex(where: { $0.text == text }) else { return }
+    /// Ghim/bỏ ghim. `limit` = số mục ghim tối đa (nil = không giới hạn —
+    /// `PlusGate.pinnedClipLimit`); đầy thì KHÔNG ghim thêm, trả false (bỏ ghim luôn được).
+    @discardableResult
+    func togglePin(_ text: String, limit: Int? = nil) -> Bool {
+        guard let i = raw.firstIndex(where: { $0.text == text }) else { return false }
+        if !raw[i].pinned, let l = limit, pinnedCount >= l { return false }
         raw[i].pinned.toggle()
         if raw[i].pinned { raw[i].sensitive = false }   // user chủ động giữ
+        return true
     }
+
+    var pinnedCount: Int { raw.filter(\.pinned).count }
 
     func remove(_ text: String) { raw.removeAll { $0.text == text } }
 

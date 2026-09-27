@@ -225,6 +225,36 @@ final class ClipboardFeatureTests: XCTestCase {
         XCTAssertFalse(f.shouldAutoRead(fullAccess: true, noPrompt: true, secureField: false, concealed: false))
     }
 
+    func testPinLimitFromPlus() {
+        let f = ClipboardFeature(fileURL: url)
+        f.load(historyEnabled: true, incognito: false)
+        f.pinLimit = { 5 }
+        for i in 1...7 { f.captured("mục \(i)", change: i, now: 0, secureField: false, concealed: false) }
+        for i in 1...5 { XCTAssertTrue(f.togglePin("mục \(i)")) }
+        XCTAssertFalse(f.togglePin("mục 6"))            // miễn phí tối đa 5
+        XCTAssertTrue(f.togglePin("mục 1"))             // bỏ ghim luôn được
+        XCTAssertTrue(f.togglePin("mục 6"))
+        f.pinLimit = { nil }                            // Plus: không giới hạn
+        XCTAssertTrue(f.togglePin("mục 7"))
+        XCTAssertEqual(f.history?.pinnedCount, 6)
+    }
+
+    func testChipsNeedAdvancedClipboard() {
+        let f = ClipboardFeature(fileURL: url)
+        f.load(historyEnabled: true, incognito: false)
+        f.chipsUnlocked = { false }
+        f.captured("0912345678", change: 1, now: 0, secureField: false, concealed: false)
+        XCTAssertEqual(f.chips(currentChange: 1, usedChange: -1), [])
+        f.chipsUnlocked = { true }
+        XCTAssertEqual(f.chips(currentChange: 1, usedChange: -1).map(\.value), ["0912345678"])
+    }
+
+    func testDefaultGateFollowsPlusGate() {
+        let f = ClipboardFeature(fileURL: url)
+        XCTAssertEqual(f.pinLimit(), PlusGate.pinnedClipLimit)
+        XCTAssertEqual(f.chipsUnlocked(), PlusGate.isUnlocked(.advancedClipboard))
+    }
+
     func testChipsFollowChangeCountAndUse() {
         let f = ClipboardFeature(fileURL: url)
         f.load(historyEnabled: true, incognito: false)

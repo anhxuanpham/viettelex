@@ -149,9 +149,68 @@ final class SwipeDecoderTests: XCTestCase {
         let (c1, c3) = accuracy(d, words, seed: 42, endOffset: 0.5)
         print(String(format: "SWIPE accuracy σ0.25: top1 %.3f top3 %.3f | σ0.3: %.3f/%.3f | lệch đầu/cuối 0.5: %.3f/%.3f",
                      a1, a3, b1, b3, c1, c3))
+        // đo 27/09/2026 (tầng 2 + kênh độ dài): 0.902/0.994 | 0.836/0.984 | 0.724/0.952
+        // (trước: 0.900/0.996 | 0.824/0.978 | 0.684/0.914) — cùng ngưỡng Kotlin
         XCTAssertGreaterThanOrEqual(a1, 0.85); XCTAssertGreaterThanOrEqual(a3, 0.98)
-        XCTAssertGreaterThanOrEqual(b1, 0.78); XCTAssertGreaterThanOrEqual(b3, 0.95)
-        XCTAssertGreaterThanOrEqual(c1, 0.62); XCTAssertGreaterThanOrEqual(c3, 0.88)
+        XCTAssertGreaterThanOrEqual(b1, 0.80); XCTAssertGreaterThanOrEqual(b3, 0.96)
+        XCTAssertGreaterThanOrEqual(c1, 0.69); XCTAssertGreaterThanOrEqual(c3, 0.93)
+    }
+
+    /// Tầng 2 (σ thích nghi + căn phím + góc) + kênh độ dài phải hơn SHARK2 trần ở ca khó.
+    func testRescoreBeatsPlainShark2() {
+        var pp = SwipeDecoder.Params(); pp.rescorePool = 0; pp.lengthWeight = 0
+        let plain = SwipeDecoder(params: pp); plain.setLayout(layout)
+        let d = decoder(), words = corpus()
+        let (p1, _) = accuracy(plain, words, seed: 42, endOffset: 0.5)
+        let (n1, _) = accuracy(d, words, seed: 42, endOffset: 0.5)
+        let (q1, _) = accuracy(plain, words, seed: 7, sigma: 0.3)
+        let (m1, _) = accuracy(d, words, seed: 7, sigma: 0.3)
+        print(String(format: "SWIPE tầng 2: lệch 0.5 %.3f → %.3f | σ0.3 %.3f → %.3f", p1, n1, q1, m1))
+        XCTAssertGreaterThanOrEqual(n1, p1 + 0.02)
+        XCTAssertGreaterThanOrEqual(m1, q1)
+    }
+
+    /// Đường của `words` dời cả nét (dx, dy) phím — người dùng có lệch tay hệ thống.
+    private func biasedPaths(_ words: [String], seed: UInt64, dx: Float, dy: Float) -> [SwipePath] {
+        var sim = SwipeSim(seed: seed)
+        return words.map { w in
+            let p = sim.path(w, layout)
+            var q = SwipePath(minDistance: p.minDistance)
+            for i in 0..<p.count {
+                q.add(x: p.xs[i] + dx * layout.keyWidth, y: p.ys[i] + dy * layout.keyWidth, t: p.ts[i], force: true)
+            }
+            return q
+        }
+    }
+
+    private func top1(_ d: SwipeDecoder, _ paths: [SwipePath], _ words: [String]) -> Double {
+        Double(paths.indices.filter { d.decode(paths[$0], topK: 1).first?.folded == words[$0] }.count)
+            / Double(words.count)
+    }
+
+    func testLearnOffsetConvergesAndHelps() {
+        let d = decoder(), words = corpus()
+        let train = words.enumerated().filter { $0.offset % 2 == 0 }.map(\.element)
+        let test = words.enumerated().filter { $0.offset % 2 == 1 }.map(\.element)
+        let trainPaths = biasedPaths(train, seed: 5, dx: 0.3, dy: 0.25)
+        let testPaths = biasedPaths(test, seed: 6, dx: 0.3, dy: 0.25)
+        let before = top1(d, testPaths, test)
+        for (i, p) in trainPaths.prefix(120).enumerated() { XCTAssertTrue(d.learnOffset(p, folded: train[i])) }
+        let after = top1(d, testPaths, test)
+        print(String(format: "SWIPE học lệch (0.30, 0.25): học được (%.3f, %.3f), top1 %.3f → %.3f",
+                     d.offsetX, d.offsetY, before, after))
+        XCTAssertEqual(d.offsetX, 0.3, accuracy: 0.08)
+        XCTAssertEqual(d.offsetY, 0.25, accuracy: 0.08)
+        XCTAssertGreaterThanOrEqual(after, before + 0.05)
+        // không lệch ⇒ học quanh 0 và không hại
+        let u = decoder()
+        var sim = SwipeSim(seed: 8)
+        for w in train.prefix(120) { u.learnOffset(sim.path(w, layout), folded: w) }
+        XCTAssertLessThan(abs(u.offsetX), 0.06); XCTAssertLessThan(abs(u.offsetY), 0.06)
+        // dạng lạ / đường 1 điểm ⇒ không học
+        var p1 = SwipePath(minDistance: 1); p1.add(x: 10, y: 10, t: 0)
+        XCTAssertFalse(u.learnOffset(sim.path("viet", layout), folded: "zzz"))
+        XCTAssertFalse(u.learnOffset(p1, folded: "viet"))
     }
 
     func testVietExpandsToAccented() {
@@ -243,12 +302,22 @@ final class SwipeDecoderTests: XCTestCase {
         let build = (CFAbsoluteTimeGetCurrent() - t0) * 1000
         var sim = SwipeSim(seed: 11)
         let paths = corpus(200).map { sim.path($0, layout) }
-        for p in paths { _ = d.decode(p, topK: 5) }
-        let t1 = CFAbsoluteTimeGetCurrent()
-        for p in paths { _ = d.decode(p, topK: 5) }
-        let per = (CFAbsoluteTimeGetCurrent() - t1) * 1000 / Double(paths.count)
-        print(String(format: "SWIPE benchmark iOS: dựng template %.1f ms, decode %.3f ms/đường, RAM template %d B",
-                     build, per, d.templateBytes))
+        var pp = SwipeDecoder.Params(); pp.rescorePool = 0; pp.lengthWeight = 0
+        let plain = SwipeDecoder(params: pp); plain.setLayout(layout); plain.prepare()
+        for p in paths { _ = d.decode(p, topK: 5); _ = plain.decode(p, topK: 5) }
+        // lấy lần nhanh nhất / 3 (simulator hay giật)
+        func best(_ x: SwipeDecoder) -> Double {
+            var b = Double.infinity
+            for _ in 0..<3 {
+                let t = CFAbsoluteTimeGetCurrent()
+                for p in paths { _ = x.decode(p, topK: 5) }
+                b = min(b, (CFAbsoluteTimeGetCurrent() - t) * 1000 / Double(paths.count))
+            }
+            return b
+        }
+        let per = best(d), perPlain = best(plain)
+        print(String(format: "SWIPE benchmark iOS: dựng template %.1f ms, decode %.3f ms/đường (SHARK2 trần %.3f), RAM template %d B",
+                     build, per, perPlain, d.templateBytes))
         XCTAssertLessThan(per, 20)   // Debug -Onone trên simulator; Release nhanh hơn nhiều
     }
 

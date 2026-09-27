@@ -4,6 +4,11 @@ package com.viettelex.keyboard
 interface TextProxy {
     /** commitText(text, 1). */
     fun insertText(text: String)
+    /**
+     * Xuống dòng THẬT (giữ lâu Enter): chèn "\n" vào ô, không bao giờ performEditorAction.
+     * Mặc định = insertText("\n") (proxy test/đơn giản); IcProxy ghi đè.
+     */
+    fun insertLineBreak() = insertText("\n")
     /** Xoá đúng [count] code point trước con trỏ (diff của engine). */
     fun deleteCodePoints(count: Int)
     /** Một lần ⌫ "như user" (KEYCODE_DEL / grapheme) khi không đang soạn. */

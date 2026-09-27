@@ -9,6 +9,18 @@ import org.junit.Test
 class ClipboardHistoryTests {
     private val min = 60_000L
 
+    @Test fun pinLimitFromPlusGate() {
+        val h = ClipboardHistory()
+        for (i in 1..7) h.add("mục $i", i.toLong())
+        for (i in 1..5) assertTrue(h.togglePin("mục $i", limit = 5))
+        assertFalse(h.togglePin("mục 6", limit = 5))     // miễn phí tối đa 5
+        assertEquals(5, h.pinnedCount())
+        assertTrue(h.togglePin("mục 1", limit = 5))      // bỏ ghim luôn được
+        assertTrue(h.togglePin("mục 6", limit = 5))
+        assertTrue(h.togglePin("mục 7", limit = null))   // Plus: không giới hạn
+        assertEquals(6, h.pinnedCount())
+    }
+
     @Test fun ttlAndSensitive() {
         val h = ClipboardHistory()
         h.add("xin chào", 0)

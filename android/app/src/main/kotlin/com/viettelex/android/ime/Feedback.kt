@@ -33,6 +33,13 @@ class Feedback(ctx: Context) {
             HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING)
     }
 
+    /** Giữ lâu đã kích hoạt (Enter xuống dòng): rung LONG_PRESS; tắt rung app ⇒ theo cài đặt hệ thống. */
+    fun longPress(view: View) {
+        if (hapticsEnabled) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS,
+            HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING)
+        else view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+    }
+
     companion object {
         const val LETTER = 0
         const val DELETE = 1
