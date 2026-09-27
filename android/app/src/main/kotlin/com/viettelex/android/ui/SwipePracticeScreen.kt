@@ -29,6 +29,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -216,6 +217,8 @@ private fun PracticeKeyboard(rowAdjust: Int, onSwipe: (SwipePath, SwipeLayout, M
             if (kw > 0f) SwipeLayout(kw, centers) else null
         }
         val trail = remember { mutableStateListOf<Offset>() }
+        // cử chỉ sống qua nhiều lần recompose (khoá theo layout) ⇒ luôn gọi callback MỚI NHẤT
+        val latest by rememberUpdatedState(onSwipe)
         val yOff = TouchGeometry.yOffset * density
         val keyColor = if (c.dark) Color(0xFF6B6B6B) else Color.White
         val specialColor = if (c.dark) Color(0xFF474747) else Color(0xFFABB0BA)
@@ -250,7 +253,7 @@ private fun PracticeKeyboard(rowAdjust: Int, onSwipe: (SwipePath, SwipeLayout, M
                 }
                 add(last, lastT, force = true)
                 // Một chạm (≤ 1 phím) không phải nét vuốt
-                if (path.length >= l.keyWidth) onSwipe(path, l, centers)
+                if (path.length >= l.keyWidth) latest(path, l, centers)
             }
         }) {
             val r = KeyLayout.KEY_RADIUS * density
