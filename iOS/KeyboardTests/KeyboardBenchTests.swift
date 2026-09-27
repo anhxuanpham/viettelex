@@ -69,6 +69,10 @@ final class KeyboardBenchTests: XCTestCase {
             d.set(["ko": "không", "dc": "được", "vn": "Việt Nam"], forKey: "shortcuts")
         default: break
         }
+        // Tách chi phí từng tính năng: VT_BENCH_OFF=smartTouch,showSuggestions (tắt thêm).
+        for k in (ProcessInfo.processInfo.environment["VT_BENCH_OFF"] ?? "").split(separator: ",") {
+            d.set(false, forKey: String(k))
+        }
         return d
     }
 

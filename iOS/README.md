@@ -20,6 +20,8 @@ Bộ mẫu câu mặc định: `ios-mau-cau.yml` (bundle theo build). Blob emoji
   `xcodebuild -scheme VietTelexKeyboardSlowTests -destination 'platform=iOS Simulator,name=iPhone 17' test`
   hoặc thêm `TEST_RUNNER_VT_SLOW_TESTS=1` trước lệnh bộ mặc định để chạy tất cả. Danh sách ở
   `KeyboardTests/SlowTests.swift` (gọi `try SlowTests.require()`) và scheme trong `project.yml`.
+  Bench đường nóng mỗi phím (`KeyboardBenchTests`): thêm `TEST_RUNNER_VT_BENCH_CONFIG=B|C|D`
+  và `SWIFT_OPTIMIZATION_LEVEL=-O` để lấy số đo — bảng A/B/C/D ở `docs/ios-app.md`.
 - **Android** tương tự: `./gradlew --offline test` (mặc định) · `VT_SLOW_TESTS=1 ./gradlew --offline :keyboard:test` (bộ chậm, `SlowTests.kt`).
 
 Gõ giọng nói: KHÔNG có trên iOS — bàn phím bên thứ ba không được truy cập micro
