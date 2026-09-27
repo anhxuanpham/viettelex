@@ -2693,6 +2693,23 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         return nil
     }
 
+    /// Chọn phím theo ngữ cảnh (thử nghiệm, TouchTarget): controller trả P(phím | từ đang
+    /// gõ) lúc chạm, nil = không biết / tắt. nil (mặc định) ⇒ router gần-nhất như cũ.
+    var letterPrior: (() -> ((Character) -> Float?)?)?
+
+    /// Vùng biên giữa 2 phím ⇒ TouchTarget.choose; lõi phím ⇒ giữ ngay (0 alloc).
+    private func smartPick(_ hit: UIButton, at p: CGPoint,
+                           prior lp: () -> ((Character) -> Float?)?) -> UIButton {
+        guard plane == .letters, !TouchTarget.inCore(p, convert(hit.bounds, from: hit)) else { return hit }
+        // Chốt phím nhấc-mới-chốt đang đè (vd space) TRƯỚC để prior thấy từ đang gõ mới nhất
+        // (sendActions(.touchDown) sau đó flush lần nữa = no-op).
+        commits.flush(except: nil)
+        guard let prior = lp(), let idx = letterKeys.firstIndex(where: { $0.button === hit }) else { return hit }
+        let rects = letterKeys.map { convert($0.button.bounds, from: $0.button) }
+        let chars = letterKeys.map { $0.base.first ?? " " }
+        return letterKeys[TouchTarget.choose(p, rects: rects, keys: chars, nearest: idx, prior: prior)].button
+    }
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         for t in touches {
             routeDown(ObjectIdentifier(t), at: t.location(in: self), time: t.timestamp,
@@ -2704,7 +2721,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// touch duy nhất được route bắt đầu phân loại chạm/vuốt (GestureClassifier).
     private func routeDown(_ id: ObjectIdentifier, at raw: CGPoint, time: TimeInterval, batch: Int) {
         let p = TouchGeometry.keySelectionPoint(raw)
-        let b = swipeActive ? nil : nearestLetterButton(at: p)   // đang vuốt: ngón khác không gõ
+        var b = swipeActive ? nil : nearestLetterButton(at: p)   // đang vuốt: ngón khác không gõ
+        if let hit = b, let lp = letterPrior { b = smartPick(hit, at: p, prior: lp) }
         TouchLog.touchBegan(active: routedTouches.count, batch: batch,
                             touchTimestamp: time, hit: b != nil, y: Double(p.y),
                             key: b?.currentTitle)

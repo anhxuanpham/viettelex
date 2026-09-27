@@ -143,6 +143,7 @@ targets:
       - Keyboard/SyllableBigram.swift
       - Keyboard/AddTones.swift
       - Keyboard/SyllableLM.swift
+      - Keyboard/TouchTarget.swift
       - Keyboard/Shortcuts.swift
       - Keyboard/TextTools.swift
       # bảng gõ tắt mẫu ở gốc repo — test khứ hồi parse/export cùng định dạng macOS

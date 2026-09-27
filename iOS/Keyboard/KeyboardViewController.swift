@@ -28,6 +28,8 @@ final class KeyboardViewController: UIInputViewController {
     private var swipeSuggest: (current: String, alts: [String], english: Set<String>)?
     /// Công tắc con "Vuốt từ tiếng Anh" (giai đoạn 3).
     private var swipeEnglishSetting = true
+    /// Chọn phím theo ngữ cảnh lúc chạm (thử nghiệm, mặc định BẬT) — TouchTarget.
+    private var smartTouchSetting = true
     /// Vài từ tiếng Anh vừa vuốt ra (chữ thường) — ngữ cảnh ngôn ngữ cho cú vuốt kế
     /// (từ trùng chuỗi như "the" vuốt ra dạng Anh vẫn mở mạch Anh).
     private var recentEnglish: [String] = []
@@ -70,6 +72,7 @@ final class KeyboardViewController: UIInputViewController {
         keyboard.onDeleteWord = { [weak self] in self?.deleteWordBackward() }
         wireWordSwipe()
         wireSwipeTyping()
+        keyboard.letterPrior = { [weak self] in self?.smartTouchPrior() }
         keyboard.onBarToggle = { [weak self] in self?.updateSuggestions() }
         keyboard.onTemplate = { [weak self] in self?.insertTemplate($0) }
         keyboard.onOpenTemplates = { [weak self] in self?.openTemplatesInApp() }
@@ -128,6 +131,8 @@ final class KeyboardViewController: UIInputViewController {
         showSuggestionsSetting = settings.showSuggestions
         swipeSetting = settings.swipeTyping
         swipeEnglishSetting = settings.swipeEnglish
+        smartTouchSetting = settings.smartTouch
+        if smartTouchSetting { TelexKeyPrior.warmUpInBackground() }
         if !swipeSetting { swipe = nil }              // tắt ⇒ bỏ template (RAM)
         swipeSuggest = nil
         recentEnglish = []
@@ -1182,6 +1187,17 @@ final class KeyboardViewController: UIInputViewController {
         KeyboardView.clickModifier()
         updateAutoShift()
         updateSuggestions()
+    }
+}
+
+// MARK: chọn phím theo ngữ cảnh (thử nghiệm) — TouchTarget
+extension KeyboardViewController {
+    /// Gọi lúc chạm phím chữ (main): P(phím | từ đang gõ), nil ⇒ router gần-nhất như cũ.
+    /// Ô literal (email/URL/username/mật khẩu), layout số/email/URL: tắt.
+    fileprivate func smartTouchPrior() -> ((Character) -> Float?)? {
+        guard smartTouchSetting, let t = fieldTraits, !t.passthrough, !t.secure,
+              t.inputKind == .normal, !bridge.passthrough else { return nil }
+        return TelexKeyPrior.sharedIfReady?.forTyping(bridge.rawWord, vniMode: bridge.vniMode)
     }
 }
 

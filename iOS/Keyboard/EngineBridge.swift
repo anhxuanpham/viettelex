@@ -56,6 +56,9 @@ struct KeyboardSettings {
     /// Kiểu gõ VNI (mặc định TẮT = Telex): số 1–9/0 mang dấu KHI ĐANG SOẠN TỪ (hoặc sửa
     /// dấu từ ngay trước con trỏ); ngoài từ vẫn là số. Engine giống macOS (`vniMode`).
     var vniMode = false
+    /// Chọn phím theo ngữ cảnh lúc chạm vùng biên 2 phím (TouchTarget) — thử nghiệm, mặc
+    /// định BẬT (mô phỏng: lỗi phím giảm ~55%, người gõ chuẩn không tệ hơn). Giống Android.
+    var smartTouch = true
     /// Gõ tắt (mặc định BẬT, bảng mặc định RỖNG như macOS — người dùng tự thêm hoặc bấm
     /// "Thêm bộ gợi ý" trong app). Bảng lưu App Group key "shortcuts" ([khoá: nội dung]).
     var shortcutsEnabled = true
@@ -80,6 +83,7 @@ struct KeyboardSettings {
         if d.object(forKey: "swipeTyping") != nil { s.swipeTyping = d.bool(forKey: "swipeTyping") }
         if d.object(forKey: "swipeEnglish") != nil { s.swipeEnglish = d.bool(forKey: "swipeEnglish") }
         if d.object(forKey: "vniMode") != nil { s.vniMode = d.bool(forKey: "vniMode") }
+        if d.object(forKey: "smartTouch") != nil { s.smartTouch = d.bool(forKey: "smartTouch") }
         if d.object(forKey: ShortcutFile.enabledKey) != nil { s.shortcutsEnabled = d.bool(forKey: ShortcutFile.enabledKey) }
         if s.shortcutsEnabled, let dict = d.dictionary(forKey: ShortcutFile.storeKey) as? [String: String] {
             s.shortcuts = ShortcutTable(dict)

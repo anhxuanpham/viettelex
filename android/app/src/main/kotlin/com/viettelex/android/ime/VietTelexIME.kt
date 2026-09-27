@@ -49,6 +49,7 @@ import com.viettelex.keyboard.PlusGate
 import com.viettelex.keyboard.TextTool
 import com.viettelex.keyboard.TextToolRunner
 import com.viettelex.keyboard.TextTools
+import com.viettelex.keyboard.TelexKeyPrior
 import com.viettelex.keyboard.Templates
 import com.viettelex.keyboard.TouchLog
 import com.viettelex.keyboard.UserLangModel
@@ -131,6 +132,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         // Bật/tắt gõ vuốt trong app khi bàn phím đang mở (ô Thử gõ).
         else if (key == Keys.SWIPE_TYPING) { swipeSetting = VTPrefs.settings(prefs).swipeTyping; updateSwipeTyping() }
         else if (key == Keys.SWIPE_ENGLISH) session.swipeEnglish = VTPrefs.settings(prefs).swipeEnglish
+        else if (key == Keys.SMART_TOUCH) { smartTouchSetting = VTPrefs.settings(prefs).smartTouch; warmSmartTouch() }
         else if (key == Keys.HARDWARE_TELEX) hwSetting = VTPrefs.settings(prefs).hardwareTelex
         // Bật/tắt kiểu gõ trong app khi bàn phím đang mở (ô Thử gõ) → áp ngay, không đợi mở lại.
         else if (key in Keys.ENGINE_KEYS) session.bridge.applySettings(VTPrefs.settings(prefs))
@@ -183,6 +185,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         val kb = KeyboardView(this, th, balloon, feedback, trail)
         val st = StripView(this, th, feedback)
         kb.listener = this
+        kb.letterPrior = ::smartTouchPrior
         st.listener = this
         val r = ImeRootView(this, th, kb, st, balloon, trail)
         keyboard = kb; strip = st; root = r
@@ -231,6 +234,10 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         // filter), không TYPE_NULL, không ô URL, không app phải ghi bằng key event.
         swipeFieldOk = !field.isSecure && !field.passthrough && !field.rawKeys && !proxy.uriField &&
             proxy.writeMode == WriteMode.COMMIT
+        // Chọn phím theo ngữ cảnh: chỉ ô chữ thường (email/URL/mật khẩu gõ literal ⇒ router cũ).
+        smartTouchSetting = settings.smartTouch
+        smartTouchFieldOk = !field.isSecure && !field.passthrough && !proxy.uriField
+        warmSmartTouch()
 
         inputShown = true
         collapsed = prefs.getBoolean(Keys.SUGGESTION_BAR_COLLAPSED, false)
@@ -454,6 +461,24 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         resetIfEditFailed()
         applyAutoShift()
         refreshBar()
+    }
+
+    // MARK: chọn phím theo ngữ cảnh (thử nghiệm)
+
+    private var smartTouchSetting = true
+    private var smartTouchFieldOk = false
+
+    /** Dựng trie prior (~vài chục ms) trên worker một lần; chưa xong ⇒ router cũ. */
+    private fun warmSmartTouch() {
+        if (smartTouchSetting && TelexKeyPrior.sharedIfReady == null) worker().post { TelexKeyPrior.warmUp() }
+    }
+
+    /** Gọi lúc chạm phím chữ (main): P(phím | từ đang gõ), null = không đổi phím. */
+    private fun smartTouchPrior(): ((Char) -> Float?)? {
+        if (!smartTouchSetting || !smartTouchFieldOk || !::session.isInitialized) return null
+        val b = session.bridge
+        if (b.passthrough) return null
+        return TelexKeyPrior.sharedIfReady?.forTyping(b.rawWord, b.vniMode)
     }
 
     // MARK: gõ vuốt

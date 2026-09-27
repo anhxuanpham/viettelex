@@ -176,6 +176,12 @@ class KeyboardView(
     private val logo: android.graphics.Bitmap? by lazy { android.graphics.BitmapFactory.decodeResource(resources, R.drawable.ime_space_logo) }
     private val logoRect = android.graphics.RectF()
 
+    /**
+     * Chọn phím theo ngữ cảnh (thử nghiệm, SmartTouch): IME trả P(phím | từ đang gõ) lúc
+     * chạm, null = không biết / tắt. null (mặc định) ⇒ router gần-nhất như cũ.
+     */
+    var letterPrior: (() -> ((Char) -> Float?)?)? = null
+
     // --- gõ vuốt ---
     /** IME bật khi setting + loại ô + không TalkBack. Tắt ⇒ không tính layout, không theo dõi ngón. */
     var swipeTyping = false
@@ -713,16 +719,19 @@ class KeyboardView(
                 return
             }
         }
-        val k = KeyLayout.hit(keys, plane, x, y, TouchGeometry.yOffset * d, d)
+        val hit = KeyLayout.hit(keys, plane, x, y, TouchGeometry.yOffset * d, d)
         cancelVoiceHold()                 // ngón khác chạm ⇒ "," đang giữ là gõ thường
         if (TouchLog.enabled) {
             val lag = (SystemClock.uptimeMillis() - e.eventTime).toDouble()
-            TouchLog.touchBegan(activeCount(), e.pointerCount, lag, k != null, (y / d).toDouble(),
-                k?.let { if (it.kind == KeyKind.LETTER) it.label else null })
+            TouchLog.touchBegan(activeCount(), e.pointerCount, lag, hit != null, (y / d).toDouble(),
+                hit?.let { if (it.kind == KeyKind.LETTER) it.label else null })
         }
-        if (k == null) return
+        if (hit == null) return
         // ĐẦU TIÊN: chốt các phím nhấc-mới-chốt đang đè (thứ tự khi gõ chồng ngón).
-        commits.flush(k)
+        commits.flush(hit)
+        // Chọn phím theo ngữ cảnh (thử nghiệm) — SAU flush để prior thấy từ đang gõ mới nhất.
+        val prior = if (hit.kind == KeyKind.LETTER && plane == Plane.LETTERS) letterPrior?.invoke() else null
+        val k = if (prior != null) SmartTouch.refine(keys, hit, x, y - TouchGeometry.yOffset * d, prior) else hit
         ptrKey[pid] = k
         when (k.kind) {
             KeyKind.LETTER -> {
