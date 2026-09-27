@@ -121,6 +121,17 @@ final class BackupTests: XCTestCase {
         XCTAssertNil(snap.learnedWords)
     }
 
+    /// Công tắc emoji / nút Dán / chọn phím thông minh phải theo bản sao lưu (27/09).
+    func testSnapshotIncludesPerfSwitches() throws {
+        let (s, _) = makeStore()
+        for k in ["emojiSuggest", "pasteButton", "smartTouch"] { s.defaults.set(false, forKey: k) }
+        let snap = s.snapshot(includeLearned: false)
+        for k in ["emojiSuggest", "pasteButton", "smartTouch"] { XCTAssertEqual(snap.settings?[k], .bool(false), k) }
+        let (t, _) = makeStore()
+        _ = t.apply(try BackupCodec.decode(BackupCodec.encode(snap)))
+        for k in ["emojiSuggest", "pasteButton", "smartTouch"] { XCTAssertEqual(t.defaults.object(forKey: k) as? Bool, false, k) }
+    }
+
     func testImportAndroidFileIntoIOSStore() throws {
         let (s, _) = makeStore()
         s.setShortcuts(["mn": "mình", "ko": "không"])

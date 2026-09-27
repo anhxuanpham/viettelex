@@ -50,6 +50,9 @@ enum BackupSettings {
         Spec(key: "shortcutsEnabled", kind: .bool(true)),
         Spec(key: "addTonesChip", kind: .bool(false)),
         Spec(key: "numberChips", kind: .bool(true)),
+        Spec(key: "emojiSuggest", kind: .bool(true)),    // chỉ iOS dùng
+        Spec(key: "pasteButton", kind: .bool(true)),     // chỉ iOS dùng
+        Spec(key: "smartTouch", kind: .bool(true)),
     ]
     static let byKey: [String: Spec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
 }
