@@ -129,6 +129,8 @@ struct RootView: View {
             if phase == .active {
                 keyboardEnabled = isKeyboardEnabled()
                 pasteReady = Self.readPasteReady()
+                // Plus: đọc entitlement đã verify → cờ App Group cho bàn phím.
+                Task { await PlusShared.model.refreshEntitlements() }
             }
         }
         .onChange(of: templatesEnabled) { on in
@@ -186,6 +188,7 @@ struct RootView: View {
             .padding(.vertical, 8)
             .listRowBackground(Color.clear)
         }
+        Section { PlusEntryRow() }
         Section {
             Link(destination: URL(string: "https://ptrinh.github.io/viettelex/")!) {
                 Label("Website", systemImage: "globe")
@@ -809,6 +812,8 @@ struct TinhNangSections: View {
     private var templatesEnabled = true
     @AppStorage("rowHeightAdjust", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var rowHeightAdjust = 0
+    @AppStorage("numberRow", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var numberRow = false
     @AppStorage("hapticFeedback", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var hapticFeedback = false
     @AppStorage("reEditWord", store: UserDefaults(suiteName: "group.com.viettelex"))
@@ -825,6 +830,8 @@ struct TinhNangSections: View {
             settingToggle("Kiểm tra chính tả khi gõ", "Ngừng bỏ dấu ngay khi từ không thể là tiếng Việt.", isOn: $liveSpellCheck)
             settingToggle("Sửa dấu từ đã gõ", "Xoá dấu cách ngay sau một từ để gõ tiếp dấu cho từ đó (tháy ␣ ⌫ a → thấy); hoặc đặt con trỏ ngay sau từ rồi gõ phím dấu s f r x j: viêt + j → việt.", isOn: $reEditWord)
         } header: { Text("Chính tả") }
+
+        ShortcutsSection()
 
         Section {
             // Thanh gợi ý bật = tự học từ hay dùng (learnWords đi theo, không
@@ -853,10 +860,13 @@ struct TinhNangSections: View {
                     Text(rowHeightAdjust == 0
                          ? "Chuẩn"
                          : String(format: "%+d pt mỗi hàng (%+d pt cả bàn phím)",
-                                  rowHeightAdjust, rowHeightAdjust * 4))
+                                  // hàng số cao ¾ hàng chữ ⇒ tổng ×4,75 khi bật
+                                  rowHeightAdjust,
+                                  Int((Double(rowHeightAdjust) * (numberRow ? 4.75 : 4)).rounded())))
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
+            settingToggle("Hàng phím số", "Thêm hàng 1 2 3 … 0 phía trên hàng chữ — gõ số không cần chuyển sang bàn phím 123. Bàn phím cao thêm khoảng ¾ hàng.", isOn: $numberRow)
         } header: { Text("Giao diện") } footer: {
             Text("Cài đặt áp dụng ngay lần mở bàn phím kế tiếp.")
         }

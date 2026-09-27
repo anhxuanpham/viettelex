@@ -248,6 +248,22 @@ class IcProxy(
         shadow.invalidate()
     }
 
+    /**
+     * Giữ lâu Enter: "\n" chèn thật, KHÔNG performEditorAction / KEYCODE_ENTER (app chat
+     * bắt phím Enter thành "Gửi"). TYPE_NULL chỉ hiểu phím ⇒ ENTER như cũ; ghi bằng key
+     * event (KEY_ONLY, hoặc sau DEL trong batch) ⇒ key event ký tự "\n" cùng hàng đợi.
+     */
+    override fun insertLineBreak() {
+        val c = conn() ?: return
+        if (rawKeys) { c.sendKey(EditorPort.PortKey.ENTER); tracker.unknown(); shadow.invalidate(); return }
+        if (writeMode == WriteMode.KEY_ONLY || (keyDelQueued && writeMode != WriteMode.COMMIT)) {
+            c.sendText("\n"); tracker.unknown(); shadow.invalidate(); return
+        }
+        if (!c.commitText("\n")) { fail("commitText"); return }
+        tracker.inserted(1)
+        shadow.inserted("\n")
+    }
+
     private fun newline(c: EditorPort) {
         if (actionId != 0 && !rawKeys) c.performEditorAction(actionId) else c.sendKey(EditorPort.PortKey.ENTER)
         tracker.unknown()

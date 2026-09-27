@@ -22,10 +22,16 @@ object Keys {
     /** Gõ vuốt (thử nghiệm, mặc định tắt). */
     const val SWIPE_TYPING = "swipeTyping"
     const val SWIPE_ENGLISH = "swipeEnglish"
+    /** Gõ Telex bằng bàn phím cứng (tablet, DeX, Chromebook, BT/USB) — mặc định BẬT. */
+    const val HARDWARE_TELEX = "hardwareTelex"
+
+    /** Gõ tắt: bật/tắt (mặc định BẬT) + bảng (String YAML phẳng như macOS, xem [ShortcutFile]). */
+    const val SHORTCUTS_ENABLED = "shortcutsEnabled"
+    const val SHORTCUTS = "shortcuts"
 
     /** Key ảnh hưởng engine/EngineBridge — đổi lúc bàn phím đang mở thì áp ngay. */
     val ENGINE_KEYS = setOf(SIMPLE_TELEX, FREE_MARKING, QUICK_TELEX, MODERN_TONE, CONTEXTUAL_ENGLISH,
-        AUTO_FIX_ADJACENT, TEENCODE, AUTO_RESTORE, LIVE_SPELL_CHECK)
+        AUTO_FIX_ADJACENT, TEENCODE, AUTO_RESTORE, LIVE_SPELL_CHECK, SHORTCUTS_ENABLED, SHORTCUTS)
     const val SHOW_SUGGESTIONS = "showSuggestions"
     const val FILTER_SENSITIVE = "filterSensitive"
     const val TEMPLATES_ENABLED = "templatesEnabled"
@@ -33,6 +39,8 @@ object Keys {
     const val HAPTIC_FEEDBACK = "hapticFeedback"
     /** Int −10…10 (dp mỗi hàng). */
     const val ROW_HEIGHT_ADJUST = "rowHeightAdjust"
+    /** Bool — hàng phím số trên plane chữ (tên như iOS App Group). */
+    const val NUMBER_ROW = "numberRow"
     /** String JSON `[{"label":…,"text":…}]`; vắng ⇒ mặc định từ assets/ios-mau-cau.yml. */
     const val USER_TEMPLATES = "userTemplates"
     const val DEBUG_TOUCH_LOG = "debugTouchLog"
@@ -42,6 +50,12 @@ object Keys {
     const val EMOJI_RECENTS = "emojiRecents"
     /** Long ms — app ghi khi user bấm "Xóa từ đã học" (đã xoá [USERLM_FILE]). */
     const val USERLM_RESET_AT = "userlmResetAt"
+
+    // VietTelex Plus (xem [PlusGate]) — app ghi, IME chỉ đọc.
+    /** Boolean: đã mua Plus (Play Billing xác nhận + acknowledge). */
+    const val PLUS_UNLOCKED = "plusUnlocked"
+    /** Boolean: giả lập đã mua — chỉ bản debug nghe. */
+    const val PLUS_DEBUG_OVERRIDE = "plusDebugOverride"
 
     // file trong filesDir
     const val USERLM_FILE = "userlm.bin"

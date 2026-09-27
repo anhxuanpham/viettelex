@@ -88,7 +88,8 @@ class FakeEditor(initial: String = "", var selStart: Int = initial.length, var s
     override fun selectedText(): CharSequence? = if (!readable) null else sb.substring(minOf(selStart, selEnd), maxOf(selStart, selEnd))
     override fun setSelection(start: Int, end: Int): Boolean { setSelections++; selStart = start; selEnd = end; return true }
     override fun finishComposing(): Boolean { finishComposingCalls++; return true }
-    override fun performEditorAction(actionId: Int) = true
+    val actions = ArrayList<Int>()
+    override fun performEditorAction(actionId: Int): Boolean { actions.add(actionId); return true }
     override fun sendKey(key: EditorPort.PortKey) { keys.add(key); pendingKeys.add(key); if (depth == 0) flushKeys() }
 }
 
@@ -419,5 +420,44 @@ class IcProxyTest {
         p.begin(); p.deleteBackward(); p.end()
         assertEquals("vi", ed.text)
         assertTrue(p.confirmTail("không khớp"))   // key event trễ ⇒ không so đuôi
+    }
+
+    // Giữ lâu Enter: "\n" thật, không action, không KEYCODE_ENTER.
+
+    @Test fun lineBreakCommitsNewlineWithoutAction() {
+        val ed = FakeEditor("chào")
+        val p = proxy(ed).apply { actionId = android.view.inputmethod.EditorInfo.IME_ACTION_SEND }
+        p.batch { insertLineBreak() }
+        assertEquals("chào\n", ed.text)
+        assertTrue(ed.actions.isEmpty()); assertTrue(ed.keys.isEmpty())
+        assertEquals("chào\n", p.contextBeforeInput())   // shadow/tracker theo kịp
+        // Chạm Enter vẫn gửi action như cũ.
+        p.batch { insertText("\n") }
+        assertEquals(listOf(android.view.inputmethod.EditorInfo.IME_ACTION_SEND), ed.actions)
+        assertEquals("chào\n", ed.text)
+    }
+
+    @Test fun lineBreakKeyOnlyGoesViaCharKeyEvent() {
+        val ed = FakeEditor("a")
+        val p = proxy(ed, reliable = false).apply { writeMode = WriteMode.KEY_ONLY; actionId = 4 }
+        p.batch { insertLineBreak() }
+        assertEquals("a\n", ed.text)
+        assertTrue(ed.actions.isEmpty()); assertTrue(ed.keys.isEmpty())
+    }
+
+    @Test fun lineBreakAfterQueuedDelStaysInKeyQueue() {
+        val ed = FakeEditor("ab")
+        val p = proxy(ed, reliable = false).apply { writeMode = WriteMode.DEL_VIA_KEY_EVENT }
+        p.batch { deleteBackward(); insertLineBreak() }
+        assertEquals("a\n", ed.text)
+        assertTrue(ed.actions.isEmpty())
+    }
+
+    @Test fun lineBreakRawKeysSendsEnter() {
+        val ed = FakeEditor("$ ls")
+        val p = proxy(ed).also { it.rawKeys = true }
+        p.batch { insertLineBreak() }
+        assertEquals(listOf(EditorPort.PortKey.ENTER), ed.keys)
+        assertTrue(ed.actions.isEmpty())
     }
 }

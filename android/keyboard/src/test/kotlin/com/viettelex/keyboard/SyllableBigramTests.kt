@@ -151,8 +151,9 @@ class SyllableBigramTests {
 
     companion object {
         // đo 27/09/2026: trước top1 0.704 top3 0.865 → sau top1 0.856 top3 0.948 (n=12027);
+        // + tầng 2 decoder (σ thích nghi/căn phím/góc/độ dài): 0.710/0.870 → 0.861/0.951.
         // ngưỡng hồi quy chừa ~1.5 điểm
-        const val AFTER_TOP1 = 0.84
+        const val AFTER_TOP1 = 0.845
         const val AFTER_TOP3 = 0.935
         const val GAIN_TOP1 = 0.13
     }

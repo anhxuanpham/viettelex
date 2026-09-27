@@ -59,6 +59,18 @@ final class SyllableBigram {
                 return 0
             }
         }
+
+        /// Duyệt mọi cặp (id âm tiết sau, PMI) của dải — thanh gợi ý lấy top từ kế tiếp.
+        func forEach(_ body: (_ next: Int, _ pmi: Float) -> Void) {
+            guard let t = table, lo < hi else { return }
+            t.blob.withUnsafeBytes { raw in
+                for m in lo..<hi {
+                    let v = Int(UInt16(littleEndian: raw.loadUnaligned(fromByteOffset: t.nextBase + m * 2,
+                                                                      as: UInt16.self)))
+                    body(v, Float(raw[t.scoreBase + m]) / t.qPerNat)
+                }
+            }
+        }
     }
 
     /// Dải của âm tiết trước id `prev` (id vnlexicon).
@@ -82,7 +94,8 @@ final class SyllableBigram {
         return SyllableBigram(blob: d)
     }
 
-    /// Bảng dùng chung — map lần đầu cần (chỉ khi gõ vuốt bật). nil nếu thiếu/hỏng/lệch.
+    /// Bảng dùng chung (gõ vuốt + thanh gợi ý — một lần map) — map lần đầu cần, nên chạm
+    /// lần đầu ở hàng đợi nền (hash vnlexicon ~150KB). nil nếu thiếu/hỏng/lệch.
     static let shared: SyllableBigram? = {
         final class BundleToken {}
         guard let url = Bundle(for: BundleToken.self).url(forResource: "vnbigram", withExtension: "bin"),

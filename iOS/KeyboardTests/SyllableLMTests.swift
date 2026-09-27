@@ -142,7 +142,7 @@ final class SyllableLMTests: XCTestCase {
         let tri = measure(chains, useLM: true)
         let ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000 / Double(tri.n)
         print(String(format: "LM heldout iOS bigram: %@ | trigram: %@ | %.2f ms/vuốt (Debug)", f(bigram), f(tri), ms))
-        // cùng ngưỡng với Kotlin (đo 27/09/2026: 0.856/0.948 → 0.892/0.960 trên toàn tập)
+        // cùng ngưỡng với Kotlin (đo 27/09/2026, decoder tầng 2: 0.861/0.951 → 0.894/0.962 trên toàn tập)
         XCTAssertGreaterThanOrEqual(Double(tri.top1) / Double(tri.n), 0.877, f(tri))
         XCTAssertGreaterThanOrEqual(Double(tri.top3) / Double(tri.n), 0.950, f(tri))
         XCTAssertGreaterThanOrEqual(Double(tri.top1 - bigram.top1) / Double(tri.n), 0.025)

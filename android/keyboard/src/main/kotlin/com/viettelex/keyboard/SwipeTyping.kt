@@ -209,7 +209,7 @@ object SwipeSuggest {
     /**
      * Trigram (vnlm.bin, [SyllableLM]): điểm = s·[LM_WEIGHT] kẹp [[LM_FLOOR], [LM_CAP]] (có
      * bằng chứng ÂM), λ tần suất hạ còn [LM_LAMBDA_FREQ]. Chỉnh trên tập dev (docs/DATA-SOURCES.md):
-     * heldout top-1 0.856 → 0.892, top-3 0.948 → 0.960. GIỐNG iOS SwipeTyping.lm*.
+     * heldout top-1 0.861 → 0.894, top-3 0.951 → 0.962 (decoder tầng 2). GIỐNG iOS SwipeTyping.lm*.
      */
     const val LM_WEIGHT = 0.15f
     const val LM_CAP = 1.0f

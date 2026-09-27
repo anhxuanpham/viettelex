@@ -56,7 +56,7 @@ final class SwipeTyping {
     /// kẹp [lmFloor, lmCap] (có bằng chứng ÂM: "hiếm sau ngữ cảnh này"), và khi đó λ tần
     /// suất lúc chọn dạng/bung dấu hạ còn lmLambdaFreq (LM gánh phần tiên nghiệm). Chỉnh
     /// trên tập dev (Scripts/gen-syllable-lm.py, docs/DATA-SOURCES.md): heldout top-1
-    /// 0.856 → 0.892, top-3 0.948 → 0.960.
+    /// 0.861 → 0.894, top-3 0.951 → 0.962 (decoder tầng 2).
     static let lmWeight: Float = 0.15
     static let lmCap: Float = 1.0
     static let lmFloor: Float = -1.0
@@ -141,7 +141,7 @@ final class SwipeTyping {
             d.setLayout(l)
             if prepare {
                 d.prepare()
-                _ = SyllableBigram.shared   // map bảng bigram tĩnh (lười, chỉ khi gõ vuốt bật)
+                _ = SyllableBigram.shared   // bảng bigram tĩnh dùng chung (thanh gợi ý cũng map sẵn)
                 _ = SyllableLM.shared       // map mô hình trigram (vnlm.bin)
             }
         }

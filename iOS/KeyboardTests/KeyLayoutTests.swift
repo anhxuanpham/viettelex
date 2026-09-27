@@ -27,6 +27,25 @@ final class KeyLayoutTests: XCTestCase {
             }
         }
     }
+    /// Hàng số iPad: đúng một phím co giãn, cùng số phím với hàng neo (1…0 thẳng
+    /// cột q…p), phím co giãn rộng đúng như ⌫ ở mọi bề rộng.
+    func testPadNumberRowAlignsWithAnchorRow() {
+        let num = KeyLayout.padNumberRow
+        let anchor = KeyLayout.padRows[KeyLayout.padAnchorRow]
+        XCTAssertEqual(KeyLayout.flexCount(num), 1)
+        XCTAssertEqual(num.count, anchor.count)
+        XCTAssertEqual(num.map(\.id)[1...10].joined(), "1234567890")
+        XCTAssertEqual(anchor.map(\.id)[1...10].joined(), "qwertyuiop")
+        XCTAssertEqual(num[0].units, anchor[0].units)
+        for w: CGFloat in [744, 820, 834, 1024, 1133, 1194, 1366] {
+            let q = KeyLayout.padLetterWidth(rowWidth: w, gap: 10, margin: 3)
+            let f = KeyLayout.padFlexWidth(num, rowWidth: w, gap: 10, margin: 3)
+            XCTAssertEqual(f, q * (KeyLayout.units("back", in: anchor) ?? 0), accuracy: 0.01, "w=\(w)")
+        }
+        // id không đụng hàng chữ (buildLettersPad tra view theo id)
+        let ids = Set(KeyLayout.padRows.flatMap { $0.map(\.id) })
+        XCTAssertTrue(ids.isDisjoint(with: num.map(\.id)))
+    }
     func testBottomFractionsLeaveRoomForSpace() {
         for row in [KeyLayout.padBottom, KeyLayout.phoneBottom] {
             XCTAssertLessThan(row.compactMap(\.units).reduce(0, +), 0.75)

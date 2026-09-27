@@ -193,7 +193,7 @@ class SyllableLMTests {
     }
 
     companion object {
-        // đo 27/09/2026 (Python, cùng đường giả): bigram 0.856/0.948 → trigram 0.892/0.960;
+        // đo 27/09/2026 (decoder tầng 2): bigram 0.861/0.951 → trigram 0.894/0.962;
         // ngưỡng hồi quy chừa ~1.5 điểm
         const val TOP1 = 0.877
         const val TOP3 = 0.950

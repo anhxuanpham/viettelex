@@ -1,6 +1,5 @@
 package com.viettelex.keyboard
 
-import kotlin.math.ln
 
 /** Phím gửi vào [KeyboardSession.handle] (≈ KeyboardView.Key iOS). */
 sealed class Key {
@@ -12,6 +11,11 @@ sealed class Key {
     /** Space thứ 2 trong < 0.35 s (IME đo nhịp). */
     object DoubleSpacePeriod : Key()
     object Newline : Key()
+    /**
+     * Giữ lâu Enter: chèn "\n" THẬT (commitText) — không performEditorAction, không
+     * KEYCODE_ENTER (Zalo/Messenger bắt phím Enter thành "Gửi"). Chốt/học từ như [Newline].
+     */
+    object LineBreak : Key()
     object Backspace : Key()
     /** Trackpad: session reset; IME tự dời con trỏ [delta] ký tự, hoặc [delta] dòng
      *  khi [vertical] (âm = trái/lên). */
@@ -45,6 +49,8 @@ data class FieldTraits(
     val noLearning: Boolean = false,
     /** EditorInfo.packageName — tra bảng [WriteMode]. */
     val packageName: String? = null,
+    /** Ô URL (TYPE_TEXT_VARIATION_URI — omnibox tự hoàn tất): không gõ tắt. */
+    val urlField: Boolean = false,
 ) {
     /** Cách ghi chữ vào ô theo app (bảng [WriteMode.forPackage]). */
     val writeMode: WriteMode get() = WriteMode.forPackage(packageName)
@@ -119,12 +125,14 @@ sealed class SuggestionPlan {
 class SuggestJob internal constructor(
     internal val req: Int, internal val gen: Int, internal val bridge: EngineBridge,
     val composed: String, val raw: String, internal val predicted: String, private val wantFix: Boolean,
+    /** Âm tiết liền trước (bigram tĩnh). */
+    private val prev: String? = null,
 ) {
-    class Result(val pool: List<VNSuggest.Match>, val fix: String?)
+    class Result(val pool: List<VNSuggest.Match>, val fix: String?, val pmi: FloatArray? = null)
     fun compute(): Result {
         val pool = VNSuggest.matches(composed, poolLimit = 24, excluding = composed.lowercase())
         val fix = if (pool.isEmpty() && wantFix) AdjacentKeyFixer.lexiconCorrection(raw, bridge) else null
-        return Result(pool, fix)
+        return Result(pool, fix, SuggestRank.inlinePmi(pool, prev))
     }
 }
 
@@ -198,6 +206,7 @@ class KeyboardSession(
         TouchLog.session("android")
         bridge = EngineBridge(settings)
         bridge.passthrough = field.passthrough
+        bridge.shortcutsAllowed = !field.urlField
         traits = field
         lastKeyWasEmailTrigger = false
         clearUndo()
@@ -246,6 +255,22 @@ class KeyboardSession(
         clearSwipe()
     }
 
+    /**
+     * Bàn phím cứng: phím sắp đi THẲNG tới app (Enter thật — Shift+Enter, "Enter để gửi"):
+     * chốt từ đang soạn (auto-restore + học) mà KHÔNG chèn gì; như [Key.Newline], ⌫ sau đó
+     * không mở lại từ cũ.
+     */
+    fun commitComposing(proxy: TextProxy) {
+        val literal = if (swipeLiteral) openSwipeWord() else null
+        clearSwipe()
+        if (literal != null) settleLiteral(literal)
+        else if (bridge.isComposing) commitAndLearn(bridge.boundary("", proxy))
+        bridge.forgetLastCommit()
+        lastWord = null; lastWord2 = null; clearUndo()
+        lastInsertWasSpace = false
+        generation++
+    }
+
     private fun clearUndo() { restoreUndoRaw = null; restoreUndoComposed = null; undoOfferActive = false }
 
     /**
@@ -277,21 +302,24 @@ class KeyboardSession(
         // Từ tiếng Anh vuốt ra đang mở: phím chữ/ranh giới chốt nó (học), phím chữ thêm dấu
         // cách treo trước (không dính "mailx"; huỷ được nếu phím đó là đầu cú vuốt mới).
         if (literal != null && (key is Key.Letter || key is Key.Text || key == Key.Space ||
-                key == Key.DoubleSpacePeriod || key == Key.Newline)) {
+                key == Key.DoubleSpacePeriod || key == Key.Newline || key == Key.LineBreak)) {
             settleLiteral(literal)
-            if (key is Key.Letter) bridge.boundary(" ", proxy)
+            if (key is Key.Letter) bridge.boundary(" ", proxy, expand = false)
         }
+        // Từ vuốt không bao giờ là chữ tắt.
+        val expand = swiped == null
         when (key) {
             is Key.Letter -> { bridge.letter(key.ch, proxy); clearUndo() }
             is Key.Text -> {
-                commitAndLearn(bridge.boundary(key.text, proxy))
+                commitAndLearn(bridge.boundary(key.text, proxy, expand = expand))
                 lastWord = null; lastWord2 = null
                 clearUndo()
             }
             Key.Space -> {
                 val composedBefore = bridge.composedWord
-                val committed = bridge.boundary(" ", proxy)
-                if (composedBefore.isNotEmpty() && committed != composedBefore) {
+                val committed = bridge.boundary(" ", proxy, expand = expand)
+                // (Gõ tắt vừa bung thì không: ⌫ kế tiếp tự trả lại chữ tắt trong bridge.)
+                if (composedBefore.isNotEmpty() && committed != composedBefore && !bridge.expandedAtLastBoundary) {
                     restoreUndoRaw = committed; restoreUndoComposed = composedBefore
                 } else { restoreUndoRaw = null; restoreUndoComposed = null }
                 undoOfferActive = false
@@ -307,7 +335,7 @@ class KeyboardSession(
                     proxy.insertText(". ")
                     lastWord = null; lastWord2 = null
                 } else {
-                    commitAndLearn(bridge.boundary(" ", proxy))
+                    commitAndLearn(bridge.boundary(" ", proxy, expand = expand))
                 }
                 // Space đôi có thể đã thành ". ": ⌫ sau đó không được mở lại từ.
                 bridge.forgetLastCommit()
@@ -316,8 +344,8 @@ class KeyboardSession(
             is Key.MoveCursor -> {
                 bridge.reset(); lastWord = null; lastWord2 = null; clearUndo()
             }
-            Key.Newline -> {
-                commitAndLearn(bridge.boundary("\n", proxy))
+            Key.Newline, Key.LineBreak -> {
+                commitAndLearn(bridge.boundary("\n", proxy, lineBreak = key == Key.LineBreak, expand = expand))
                 // Enter có thể là "gửi"/performEditorAction: ⌫ sau đó không mở lại từ cũ.
                 bridge.forgetLastCommit()
                 lastWord = null; lastWord2 = null; clearUndo()
@@ -342,7 +370,7 @@ class KeyboardSession(
         lastKeyWasEmailTrigger = key is Key.Text && (key.text == "@" || key.text == ".")
         initialCapsPending = false
         val needsAutoShift = when (key) {
-            Key.Space, Key.Newline, Key.DoubleSpacePeriod, Key.Backspace, is Key.MoveCursor, Key.ClearField -> true
+            Key.Space, Key.Newline, Key.LineBreak, Key.DoubleSpacePeriod, Key.Backspace, is Key.MoveCursor, Key.ClearField -> true
             // CAP_CHARACTERS: shift ON bị bàn phím hạ sau mỗi chữ → bật lại.
             else -> traits.capCharacters
         }
@@ -354,6 +382,7 @@ class KeyboardSession(
                 Key.DoubleSpacePeriod -> "doubleSpace" to null
                 Key.Backspace -> "backspace" to null
                 Key.Newline -> "newline" to null
+                Key.LineBreak -> "linebreak" to null
                 is Key.MoveCursor -> "cursor" to null
                 Key.ClearField -> "clear" to null
             }
@@ -406,11 +435,12 @@ class KeyboardSession(
         if (lit != null) {
             // từ tiếng Anh vuốt trước còn mở: chốt nó + dấu cách
             settleLiteral(lit)
-            bridge.boundary(" ", proxy)
+            bridge.boundary(" ", proxy, expand = false)
         } else if (bridge.isComposing) {
-            commitAndLearn(bridge.boundary(" ", proxy))
+            // dấu cách tự chèn trước từ vuốt: không phải ranh giới người dùng gõ → không gõ tắt
+            commitAndLearn(bridge.boundary(" ", proxy, expand = false))
         } else if (SwipeSuggest.needsLeadingSpace(proxy.contextBeforeInput())) {
-            bridge.boundary(" ", proxy)
+            bridge.boundary(" ", proxy, expand = false)
         }
         proxy.insertText(choice.word)
         if (choice.english) {
@@ -482,6 +512,13 @@ class KeyboardSession(
     private fun commitAndLearn(word: String, accepted: Boolean = false) {
         lastCommit = null
         if (word.isEmpty()) return
+        // Nội dung gõ tắt nhiều từ ("mọi người"): học lần lượt từng từ (bigram trong cụm).
+        val parts = ShortcutFile.words(word)
+        if (parts.size != 1 || parts[0] != word) {
+            for (p in parts) commitAndLearn(p, accepted)
+            if (parts.isEmpty()) { lastWord = null; lastWord2 = null }
+            return
+        }
         val learned = if (learnEnabled) langModel.record(word, lastWord, lastWord2, if (accepted) 2 else 1) else null
         lastCommit = LastCommit(word, lastWord, lastWord2, learned)
         if (UserLangModel.learnable(word)) { lastWord2 = lastWord; lastWord = word }
@@ -521,13 +558,15 @@ class KeyboardSession(
         if (composed.isNotEmpty()) {
             val b = bridge
             return SuggestionPlan.Background(SuggestJob(suggestReq, generation, b, composed,
-                b.rawWord, b.predictedCommit, b.autoFixAdjacent))
+                b.rawWord, b.predictedCommit, b.autoFixAdjacent, lastWord))
         }
         val prev = lastWord
         val next: List<String> = if (prev != null) {
-            val n = SensitiveWords.filter(langModel.nextWords(prev, lastWord2, 6), filterSensitive)
-                .take(3).map { caseForContext(DisplayCase.apply(it, prev)) }
-            padWords(n, 3)
+            // cá nhân/seed trước; thiếu thì lấp bằng bigram tĩnh (người dùng mới) rồi mới topWords
+            val personal = SensitiveWords.filter(langModel.nextWords(prev, lastWord2, 6), filterSensitive).take(3)
+            val n = if (personal.size >= 3) personal else SuggestionFill.pad(personal,
+                SensitiveWords.filter(SuggestRank.bigramNext(prev, 6), filterSensitive), 3)
+            padWords(n.map { caseForContext(DisplayCase.apply(it, prev)) }, 3)
         } else {
             val top = SensitiveWords.filter(langModel.topWords(6), filterSensitive)
                 .take(3).map { caseForContext(DisplayCase.apply(it)) }
@@ -541,7 +580,7 @@ class KeyboardSession(
     fun completeSuggestions(job: SuggestJob, result: SuggestJob.Result): SuggestionSet? {
         if (job.req != suggestReq || job.gen != generation || bridge !== job.bridge ||
             job.bridge.composedWord != job.composed || !suggestionsActive || barCollapsed) return null
-        return composingSuggestions(job.composed, job.raw, job.predicted, result.pool, result.fix)
+        return composingSuggestions(job.composed, job.raw, job.predicted, result.pool, result.fix, result.pmi)
     }
 
     /** Đồng bộ (test / debug): tính luôn trên thread gọi. */
@@ -551,7 +590,8 @@ class KeyboardSession(
     }
 
     private fun composingSuggestions(composed: String, raw: String, predicted: String,
-                                     pool: List<VNSuggest.Match>, fix: String?): SuggestionSet {
+                                     pool: List<VNSuggest.Match>, fix: String?,
+                                     pmi: FloatArray? = null): SuggestionSet {
         val literal = if (predicted == composed) raw else composed
         var word: String? = null
         var word2: String? = null
@@ -562,13 +602,8 @@ class KeyboardSession(
                 ctxCacheKey = ctxKey
             }
             val ctx = ctxCache
-            val typedLen = Cp.count(composed)
-            fun score(w: String, f: Int): Double =
-                ln(f + 1.0) + 2.5 * ln(langModel.count(w) + 1.0) +
-                    (if (w in ctx) 4.0 else 0.0) + (if (Cp.count(w) == typedLen) 1.5 else 0.0)
             val ranked = SensitiveWords.filter(
-                pool.map { it.word to score(it.word, it.freq) }.sortedByDescending { it.second }.map { it.first },
-                filterSensitive)
+                SuggestRank.rankInline(pool, pmi, Cp.count(composed), langModel::count, ctx), filterSensitive)
             word = ranked.firstOrNull()?.let { DisplayCase.apply(it, lastWord) }
             word2 = ranked.getOrNull(1)?.let { DisplayCase.apply(it, lastWord) }
         } else if (fix != null) {
@@ -584,6 +619,10 @@ class KeyboardSession(
             word = words.firstOrNull()
             word2 = if (words.size > 1) words.last() else null
         }
+        // Đang gõ đúng một chữ tắt: slot chính hiện nội dung sẽ bung (chạm = bung ngay).
+        // Nội dung nhiều dòng không lên bar (gõ ranh giới vẫn bung).
+        val preview = bridge.shortcutPreview
+        if (preview != null && !preview.contains('\n') && word != preview) { word2 = word ?: word2; word = preview }
         return SuggestionSet(literal = literal, word = word, word2 = word2, emojis = emojis)
     }
 
