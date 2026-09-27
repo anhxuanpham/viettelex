@@ -51,6 +51,12 @@ object Keys {
     /** Long ms — app ghi khi user bấm "Xóa từ đã học" (đã xoá [USERLM_FILE]). */
     const val USERLM_RESET_AT = "userlmResetAt"
 
+    // VietTelex Plus (xem [PlusGate]) — app ghi, IME chỉ đọc.
+    /** Boolean: đã mua Plus (Play Billing xác nhận + acknowledge). */
+    const val PLUS_UNLOCKED = "plusUnlocked"
+    /** Boolean: giả lập đã mua — chỉ bản debug nghe. */
+    const val PLUS_DEBUG_OVERRIDE = "plusDebugOverride"
+
     // file trong filesDir
     const val USERLM_FILE = "userlm.bin"
     const val TOUCHLOG_FILE = "touchlog.txt"

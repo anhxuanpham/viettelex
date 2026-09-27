@@ -129,6 +129,8 @@ struct RootView: View {
             if phase == .active {
                 keyboardEnabled = isKeyboardEnabled()
                 pasteReady = Self.readPasteReady()
+                // Plus: đọc entitlement đã verify → cờ App Group cho bàn phím.
+                Task { await PlusShared.model.refreshEntitlements() }
             }
         }
         .onChange(of: templatesEnabled) { on in
@@ -186,6 +188,7 @@ struct RootView: View {
             .padding(.vertical, 8)
             .listRowBackground(Color.clear)
         }
+        Section { PlusEntryRow() }
         Section {
             Link(destination: URL(string: "https://ptrinh.github.io/viettelex/")!) {
                 Label("Website", systemImage: "globe")

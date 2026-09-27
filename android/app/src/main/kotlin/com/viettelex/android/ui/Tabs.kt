@@ -404,7 +404,7 @@ private fun LinkRow(g: Glyph, title: String, onClick: () -> Unit) {
 // ============================================================== Giới Thiệu
 
 @Composable
-fun GioiThieuTab() {
+fun GioiThieuTab(plus: com.viettelex.android.plus.PlusController, onOpenPlus: () -> Unit) {
     val c = LocalVT.current
     val ctx = LocalContext.current
     DebugSection()
@@ -416,6 +416,7 @@ fun GioiThieuTab() {
             Text("Bàn phím Telex tiếng Việt", style = VTType.subheadline, color = c.secondary)
         }
     }
+    PlusEntryRow(plus, onOpenPlus)
     VTSection(header = "Tài nguyên") {
         LinkRow(Glyph.Globe, "Website") { openUrl(ctx, "https://ptrinh.github.io/viettelex/") }
         RowDivider(52.dp)
