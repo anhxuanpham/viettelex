@@ -55,7 +55,8 @@ final class PerfSwitchTests: XCTestCase {
         for (i, c) in s.enumerated() { _ = rig.key(c, index: i + 1, drain: 0.04) }
     }
 
-    /// Mọi tính năng phụ tắt: phím CHỮ không đọc context lần nào (chỉ ranh giới từ: auto-shift).
+    /// Mọi tính năng phụ tắt: phím CHỮ không đọc context lần nào (chỉ ranh giới từ: auto-shift;
+    /// fail-safe CompositionSync khi engine xoá ≥2 ký tự — "tiêng"+s — là lõi, không tính ở đây).
     @MainActor func testAllOffLettersReadNoContext() {
         let saved = UserDefaultsProvider.shared
         UserDefaultsProvider.shared = KeyboardBenchTests.makeDefaults("C")
@@ -64,9 +65,9 @@ final class PerfSwitchTests: XCTestCase {
         defer { rig.close() }
         type(rig, "xin chaof ")
         rig.proxy.contextReads = 0
-        type(rig, "tieengs")
+        type(rig, "xinhh")
         XCTAssertEqual(rig.proxy.contextReads, 0)
-        XCTAssertEqual(rig.proxy.text, "Xin chào tiếng")
+        XCTAssertEqual(rig.proxy.text, "Xin chào xinhh")
     }
 
     /// Chip "Thêm dấu": tắt (mặc định) ⇒ không mời; bật ⇒ mời sau dấu cách.

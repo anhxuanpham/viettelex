@@ -49,6 +49,8 @@ object BackupSettings {
         Spec(Keys.NUMBER_ROW, SettingKind.Bool(false)),
         Spec(Keys.ROW_HEIGHT_ADJUST, SettingKind.IntRange(0, -10..10)),
         Spec(Keys.SHORTCUTS_ENABLED, SettingKind.Bool(true)),
+        Spec(Keys.ADD_TONES_CHIP, SettingKind.Bool(false)),
+        Spec(Keys.NUMBER_CHIPS, SettingKind.Bool(true)),
     )
     val byKey: Map<String, Spec> = all.associateBy { it.key }
 }
