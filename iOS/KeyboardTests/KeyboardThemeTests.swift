@@ -172,7 +172,8 @@ final class KeyboardThemeTests: XCTestCase {
         let d = UserDefaults(suiteName: suite)!
         defer { d.removePersistentDomain(forName: suite) }
         XCTAssertEqual(ThemeSettings.load(d), ThemeSettings())   // mặc định khi trống
-        let s = ThemeSettings(theme: .lavender, wallpaper: true, dim: 55, blur: 7, version: 123.5)
+        let s = ThemeSettings(theme: .lavender, wallpaper: true, dim: 55, blur: 7, version: 123.5,
+                              keyboardTransparency: 35, labelTransparency: 60)
         s.save(d)
         XCTAssertEqual(ThemeSettings.load(d), s)
     }
@@ -184,10 +185,115 @@ final class KeyboardThemeTests: XCTestCase {
         d.set("neon-pink-unknown", forKey: ThemeSettings.themeKey)
         d.set(500, forKey: ThemeSettings.dimKey)
         d.set(-3, forKey: ThemeSettings.blurKey)
+        d.set(180, forKey: KeyboardTransparency.keyboardKey)
+        d.set(-9, forKey: KeyboardTransparency.labelKey)
         let s = ThemeSettings.load(d)
+        XCTAssertEqual(s.keyboardTransparency, 100)
+        XCTAssertEqual(s.labelTransparency, 0)
         XCTAssertEqual(s.theme, .system)
         XCTAssertEqual(s.dim, 80)
         XCTAssertEqual(s.blur, 0)
+    }
+
+    // MARK: độ trong suốt
+
+    private func allPalettes() -> [(KeyboardPalette, Bool, Bool)] {
+        var out: [(KeyboardPalette, Bool, Bool)] = []
+        for t in KeyboardTheme.allCases {
+            for dark in [false, true] {
+                let p = t.palette(systemDark: dark)
+                out.append((p, dark, false)); out.append((p.overWallpaper(), dark, true))
+            }
+        }
+        return out
+    }
+
+    func testTransparencyZeroIsIdentity() {
+        for (p, dark, wp) in allPalettes() {
+            XCTAssertEqual(p.withTransparency(keyboard: 0, labels: 0, systemDark: dark, wallpaper: wp), p)
+            XCTAssertEqual(p.withTransparency(keyboard: -30, labels: -1, systemDark: dark, wallpaper: wp), p)
+        }
+    }
+
+    func testTransparencyMapping() {
+        XCTAssertEqual(KeyboardTransparency.alpha(0), 1)
+        XCTAssertEqual(KeyboardTransparency.alpha(40), 0.6, accuracy: 1e-9)
+        XCTAssertEqual(KeyboardTransparency.alpha(100), 0)
+        XCTAssertEqual(KeyboardTransparency.alpha(250), 0)      // kẹp
+        XCTAssertEqual(KeyboardTransparency.alpha(-5), 1)
+
+        let peach = KeyboardTheme.peach.palette(systemDark: false)
+        let half = peach.withTransparency(keyboard: 50, labels: 0, systemDark: false, wallpaper: false)
+        XCTAssertEqual(half.background?.a ?? -1, 0.5, accuracy: 1e-9)
+        XCTAssertEqual(half.keyFill.a, 0.5, accuracy: 1e-9)
+        XCTAssertEqual(half.specialFill.a, 0.5, accuracy: 1e-9)
+        XCTAssertEqual(half.accent.a, 0.5, accuracy: 1e-9)
+        XCTAssertEqual(half.surfaceAlpha, 0.5, accuracy: 1e-9)
+        XCTAssertEqual(half.keyInk.a, 1)                        // chữ không mờ theo phím
+
+        let glass = KeyboardTheme.glass.palette(systemDark: false)
+        let g = glass.withTransparency(keyboard: 50, labels: 0, systemDark: false, wallpaper: false)
+        XCTAssertEqual(g.keyBorder?.a ?? -1, (glass.keyBorder?.a ?? 0) * 0.5, accuracy: 1e-9)
+        XCTAssertNil(g.background)                              // nền trong suốt vẫn nil
+
+        // 100% phím: nền/phím/viền/bóng biến mất hẳn, chữ còn nguyên.
+        for (p, dark, wp) in allPalettes() {
+            let z = p.withTransparency(keyboard: 100, labels: 0, systemDark: dark, wallpaper: wp)
+            XCTAssertEqual(z.keyFill.a, 0); XCTAssertEqual(z.specialFill.a, 0); XCTAssertEqual(z.accent.a, 0)
+            XCTAssertEqual(z.background?.a ?? 0, 0); XCTAssertEqual(z.keyBorder?.a ?? 0, 0)
+            XCTAssertEqual(z.surfaceAlpha, 0)
+            XCTAssertEqual(z.keyInk.a, 1)
+        }
+    }
+
+    func testLabelTransparencyIndependentAndSparesBalloon() {
+        for (p, dark, wp) in allPalettes() {
+            let z = p.withTransparency(keyboard: 0, labels: 100, systemDark: dark, wallpaper: wp)
+            XCTAssertEqual(z.keyInk.a, 0); XCTAssertEqual(z.accentInk.a, 0)
+            XCTAssertEqual(z.keyFill, p.keyFill); XCTAssertEqual(z.background, p.background)
+            XCTAssertEqual(z.ink, p.ink); XCTAssertEqual(z.balloon, p.balloon)   // balloon rõ nguyên
+            let h = p.withTransparency(keyboard: 0, labels: 30, systemDark: dark, wallpaper: wp)
+            XCTAssertEqual(h.keyInk, p.ink.alpha(0.7))
+        }
+    }
+
+    /// Nền trong suốt lộ backdrop khác tông → chữ tự đổi đen/trắng cho đọc được;
+    /// mức nhỏ không được lật màu (không đổi hình người đang dùng).
+    func testLabelsStayReadableWhenBackgroundGoesClear() {
+        let peachDark = KeyboardTheme.peach.palette(systemDark: true)
+            .withTransparency(keyboard: 100, labels: 0, systemDark: true, wallpaper: false)
+        XCTAssertEqual(peachDark.keyInk, .white)
+        XCTAssertTrue(peachDark.isDark)
+        XCTAssertGreaterThanOrEqual(RGBA.contrast(peachDark.barInk,
+                                                  KeyboardTransparency.systemBackdrop(dark: true)), 4.5)
+        let peachLight = KeyboardTheme.peach.palette(systemDark: false)
+        XCTAssertEqual(peachLight.withTransparency(keyboard: 100, labels: 0, systemDark: false,
+                                                   wallpaper: false).keyInk, peachLight.ink)
+        for (p, dark, wp) in allPalettes() {
+            let small = p.withTransparency(keyboard: 10, labels: 0, systemDark: dark, wallpaper: wp)
+            XCTAssertEqual(small.keyInk, p.ink); XCTAssertEqual(small.barInk, p.barInk)
+            XCTAssertEqual(small.accentInk, p.accentInk); XCTAssertEqual(small.isDark, p.isDark)
+        }
+    }
+
+    func testSettingsApplyTransparency() {
+        let s = ThemeSettings(theme: .mint, keyboardTransparency: 100, labelTransparency: 100)
+        let p = s.palette(systemDark: false, wallpaperActive: false)
+        XCTAssertEqual(p.keyFill.a, 0); XCTAssertEqual(p.keyInk.a, 0)
+    }
+
+    func testResetToDefaults() {
+        XCTAssertTrue(ThemeSettings().isDefault)
+        let s = ThemeSettings(theme: .sky, wallpaper: true, dim: 60, blur: 9, version: 77,
+                              keyboardTransparency: 40, labelTransparency: 25)
+        XCTAssertFalse(s.isDefault)
+        let r = s.resetToDefaults()
+        XCTAssertTrue(r.isDefault)
+        XCTAssertEqual(r.theme, .system); XCTAssertFalse(r.wallpaper)
+        XCTAssertEqual(r.dim, 30); XCTAssertEqual(r.blur, 0)
+        XCTAssertEqual(r.keyboardTransparency, 0); XCTAssertEqual(r.labelTransparency, 0)
+        XCTAssertEqual(r.version, 77)                          // ảnh nền giữ nguyên, không vứt cache
+        XCTAssertFalse(ThemeSettings(labelTransparency: 5).isDefault)
     }
 
     func testWallpaperNeedsFile() {

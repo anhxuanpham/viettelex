@@ -116,17 +116,95 @@ class KeyboardThemeTests {
 
     @Test fun settingsRoundTrip() {
         assertEquals(ThemeSettings(), ThemeSettings.load { null })
-        val s = ThemeSettings(KeyboardTheme.LAVENDER, wallpaper = true, dim = 55, blur = 7, version = 123L)
+        val s = ThemeSettings(KeyboardTheme.LAVENDER, wallpaper = true, dim = 55, blur = 7, version = 123L,
+            keyboardTransparency = 35, labelTransparency = 60)
         val m = s.toMap()
         assertEquals(s, ThemeSettings.load { m[it] })
     }
 
     @Test fun loadClampsGarbage() {
-        val m = mapOf<String, Any>(Keys.KEYBOARD_THEME to "neon", Keys.WALLPAPER_DIM to 500, Keys.WALLPAPER_BLUR to -2)
+        val m = mapOf<String, Any>(Keys.KEYBOARD_THEME to "neon", Keys.WALLPAPER_DIM to 500, Keys.WALLPAPER_BLUR to -2,
+            Keys.KEYBOARD_TRANSPARENCY to 180, Keys.KEY_LABEL_TRANSPARENCY to -9)
         val s = ThemeSettings.load { m[it] }
+        assertEquals(100, s.keyboardTransparency)
+        assertEquals(0, s.labelTransparency)
         assertEquals(KeyboardTheme.SYSTEM, s.theme)
         assertEquals(80, s.dim)
         assertEquals(0, s.blur)
+    }
+
+    // ---- độ trong suốt (cùng hợp đồng với iOS KeyboardThemeTests)
+
+    private fun allPalettes(): List<Pair<ThemePalette, Boolean>> = KeyboardTheme.entries.flatMap { t ->
+        listOf(false, true).flatMap { dark -> t.palette(dark)?.let { listOf(it to dark, it.overWallpaper() to dark) } ?: emptyList() }
+    }
+    private fun a(c: Int) = ThemeColor.alpha(c)
+
+    @Test fun transparencyZeroIsIdentity() {
+        for ((p, dark) in allPalettes()) {
+            assertEquals(p, p.withTransparency(0, 0, dark))
+            assertEquals(p, p.withTransparency(-30, -1, dark))
+        }
+    }
+
+    @Test fun transparencyMapping() {
+        assertEquals(1f, KeyboardTransparency.alpha(0))
+        assertEquals(0.6f, KeyboardTransparency.alpha(40), 1e-6f)
+        assertEquals(0f, KeyboardTransparency.alpha(100))
+        assertEquals(0f, KeyboardTransparency.alpha(250))
+        assertEquals(1f, KeyboardTransparency.alpha(-5))
+        val peach = KeyboardTheme.PEACH.palette(false)!!
+        val half = peach.withTransparency(50, 0, false)
+        for (c in listOf(half.bg, half.keyFill, half.specialFill, half.action, half.chip)) assertEquals(127, a(c))
+        assertEquals(0.5f, half.surfaceAlpha)
+        assertEquals(1f, half.labelAlpha)
+        val glass = KeyboardTheme.GLASS.palette(false)!!.withTransparency(50, 0, false)
+        assertEquals(a(KeyboardTheme.GLASS.palette(false)!!.keyBorder!!) / 2, a(glass.keyBorder!!))
+        assertEquals(127, a(glass.bgBottom!!))
+        for ((p, dark) in allPalettes()) {
+            val z = p.withTransparency(100, 0, dark)
+            for (c in listOfNotNull(z.bg, z.bgBottom, z.keyFill, z.specialFill, z.action, z.chip, z.keyBorder)) assertEquals(0, a(c))
+            assertEquals(0f, z.surfaceAlpha)
+            assertEquals(1f, z.labelAlpha)
+            assertEquals(255, a(z.keyInk))
+        }
+    }
+
+    @Test fun labelTransparencyIndependentAndSparesBalloon() {
+        for ((p, dark) in allPalettes()) {
+            val z = p.withTransparency(0, 100, dark)
+            assertEquals(0f, z.labelAlpha)
+            assertEquals(p.keyFill, z.keyFill); assertEquals(p.bg, z.bg)
+            assertEquals(p.ink, z.ink); assertEquals(p.balloon, z.balloon)   // balloon rõ nguyên
+            assertEquals(0.7f, p.withTransparency(0, 30, dark).labelAlpha, 1e-6f)
+        }
+    }
+
+    /** Nền trong suốt lộ app khác tông → chữ tự đổi đen/trắng; mức nhỏ không được lật màu. */
+    @Test fun labelsStayReadableWhenBackgroundGoesClear() {
+        val peachDark = KeyboardTheme.PEACH.palette(true)!!.withTransparency(100, 0, true)
+        assertEquals(ThemeColor.WHITE, peachDark.keyInk)
+        assertTrue(peachDark.isDark)
+        val peachLight = KeyboardTheme.PEACH.palette(false)!!
+        assertEquals(peachLight.ink, peachLight.withTransparency(100, 0, false).keyInk)
+        for ((p, dark) in allPalettes()) {
+            val small = p.withTransparency(10, 0, dark)
+            assertEquals(p.ink, small.keyInk); assertEquals(p.actionInk, small.actionInk); assertEquals(p.isDark, small.isDark)
+        }
+    }
+
+    @Test fun resetToDefaults() {
+        assertTrue(ThemeSettings().isDefault)
+        val s = ThemeSettings(KeyboardTheme.SKY, wallpaper = true, dim = 60, blur = 9, version = 77L,
+            keyboardTransparency = 40, labelTransparency = 25)
+        assertFalse(s.isDefault)
+        val r = s.resetToDefaults()
+        assertTrue(r.isDefault)
+        assertEquals(KeyboardTheme.SYSTEM, r.theme); assertFalse(r.wallpaper)
+        assertEquals(30, r.dim); assertEquals(0, r.blur)
+        assertEquals(0, r.keyboardTransparency); assertEquals(0, r.labelTransparency)
+        assertEquals(77L, r.version)                          // ảnh nền giữ nguyên
+        assertFalse(ThemeSettings(labelTransparency = 5).isDefault)
     }
 
     @Test fun wallpaperNeedsFile() {

@@ -192,7 +192,7 @@ window.vtxDetectOS = function (ua, plat, touch) {
         <span class="leg-p"><span class="tag t-mac">macOS</span></span>
         <span class="leg-p"><span class="tag t-win">Windows</span></span>
         <span class="leg-p"><span class="tag t-lin">Linux</span></span>
-        <span data-os="ios android macos"><span class="tag t-exp">Experimental</span> in the Thử nghiệm section</span>
+        <span data-os="ios android macos"><span class="tag t-exp">Experimental</span> feature in testing (marked Thử nghiệm in the app)</span>
         <span data-os="ios android"><span class="tag t-plus">Plus</span> Plus pack — currently free for everyone</span>
       </div>
     </div>
@@ -279,7 +279,7 @@ sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
 <section id="fix-tones">
   <div class="wrap">
     <h2 class="n">Fix tones after typing</h2>
-    <p class="lead">Forgot a diacritic? No need to retype the word. <span data-os="ios android">Toggle: <b>Tính Năng → Chính tả → Sửa dấu từ đã gõ</b> (on by default).</span> <span data-os="macos"><span class="tag t-mac p">macOS</span> always on.</span> <span data-os="windows"><span class="tag t-win p">Windows</span> Chính tả tab → <b>Gõ thêm dấu cho từ trước con trỏ</b>.</span> <span data-os="linux"><span class="tag t-lin p">Linux</span> Tuỳ chỉnh tab → <b>Gõ thêm dấu cho từ ngay trước con trỏ</b>.</span></p>
+    <p class="lead">Forgot a diacritic? No need to retype the word. <span data-os="ios android">Toggle: <b>Tính Năng → Chính tả &amp; sửa lỗi → Sửa dấu từ đã gõ</b> (on by default).</span> <span data-os="macos"><span class="tag t-mac p">macOS</span> always on.</span> <span data-os="windows"><span class="tag t-win p">Windows</span> Chính tả tab → <b>Gõ thêm dấu cho từ trước con trỏ</b>.</span> <span data-os="linux"><span class="tag t-lin p">Linux</span> Tuỳ chỉnh tab → <b>Gõ thêm dấu cho từ ngay trước con trỏ</b>.</span></p>
     <div class="card">
       <ul>
         <li data-os="ios android macos windows"><b>Delete the space to reopen the word:</b> <code>tháy</code> ␣ <kbd>⌫</kbd> <code>a</code> → <b>thấy</b>.</li>
@@ -305,8 +305,8 @@ sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
         <tr><td><kbd>⌫</kbd> right after an auto-restore / shortcut expansion</td><td>Gives back exactly what you typed (undo the shortcut), or offers the toned form on the suggestion bar for a one-tap swap.</td></tr>
         <tr data-os="ios"><td>Long-press ☰ on the suggestion bar</td><td>Toggle <b>one-handed mode</b> (iPhone only). <span class="tag t-ios p">iOS</span></td></tr>
         <tr data-os="android"><td>Long-press the cursor icon on the suggestion bar</td><td>Toggle one-handed mode (phones only). A normal tap opens the text-editing panel. <span class="tag t-and p">Android</span></td></tr>
-        <tr><td>Hold q w e … p</td><td>Types the digits <b>1 2 3 … 0</b> (small hint at the key’s top-right). Hold ~0.4 s, the key preview shows the digit, lift to insert; the letter from the touch is taken back, so the word being typed keeps its tones. On by default, only while the <b>number row</b> is off (Tính năng → Giao diện → “Giữ phím hàng trên để ra số”). Off while VoiceOver/TalkBack is running. <span class="tag t-ios" data-os="ios">iPhone</span> <span class="tag t-and p">Android</span></td></tr>
-        <tr><td>Hold a … l, z … m</td><td>Types the small symbol at the key’s corner: a <b>@</b> · s <b>#</b> · d <b>$</b> · f <b>_</b> · g <b>&amp;</b> · h <b>-</b> · j <b>+</b> · k <b>(</b> · l <b>)</b> · z <b>*</b> · x <b>"</b> · c <b>%</b> · v <b>:</b> · b <b>/</b> · n <b>!</b> · m <b>?</b>. Off by default — enable in Tính năng → Giao diện → “Giữ phím hàng 2, 3 để ra ký tự đặc biệt”. <span class="tag t-ios" data-os="ios">iPhone</span> <span class="tag t-and p">Android</span></td></tr>
+        <tr><td>Hold q w e … p</td><td>Types the digits <b>1 2 3 … 0</b> (small hint at the key’s top-right). Hold ~0.4 s, the key preview shows the digit, lift to insert; the letter from the touch is taken back, so the word being typed keeps its tones. On by default, only while the <b>number row</b> is off (Tính Năng → Phím &amp; cử chỉ → “Giữ phím hàng trên để ra số”). Off while VoiceOver/TalkBack is running. <span class="tag t-ios" data-os="ios">iPhone</span> <span class="tag t-and p">Android</span></td></tr>
+        <tr><td>Hold a … l, z … m</td><td>Types the small symbol at the key’s corner: a <b>@</b> · s <b>#</b> · d <b>$</b> · f <b>_</b> · g <b>&amp;</b> · h <b>-</b> · j <b>+</b> · k <b>(</b> · l <b>)</b> · z <b>*</b> · x <b>"</b> · c <b>%</b> · v <b>:</b> · b <b>/</b> · n <b>!</b> · m <b>?</b>. Off by default — enable in Tính Năng → Phím &amp; cử chỉ → “Giữ phím hàng 2, 3 để ra ký tự đặc biệt”. <span class="tag t-ios" data-os="ios">iPhone</span> <span class="tag t-and p">Android</span></td></tr>
         <tr><td>Long-press <kbd>,</kbd></td><td>Types a period <b>.</b> — when either of the two “hold key” options above is on. <span data-os="android">On Android, if a voice keyboard is installed (a faint 🎤 marks the key), long-pressing <kbd>,</kbd> switches to the system voice input (e.g. Google voice typing) instead.</span> <span class="tag t-ios" data-os="ios">iPhone</span> <span class="tag t-and p">Android</span></td></tr>
         <tr data-os="ios"><td>Swipe down on a letter key (iPad)</td><td>Types the grey secondary character shown above the key, like the stock iPad keyboard. <span class="tag t-ios" data-os="ios">iPad</span></td></tr>
         <tr data-os="android"><td>Long-press 😊</td><td>Opens the keyboard picker to switch keyboards. <span class="tag t-and p">Android</span></td></tr>
@@ -319,7 +319,7 @@ sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
 <section id="swipe" data-os="ios android">
   <div class="wrap">
     <h2 class="n">Swipe typing <span class="tag t-exp">Experimental</span></h2>
-    <p class="lead">Enable in <b>Tính Năng → Thử nghiệm → Gõ vuốt</b>. <span class="tag t-ios" data-os="ios">iPhone</span> <span class="tag t-and p">Android</span></p>
+    <p class="lead">Enable in <b>Tính Năng → Gõ vuốt</b>; Luyện vuốt (practice) is at the bottom of that page. <span class="tag t-ios" data-os="ios">iPhone</span> <span class="tag t-and p">Android</span></p>
     <div class="card">
       <ul>
         <li>Glide over the <b>unaccented</b> letters of a syllable and lift: v→i→e→t gives <b>“việt”</b>.</li>
@@ -335,7 +335,7 @@ sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
 <section id="shortcuts">
   <div class="wrap">
     <h2 class="n">Text shortcuts</h2>
-    <p class="lead"><span data-os="ios android"><b>Tính Năng → Gõ tắt</b>.</span> <span data-os="macos"><span class="tag t-mac p">macOS</span> Settings… → <b>Gõ tắt</b> tab.</span> <span data-os="windows"><span class="tag t-win p">Windows</span> Settings → <b>Gõ tắt</b> (Shortcuts) tab.</span> <span data-os="linux"><span class="tag t-lin p">Linux</span> <b>Gõ tắt</b> tab (switch <b>Bật gõ tắt</b>).</span></p>
+    <p class="lead"><span data-os="ios android"><b>Tính Năng → Gõ tắt &amp; mẫu câu</b>.</span> <span data-os="macos"><span class="tag t-mac p">macOS</span> Settings… → <b>Gõ tắt</b> tab.</span> <span data-os="windows"><span class="tag t-win p">Windows</span> Settings → <b>Gõ tắt</b> (Shortcuts) tab.</span> <span data-os="linux"><span class="tag t-lin p">Linux</span> <b>Gõ tắt</b> tab (switch <b>Bật gõ tắt</b>).</span></p>
     <div class="card">
       <ul>
         <li data-os="ios android macos">Type the abbreviation, then space, Enter or punctuation: <code>ko</code> → không.</li>
@@ -355,7 +355,7 @@ sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
 <section id="suggestions" data-os="ios android">
   <div class="wrap">
     <h2 class="n">Suggestion bar &amp; chips</h2>
-    <p class="lead">VietTelex <b>never rewrites your words</b> — suggestions apply only when you tap them. Settings: <b>Tính Năng → Gợi ý</b>. The <b>⌄</b> button on the right collapses the bar.</p>
+    <p class="lead">VietTelex <b>never rewrites your words</b> — suggestions apply only when you tap them. Settings: <b>Tính Năng → Gợi ý &amp; từ điển</b>. The <b>⌄</b> button on the right collapses the bar.</p>
     <div class="card">
       <ul>
         <li><b>Word suggestions</b> that learn the words you use (stored on-device only). <b>Personal dictionary</b> (Từ điển cá nhân): view, search, delete learned words, add names and terms. <b>Sensitive-word filter</b> never proactively suggests profanity.</li>
@@ -372,7 +372,7 @@ sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
 <section id="snippets" data-os="ios android">
   <div class="wrap">
     <h2 class="n">Snippets &amp; text tools</h2>
-    <p class="lead">Toggle in <b>Tính Năng → Gợi ý → Mẫu câu</b>; manage in the <b>Mẫu Câu</b> tab.</p>
+    <p class="lead">Toggle in <b>Tính Năng → Gõ tắt &amp; mẫu câu → Mẫu câu</b>; manage in the <b>Mẫu Câu</b> tab.</p>
     <div class="card">
       <ul>
         <li>Tap <b>☰</b> on the suggestion bar for a grid of saved phrases; tap one to insert it. A short label (emoji) keeps the grid compact.</li>
@@ -388,12 +388,12 @@ sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
 <section id="clipboard" data-os="ios android">
   <div class="wrap">
     <h2 class="n">Clipboard &amp; incognito</h2>
-    <p class="lead"><b>Tính Năng → Riêng tư</b>.</p>
+    <p class="lead"><b>Tính Năng → Riêng tư &amp; clipboard</b>.</p>
     <div class="card">
       <ul>
         <li><b>Clipboard history</b> (off by default): the 📋 button on the bar opens up to 20 recent copies — tap to paste, pin to keep. Unpinned items expire after 1 hour (password/OTP-like: 2 minutes). Password fields and content marked sensitive are skipped.<span data-os="ios"> iOS needs Full Access.</span></li>
         <li><b>Number-split chips</b> <span class="tag t-plus">Plus</span>: when the copied text contains a bank account / phone number / OTP, a “Dán STK…” chip pastes just the number. Unlimited pins are also Plus.</li>
-        <li><b>Incognito mode</b>: no word learning, no clipboard saving; <span data-os="ios">a crossed-eye icon<span class="leg-p"> (iOS)</span></span><span class="leg-p"> / </span><span data-os="android">🕶<span class="leg-p"> (Android)</span></span> shows on the keyboard.<span data-os="android"> Android turns it on automatically in private-browser fields.</span></li>
+        <li><b>Incognito mode</b>: no word learning, no clipboard saving.<span data-os="android"> Android turns it on automatically in private-browser fields.</span></li>
       </ul>
     </div>
   </div>
@@ -415,16 +415,18 @@ sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
 <section id="look" data-os="ios android">
   <div class="wrap">
     <h2 class="n">Appearance &amp; one-handed</h2>
-    <p class="lead"><b>Tính Năng → Giao diện</b>.</p>
+    <p class="lead"><b>Tính Năng → Giao diện</b> (theme, wallpaper, transparency, row height, logo) and <b>Tính Năng → Phím &amp; cử chỉ</b> (number row, long-press, space-bar swipe, one-handed, key preview, haptics).</p>
     <div class="card">
       <ul>
         <li><b>Themes &amp; wallpaper</b>: System, OLED dark and High contrast are always free; other themes (Hồng đào, Bạc hà, Trời xanh, Oải hương, Kính…) and a custom background image (overlay dimming, blur) are <span class="tag t-plus">Plus</span>. Images are compressed on-device.</li>
-        <li><b>Number row</b> 1…0 above the letters; <b>row height</b> ±10.</li>
+        <li><b>Key transparency</b> and <b>label transparency</b> (0–100%, free with every theme): keys — background, wallpaper, key fill and borders, at 100% only the labels remain; labels — letters and icons on the keys, at 100% the keys are blank. <span data-os="ios">iOS always keeps its own frosted-glass layer behind the keyboard.</span></li>
+        <li><b>Restore default look</b> (Khôi phục giao diện gốc): back to the System theme, wallpaper off (the image is kept), dimming/blur and transparency reset.</li>
+        <li><b>Row height</b> ±10 and the faint <b>Vᴛ logo</b> on the space bar (Giao diện); <b>number row</b> 1…0 above the letters (Phím &amp; cử chỉ).</li>
         <li><b>Hold top row for digits</b> (shown while the number row is off) and <b>hold rows 2–3 for symbols</b> — see <a href="#gestures">Hidden gestures</a>.</li>
-        <li><b>Key preview</b> pop-ups, <b>haptics</b><span data-os="ios"> (iOS needs Full Access)</span>, faint <b>Vᴛ logo</b> on the space bar.</li>
+        <li><b>Key preview</b> pop-ups, <b>haptics</b><span data-os="ios"> (iOS needs Full Access)</span>.</li>
         <li><b>One-handed mode</b> (phones): Off / Left / Right — shrinks the keyboard to one side; buttons in the empty strip switch sides or exit. Quick toggle via the gesture in <a href="#gestures">Hidden gestures</a>.</li>
-        <li><b>Smart key selection</b> <span class="tag t-exp">Experimental</span> (on by default): a tap right on the edge between two keys picks the one that fits the word; a tap in the middle of a key always gives that key, and typed text is never auto-corrected.</li>
-        <li><b>Auto-correct typos</b> <span class="tag t-exp">Experimental</span> (off by default): when you press space, if the word you just typed isn't a valid word and a tap clearly leaned onto the neighbouring key, it is replaced with the common word (<code>tpoi</code> → <code>tôi</code>). Only confident fixes; English words, words you use often and password/email/web fields are left alone. Press <b>⌫ right after</b> (or tap the <b>↩︎ original</b> chip on the suggestion bar) to get your original word back — that word won't be corrected again.</li>
+        <li><b>Smart key selection</b> <span class="tag t-exp">Experimental</span> (Tính Năng → Chính tả &amp; sửa lỗi, on by default): a tap right on the edge between two keys picks the one that fits the word; a tap in the middle of a key always gives that key, and typed text is never auto-corrected.</li>
+        <li><b>Auto-correct typos</b> <span class="tag t-exp">Experimental</span> (Tính Năng → Chính tả &amp; sửa lỗi, off by default): when you press space, if the word you just typed isn't a valid word and a tap clearly leaned onto the neighbouring key, it is replaced with the common word (<code>tpoi</code> → <code>tôi</code>). Only confident fixes; English words, words you use often and password/email/web fields are left alone. Press <b>⌫ right after</b> (or tap the <b>↩︎ original</b> chip on the suggestion bar) to get your original word back — that word won't be corrected again.</li>
       </ul>
     </div>
   </div>
@@ -436,7 +438,7 @@ sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
     <div class="card">
       <ul>
         <li><b>Text-editing panel</b>: tap the cursor icon on the suggestion bar — arrows, line start/end, select / select word / select all, copy / cut / paste, undo / redo; the last row holds the text tools <span class="tag t-plus">Plus</span>.</li>
-        <li><b>Telex for hardware keyboards</b> (Tính Năng → Bàn phím cứng): type Telex/VNI on Bluetooth/USB keyboards, Samsung DeX, Chromebook; Ctrl/Alt shortcuts still reach the app.</li>
+        <li><b>Telex for hardware keyboards</b> (Tính Năng → Phím &amp; cử chỉ → Bàn phím cứng): type Telex/VNI on Bluetooth/USB keyboards, Samsung DeX, Chromebook; Ctrl/Alt shortcuts still reach the app.</li>
         <li>Number / phone / date fields open a dedicated <b>number pad</b>.</li>
       </ul>
     </div>
@@ -446,7 +448,7 @@ sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
 <section id="backup" data-os="ios android macos">
   <div class="wrap">
     <h2 class="n">Backup &amp; sync</h2>
-    <p class="lead" data-os="ios android"><b>Giới Thiệu tab → Sao lưu &amp; đồng bộ</b>.</p>
+    <p class="lead" data-os="ios android"><b>Tính Năng → Sao lưu &amp; đồng bộ</b>.</p>
     <div class="card">
       <ul>
         <li data-os="ios android"><b>Export / import a backup file</b>: settings, shortcuts, snippets (and learned words if “Kèm từ đã học” is on) — one file that opens on iPhone, iPad and Android. Import: settings follow the file, shortcuts and snippets are merged.</li>

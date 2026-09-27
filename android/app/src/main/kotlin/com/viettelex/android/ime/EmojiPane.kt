@@ -58,7 +58,7 @@ class EmojiPane(
     private val popupPaint = theme.fill(theme.popupFill).apply {
         if (android.os.Build.VERSION.SDK_INT >= 28) setShadowLayer(theme.dp(3f), 0f, theme.dp(1f), 0x4D000000)
     }
-    private val tonePaint = theme.text(26f)
+    private val tonePaint = theme.text(26f, color = theme.balloonInk)
     private val toneOff = theme.centerOffset(tonePaint)
 
     // hàng category

@@ -170,7 +170,6 @@ final class KeyboardViewController: UIInputViewController {
         // Ẩn danh (thủ công, trong app): không học từ, không lưu clipboard.
         learnEnabled = settings.learnWords && !clip.incognito
         keyboard.setClipboardButton(visible: clip.historyEnabled && hasFullAccess)
-        keyboard.setIncognito(clip.incognito)
         filterSensitive = settings.filterSensitive
         showSuggestionsSetting = settings.showSuggestions
         autoCapitalizeSetting = settings.autoCapitalize

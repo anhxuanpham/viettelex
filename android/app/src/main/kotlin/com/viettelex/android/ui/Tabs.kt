@@ -64,9 +64,8 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-private const val APPLY_NOTE = "Cài đặt áp dụng ngay lần mở bàn phím kế tiếp."
 
-private fun openUrl(ctx: Context, url: String) {
+internal fun openUrl(ctx: Context, url: String) {
     runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
 }
 
@@ -179,7 +178,7 @@ private fun Note(text: String, color: Color? = null, modifier: Modifier = Modifi
 }
 
 @Composable
-private fun BoolToggle(key: String, default: Boolean, title: String, caption: String) {
+internal fun BoolToggle(key: String, default: Boolean, title: String, caption: String) {
     var v by rememberBoolPref(key, default)
     SettingToggle(title, caption, v) { v = it }
 }
@@ -187,7 +186,7 @@ private fun BoolToggle(key: String, default: Boolean, title: String, caption: St
 /**
  * Telex / VNI — hai kiểu gõ loại trừ nhau ⇒ segmented (như radio macOS / Picker iOS). Chọn
  * VNI TỰ BẬT hàng phím số (số là phím dấu; không có hàng số thì mỗi dấu phải chuyển ?123),
- * tắt lại được ở Tính năng → Giao diện.
+ * tắt lại được ở Tính năng → Phím & cử chỉ.
  */
 @Composable
 private fun InputMethodPicker(vni: Boolean, onChange: (Boolean) -> Unit) {
@@ -220,7 +219,7 @@ private fun KieuGoSection() {
         RowDivider()
         if (vni) {
             VTRow {
-                Note("Gõ dấu bằng số khi đang gõ một từ: 1 sắc, 2 huyền, 3 hỏi, 4 ngã, 5 nặng, 6 mũ (â ê ô), 7 móc (ơ ư), 8 trăng (ă), 9 đ, 0 xoá dấu — tie6ng1 vie6t5 → tiếng việt. Ngoài từ, phím số vẫn gõ ra số (cả bàn phím cứng). Chọn VNI tự bật Hàng phím số (tắt được ở Tính năng → Giao diện).")
+                Note("Gõ dấu bằng số khi đang gõ một từ: 1 sắc, 2 huyền, 3 hỏi, 4 ngã, 5 nặng, 6 mũ (â ê ô), 7 móc (ơ ư), 8 trăng (ă), 9 đ, 0 xoá dấu — tie6ng1 vie6t5 → tiếng việt. Ngoài từ, phím số vẫn gõ ra số (cả bàn phím cứng). Chọn VNI tự bật Hàng phím số (tắt được ở Tính năng → Phím & cử chỉ).")
             }
             RowDivider()
         } else {
@@ -236,8 +235,8 @@ private fun KieuGoSection() {
         BoolToggle(Keys.AUTO_CAPITALIZE, Prefs.D.autoCapitalize, "Tự động viết hoa đầu câu", "Bật shift ở đầu ô, sau . ! ? và khi xuống dòng.")
         RowDivider()
         BoolToggle(Keys.CONTEXTUAL_ENGLISH, Prefs.D.contextualEnglish, "Quyết định theo ngữ cảnh", "Sau một từ tiếng Anh, từ nhập nhằng kế tiếp mà chuỗi phím tạo thành một từ tiếng Anh sẽ được giữ tiếng Anh thay vì tiếng Việt — “he is” → “he is”, không phải “he í”. Sau từ tiếng Việt hoặc không rõ thì để tiếng Việt — “sao í”.")
-        RowDivider()
-        BoolToggle(Keys.RE_EDIT_WORDS, Prefs.D.reEditWords, "Sửa dấu từ đã gõ", "Bấm ⌫ ngay sau dấu cách để sửa tiếp từ vừa gõ (tháy ␣ ⌫ a → thấy), hoặc đặt con trỏ ngay sau một từ rồi gõ phím dấu thanh để thêm dấu (chao + f → chào; VNI: chao + 2).")
+
+        // Sửa dấu từ đã gõ chuyển sang Tính Năng → Chính tả & sửa lỗi (giống iOS, 27/09/2026).
         RowDivider()
         BoolToggle(Keys.AUTO_FIX_ADJACENT, Prefs.D.autoFixAdjacent, "Gợi ý sửa lỗi chạm trượt", "Khi từ đang gõ không phải tiếng Việt, gợi ý từ đúng nếu bạn lỡ chạm phím bên cạnh: nbjeeuf → nhiều, ohims → phím, cahcs → cách. Chạm gợi ý để thay.")
         if (!vni) {
@@ -248,137 +247,11 @@ private fun KieuGoSection() {
 }
 
 // ============================================================== Tính Năng
-
-@Composable
-fun TinhNangTab() {
-    val c = LocalVT.current
-    val ctx = LocalContext.current
-    // Trang con "Bảng gõ tắt" (như NavigationLink iOS) — ⟵ hệ thống quay lại.
-    var showShortcuts by rememberSaveable { mutableStateOf(false) }
-    if (showShortcuts) { ShortcutsPage { showShortcuts = false }; return }
-    var showTheme by rememberSaveable { mutableStateOf(false) }
-    if (showTheme) { ThemePage { showTheme = false }; return }
-    VTSection(header = "Chính tả") {
-        BoolToggle(Keys.AUTO_RESTORE, Prefs.D.autoRestore, "Tự khôi phục từ tiếng Anh", "Từ không phải tiếng Việt tự trả về như đã gõ (google, github…).")
-        RowDivider()
-        BoolToggle(Keys.LIVE_SPELL_CHECK, Prefs.D.liveSpellCheck, "Kiểm tra chính tả khi gõ", "Ngừng bỏ dấu ngay khi từ không thể là tiếng Việt.")
-    }
-    ShortcutsSection { showShortcuts = true }
-    VTSection(header = "Gợi ý") {
-        BoolToggle(Keys.SHOW_SUGGESTIONS, Prefs.D.showSuggestions, "Thanh gợi ý", "Gợi ý từ + emoji, tự học từ bạn hay dùng (chỉ trên máy).")
-        RowDivider()
-        BoolToggle(Keys.FILTER_SENSITIVE, Prefs.D.filterSensitive, "Lọc từ nhạy cảm khỏi gợi ý", "Không chủ động gợi ý từ tục — gõ tay và học vẫn bình thường.")
-        RowDivider()
-        BoolToggle(Keys.ADD_TONES_CHIP, Prefs.D.addTonesChip, "Chip “Thêm dấu”",
-            "Gõ xong một câu không dấu, thanh gợi ý tự mời thêm dấu cả câu (hom nay troi dep → hôm nay trời đẹp). Tắt mặc định để gõ nhẹ nhất: khi tắt bàn phím không phân tích câu ở mỗi dấu cách.")
-        RowDivider()
-        BoolToggle(Keys.NUMBER_CHIPS, Prefs.D.numberChips, "Chip số",
-            "Sau khi gõ số: đọc số thành chữ, định dạng tiền, tính nhanh phép tính (12*3 → 36).")
-        RowDivider()
-        BoolToggle(Keys.TEMPLATES_ENABLED, Prefs.D.templatesEnabled, "Mẫu câu", "Nút ☰ trên bàn phím chèn nhanh câu soạn sẵn — quản lý ở tab Mẫu Câu.")
-        RowDivider()
-        var showDict by remember { mutableStateOf(false) }
-        VTRow(onClick = { showDict = true }) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Từ điển cá nhân", style = VTType.body, color = c.label)
-                Text("Xem, tìm, xoá từ đã học; thêm tên riêng, thuật ngữ.", style = VTType.footnote, color = c.secondary)
-            }
-            Text("›", style = VTType.title3, color = c.tertiary)
-        }
-        if (showDict) UserDictDialog { showDict = false }
-        RowDivider()
-        VTRow(onClick = {
-            java.io.File(ctx.filesDir, Keys.USERLM_FILE).delete()
-            // IME (cùng process) thấy mốc đổi ⇒ bỏ model trong RAM, seed lại, không ghi đè.
-            Prefs.of(ctx).edit().putLong(Keys.USERLM_RESET_AT, System.currentTimeMillis()).apply()
-        }) { Text("Xóa từ đã học", style = VTType.body, color = c.red) }
-    }
-    VTSection(header = "Bàn phím cứng") {
-        BoolToggle(Keys.HARDWARE_TELEX, Prefs.D.hardwareTelex, "Telex cho bàn phím cứng",
-            "Gõ Telex (hoặc VNI, theo kiểu gõ đang chọn) bằng bàn phím Bluetooth/USB, Samsung DeX, Chromebook. Phím tắt có Ctrl/Alt/⌘ vẫn đi thẳng tới app. Bàn phím ảo tự ẩn khi có bàn phím cứng (bật lại trong Cài đặt hệ thống → Bàn phím vật lý → Hiện bàn phím ảo).")
-    }
-    PrivacySection()
-    VTSection(header = "Thử nghiệm") {
-        BoolToggle(Keys.SMART_TOUCH, Prefs.D.smartTouch, "Chọn phím thông minh",
-            "Chạm lệch sát mép giữa hai phím thì bàn phím chọn phím hợp với chữ đang gõ (như iPhone) — bớt gõ trượt sang phím bên cạnh. Chạm giữa phím luôn ra đúng phím đó; chữ đã gõ không bao giờ bị tự sửa.")
-        RowDivider()
-        BoolToggle(Keys.AUTO_CORRECT, Prefs.D.autoCorrect, "Tự sửa từ gõ sai",
-            "Sửa khi gõ dấu cách nếu chữ vừa gõ không phải từ hợp lệ (chạm trượt sang phím kề: tpoi → tôi). Chỉ sửa khi chắc chắn; không đụng từ tiếng Anh, từ bạn hay dùng, ô mật khẩu/email/web. ⌫ ngay sau đó để trả lại chữ gốc — từ đó sẽ không bị sửa nữa.")
-        RowDivider()
-        BoolToggle(Keys.SWIPE_TYPING, Prefs.D.swipeTyping, "Gõ vuốt",
-            "Lướt ngón qua các chữ KHÔNG DẤU của một âm tiết rồi nhấc tay: viet → việt. Thanh gợi ý hiện các dấu khác; gõ phím dấu Telex ngay sau đó để đổi dấu, ⌫ xoá cả từ vừa vuốt. Tự tắt khi bật TalkBack và ở ô mật khẩu, email, địa chỉ web.")
-        val swipeOn by rememberBoolPref(Keys.SWIPE_TYPING, Prefs.D.swipeTyping)
-        if (swipeOn) {
-            RowDivider()
-            BoolToggle(Keys.SWIPE_ENGLISH, Prefs.D.swipeEnglish, "Vuốt từ tiếng Anh",
-                "Vuốt ra cả từ tiếng Anh xen trong câu: check, mail, file, meeting… Khi một nét vuốt vừa là từ Việt vừa là từ Anh (the/thế, can/cần), bàn phím ưu tiên tiếng Việt — trừ khi đang gõ tiếng Anh — và luôn để phương án kia trên thanh gợi ý.")
-            RowDivider()
-            BoolToggle(Keys.SWIPE_FUTO, Prefs.D.swipeFuto, "Mô hình neural gõ vuốt",
-                "Thêm mạng neural nhận dạng nét vuốt (chạy hoàn toàn trên máy) để chấm cùng bộ giải mã hiện có. Tốn thêm khoảng 3 MB bộ nhớ khi bàn phím mở.")
-            RowDivider()
-            var showPractice by remember { mutableStateOf(false) }
-            VTRow(onClick = { showPractice = true }) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Luyện vuốt", style = VTType.body, color = LocalVT.current.label)
-                    Text("Vuốt thử từng từ trên bàn phím mẫu, xem bàn phím đọc đúng bao nhiêu.", style = VTType.footnote, color = LocalVT.current.secondary)
-                }
-                Text("›", style = VTType.title3, color = LocalVT.current.tertiary)
-            }
-            if (showPractice) SwipePracticeDialog { showPractice = false }
-            // Ghi công BẮT BUỘC theo FUTO Model Weights License 1.0 ("visible notice … within
-            // the product's settings") — Phil 27/09/2026: chỉ hiện ở đây (dưới công tắc, khi đã
-            // bật Gõ vuốt), chữ nhỏ mờ. KHÔNG xoá. Xem docs/DATA-SOURCES.md.
-            val futoCtx = LocalContext.current
-            VTRow(onClick = { openUrl(futoCtx, "https://github.com/ptrinh/viettelex/blob/main/docs/DATA-SOURCES.md#futo-swipe") }) {
-                Text("powered by FUTO Swipe", style = VTType.caption2, color = LocalVT.current.tertiary)
-            }
-        }
-    }
-    VTSection(header = "Giao diện", footer = APPLY_NOTE) {
-        ThemeRow { showTheme = true }
-        RowDivider()
-        BoolToggle(Keys.SHOW_SPACE_LOGO, Prefs.D.showSpaceLogo, "Hiện logo Vᴛ", "Logo mờ ở góc phải phím space.")
-        RowDivider()
-        BoolToggle(Keys.SPACE_SWIPE_LANGUAGE, Prefs.D.spaceSwipeLanguage, "Vuốt phím cách để đổi Tiếng Việt / Tiếng Anh",
-            "Vuốt nhanh phím cách sang trái hoặc phải để đổi. Tiếng Anh: gõ nguyên văn (không bỏ dấu), gợi ý và gõ vuốt theo từ điển tiếng Anh, logo phím cách thành E. Giữ phím cách rồi kéo vẫn là di con trỏ.")
-        RowDivider()
-        BoolToggle(Keys.HAPTIC_FEEDBACK, Prefs.D.hapticFeedback, "Rung phím", "Rung nhẹ mỗi lần chạm phím.")
-        RowDivider()
-        BoolToggle(Keys.KEY_PREVIEW, Prefs.D.keyPreview, "Phóng to chữ khi bấm",
-            "Hiện ô chữ lớn phía trên phím khi chạm. Tắt nếu thấy rối mắt.")
-        RowDivider()
-        var adj by rememberIntPref(Keys.ROW_HEIGHT_ADJUST, Prefs.D.rowHeightAdjust)
-        VTRow {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Chiều cao hàng phím", style = VTType.body, color = c.label)
-                Text(
-                    if (adj == 0) "Chuẩn" else String.format(Locale.ROOT, "%+d dp mỗi hàng (%+d dp cả bàn phím)", adj, adj * 4),
-                    style = VTType.footnote, color = c.secondary,
-                )
-            }
-            IosStepper(adj, -10..10) { adj = it }
-        }
-        RowDivider()
-        val numberRow by rememberBoolPref(Keys.NUMBER_ROW, Prefs.D.numberRow)
-        BoolToggle(Keys.NUMBER_ROW, Prefs.D.numberRow, "Hàng phím số",
-            "Thêm hàng 1 2 3 … 0 phía trên hàng chữ — gõ số không cần chuyển sang bàn phím ?123. Bàn phím cao thêm khoảng ¾ hàng.")
-        RowDivider()
-        // Hàng số bật ⇒ giữ q…p ra số vô nghĩa (KeyAlternates.numbersSettingVisible).
-        if (KeyAlternates.numbersSettingVisible(numberRow)) {
-            BoolToggle(Keys.LONG_PRESS_NUMBERS, Prefs.D.longPressNumbers, "Giữ phím hàng trên để ra số",
-                "Giữ q w e … p một chút để gõ 1 2 3 … 0 — số nhỏ ở góc phím. Chỉ dùng khi tắt Hàng phím số.")
-            RowDivider()
-        }
-        BoolToggle(Keys.LONG_PRESS_SYMBOLS, Prefs.D.longPressSymbols, "Giữ phím hàng 2, 3 để ra ký tự đặc biệt",
-            "Giữ a … l, z … m để gõ @ # \$ _ & - + ( ) * \" % : / ! ? — ký hiệu nhỏ ở góc phím. Giữ , để ra . khi bật một trong các công tắc giữ phím (nếu , chưa dùng để gõ giọng nói).")
-        RowDivider()
-        OneHandRow()
-    }
-}
+// TinhNangTab + các trang con ở FeaturePages.kt.
 
 /** Chế độ một tay: Tắt / Trái / Phải (điện thoại; tablet bàn phím bỏ qua). */
 @Composable
-private fun OneHandRow() {
+internal fun OneHandRow() {
     val c = LocalVT.current
     val ctx = LocalContext.current
     var mode by rememberStringPref(Keys.ONE_HAND_MODE, Prefs.D.oneHandMode)
@@ -556,7 +429,7 @@ internal fun LinkRow(g: Glyph, title: String, onClick: () -> Unit) {
 fun GioiThieuTab(plus: com.viettelex.android.plus.PlusController, onOpenPlus: () -> Unit) {
     val c = LocalVT.current
     val ctx = LocalContext.current
-    SaoLuuSection()
+    // Sao lưu & đồng bộ chuyển sang Tính Năng (27/09/2026).
     DebugSection()
     VTSection(plain = true) {
         Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,

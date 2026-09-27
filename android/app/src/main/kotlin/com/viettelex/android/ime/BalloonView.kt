@@ -22,7 +22,7 @@ class BalloonView(context: Context, private val theme: ImeTheme) : View(context)
         // tăng tốc phần cứng từ API 28; máy cũ bỏ bóng.
         if (Build.VERSION.SDK_INT >= 28) setShadowLayer(theme.dp(3f), 0f, theme.dp(1.5f), 0x33000000)
     }
-    private val textPaint = theme.text(28f)
+    private val textPaint = theme.text(28f, color = theme.balloonInk)
     private val textOff = theme.centerOffset(textPaint)
 
     private var visible = false
