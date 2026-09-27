@@ -48,6 +48,15 @@ struct KeyboardSettings {
     /// Gõ vuốt (thử nghiệm, mặc định TẮT): tắt ⇒ không dựng template, không theo dõi
     /// touchesMoved thêm — 0 RAM/CPU.
     var swipeTyping = false
+    /// Vuốt ra từ tiếng Anh (công tắc con của Gõ vuốt) — mặc định BẬT: câu Việt chen từ
+    /// Anh rất thường (check mail, gửi file); decoder nghiêng Việt + biên độ nên chỉ ra
+    /// tiếng Anh khi hình vuốt thắng rõ / đang trong mạch Anh, từ điển chỉ nạp khi gõ vuốt
+    /// bật. Giống Android.
+    var swipeEnglish = true
+    /// Gõ tắt (mặc định BẬT, bảng mặc định RỖNG như macOS — người dùng tự thêm hoặc bấm
+    /// "Thêm bộ gợi ý" trong app). Bảng lưu App Group key "shortcuts" ([khoá: nội dung]).
+    var shortcutsEnabled = true
+    var shortcuts = ShortcutTable()
 
     static func load() -> KeyboardSettings {
         var s = KeyboardSettings()
@@ -66,6 +75,11 @@ struct KeyboardSettings {
         if d.object(forKey: "contextualEnglish") != nil { s.contextualEnglish = d.bool(forKey: "contextualEnglish") }
         if d.object(forKey: "reEditWord") != nil { s.reEditWord = d.bool(forKey: "reEditWord") }
         if d.object(forKey: "swipeTyping") != nil { s.swipeTyping = d.bool(forKey: "swipeTyping") }
+        if d.object(forKey: "swipeEnglish") != nil { s.swipeEnglish = d.bool(forKey: "swipeEnglish") }
+        if d.object(forKey: ShortcutFile.enabledKey) != nil { s.shortcutsEnabled = d.bool(forKey: ShortcutFile.enabledKey) }
+        if s.shortcutsEnabled, let dict = d.dictionary(forKey: ShortcutFile.storeKey) as? [String: String] {
+            s.shortcuts = ShortcutTable(dict)
+        }
         s.learnWords = s.showSuggestions   // bật gợi ý = bật học (quyết định 2026-07-24)
         return s
     }
@@ -90,6 +104,21 @@ final class EngineBridge {
     /// dấu/mũ nạp lại từ ngay trước con trỏ (seed). Controller TẮT ở omnibox
     /// (keyboardType .webSearch): inline autocomplete tự sửa chữ bên dưới mình.
     var reachBackAllowed = true
+
+    /// Cho phép gõ tắt ở ô này. Controller TẮT ở omnibox (.webSearch: inline autocomplete
+    /// tự viết lại chữ bên dưới). Ô URL/email/mật khẩu đã là passthrough.
+    var shortcutsAllowed = true
+
+    /// Lần bung gõ tắt gần nhất — ⌫ NGAY SAU đó trả lại đúng chữ đã gõ (một lần).
+    private struct ExpansionUndo {
+        let typed: String
+        let expansion: String
+        let boundary: String
+    }
+    private var expansionUndo: ExpansionUndo?
+    /// boundary() vừa rồi đã bung gõ tắt (controller: không mời "hoàn tác khôi phục",
+    /// học nội dung đã bung thay vì chữ tắt).
+    private(set) var expandedAtLastBoundary = false
 
     /// Thao tác cuối của bridge là chèn ký tự ranh giới → chắc chắn ký tự trước con
     /// trỏ KHÔNG phải chữ: phím đầu từ mới khỏi phải đọc context (XPC) để thử seed.
@@ -116,6 +145,9 @@ final class EngineBridge {
     struct SwipeOpen: Equatable {
         var fresh = true
         var accepted = false
+        /// Từ tiếng Anh chèn NGUYÊN VĂN (giai đoạn 3): engine trống, phím dấu Telex không
+        /// sửa nó (phím chữ kế = dấu cách treo), ⌫ đầu xoá cả từ, chốt ⇒ học + ngữ cảnh Anh.
+        var literal: String? = nil
     }
     struct SettledCommit: Equatable {
         let word: String
@@ -142,6 +174,7 @@ final class EngineBridge {
     /// A letter key ("a"…"z", already cased by the shift state).
     func letter(_ ch: Character, proxy: TextProxyLike) {
         letterUndo = nil
+        expansionUndo = nil
         guard !proxy.isSecure, !passthrough else {
             proxy.insertText(String(ch))
             letterUndo = LetterUndo(engine: engine, removed: "", inserted: String(ch),
@@ -163,8 +196,8 @@ final class EngineBridge {
     private func letterAfterSwipe(_ ch: Character, proxy: TextProxyLike) {
         guard let open = swipeOpen else { return }
         let snapshot = engine
-        let before = engine.composed
-        if Self.isReEditKey(ch) {
+        let before = open.literal ?? engine.composed
+        if open.literal == nil, Self.isReEditKey(ch) {
             let action = engine.feed(ch)
             if case .replace(let bs, let insert) = action, bs > 0,
                engine.composed != before + String(ch),
@@ -205,30 +238,33 @@ final class EngineBridge {
     /// cách treo). Sau đó chèn `word` và SEED engine bằng nó để từ vẫn là composition
     /// đang mở. Seed không round-trip, hoặc boundary sẽ auto-restore nó ⇒ chữ thường
     /// (không mở), vẫn chèn.
+    /// `literal` = từ tiếng Anh: chèn nguyên văn, KHÔNG seed engine (xem SwipeOpen.literal).
     @discardableResult
-    func insertSwipeWord(_ word: String, accepted: Bool = false,
+    func insertSwipeWord(_ word: String, accepted: Bool = false, literal: Bool = false,
                          proxy: TextProxyLike) -> SettledCommit? {
         letterUndo = nil
+        expansionUndo = nil
         var committed = settledCommit
         settledCommit = nil
-        if !engine.isEmpty {
+        if !engine.isEmpty || swipeOpen?.literal != nil {
             let wasAccepted = swipeOpen?.accepted ?? false
-            let final = boundary(" ", proxy: proxy)
+            // dấu cách tự chèn trước từ vuốt: không phải ranh giới người dùng gõ → không gõ tắt
+            let final = boundary(" ", proxy: proxy, expand: false)
             if !final.isEmpty { committed = SettledCommit(word: final, accepted: wasAccepted) }
         } else if SwipeSpacing.needsLeadingSpace(before: proxy.contextBeforeInput) {
             engine.forgetLastCommit()                  // ⌫ không mở lại từ cũ qua " " của mình
             proxy.insertText(" ")
         }
         proxy.insertText(word)
-        openSwipeWord(word, accepted: accepted)
+        openSwipeWord(word, accepted: accepted, literal: literal)
         return committed
     }
 
     /// Thay từ vuốt đang mở bằng `word` (biến thể trên thanh gợi ý). false = không còn
     /// mở / màn hình lệch (caller xử lý như gợi ý thường).
-    func replaceSwipeWord(with word: String, proxy: TextProxyLike) -> Bool {
-        guard swipeOpen != nil, !engine.isEmpty else { return false }
-        let composed = engine.composed
+    func replaceSwipeWord(with word: String, literal: Bool = false, proxy: TextProxyLike) -> Bool {
+        guard let open = swipeOpen, open.literal != nil || !engine.isEmpty else { return false }
+        let composed = open.literal ?? engine.composed
         guard CompositionSync.canDelete(composed.count, expected: composed,
                                         context: { proxy.contextBeforeInput }) else {
             reset()
@@ -237,12 +273,18 @@ final class EngineBridge {
         letterUndo = nil
         for _ in 0..<composed.count { proxy.deleteBackward() }
         proxy.insertText(word)
-        openSwipeWord(word, accepted: true)
+        openSwipeWord(word, accepted: true, literal: literal)
         return true
     }
 
-    private func openSwipeWord(_ word: String, accepted: Bool) {
+    private func openSwipeWord(_ word: String, accepted: Bool, literal: Bool = false) {
         lastWasOwnBoundary = false
+        if literal {
+            engine.reset()
+            engine.forgetLastCommit()                 // ⌫ không mở lại từ trước qua từ Anh
+            swipeOpen = passthrough ? nil : SwipeOpen(fresh: true, accepted: accepted, literal: word)
+            return
+        }
         if !passthrough, engine.seed(word),
            engine.peekCommitText(autoRestore: settings.autoRestore) == word {
             swipeOpen = SwipeOpen(fresh: true, accepted: accepted)
@@ -286,6 +328,7 @@ final class EngineBridge {
     /// Huỷ phím chữ vừa gõ (chỉ khi chưa có thao tác nào khác xen vào): trả màn hình và
     /// engine về đúng trước phím đó. false = không huỷ được (caller tự xử lý).
     func undoLastLetter(proxy: TextProxyLike) -> Bool {
+        expansionUndo = nil
         guard let u = letterUndo else { return false }
         letterUndo = nil
         if let ctx = proxy.contextBeforeInput, !ctx.hasSuffix(u.inserted) { return false }
@@ -302,10 +345,23 @@ final class EngineBridge {
     /// Returns the FINAL committed word (post auto-restore) — the
     /// personalization model must learn what actually landed on screen.
     @discardableResult
-    func boundary(_ text: String, proxy: TextProxyLike) -> String {
+    func boundary(_ text: String, proxy: TextProxyLike, expand: Bool = true) -> String {
         letterUndo = nil
+        expansionUndo = nil
+        expandedAtLastBoundary = false
+        let literal = swipeOpen?.literal
+        let wasSwipe = swipeOpen != nil
         swipeOpen = nil
         guard !proxy.isSecure, !passthrough else { proxy.insertText(text); return "" }
+        if let literal, engine.isEmpty {
+            // từ tiếng Anh nguyên văn: chốt như đã gõ, ngữ cảnh Anh cho từ gõ tiếp
+            engine.noteExternalWord(english: true)
+            proxy.insertText(text)
+            lastWasOwnBoundary = text.last.map { !$0.isLetter } ?? false
+            return literal
+        }
+        // Gõ tắt TRƯỚC tự khôi phục tiếng Anh. Không bung từ vuốt (từ vuốt là từ từ điển).
+        if expand, !wasSwipe, let expanded = tryExpandShortcut(text, proxy: proxy) { return expanded }
         let before = engine.composed
         var action = engine.commitBoundary(autoRestore: settings.autoRestore)
         if !safeToApply(action, expected: before, proxy: proxy) {
@@ -327,10 +383,24 @@ final class EngineBridge {
     @discardableResult
     func backspace(proxy: TextProxyLike) -> Bool {
         letterUndo = nil
+        if let u = expansionUndo {
+            expansionUndo = nil
+            if undoExpansion(u, proxy: proxy) { return false }
+        }
         lastWasOwnBoundary = false
         let open = swipeOpen
         swipeOpen = nil
         guard !proxy.isSecure, !passthrough else { proxy.deleteBackward(); return false }
+        if let lit = open?.literal, open?.fresh == true, engine.isEmpty {
+            // ⌫ đầu ngay sau vuốt từ tiếng Anh: xoá cả từ. Lệch ⇒ ⌫ thường.
+            if CompositionSync.canDelete(lit.count, expected: lit, context: { proxy.contextBeforeInput }) {
+                for _ in 0..<lit.count { proxy.deleteBackward() }
+            } else {
+                TouchLog.write("failsafe: swipe-word ⌫ len=\(lit.count) → ⌫ thường")
+                proxy.deleteBackward()
+            }
+            return false
+        }
         if open?.fresh == true, !engine.isEmpty {
             // ⌫ đầu tiên ngay sau vuốt: xoá cả từ (như Gboard/QuickPath). Lệch ⇒ ⌫ thường.
             let composed = engine.composed
@@ -364,6 +434,76 @@ final class EngineBridge {
             proxy.deleteBackward()
         }
         return false
+    }
+
+    // MARK: - Gõ tắt
+
+    /// Bung gõ tắt ở ký tự ranh giới `text` nếu khớp (xem ShortcutTable): xoá chữ đã gõ
+    /// (fail-safe CompositionSync: chỉ khi chữ trước con trỏ đúng là nó), chèn nội dung +
+    /// ranh giới. Trả nội dung đã bung, nil = không bung (boundary chạy tiếp như thường).
+    private func tryExpandShortcut(_ text: String, proxy: TextProxyLike) -> String? {
+        let table = settings.shortcuts
+        guard settings.shortcutsEnabled, shortcutsAllowed, !table.isEmpty else { return nil }
+        if !engine.isEmpty, ShortcutTable.triggersWord(text),
+           let e = table.wordExpansion(composed: engine.composed, raw: engine.rawKeystrokes) {
+            let composed = engine.composed
+            let ctx = proxy.contextBeforeInput
+            if !ShortcutTable.isGlued(word: composed, context: ctx),
+               CompositionSync.canDelete(composed.count, expected: composed, context: { ctx }) {
+                return applyExpansion(typed: composed, expansion: e, boundary: text, proxy: proxy)
+            }
+            return nil
+        }
+        if table.hasTokenKeys, ShortcutTable.triggersToken(text),
+           let ctx = proxy.contextBeforeInput, !proxy.hasSelection,
+           let m = table.tokenExpansion(context: ctx),
+           engine.isEmpty || m.token.hasSuffix(engine.composed) {
+            return applyExpansion(typed: m.token, expansion: m.expansion, boundary: text, proxy: proxy)
+        }
+        return nil
+    }
+
+    private func applyExpansion(typed: String, expansion: String, boundary text: String,
+                                proxy: TextProxyLike) -> String {
+        engine.reset()
+        engine.forgetLastCommit()                    // ⌫ không mở lại chữ tắt qua engine
+        engine.noteExternalWord(english: false)
+        TouchLog.edit(bs: typed.count, insertLen: expansion.count, insert: expansion)
+        for _ in 0..<typed.count { proxy.deleteBackward() }
+        proxy.insertText(expansion)
+        proxy.insertText(text)                       // tách riêng: "\n" là phím Return của host
+        lastWasOwnBoundary = text.last.map { !$0.isLetter } ?? false
+        expandedAtLastBoundary = true
+        // Enter có thể đã gửi tin — không hứa hoàn tác qua nó.
+        if !text.contains("\n") {
+            expansionUndo = ExpansionUndo(typed: typed, expansion: expansion, boundary: text)
+        }
+        return expansion
+    }
+
+    /// ⌫ ngay sau khi bung: màn hình phải kết thúc ĐÚNG bằng nội dung + ranh giới (đọc
+    /// context, nil ⇒ không làm) → thay bằng chữ đã gõ + ranh giới. false ⇒ ⌫ thường.
+    private func undoExpansion(_ u: ExpansionUndo, proxy: TextProxyLike) -> Bool {
+        guard !proxy.isSecure, !passthrough, !proxy.hasSelection,
+              let ctx = proxy.contextBeforeInput, ctx.hasSuffix(u.expansion + u.boundary) else {
+            TouchLog.write("shortcut undo: context lệch → ⌫ thường")
+            return false
+        }
+        for _ in 0..<(u.expansion.count + u.boundary.count) { proxy.deleteBackward() }
+        proxy.insertText(u.typed + u.boundary)
+        engine.reset()
+        engine.forgetLastCommit()
+        swipeOpen = nil
+        lastWasOwnBoundary = u.boundary.last.map { !$0.isLetter } ?? false
+        TouchLog.write("shortcut undo: -\(u.expansion.count) +\(u.typed.count)")
+        return true
+    }
+
+    /// Nội dung sẽ bung nếu gõ ranh giới ngay bây giờ (thanh gợi ý hiện trước). Chỉ khoá chữ.
+    var shortcutPreview: String? {
+        guard settings.shortcutsEnabled, shortcutsAllowed, !passthrough, swipeOpen == nil,
+              !engine.isEmpty, !settings.shortcuts.isEmpty else { return nil }
+        return settings.shortcuts.wordExpansion(composed: engine.composed, raw: engine.rawKeystrokes)
     }
 
     // MARK: - Sửa dấu từ đã gõ xong (như macOS: reopenLastCommit + seed)
@@ -446,21 +586,24 @@ final class EngineBridge {
 
     /// Ký tự ranh giới vừa chèn đã bị controller viết lại (double-space → ". ") —
     /// ⌫ kế tiếp không còn xoá đúng ký tự đã chốt từ.
-    func forgetLastCommit() { engine.forgetLastCommit(); lastWasOwnBoundary = false }
+    func forgetLastCommit() { engine.forgetLastCommit(); lastWasOwnBoundary = false; expansionUndo = nil }
 
     /// Field switch / selection moved / keyboard dismissed → forget the word.
     /// Cũng xoá ngữ cảnh tiếng Anh: đổi ô / con trỏ nhảy → từ trước không còn là
     /// "từ ngay trước" nữa (macOS làm y hệt khi activateServer / đổi field).
     func reset() {
         engine.reset(); engine.resetContext(); lastWasOwnBoundary = false; letterUndo = nil
-        swipeOpen = nil
+        swipeOpen = nil; expansionUndo = nil
     }
 
-    var isComposing: Bool { !engine.isEmpty }
+    var isComposing: Bool { !engine.isEmpty || swipeOpen?.literal != nil }
 
-    /// Current word for the suggestion bar: on-screen composed form + raw keys.
-    var composedWord: String { engine.composed }
-    var rawWord: String { engine.rawKeystrokes }
+    /// Current word for the suggestion bar: on-screen composed form + raw keys. Từ tiếng
+    /// Anh vuốt ra (nguyên văn, engine trống) cũng tính là từ đang mở.
+    var composedWord: String { swipeOpen?.literal ?? engine.composed }
+    var rawWord: String { swipeOpen?.literal ?? engine.rawKeystrokes }
+    /// Từ đang mở là từ tiếng Anh nguyên văn vừa vuốt.
+    var isLiteralSwipeWordOpen: Bool { swipeOpen?.literal != nil }
     var autoFixAdjacent: Bool { settings.autoFixAdjacent }
     /// Cache kết quả AdjacentKeyFixer theo raw — sống cùng bridge (cùng setting).
     let adjacentFixCache = AdjacentKeyFixer.Cache()
@@ -484,7 +627,7 @@ final class EngineBridge {
     /// tiếp trên engine. KHÔNG copy struct: bản copy cũ kích hoạt COW copy ~10
     /// buffer cố định mỗi phím khi commitText mutate (reset + scratch).
     var predictedCommit: String {
-        engine.peekCommitText(autoRestore: settings.autoRestore)
+        swipeOpen?.literal ?? engine.peekCommitText(autoRestore: settings.autoRestore)
     }
 
     /// Fail-safe trước khi xoá: action định xoá `bs` ký tự của `expected` (từ đang gõ

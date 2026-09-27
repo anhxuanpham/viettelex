@@ -166,4 +166,38 @@ class FieldMappingTest {
         val pw = m(TYPE_CLASS_TEXT or TYPE_TEXT_VARIATION_VISIBLE_PASSWORD)
         assertTrue(pw.isSecure); assertTrue(pw.passthrough)
     }
+
+    // Giữ lâu Enter = xuống dòng thật: chỉ ô chữ nhiều dòng.
+
+    @Test fun holdNewlineOnlyInMultiLineText() {
+        // Ô chat Zalo/Messenger: multi-line + actionSend ⇒ chạm = xuống dòng/KEYCODE_ENTER
+        // (app bắt thành "Gửi"), giữ lâu = "\n" thật.
+        val chat = m(TYPE_CLASS_TEXT or TYPE_TEXT_FLAG_MULTI_LINE or TYPE_TEXT_FLAG_CAP_SENTENCES,
+            EditorInfo.IME_ACTION_SEND)
+        assertTrue(chat.holdNewline); assertEquals(0, chat.actionId)
+        assertTrue(m(TYPE_CLASS_TEXT or TYPE_TEXT_FLAG_MULTI_LINE, EditorInfo.IME_FLAG_NO_ENTER_ACTION).holdNewline)
+        // Chat RN/Flutter dùng VISIBLE_PASSWORD + MULTI_LINE để tắt gợi ý: vẫn là ô chat.
+        assertTrue(m(TYPE_CLASS_TEXT or TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or TYPE_TEXT_FLAG_MULTI_LINE).holdNewline)
+    }
+
+    @Test fun holdNewlineOffInSingleLineFields() {
+        assertFalse(m(TYPE_CLASS_TEXT).holdNewline)
+        assertFalse(m(TYPE_CLASS_TEXT, EditorInfo.IME_ACTION_SEARCH).holdNewline)
+        assertFalse(m(TYPE_CLASS_TEXT, EditorInfo.IME_ACTION_SEND).holdNewline)
+        assertFalse(m(TYPE_CLASS_TEXT, EditorInfo.IME_FLAG_NO_ENTER_ACTION).holdNewline)
+        assertFalse(m(TYPE_CLASS_TEXT or TYPE_TEXT_VARIATION_URI, EditorInfo.IME_ACTION_GO).holdNewline)
+        assertFalse(m(TYPE_NULL).holdNewline)
+        assertFalse(m(TYPE_CLASS_NUMBER).holdNewline)
+        assertFalse(m(TYPE_CLASS_TEXT or TYPE_TEXT_VARIATION_PASSWORD or TYPE_TEXT_FLAG_MULTI_LINE).holdNewline)
+        // Pixel Launcher gỡ MULTI_LINE ⇒ ô tìm một dòng.
+        assertFalse(FieldMapping.map(TYPE_CLASS_TEXT or TYPE_TEXT_FLAG_MULTI_LINE,
+            EditorInfo.IME_ACTION_SEARCH or EditorInfo.IME_FLAG_NO_ENTER_ACTION, FieldMapping.PIXEL_LAUNCHER).holdNewline)
+    }
+
+    @Test fun allowsHoldNewlinePure() {
+        assertTrue(FieldMapping.allowsHoldNewline(multiLine = true, secure = false, rawKeys = false))
+        assertFalse(FieldMapping.allowsHoldNewline(multiLine = false, secure = false, rawKeys = false))
+        assertFalse(FieldMapping.allowsHoldNewline(multiLine = true, secure = true, rawKeys = false))
+        assertFalse(FieldMapping.allowsHoldNewline(multiLine = true, secure = false, rawKeys = true))
+    }
 }

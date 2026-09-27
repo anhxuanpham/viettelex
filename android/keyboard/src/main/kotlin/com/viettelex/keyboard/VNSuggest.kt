@@ -7,8 +7,8 @@ import java.text.Normalizer
  * foldedKey rồi post-filter TƯƠNG THÍCH DẤU từng ký tự. Thread-safe (chỉ đọc blob).
  */
 object VNSuggest {
-    /** Một ứng viên + tần suất tĩnh 0-255. */
-    data class Match(val word: String, val freq: Int)
+    /** Một ứng viên + tần suất tĩnh 0-255 + id lexicon (bigram tĩnh; -1 = không rõ). */
+    data class Match(val word: String, val freq: Int, val id: Int = -1)
 
     // char → (base << 8) | attr  (attr = quality<<3 | tone); -1 = ngoài bảng.
     private val decomposeTable: IntArray = run {
@@ -106,11 +106,30 @@ object VNSuggest {
             val id = (pool[k] and 0xFFFFFFFFL).toInt()
             val w = display(id)
             if (w == excl) continue
-            out.add(Match(w, 255 - (pool[k] ushr 32).toInt()))
+            out.add(Match(w, 255 - (pool[k] ushr 32).toInt(), id))
             if (out.size >= poolLimit) break
         }
         return out
     }
+
+    /**
+     * id lexicon của đúng âm tiết [word] (chữ thường, NFC, dấu kiểu cũ như vnlexicon:
+     * hoà → hòa), -1 nếu không có. Không đụng SwipeLexicon (thanh gợi ý chạy cả khi tắt vuốt).
+     */
+    fun lexiconId(word: String): Int {
+        val w = SyllableBigram.normalize(word)
+        val dec = decompose(w) ?: return -1
+        val b = lex()
+        val bytes = w.toByteArray(Charsets.UTF_8)
+        for (id in range(dec)) {
+            if (b.offsets[id + 1] - b.offsets[id] != dec.size) continue
+            if (displayEquals(id, bytes)) return id
+        }
+        return -1
+    }
+
+    /** Tần suất tĩnh (0-255) của id lexicon. */
+    fun freq(id: Int): Int = lex().freq(id)
 
     /** Âm tiết có trong lexicon (binary search). */
     fun contains(word: String): Boolean = frequency(word) != null

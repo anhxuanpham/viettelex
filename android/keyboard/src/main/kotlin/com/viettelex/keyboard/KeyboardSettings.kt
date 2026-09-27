@@ -26,11 +26,25 @@ data class KeyboardSettings(
     var reEditWords: Boolean = true,
     /** Gõ vuốt (thử nghiệm) — mặc định TẮT; tắt ⇒ không dựng template, không ghi checkpoint. */
     var swipeTyping: Boolean = false,
+    /**
+     * Vuốt ra từ tiếng Anh (công tắc con của gõ vuốt) — mặc định BẬT: câu Việt chen từ
+     * Anh rất thường (check mail, gửi file); decoder nghiêng Việt + biên độ nên chỉ ra
+     * tiếng Anh khi hình vuốt thắng rõ / đang trong mạch Anh, và từ điển chỉ nạp khi gõ
+     * vuốt đang bật. Giống iOS.
+     */
+    var swipeEnglish: Boolean = true,
+    /** Telex cho bàn phím cứng — mặc định BẬT; tắt ⇒ IME không đụng KeyEvent. */
+    var hardwareTelex: Boolean = true,
+    /** Gõ tắt — mặc định BẬT, bảng mặc định RỖNG (như macOS; "Thêm bộ gợi ý" trong app). */
+    var shortcutsEnabled: Boolean = true,
+    var shortcuts: ShortcutTable = ShortcutTable(),
     // Phần UI (iOS đọc rải rác trong KeyboardView) — gom về đây cho IME.
     var templatesEnabled: Boolean = true,
     var showSpaceLogo: Boolean = true,
     /** −10…10 dp mỗi hàng. */
     var rowHeightAdjust: Int = 0,
+    /** Hàng phím số 1…0 trên hàng chữ — mặc định TẮT. */
+    var numberRow: Boolean = false,
     var debugTouchLog: Boolean = false,
     /** Giá trị Keys.USERLM_RESET_AT (0 = chưa từng xoá). */
     var userlmResetAt: Long = 0,
@@ -54,9 +68,14 @@ data class KeyboardSettings(
             s.contextualEnglish = b(Keys.CONTEXTUAL_ENGLISH, s.contextualEnglish)
             s.reEditWords = b(Keys.RE_EDIT_WORDS, s.reEditWords)
             s.swipeTyping = b(Keys.SWIPE_TYPING, s.swipeTyping)
+            s.swipeEnglish = b(Keys.SWIPE_ENGLISH, s.swipeEnglish)
+            s.hardwareTelex = b(Keys.HARDWARE_TELEX, s.hardwareTelex)
+            s.shortcutsEnabled = b(Keys.SHORTCUTS_ENABLED, s.shortcutsEnabled)
+            if (s.shortcutsEnabled) s.shortcuts = ShortcutTable(ShortcutFile.parse(get(Keys.SHORTCUTS) as? String))
             s.templatesEnabled = b(Keys.TEMPLATES_ENABLED, s.templatesEnabled)
             s.showSpaceLogo = b(Keys.SHOW_SPACE_LOGO, s.showSpaceLogo)
             s.debugTouchLog = b(Keys.DEBUG_TOUCH_LOG, s.debugTouchLog)
+            s.numberRow = b(Keys.NUMBER_ROW, s.numberRow)
             s.rowHeightAdjust = ((get(Keys.ROW_HEIGHT_ADJUST) as? Number)?.toInt() ?: 0).coerceIn(-10, 10)
             s.userlmResetAt = (get(Keys.USERLM_RESET_AT) as? Number)?.toLong() ?: 0
             s.learnWords = s.showSuggestions   // bật gợi ý = bật học (quyết định 2026-07-24)
