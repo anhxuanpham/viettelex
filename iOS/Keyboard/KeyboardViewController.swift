@@ -123,13 +123,14 @@ final class KeyboardViewController: UIInputViewController {
         #endif
         super.viewWillAppear(animated)
         TouchLog.loadSetting()
-        bridge = EngineBridge()                       // fresh settings + buffer
+        // Đọc settings MỘT lần mỗi lần hiện (trước đây EngineBridge() tự load lần hai).
+        let settings = KeyboardSettings.load()
+        bridge = EngineBridge(settings: settings)     // fresh settings + buffer
         externalChangePending = false
         lastKeyWasEmailTrigger = false
         restoreUndo = nil; undoOfferActive = false
         textToolUndo = nil
         keyboard.textToolsEnabled = PlusGate.isUnlocked(.textTools)
-        let settings = KeyboardSettings.load()
         checkExternalDictEdit()
         clip.load(from: UserDefaultsProvider.shared)
         // Ẩn danh (thủ công, trong app): không học từ, không lưu clipboard.
@@ -1058,7 +1059,8 @@ final class KeyboardViewController: UIInputViewController {
                 emojis = EmojiSuggest.emojis(for: prev.lowercased() + " " + composed.lowercased())
             }
             if emojis.isEmpty { emojis = EmojiSuggest.emojis(for: composed) }
-            if emojis.isEmpty { emojis = EmojiSuggest.emojis(for: raw.lowercased()) }
+            // raw ≡ composed (từ không dấu) ⇒ tra lần ba là thừa.
+            if emojis.isEmpty, raw != composed { emojis = EmojiSuggest.emojis(for: raw.lowercased()) }
         }
         set.emojis = emojis
         // Không có emoji lấp slot 3 → đệm word/word2 cho đủ (literal + 2 từ).

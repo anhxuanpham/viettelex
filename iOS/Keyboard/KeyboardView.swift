@@ -478,6 +478,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private var lastLayoutWidth: CGFloat = 0
     override func layoutSubviews() {
         super.layoutSubviews()
+        letterGeometryCache = nil
         if bounds.width != lastLayoutWidth {
             lastLayoutWidth = bounds.width
             updateSuggestionChrome()
@@ -1226,6 +1227,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
 
     private func rebuild() {
         guard !rebuildDeferred else { return }   // batchConfigure rebuild 1 lần cuối
+        letterGeometryCache = nil
         updateSuggestionChrome()
         applyOneHand()                           // plane mới có thể thu hẹp / đầy bề ngang
         let styleChanged = builtReturn != returnTitle || builtDark != dark
@@ -2590,10 +2592,19 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
 
     private func letterCoreContains(_ point: CGPoint) -> Bool {
         guard point.y >= rowsContainer.frame.minY else { return false }
-        for (b, _) in letterKeys where convert(b.bounds, from: b).contains(point) {
-            return true
-        }
-        return false
+        return letterGeometry().rects.contains { $0.contains(point) }
+    }
+
+    /// Frame phím chữ (toạ độ self) + ký tự gốc, CACHE giữa các lần layout: router chạy
+    /// hitTest + routeDown (+ smartPick) mỗi chạm — trước đây 2–3 lượt convert 26 phím và
+    /// cấp phát 2 mảng mỗi chạm. Vứt ở mỗi layoutSubviews / rebuild (phím dời ⇒ tính lại).
+    private var letterGeometryCache: (rects: [CGRect], chars: [Character])?
+    private func letterGeometry() -> (rects: [CGRect], chars: [Character]) {
+        if let c = letterGeometryCache, c.rects.count == letterKeys.count { return c }
+        let g = (letterKeys.map { convert($0.button.bounds, from: $0.button) },
+                 letterKeys.map { $0.base.first ?? " " })
+        letterGeometryCache = g
+        return g
     }
 
     private func nearestLetterButton(at point: CGPoint) -> UIButton? {
@@ -2601,17 +2612,16 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // của chevron/slot, router mà cướp thì chevron "bấm mãi không ăn".
         guard lettersLike, !letterKeys.isEmpty,
               point.y >= rowsContainer.frame.minY else { return nil }
-        var best: (UIButton, CGFloat)?
-        for (b, _) in letterKeys {
-            let f = convert(b.bounds, from: b)
-            if f.insetBy(dx: -3, dy: -5.5).contains(point) { return b }
+        var best: (Int, CGFloat)?
+        for (i, f) in letterGeometry().rects.enumerated() {
+            if f.insetBy(dx: -3, dy: -5.5).contains(point) { return letterKeys[i].button }
             let dx = max(f.minX - point.x, 0, point.x - f.maxX)
             let dy = max(f.minY - point.y, 0, point.y - f.maxY)
             let d = dx * dx + dy * dy
-            if best == nil || d < best!.1 { best = (b, d) }
+            if best == nil || d < best!.1 { best = (i, d) }
         }
         // chỉ nhận khi thật sự gần hàng phím chữ (~nửa chiều cao phím)
-        if let (b, d) = best, d <= 21 * 21 { return b }
+        if let (i, d) = best, d <= 21 * 21 { return letterKeys[i].button }
         return nil
     }
 
@@ -2622,14 +2632,15 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// Vùng biên giữa 2 phím ⇒ TouchTarget.choose; lõi phím ⇒ giữ ngay (0 alloc).
     private func smartPick(_ hit: UIButton, at p: CGPoint,
                            prior lp: () -> ((Character) -> Float?)?) -> UIButton {
-        guard plane == .letters, !TouchTarget.inCore(p, convert(hit.bounds, from: hit)) else { return hit }
+        guard plane == .letters,
+              let hi = letterKeys.firstIndex(where: { $0.button === hit }),
+              !TouchTarget.inCore(p, letterGeometry().rects[hi]) else { return hit }
         // Chốt phím nhấc-mới-chốt đang đè (vd space) TRƯỚC để prior thấy từ đang gõ mới nhất
         // (sendActions(.touchDown) sau đó flush lần nữa = no-op).
         commits.flush(except: nil)
         guard let prior = lp(), let idx = letterKeys.firstIndex(where: { $0.button === hit }) else { return hit }
-        let rects = letterKeys.map { convert($0.button.bounds, from: $0.button) }
-        let chars = letterKeys.map { $0.base.first ?? " " }
-        return letterKeys[TouchTarget.choose(p, rects: rects, keys: chars, nearest: idx, prior: prior)].button
+        let g = letterGeometry()
+        return letterKeys[TouchTarget.choose(p, rects: g.rects, keys: g.chars, nearest: idx, prior: prior)].button
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
