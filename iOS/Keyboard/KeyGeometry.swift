@@ -116,5 +116,74 @@ enum KeyGeometry {
             let natural = h / 2 + (ascender + descender) / 2
             return baselineFromTop(keyHeight: h) - natural
         }
+        /// Dịch dọc để baseline hộp dòng (căn giữa phím cao `h`) về `target` pt dưới đỉnh.
+        static func offsetY(toBaseline target: CGFloat, keyHeight h: CGFloat,
+                            ascender: CGFloat, descender: CGFloat) -> CGFloat {
+            target - (h / 2 + (ascender + descender) / 2)
+        }
+
+        /// Chữ trên phím iPad khớp stock iPadOS 27 (đo 27/09/2026, ảnh @2x simulator iPad
+        /// Pro 11" M5 / iPad mini A17 / iPad Pro 13" M5, English US, dark + light):
+        ///  • Cũng SF COMPACT Regular, nhưng chữ HOA và thường CÙNG cỡ (khác iPhone):
+        ///    khớp bbox stock ≈ 21.5 dọc / 26.6 ngang — y hệt trên cả 3 máy (cỡ theo hướng,
+        ///    không theo máy). Cỡ đặt: dọc 22 (UIKit vẽ Compact 21.5 dọc nhỏ hơn stock ~1px,
+        ///    đo lại ảnh VietTelex → 22 khớp), ngang 26.6. Trước: SF Pro 23 cả hai hướng.
+        ///  • Chữ + ký tự phụ (vuốt xuống) là một khối căn theo TÂM phím: baseline chữ dưới tâm
+        ///    18.25 (dọc) / 22.25 (ngang), baseline ký tự phụ trên tâm 8.75 / 12 — khớp cả
+        ///    phím stock 50.5 (11") lẫn 46.5 (mini) cao khác nhau (đặt dọc 18: phím mình
+        ///    cao 50, làm tròn @2x trùng đúng pixel stock). Trước: chữ dạt đáy
+        ///    (baseline cách đáy 12.5pt, stock 7) và ký tự phụ bám đỉnh +5.
+        ///  • Ký tự phụ: Compact 12.5 / 15.5, alpha 0.30 tối / 0.25 sáng (trước SF 13, 0.4).
+        ///  • Phím số/ký hiệu không có ký tự phụ (căn giữa): 22 / 26.8, baseline dưới tâm
+        ///    8.5 / 9.25.
+        ///  • Nhãn phím chức năng (.?123, ABC, #+=, 123): Compact 14.6 / 19.4 (trước SF 14),
+        ///    dạt góc dưới: baseline cách đáy 6.5 / 11, mép chữ cách cạnh 7.5 / 10.
+        ///  • Icon (tab ⇪ ⇧ ⌫ return 🌐 ⌨︎): SF Symbol 22.5 / 23.5pt (trước 17 — nhỏ hơn
+        ///    stock 1/3), mép icon cách cạnh 5.5 / 7.5, cách đáy 4.5 / 8 (trước 10 / 10.5).
+        ///  • Phím dấu 2 tầng (! trên , / ? trên .): Compact 20.3 / 30, baseline trên
+        ///    −1.25 / −0.5, dưới +16.5 / +19.5 so với tâm.
+        enum Pad {
+            struct Metrics: Equatable {
+                var letterSize: CGFloat
+                var letterBaselineBelowCenter: CGFloat
+                var hintSize: CGFloat
+                var hintBaselineAboveCenter: CGFloat
+                var digitSize: CGFloat
+                var digitBaselineBelowCenter: CGFloat
+                var labelSize: CGFloat
+                var labelBaselineAboveBottom: CGFloat
+                var labelSideInset: CGFloat
+                var iconPointSize: CGFloat
+                var iconSideInset: CGFloat
+                var iconBottomInset: CGFloat
+                var punctSize: CGFloat
+                var punctUpperBaselineBelowCenter: CGFloat
+                var punctLowerBaselineBelowCenter: CGFloat
+            }
+            static let portrait = Metrics(
+                letterSize: 22, letterBaselineBelowCenter: 18,
+                hintSize: 12.5, hintBaselineAboveCenter: 8.75,
+                digitSize: 22, digitBaselineBelowCenter: 8.5,
+                labelSize: 14.6, labelBaselineAboveBottom: 6.5, labelSideInset: 7.5,
+                iconPointSize: 22.5, iconSideInset: 5.5, iconBottomInset: 4.5,
+                punctSize: 20.3, punctUpperBaselineBelowCenter: -1.25, punctLowerBaselineBelowCenter: 16.5)
+            static let landscape = Metrics(
+                letterSize: 26.6, letterBaselineBelowCenter: 22.25,
+                hintSize: 15.5, hintBaselineAboveCenter: 12,
+                digitSize: 26.8, digitBaselineBelowCenter: 9.25,
+                labelSize: 19.4, labelBaselineAboveBottom: 11, labelSideInset: 10,
+                iconPointSize: 23.5, iconSideInset: 7.5, iconBottomInset: 8,
+                punctSize: 30, punctUpperBaselineBelowCenter: -0.5, punctLowerBaselineBelowCenter: 19.5)
+            static func metrics(landscape: Bool) -> Metrics { landscape ? Self.landscape : portrait }
+            /// Alpha ký tự phụ (vuốt xuống) trên nền phím, như stock: tối trắng 0.30 (xám 124
+            /// trên phím 68), sáng đen 0.25 (191 trên phím trắng).
+            static func hintAlpha(dark: Bool) -> CGFloat { dark ? 0.30 : 0.25 }
+            /// Ảnh SF Symbol có lề trong quanh nét (≈ 6% cỡ ngang, 9% dưới — đo ở 17pt:
+            /// 1 / 1.5pt) → contentEdgeInset = mép-nét-mong-muốn − lề trong.
+            static func iconContentInsets(_ m: Metrics) -> (side: CGFloat, bottom: CGFloat) {
+                (max(m.iconSideInset - 0.06 * m.iconPointSize, 0),
+                 max(m.iconBottomInset - 0.09 * m.iconPointSize, 0))
+            }
+        }
     }
 }

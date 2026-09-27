@@ -50,7 +50,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     static func keyFont(_ size: CGFloat) -> UIFont {
         compactDescriptor.map { UIFont(descriptor: $0, size: size) } ?? .systemFont(ofSize: size)
     }
-    /// Nhãn chữ phím iPhone: cỡ theo hoa/thường + canh baseline stock. iPad giữ SF 23 cũ.
+    /// Nhãn chữ phím iPhone: cỡ theo hoa/thường + canh baseline stock. iPad: cỡ/baseline
+    /// theo hướng máy do KeyButton.padRole lo (KeyGeometry.Typography.Pad).
     private func applyKeycapFont(_ b: KeyButton, title: String) {
         guard !Self.isPad else { return }
         let size = KeyGeometry.Typography.size(for: title, compact: Self.hasCompactFont)
@@ -59,7 +60,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     }
     /// Nhãn chữ phím chức năng iPhone (123/ABC/#+=): SF Compact cỡ stock, cùng baseline.
     private func applyLabelFont(_ b: KeyButton, size: CGFloat) {
-        guard !Self.isPad else { return }
+        // iPad: nhãn phím đổi plane dạt góc dưới-trái như stock (#+=, 123, ABC).
+        guard !Self.isPad else { b.padRole = .corner(left: true); return }
         b.titleLabel?.font = Self.keyFont(size)
         b.baselineAligned = true
     }
@@ -542,6 +544,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     // không dùng UIScreen.main (deprecated, sai trong Split View).
     private var lastLayoutWidth: CGFloat = 0
     override func layoutSubviews() {
+        if Self.isPad { KeyButton.padLandscape = isLandscapeNow }   // phím tự áp cỡ chữ theo hướng
         super.layoutSubviews()
         letterGeometryCache = nil
         if bounds.width != lastLayoutWidth {
@@ -1770,12 +1773,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         b.backgroundColor = plainFill
         b.normalBackground = plainFill
         b.pressedBackground = specialFill
-        b.contentHorizontalAlignment = left ? .left : .right
-        b.contentVerticalAlignment = .bottom
-        b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 9, bottom: 9, right: 9)
-        b.titleLabel?.font = .systemFont(ofSize: 14)
-        b.titleLabel?.adjustsFontSizeToFitWidth = true
-        b.titleLabel?.minimumScaleFactor = 0.8
+        // Cỡ nhãn/icon + lề góc theo hướng máy: KeyGeometry.Typography.Pad (KeyButton.padRole).
+        b.padRole = .corner(left: left)
         let ink = self.ink
         b.tintColor = ink            // icon (tab/⇪/⇧/⌫/return…) đậm, không xanh/mờ
         b.setTitleColor(ink, for: .normal)
@@ -1795,15 +1794,21 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private func padPunctButton(lower: String, upper: String) -> KeyButton {
         let b = baseButton(title: "", special: false)
         b.pressedBackground = specialFill
-        let ink = self.ink
-        let para = NSMutableParagraphStyle()
-        para.alignment = .center
-        para.lineSpacing = -4
-        let font = UIFont.systemFont(ofSize: 21)
-        let t = NSMutableAttributedString(string: upper + "\n" + lower, attributes: [
-            .font: font, .foregroundColor: ink, .paragraphStyle: para])
-        b.titleLabel?.numberOfLines = 2
-        b.setAttributedTitle(t, for: .normal)
+        // Hai nhãn đặt theo BASELINE quanh tâm phím như stock (Typography.Pad.punct*),
+        // cỡ đổi theo hướng máy ở KeyButton.
+        for text in [upper, lower] {
+            let l = UILabel()
+            l.text = text
+            l.textColor = ink
+            l.translatesAutoresizingMaskIntoConstraints = false
+            l.isUserInteractionEnabled = false
+            l.isAccessibilityElement = false
+            b.addSubview(l)
+            let base = l.firstBaselineAnchor.constraint(equalTo: b.centerYAnchor)
+            NSLayoutConstraint.activate([l.centerXAnchor.constraint(equalTo: b.centerXAnchor), base])
+            b.padPunctLabels.append((l, base))
+        }
+        b.padRole = .punct
         b.accessibilityLabel = lower
         armCommit(b) { [weak self] in
             guard let self else { return }
@@ -1929,6 +1934,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             self?.tapped(.newline)
         }
         ret.accessibilityLabel = returnTitle == "return" ? "Xuống dòng" : returnTitle
+        if Self.isPad, returnTitle == "return" { ret.padRole = .icon }
         if returnTitle == "return" {
             ret.setImage(UIImage(systemName: "return.left",
                 withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)), for: .normal)
@@ -1974,6 +1980,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)), for: .normal)
             globe.tintColor = ink
             globe.accessibilityLabel = "Bàn phím tiếp theo"
+            if Self.isPad { globe.padRole = .icon }
             if let c = inputController {
                 // hợp đồng Apple: event thật + allTouchEvents để long-press
                 // mở keyboard picker hoạt động
@@ -2095,6 +2102,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             let b = baseButton(title: p.title, special: false)
             b.pressedBackground = specialFill
             if p.title == ".com" { b.titleLabel?.font = .systemFont(ofSize: 17) }
+            else if Self.isPad { b.padRole = .digit }
             armCommit(b) { [weak self] in self?.tapped(.text(p.insert)) }
             // Bàn chữ iPhone: giữ "," ra "." (KeyAlternates.commaHold — bảng ký tự phụ không
             // rỗng; iPad/VoiceOver đã rỗng sẵn).
@@ -2137,6 +2145,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)), for: .normal)
             d.tintColor = ink
             d.accessibilityLabel = "Ẩn bàn phím"
+            d.padRole = .icon
             d.addAction(UIAction { _ in Self.clickModifier() }, for: .touchDown)
             d.addAction(UIAction { [weak self] _ in
                 self?.inputController?.dismissKeyboard()
@@ -2180,7 +2189,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             planeBtn.setTitle(".?123", for: .normal)
             planeBtn2?.setTitle(".?123", for: .normal)
             padCorner(planeBtn, left: true)
-            if let b = planeBtn2 { padCorner(b, left: true) }
+            if let b = planeBtn2 { padCorner(b, left: false) }   // .?123 phải: nhãn dạt phải như stock
             if let g = globeBtn { padCorner(g, left: true) }
             padCorner(emojiBtn, left: true)
             if let d = dismissBtn { padCorner(d, left: false) }
@@ -2238,9 +2247,93 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             let r = super.titleRect(forContentRect: contentRect)
             guard baselineAligned, let f = titleLabel?.font, bounds.height > 0 else { return r }
             // Hộp nhãn đang căn giữa phím; dời để baseline về đúng chỗ stock.
-            let dy = KeyGeometry.Typography.titleOffsetY(keyHeight: bounds.height,
+            let dy: CGFloat
+            if let below = padBaselineBelowCenter {
+                dy = KeyGeometry.Typography.offsetY(toBaseline: bounds.height / 2 + below,
+                                                    keyHeight: bounds.height,
+                                                    ascender: f.ascender, descender: f.descender)
+            } else {
+                dy = KeyGeometry.Typography.titleOffsetY(keyHeight: bounds.height,
                                                          ascender: f.ascender, descender: f.descender)
+            }
             return r.offsetBy(dx: 0, dy: (bounds.midY - r.midY) + dy)
+        }
+
+        // MARK: iPad — chữ theo KeyGeometry.Typography.Pad, đổi theo hướng máy TẠI CHỖ
+        // (xoay không dựng lại plane): KeyboardView đặt `padLandscape` đầu mỗi layout pass,
+        // mỗi phím tự áp lại ở layoutSubviews của nó khi hướng khác lần áp trước.
+        enum PadRole { case letter, digit, corner(left: Bool), icon, punct }
+        static var padLandscape = false
+        var padRole: PadRole? { didSet { padApplied = nil; setNeedsLayout() } }
+        private var padApplied: Bool?
+        private var padBaselineBelowCenter: CGFloat?
+        weak var padHint: UILabel?
+        var padHintBaseline: NSLayoutConstraint?
+        var padPunctLabels: [(label: UILabel, baseline: NSLayoutConstraint)] = []
+
+        override func layoutSubviews() {
+            applyPadTypographyIfNeeded()
+            super.layoutSubviews()
+        }
+        /// Icon SF Symbol cỡ stock iPad (kể cả ảnh đặt lại sau: shift/caps đổi trạng thái).
+        private func applyPadSymbolSize(_ m: KeyGeometry.Typography.Pad.Metrics) {
+            let c = UIImage.SymbolConfiguration(pointSize: m.iconPointSize, weight: .regular)
+            setPreferredSymbolConfiguration(c, forImageIn: .normal)
+            setPreferredSymbolConfiguration(c, forImageIn: .highlighted)
+            // Ảnh dựng sẵn cỡ riêng (return/🌐/⌨︎ pointSize 17) không nhận preferred config
+            // → thay config của chính ảnh.
+            for st in [UIControl.State.normal, .highlighted] {
+                if let img = image(for: st), img.isSymbolImage,
+                   img.symbolConfiguration?.isEqual(to: c) != true {
+                    setImage(img.withConfiguration(c), for: st)
+                }
+            }
+        }
+        private func applyPadTypographyIfNeeded() {
+            guard let role = padRole, padApplied != Self.padLandscape else { return }
+            let land = Self.padLandscape
+            padApplied = land
+            let m = KeyGeometry.Typography.Pad.metrics(landscape: land)
+            switch role {
+            case .letter, .digit:
+                if case .letter = role { titleLabel?.font = KeyboardView.keyFont(m.letterSize) }
+                else { titleLabel?.font = KeyboardView.keyFont(m.digitSize) }
+                contentVerticalAlignment = .center
+                contentEdgeInsets = .zero
+                baselineAligned = true
+                if case .letter = role {
+                    padBaselineBelowCenter = m.letterBaselineBelowCenter
+                    padHint?.font = KeyboardView.keyFont(m.hintSize)
+                    padHintBaseline?.constant = -m.hintBaselineAboveCenter
+                } else {
+                    padBaselineBelowCenter = m.digitBaselineBelowCenter
+                }
+            case .corner(let left):
+                contentHorizontalAlignment = left ? .left : .right
+                contentVerticalAlignment = .bottom
+                if let t = currentTitle, !t.isEmpty {
+                    let f = KeyboardView.keyFont(m.labelSize)
+                    titleLabel?.font = f
+                    titleLabel?.adjustsFontSizeToFitWidth = true
+                    titleLabel?.minimumScaleFactor = 0.7
+                    // Đáy hộp nhãn = baseline + descender (descender < 0).
+                    let bottom = max(m.labelBaselineAboveBottom + f.descender, 0)
+                    contentEdgeInsets = UIEdgeInsets(top: 0, left: m.labelSideInset,
+                                                     bottom: bottom, right: m.labelSideInset)
+                } else {
+                    let ins = KeyGeometry.Typography.Pad.iconContentInsets(m)
+                    contentEdgeInsets = UIEdgeInsets(top: 0, left: ins.side, bottom: ins.bottom, right: ins.side)
+                }
+                applyPadSymbolSize(m)
+            case .icon:
+                applyPadSymbolSize(m)
+            case .punct:
+                let f = KeyboardView.keyFont(m.punctSize)
+                for (i, p) in padPunctLabels.enumerated() {
+                    p.label.font = f
+                    p.baseline.constant = i == 0 ? m.punctUpperBaselineBelowCenter : m.punctLowerBaselineBelowCenter
+                }
+            }
         }
         // Khe hở giữa phím (spacing 6 + padding hàng 5) là VÙNG CHẾT với
         // UIButton thường — chạm trúng khe = mất phím. Stock keyboard route
@@ -2364,20 +2457,21 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // hộp action được sendActions() kích.
         b.isUserInteractionEnabled = false
         letterKeys.append((b, s))
-        if Self.isPad, let sec = Self.padSecondary[s] {
-            let l = UILabel()
-            l.text = sec
-            l.font = .systemFont(ofSize: 13)
-            l.textColor = ink.withAlphaComponent(0.4)
-            l.translatesAutoresizingMaskIntoConstraints = false
-            l.isUserInteractionEnabled = false
-            b.addSubview(l)
-            NSLayoutConstraint.activate([
-                l.centerXAnchor.constraint(equalTo: b.centerXAnchor),
-                l.topAnchor.constraint(equalTo: b.topAnchor, constant: 5),
-            ])
-            b.contentVerticalAlignment = .bottom
-            b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 0, bottom: 7, right: 0)
+        if Self.isPad {
+            // Chữ + ký tự phụ căn theo tâm phím như stock (KeyGeometry.Typography.Pad).
+            if let sec = Self.padSecondary[s] {
+                let l = UILabel()
+                l.text = sec
+                l.textColor = ink.withAlphaComponent(KeyGeometry.Typography.Pad.hintAlpha(dark: dark))
+                l.translatesAutoresizingMaskIntoConstraints = false
+                l.isUserInteractionEnabled = false
+                b.addSubview(l)
+                let base = l.firstBaselineAnchor.constraint(equalTo: b.centerYAnchor)
+                NSLayoutConstraint.activate([l.centerXAnchor.constraint(equalTo: b.centerXAnchor), base])
+                b.padHint = l
+                b.padHintBaseline = base
+            }
+            b.padRole = .letter
         } else if let c = s.first, let alt = activeAlts[c] {
             // Nhãn ký tự phụ nhỏ, mờ ở góc trên-phải như Gboard — dựng một lần theo layout.
             let l = UILabel()
@@ -2507,6 +2601,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
 
     private func textButton(_ s: String) -> UIView {
         let b = baseButton(title: s, special: false)
+        if Self.isPad { b.padRole = .digit }   // số/ký hiệu: cỡ chữ iPad, căn giữa như stock
         b.addAction(UIAction { [weak self, weak b] _ in
             Self.clickLetter()
             if let self, let b { self.showBalloon(over: b, text: s) }
@@ -2560,6 +2655,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let symbol = shift == .caps ? "capslock.fill" : (shift == .on ? "shift.fill" : "shift")
         let b = baseButton(title: "", special: true)
         b.setImage(UIImage(systemName: symbol), for: .normal)
+        if Self.isPad { b.padRole = .icon }
         b.accessibilityLabel = "Shift"
         if shift != .off {
             b.backgroundColor = .white
@@ -2586,6 +2682,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private func backspaceButton() -> UIView {
         let b = baseButton(title: "", special: true)
         b.setImage(UIImage(systemName: "delete.left"), for: .normal)
+        if Self.isPad { b.padRole = .icon }   // icon cỡ stock iPad (Typography.Pad)
         b.setImage(UIImage(systemName: "delete.left.fill"), for: .highlighted)
         b.tintColor = ink
         b.accessibilityLabel = "Xoá"

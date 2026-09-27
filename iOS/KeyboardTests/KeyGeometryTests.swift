@@ -50,6 +50,56 @@ final class KeyGeometryTests: XCTestCase {
         XCTAssertEqual(dy, -1.71, accuracy: 0.02)
     }
 
+    /// Chữ phím iPad khớp stock iPadOS 27 (đo ảnh @2x 27/09, iPad Pro 11"/mini/13"): SF Compact
+    /// cùng cỡ hoa/thường theo HƯỚNG máy, khối chữ + ký tự phụ căn theo tâm phím. Trước:
+    /// SF Pro 23 dạt đáy (baseline cách đáy 12.5, stock 7), ký tự phụ SF 13 bám đỉnh.
+    func testPadTypographyMatchesStock() {
+        typealias P = KeyGeometry.Typography.Pad
+        let p = P.metrics(landscape: false), l = P.metrics(landscape: true)
+        XCTAssertEqual(p, P.portrait)
+        XCTAssertEqual(l, P.landscape)
+        XCTAssertEqual([p.letterSize, p.digitSize, p.hintSize, p.labelSize, p.punctSize, p.iconPointSize],
+                       [22, 22, 12.5, 14.6, 20.3, 22.5])
+        XCTAssertEqual([l.letterSize, l.digitSize, l.hintSize, l.labelSize, l.punctSize, l.iconPointSize],
+                       [26.6, 26.8, 15.5, 19.4, 30, 23.5])
+        XCTAssertEqual([p.letterBaselineBelowCenter, p.hintBaselineAboveCenter, p.digitBaselineBelowCenter],
+                       [18, 8.75, 8.5])
+        XCTAssertEqual([l.letterBaselineBelowCenter, l.hintBaselineAboveCenter, l.digitBaselineBelowCenter],
+                       [22.25, 12, 9.25])
+        XCTAssertEqual([p.labelBaselineAboveBottom, p.labelSideInset, p.iconSideInset, p.iconBottomInset],
+                       [6.5, 7.5, 5.5, 4.5])
+        XCTAssertEqual([l.labelBaselineAboveBottom, l.labelSideInset, l.iconSideInset, l.iconBottomInset],
+                       [11, 10, 7.5, 8])
+        XCTAssertEqual([p.punctUpperBaselineBelowCenter, p.punctLowerBaselineBelowCenter], [-1.25, 16.5])
+        XCTAssertEqual([l.punctUpperBaselineBelowCenter, l.punctLowerBaselineBelowCenter], [-0.5, 19.5])
+        XCTAssertEqual(P.hintAlpha(dark: true), 0.30)
+        XCTAssertEqual(P.hintAlpha(dark: false), 0.25)
+        // Lề trong ảnh SF Symbol trừ ra: 22.5pt → lề cạnh 5.5 − 1.35, đáy 4.5 − 2.025.
+        let ins = P.iconContentInsets(p)
+        XCTAssertEqual(ins.side, 4.15, accuracy: 0.001)
+        XCTAssertEqual(ins.bottom, 2.475, accuracy: 0.001)
+        // iPhone KHÔNG đổi.
+        XCTAssertEqual(KeyGeometry.Typography.lowercaseSize, 24.5)
+        XCTAssertEqual(KeyGeometry.Typography.keycapSize, 22.7)
+    }
+
+    /// Baseline iPad theo TÂM phím: phím 50 dọc → baseline 43 (cách đáy 7 như stock 50.5);
+    /// phím 65 ngang → 54.75 (stock 68: 56.25 — cùng 22.25 dưới tâm).
+    func testPadLetterBaselineFollowsKeyCenter() {
+        typealias T = KeyGeometry.Typography
+        let p = T.Pad.portrait, l = T.Pad.landscape
+        XCTAssertEqual(50 / 2 + p.letterBaselineBelowCenter, 43)
+        XCTAssertEqual(65 / 2 + l.letterBaselineBelowCenter, 54.75)
+        // UIButton căn giữa hộp dòng Compact 22 (asc 0.952, desc −0.241) trên phím 50:
+        // baseline tự nhiên 25 + 7.82 = 32.82 → dời xuống 10.18 để về 43.
+        let dy = T.offsetY(toBaseline: 43, keyHeight: 50, ascender: 0.952 * 22, descender: -0.241 * 22)
+        XCTAssertEqual(dy, 10.18, accuracy: 0.01)
+        // offsetY(toBaseline:) trùng titleOffsetY của iPhone khi target = baseline iPhone.
+        XCTAssertEqual(T.offsetY(toBaseline: T.baselineFromTop(keyHeight: 44), keyHeight: 44,
+                                 ascender: 23.3, descender: -5.9),
+                       T.titleOffsetY(keyHeight: 44, ascender: 23.3, descender: -5.9), accuracy: 1e-9)
+    }
+
     func testNearestSplitsGapByDistance() {
         let upper = CGRect(x: 0, y: 0, width: 40, height: 44)
         let lower = CGRect(x: 0, y: 54, width: 40, height: 44)   // khe 10
@@ -230,6 +280,43 @@ final class KeyGeometryTests: XCTestCase {
         kb.debugSetPlane(numbers: true)
         kb.setNeedsLayout(); kb.layoutIfNeeded()
         try check("7", size: T.size(for: "7", compact: c), "plane số")
+    }
+
+    /// iPad (chạy trên simulator iPad): chữ Compact 22 hoa lẫn thường, baseline 18 dưới tâm
+    /// phím, ký tự phụ Compact 12.5 baseline 8.75 trên tâm; plane số 22, 8.5 dưới tâm.
+    @MainActor func testPadLabelsSitOnStockBaseline() throws {
+        try XCTSkipUnless(isPad)
+        let kb = KeyboardView(needsGlobe: true, inputController: nil, onKey: { _ in })
+        let host = UIView(frame: CGRect(x: 0, y: 0, width: 834, height: 240))
+        host.addSubview(kb)
+        kb.frame = host.bounds
+        kb.layoutIfNeeded()
+        let P = KeyGeometry.Typography.Pad.portrait
+        func check(_ title: String, size: CGFloat, below: CGFloat, hint: String?, _ note: String) throws {
+            let b = try XCTUnwrap(kb.debugKeyButton(title), note)
+            b.layoutIfNeeded()
+            let l = try XCTUnwrap(b.titleLabel), f = try XCTUnwrap(l.font)
+            XCTAssertEqual(f.pointSize, size, accuracy: 0.01, note)
+            if KeyboardView.hasCompactFont {
+                XCTAssertTrue(f.fontName.localizedCaseInsensitiveContains("compact"), f.fontName)
+            }
+            let baseline = l.frame.midY + (f.ascender + f.descender) / 2
+            XCTAssertEqual(baseline - b.bounds.height / 2, below, accuracy: 0.5, "\(note) h=\(b.bounds.height)")
+            guard let hint else { return }
+            let h = try XCTUnwrap(b.subviews.compactMap { $0 as? UILabel }.first { $0.text == hint }, note)
+            let hf = try XCTUnwrap(h.font)
+            XCTAssertEqual(hf.pointSize, P.hintSize, accuracy: 0.01, note)
+            XCTAssertEqual(b.bounds.height / 2 - (h.frame.minY + hf.ascender), P.hintBaselineAboveCenter,
+                           accuracy: 0.5, "\(note) hint")
+        }
+        let lowerFirst = kb.debugKeyButton("q") != nil
+        try check(lowerFirst ? "q" : "Q", size: P.letterSize, below: P.letterBaselineBelowCenter, hint: "1", "ban đầu")
+        try XCTUnwrap(kb.debugControl("Shift")).sendActions(for: .touchDown)
+        kb.layoutIfNeeded()
+        try check(lowerFirst ? "Q" : "q", size: P.letterSize, below: P.letterBaselineBelowCenter, hint: "1", "sau shift")
+        kb.debugSetPlane(numbers: true)
+        kb.setNeedsLayout(); kb.layoutIfNeeded()
+        try check("7", size: P.digitSize, below: P.digitBaselineBelowCenter, hint: nil, "plane số")
     }
 
     /// Chạm sát đỉnh vùng phím (khe trên q) vẫn ra q (trước: dời lên 4pt → ra ngoài → mất).
