@@ -28,6 +28,7 @@ import com.viettelex.keyboard.EmojiData
 import com.viettelex.keyboard.ClipboardHistory
 import com.viettelex.keyboard.EmojiRecents
 import com.viettelex.keyboard.FieldTraits
+import com.viettelex.keyboard.FutoSwipe
 import com.viettelex.keyboard.Key
 import com.viettelex.keyboard.KeyboardData
 import com.viettelex.keyboard.KeyboardSession
@@ -122,22 +123,42 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     private var swipeDecoder: SwipeDecoder? = null
     private val swipeLock = Any()
     private var swipeSetting = false
+    /** FUTO Swipe (thử nghiệm, mặc định tắt): null = tắt ⇒ không tải model. Khoá swipeLock. */
+    private var futo: FutoSwipe? = null
+    private var futoSetting = false
     private var swipeFieldOk = false
     private var accessibility: AccessibilityManager? = null
     private val touchExplorationListener = AccessibilityManager.TouchExplorationStateChangeListener { updateSwipeTyping() }
 
+    /**
+     * Cache setting (prefs.all + parse gõ tắt ≈ vài trăm µs–ms) — trước đây đọc lại 2–3 lần mỗi
+     * lần focus ô (onStartInput + onStartInputView + theme). App/IME cùng process nên mọi thay
+     * đổi pref đi qua [prefListener] ⇒ xoá cache ở đó.
+     */
+    private var settingsCache: KeyboardSettings? = null
+    private fun settings(): KeyboardSettings = settingsCache ?: VTPrefs.settings(prefs).also { settingsCache = it }
+    /** Mẫu câu đã nạp (asset YAML / pref JSON) — nạp lười lần đầu cần, xoá khi pref đổi. */
+    private var templatesCache: List<TemplateItem>? = null
+    /** Pref đổi từ lần so theme trước ⇒ phải dựng lại ImeTheme để so chữ ký. */
+    private var themeStale = true
+    private var themeUiMode = -1
+
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        settingsCache = null
+        themeStale = true
+        if (key == Keys.USER_TEMPLATES || key == Keys.TEMPLATES_ENABLED) templatesCache = null
         // App vừa "Xóa từ đã học": bỏ model trong RAM NGAY (không bao giờ ghi đè lại).
         if (key == Keys.USERLM_RESET_AT) model.reloadAfterExternalErase()
         // Bật/tắt gõ vuốt trong app khi bàn phím đang mở (ô Thử gõ).
-        else if (key == Keys.SWIPE_TYPING) { swipeSetting = VTPrefs.settings(prefs).swipeTyping; updateSwipeTyping() }
-        else if (key == Keys.SWIPE_ENGLISH) session.swipeEnglish = VTPrefs.settings(prefs).swipeEnglish
-        else if (key == Keys.SMART_TOUCH) { smartTouchSetting = VTPrefs.settings(prefs).smartTouch; warmSmartTouch() }
-        else if (key == Keys.HARDWARE_TELEX) hwSetting = VTPrefs.settings(prefs).hardwareTelex
+        else if (key == Keys.SWIPE_TYPING) { swipeSetting = settings().swipeTyping; updateSwipeTyping() }
+        else if (key == Keys.SWIPE_ENGLISH) session.swipeEnglish = settings().swipeEnglish
+        else if (key == Keys.SWIPE_FUTO) { futoSetting = settings().swipeFuto; updateSwipeTyping() }
+        else if (key == Keys.SMART_TOUCH) { smartTouchSetting = settings().smartTouch; warmSmartTouch() }
+        else if (key == Keys.HARDWARE_TELEX) hwSetting = settings().hardwareTelex
         // Bật/tắt kiểu gõ trong app khi bàn phím đang mở (ô Thử gõ) → áp ngay, không đợi mở lại.
-        else if (key in Keys.ENGINE_KEYS) session.bridge.applySettings(VTPrefs.settings(prefs))
+        else if (key in Keys.ENGINE_KEYS) session.bridge.applySettings(settings())
         // Tắt lịch sử clipboard trong app: bỏ bản RAM (app đã xoá file).
-        else if (key == Keys.CLIPBOARD_HISTORY) syncClipHistory(VTPrefs.settings(prefs).clipboardHistory)
+        else if (key == Keys.CLIPBOARD_HISTORY) syncClipHistory(settings().clipboardHistory)
     }
 
     override fun onCreate() {
@@ -213,11 +234,15 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         val t0 = SystemClock.elapsedRealtime()
         super.onStartInputView(info, restarting)
         // Đổi theme/ảnh nền trong app → dựng lại input view (màu/Paint tạo sẵn trong view).
-        if (theme != null && freshTheme().signature != theme?.signature) setInputView(onCreateInputView())
+        // Chỉ dựng ImeTheme để so khi pref đổi hoặc sáng/tối hệ thống đổi (không mỗi lần focus ô).
+        val uiMode = resources.configuration.uiMode
+        if (theme != null && (themeStale || uiMode != themeUiMode) && freshTheme().signature != theme?.signature)
+            setInputView(onCreateInputView())
+        themeStale = false; themeUiMode = uiMode
         val kb = keyboard ?: return
         val st = strip ?: return
         val th = theme ?: return
-        val settings = VTPrefs.settings(prefs)
+        val settings = settings()
         DebugLog.configure(this, settings.debugTouchLog)
         // Đã gõ phím cứng trên ô này (onStartInput đã dựng ô, tracker/engine đang sống):
         // KHÔNG dựng lại từ EditorInfo cũ (initialSel đã lỗi thời) — chỉ lo phần giao diện.
@@ -230,6 +255,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         if (session.recordClip(field.isSecure, onlyIfNew = true)) saveClipHistory()
         closeClipboardPane()
         swipeSetting = settings.swipeTyping
+        futoSetting = settings.swipeFuto
         // Chỉ ô chữ ghi COMMIT thường: không secure/passthrough (URI, email, mật khẩu hiện,
         // filter), không TYPE_NULL, không ô URL, không app phải ghi bằng key event.
         swipeFieldOk = !field.isSecure && !field.passthrough && !field.rawKeys && !proxy.uriField &&
@@ -248,7 +274,8 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         kb.setOneHand(if (th.tablet) OneHandSide.OFF else OneHandSide.fromPref(settings.oneHandMode))
         kb.setEditHasSelection(info.initialSelStart >= 0 && info.initialSelStart != info.initialSelEnd)
         st.setExtras(clipButton = settings.clipboardHistory, incognito = session.incognito, open = false)
-        val templates = if (settings.templatesEnabled) VTPrefs.templates(this, prefs) else emptyList()
+        val templates = if (settings.templatesEnabled)
+            templatesCache ?: VTPrefs.templates(this, prefs).also { templatesCache = it } else emptyList()
         kb.configure(field.returnLabel, field.kind, needsGlobe(), settings.showSpaceLogo,
             settings.templatesEnabled, templates,
             th.dp(KeyLayout.keyAreaDp(th.tablet, th.landscape, settings.rowHeightAdjust, settings.numberRow)),
@@ -321,6 +348,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         swipeFieldOk = false
+        synchronized(swipeLock) { futo?.release() }   // FUTO Swipe: nhả ~2.5 MB khi ẩn
         handler.removeCallbacks(autoShiftRun); handler.removeCallbacks(suggestRun)
         trackpadMoved = false                  // ô đóng: không auto-shift/gợi ý lúc nhả trackpad
         keyboard?.onHidden()
@@ -330,6 +358,24 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         strip?.onHidden()
         root?.balloon?.hide()
         session.finishInput()
+    }
+
+    /**
+     * Hệ thống thiếu RAM khi bàn phím đang ẩn: nhả dữ liệu dựng lại được (trie chọn phím thông
+     * minh, decoder gõ vuốt, cache mẫu câu) — lần hiện kế tự dựng lại trên worker.
+     */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        // FUTO Swipe (thử nghiệm): nhả ~2.5 MB khi áp lực bộ nhớ (tải lại lười ở lần vuốt/hiện sau)
+        @Suppress("DEPRECATION")
+        if (!inputShown || level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW)
+            synchronized(swipeLock) { futo?.release() }
+        @Suppress("DEPRECATION")
+        if (level < android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND || inputShown) return
+        TelexKeyPrior.release()
+        synchronized(swipeLock) { swipeDecoder = null }
+        templatesCache = null
+        settingsCache = null
     }
 
     override fun onComputeInsets(outInsets: InputMethodService.Insets) {
@@ -375,7 +421,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         fieldReady = false
         hwTyped = false
         hwConsumed.clear()
-        val settings = VTPrefs.settings(prefs)
+        val settings = settings()
         hwSetting = settings.hardwareTelex
         if (hwSetting && hardKeyboardPresent()) configureField(attribute, settings)
     }
@@ -409,7 +455,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
      */
     private fun onHardwareKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (!hwSetting || currentInputConnection == null) return false
-        if (!fieldReady) configureField(currentInputEditorInfo ?: return false, VTPrefs.settings(prefs))
+        if (!fieldReady) configureField(currentInputEditorInfo ?: return false, settings())
         if (!hwSetting || field.isSecure || field.passthrough || field.rawKeys) return false
         val meta = event.metaState
         val k = HardwareKeys.classify(keyCode, meta, event.getUnicodeChar(meta))
@@ -499,7 +545,8 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
 
     /** Dựng trie prior (~vài chục ms) trên worker một lần; chưa xong ⇒ router cũ. */
     private fun warmSmartTouch() {
-        if (smartTouchSetting && TelexKeyPrior.sharedIfReady == null) worker().post { TelexKeyPrior.warmUp() }
+        if (!smartTouchSetting) { TelexKeyPrior.release(); return }   // tắt ⇒ nhả trie (0 RAM)
+        if (TelexKeyPrior.sharedIfReady == null) worker().post { if (smartTouchSetting) TelexKeyPrior.warmUp() }
     }
 
     /** Gọi lúc chạm phím chữ (main): P(phím | từ đang gõ), null = không đổi phím. */
@@ -518,17 +565,32 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         if (!on) {
             keyboard?.swipeTyping = false
             if (::session.isInitialized) session.setSwipeTyping(false)
-            synchronized(swipeLock) { swipeDecoder = null }
+            synchronized(swipeLock) { swipeDecoder = null; futo = null }
             return
         }
-        if (swipeDecoder == null) synchronized(swipeLock) { swipeDecoder = SwipeDecoder() }
+        val fresh = swipeDecoder == null
+        if (fresh) synchronized(swipeLock) { swipeDecoder = SwipeDecoder() }
+        updateFuto()
         session.setSwipeTyping(true)
+        if (fresh) keyboard?.swipeTyping = false   // decoder mới (sau onTrimMemory) ⇒ phát lại layout
         keyboard?.swipeTyping = true      // → onSwipeLayout khi plane chữ đã dựng
+    }
+
+    /** Công tắc FUTO Swipe: bật ⇒ tạo + tải model ở nền (nhả lúc ẩn thì tải lại); tắt ⇒ bỏ. */
+    private fun updateFuto() {
+        val f = synchronized(swipeLock) {
+            if (!futoSetting) { futo = null; return }
+            futo ?: FutoSwipe { AssetBlobs.provider(assets)(Keys.ASSET_FUTO) }.also { f ->
+                swipeDecoder?.layout?.let { f.setLayout(it) }
+                futo = f
+            }
+        }
+        worker().post { synchronized(swipeLock) { if (futo === f) f.load() } }
     }
 
     override fun onSwipeLayout(layout: SwipeLayout) {
         val dec = swipeDecoder ?: return
-        synchronized(swipeLock) { dec.setLayout(layout) }
+        synchronized(swipeLock) { dec.setLayout(layout); futo?.setLayout(layout) }
         // Dựng template nền (~320 KB) — một luồng nhờ swipeLock; decode chờ nếu chưa xong.
         worker().post {
             synchronized(swipeLock) { if (swipeDecoder === dec) dec.prepare() }
@@ -555,7 +617,12 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         // ctx.english != null ⇒ thêm ứng viên tiếng Anh (công tắc "Vuốt từ tiếng Anh"); điểm
         // cá nhân của từ tiếng Anh = ctx.englishWord (không có bigram tĩnh — chỉ cho âm tiết Việt).
         val cands = synchronized(swipeLock) {
-            dec.decode(path, SwipeSuggest.TOP_K, ctx.folded, ctx.english, if (ctx.english != null) ctx.englishWord else null)
+            val enCtx = if (ctx.english != null) ctx.englishWord else null
+            // FUTO Swipe (thử nghiệm): null khi tắt / model chưa sẵn ⇒ SHARK2 như cũ
+            futo?.decode(path, SwipeSuggest.TOP_K, ctx.folded, ctx.english, enCtx, dec)
+                ?: dec.decode(path, SwipeSuggest.TOP_K, ctx.folded, ctx.english, enCtx).also {
+                    futo?.let { f -> worker().post { synchronized(swipeLock) { if (futo === f) f.load() } } }
+                }
         }
         val choice = SwipeSuggest.choose(cands, ctx.word, case, ctx.lambdaFreq)
         if (TouchLog.enabled) TouchLog.write(String.format(java.util.Locale.ROOT, "swipe decode %.1fms pts=%d cands=%d",

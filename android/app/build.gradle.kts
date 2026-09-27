@@ -57,3 +57,7 @@ dependencies {
     }
     testImplementation("junit:junit:4.13.2")
 }
+// Bộ test chậm (benchmark ImePerfBenchTest): VT_SLOW_TESTS=1 bật; là input để đổi giá trị thì chạy lại.
+tasks.withType<Test>().configureEach {
+    inputs.property("vtSlowTests", System.getenv("VT_SLOW_TESTS") ?: "")
+}

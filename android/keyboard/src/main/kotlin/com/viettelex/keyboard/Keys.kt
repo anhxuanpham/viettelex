@@ -24,6 +24,8 @@ object Keys {
     /** Gõ vuốt (thử nghiệm, mặc định tắt). */
     const val SWIPE_TYPING = "swipeTyping"
     const val SWIPE_ENGLISH = "swipeEnglish"
+    /** Giải mã vuốt bằng mô hình FUTO Swipe (thử nghiệm, mặc định TẮT — FutoSwipe). */
+    const val SWIPE_FUTO = "swipeFuto"
     /** Chọn phím theo ngữ cảnh lúc chạm (thử nghiệm, mặc định BẬT) — TouchTarget. */
     const val SMART_TOUCH = "smartTouch"
     /** Gõ Telex bằng bàn phím cứng (tablet, DeX, Chromebook, BT/USB) — mặc định BẬT. */
@@ -37,6 +39,13 @@ object Keys {
     val ENGINE_KEYS = setOf(SIMPLE_TELEX, FREE_MARKING, QUICK_TELEX, MODERN_TONE, CONTEXTUAL_ENGLISH,
         AUTO_FIX_ADJACENT, TEENCODE, AUTO_RESTORE, LIVE_SPELL_CHECK, SHORTCUTS_ENABLED, SHORTCUTS, VNI_MODE)
     const val SHOW_SUGGESTIONS = "showSuggestions"
+    /**
+     * Chip "Thêm dấu" hiện TỰ ĐỘNG trên thanh gợi ý (Bool, mặc định TẮT — ưu tiên gõ trơn):
+     * tắt ⇒ không đọc chữ trước con trỏ / không chạy AddTones ở mỗi dấu cách.
+     */
+    const val ADD_TONES_CHIP = "addTonesChip"
+    /** Chip số (đọc số thành chữ / tiền / máy tính nhanh) — mặc định BẬT; tắt ⇒ không đọc context sau chữ số. */
+    const val NUMBER_CHIPS = "numberChips"
     const val FILTER_SENSITIVE = "filterSensitive"
     const val TEMPLATES_ENABLED = "templatesEnabled"
     const val SHOW_SPACE_LOGO = "showSpaceLogo"
@@ -90,6 +99,8 @@ object Keys {
     const val ASSET_EN_LEXICON = "enlexicon.bin"
     const val ASSET_BIGRAM = "vnbigram.bin"
     const val ASSET_LM = "vnlm.bin"
+    /** Encoder FUTO Swipe fp16 (FUTO Model Weights License 1.0 — chỉ đọc khi bật SWIPE_FUTO). */
+    const val ASSET_FUTO = "futoswipe.bin"
     const val ASSET_EMOJI_SUGGEST = "emojisuggest.bin"
     const val ASSET_SEED = "seed.tsv"
     /** Emoji + khoá tìm tiếng Việt + kaomoji (Scripts/gen-emoji-data.py, chung iOS). */

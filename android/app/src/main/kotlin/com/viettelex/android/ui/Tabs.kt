@@ -266,6 +266,12 @@ fun TinhNangTab() {
         RowDivider()
         BoolToggle(Keys.FILTER_SENSITIVE, Prefs.D.filterSensitive, "Lọc từ nhạy cảm khỏi gợi ý", "Không chủ động gợi ý từ tục — gõ tay và học vẫn bình thường.")
         RowDivider()
+        BoolToggle(Keys.ADD_TONES_CHIP, Prefs.D.addTonesChip, "Chip “Thêm dấu”",
+            "Gõ xong một câu không dấu, thanh gợi ý tự mời thêm dấu cả câu (hom nay troi dep → hôm nay trời đẹp). Tắt mặc định để gõ nhẹ nhất: khi tắt bàn phím không phân tích câu ở mỗi dấu cách.")
+        RowDivider()
+        BoolToggle(Keys.NUMBER_CHIPS, Prefs.D.numberChips, "Chip số",
+            "Sau khi gõ số: đọc số thành chữ, định dạng tiền, tính nhanh phép tính (12*3 → 36).")
+        RowDivider()
         BoolToggle(Keys.TEMPLATES_ENABLED, Prefs.D.templatesEnabled, "Mẫu câu", "Nút ☰ trên bàn phím chèn nhanh câu soạn sẵn — quản lý ở tab Mẫu Câu.")
         RowDivider()
         var showDict by remember { mutableStateOf(false) }
@@ -300,6 +306,10 @@ fun TinhNangTab() {
             RowDivider()
             BoolToggle(Keys.SWIPE_ENGLISH, Prefs.D.swipeEnglish, "Vuốt từ tiếng Anh",
                 "Vuốt ra cả từ tiếng Anh xen trong câu: check, mail, file, meeting… Khi một nét vuốt vừa là từ Việt vừa là từ Anh (the/thế, can/cần), bàn phím ưu tiên tiếng Việt — trừ khi đang gõ tiếng Anh — và luôn để phương án kia trên thanh gợi ý.")
+            RowDivider()
+            // Ghi công bắt buộc theo FUTO Model Weights License 1.0 (docs/DATA-SOURCES.md)
+            BoolToggle(Keys.SWIPE_FUTO, Prefs.D.swipeFuto, "Mô hình nơ-ron gõ vuốt",
+                "Thêm mạng nơ-ron nhận dạng nét vuốt (chạy hoàn toàn trên máy) để chấm cùng bộ giải mã hiện có. Tốn thêm khoảng 3 MB bộ nhớ khi bàn phím mở. Powered by FUTO Swipe.")
         }
     }
     VTSection(header = "Giao diện", footer = APPLY_NOTE) {
@@ -546,6 +556,12 @@ fun GioiThieuTab(plus: com.viettelex.android.plus.PlusController, onOpenPlus: ()
         // Ghi công theo giấy phép dữ liệu bigram gõ vuốt (vnbigram.bin) — docs/DATA-SOURCES.md
         VTRow(onClick = { openUrl(ctx, "https://github.com/ptrinh/viettelex/blob/main/docs/DATA-SOURCES.md") }) {
             Text("Dữ liệu gõ vuốt: thống kê từ Wikipedia, Wikisource… tiếng Việt (CC BY-SA 4.0) và Tatoeba (CC BY 2.0 FR)",
+                style = VTType.footnote, color = c.secondary)
+        }
+        RowDivider()
+        // Ghi công bắt buộc theo FUTO Model Weights License 1.0 (mô hình gõ vuốt thử nghiệm)
+        VTRow(onClick = { openUrl(ctx, "https://github.com/ptrinh/viettelex/blob/main/docs/DATA-SOURCES.md#futo-swipe") }) {
+            Text("Gõ vuốt (thử nghiệm) powered by FUTO Swipe — mô hình theo FUTO Model Weights License 1.0",
                 style = VTType.footnote, color = c.secondary)
         }
         RowDivider()

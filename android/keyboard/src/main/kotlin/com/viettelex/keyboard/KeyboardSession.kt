@@ -207,6 +207,10 @@ class KeyboardSession(
     private var tonesDismissed: String? = null
     private var tonesCacheBefore: String? = null
     private var tonesCachePlan: AddTones.Plan? = null
+    /** Công tắc chip "Thêm dấu" tự hiện ([KeyboardSettings.addTonesChip]) — tắt ⇒ 0 việc mỗi dấu cách. */
+    private var addTonesChip = false
+    /** Công tắc chip số ([KeyboardSettings.numberChips]) — tắt ⇒ không đọc context sau chữ số. */
+    private var numberChipsOn = true
 
     /** Gõ vuốt bật cho ô hiện tại (IME quyết: setting + loại ô + TalkBack). */
     var swipeTypingActive = false
@@ -253,7 +257,9 @@ class KeyboardSession(
         lastCommit = null
         clearSwipe()
         setSwipeTyping(false)
-        tonesUndo = null; tonesDismissed = null; tonesCacheBefore = null
+        tonesUndo = null; tonesDismissed = null; tonesCacheBefore = null; tonesCachePlan = null
+        addTonesChip = settings.addTonesChip
+        numberChipsOn = settings.numberChips
     }
 
     /** IME bật/tắt gõ vuốt cho ô hiện tại (sau [startInput]). Tắt ⇒ bridge thôi ghi checkpoint. */
@@ -648,7 +654,7 @@ class KeyboardSession(
     /** Chip số cho token trước con trỏ (đọc chữ / định dạng tiền / máy tính nhanh). */
     private fun refreshNumberChip(proxy: TextProxy): String? {
         numberChip = null
-        if (numberSpaces > 1) return null
+        if (!numberChipsOn || numberSpaces > 1) return null
         val before = proxy.contextBeforeInput() ?: return null
         numberChip = NumberChips.chip(before)
         return numberChip?.display
@@ -879,6 +885,7 @@ class KeyboardSession(
 
     /** Kế hoạch thêm dấu cho chữ trước con trỏ (cache theo văn bản); null = không mời. */
     private fun addTonesPlan(proxy: TextProxy): AddTones.Plan? {
+        if (!addTonesChip) return null
         if (!PlusGate.isUnlocked(PlusFeature.SENTENCE_DIACRITICS)) return null
         if (bridge.isComposing || !proxy.canReEdit || proxy.hasSelection) return null
         val before = proxy.contextBeforeInput()

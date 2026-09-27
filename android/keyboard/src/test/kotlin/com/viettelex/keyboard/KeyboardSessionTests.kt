@@ -283,6 +283,22 @@ class KeyboardSessionTests {
         assertEquals("gia một triệu hai trăm năm mươi nghìn", p.text)
     }
 
+    /** Công tắc chip số TẮT: không chip, và lượt gợi ý sau chữ số không đọc context cho nó. */
+    @Test fun testNumberChipSwitchOffCostsNothing() {
+        val on = session(traits = FieldTraits()); val pOn = MockProxy()
+        on.typeMixed(pOn, "gia 1250000")
+        pOn.contextReads = 0
+        assertNotNull(on.suggestionsNow(pOn)!!.number)
+        val readsOn = pOn.contextReads
+        val off = session(KeyboardSettings(numberChips = false), FieldTraits()); val p = MockProxy()
+        off.typeMixed(p, "gia 1250000")
+        p.contextReads = 0
+        assertNull(off.suggestionsNow(p)!!.number)
+        assertTrue("tắt chip số phải đọc context ít hơn ($readsOn → ${p.contextReads})", p.contextReads < readsOn)
+        assertTrue(KeyboardSettings().numberChips)
+        assertFalse(KeyboardSettings.load { if (it == Keys.NUMBER_CHIPS) false else null }.numberChips)
+    }
+
     @Test fun testNumberChipShorthandChainsToWords() {
         val s = session(traits = FieldTraits()); val p = MockProxy()
         s.typeMixed(p, "1tr2")
