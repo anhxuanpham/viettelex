@@ -53,6 +53,9 @@ struct KeyboardSettings {
     /// tiếng Anh khi hình vuốt thắng rõ / đang trong mạch Anh, từ điển chỉ nạp khi gõ vuốt
     /// bật. Giống Android.
     var swipeEnglish = true
+    /// Kiểu gõ VNI (mặc định TẮT = Telex): số 1–9/0 mang dấu KHI ĐANG SOẠN TỪ (hoặc sửa
+    /// dấu từ ngay trước con trỏ); ngoài từ vẫn là số. Engine giống macOS (`vniMode`).
+    var vniMode = false
     /// Gõ tắt (mặc định BẬT, bảng mặc định RỖNG như macOS — người dùng tự thêm hoặc bấm
     /// "Thêm bộ gợi ý" trong app). Bảng lưu App Group key "shortcuts" ([khoá: nội dung]).
     var shortcutsEnabled = true
@@ -76,6 +79,7 @@ struct KeyboardSettings {
         if d.object(forKey: "reEditWord") != nil { s.reEditWord = d.bool(forKey: "reEditWord") }
         if d.object(forKey: "swipeTyping") != nil { s.swipeTyping = d.bool(forKey: "swipeTyping") }
         if d.object(forKey: "swipeEnglish") != nil { s.swipeEnglish = d.bool(forKey: "swipeEnglish") }
+        if d.object(forKey: "vniMode") != nil { s.vniMode = d.bool(forKey: "vniMode") }
         if d.object(forKey: ShortcutFile.enabledKey) != nil { s.shortcutsEnabled = d.bool(forKey: ShortcutFile.enabledKey) }
         if s.shortcutsEnabled, let dict = d.dictionary(forKey: ShortcutFile.storeKey) as? [String: String] {
             s.shortcuts = ShortcutTable(dict)
@@ -169,6 +173,7 @@ final class EngineBridge {
         engine.modernTone = settings.modernTone
         engine.teencode = settings.teencode
         engine.contextualEnglish = settings.contextualEnglish
+        engine.vniMode = settings.vniMode
     }
 
     /// A letter key ("a"…"z", already cased by the shift state).
@@ -189,6 +194,48 @@ final class EngineBridge {
         letterUndo?.settled = settledCommit
     }
 
+    /// Kiểu gõ đang là VNI (controller định tuyến phím số qua `vniDigit`).
+    var vniMode: Bool { settings.vniMode }
+
+    /// Phím SỐ ở kiểu gõ VNI (hàng số hoặc plane 123). true = đã xử lý như phím của từ:
+    /// đang soạn từ ⇒ feed engine (áp dấu khi áp được, không thì số nằm trong từ — "mp3",
+    /// như macOS); engine trống ⇒ chỉ thử sửa dấu từ ngay trước con trỏ (1–5/0/7/8).
+    /// false = ngoài từ ⇒ caller chèn số như ký hiệu (boundary) — "2026" vẫn là số.
+    func vniDigit(_ ch: Character, proxy: TextProxyLike) -> Bool {
+        guard settings.vniMode, ch.isASCII, ch.isNumber, !proxy.isSecure, !passthrough else { return false }
+        if let open = swipeOpen {
+            // Từ vuốt đang mở: số chỉ SỬA từ (dấu) — không sửa được ⇒ ranh giới (chốt từ +
+            // số liền sau, không chèn dấu cách treo như phím chữ).
+            guard open.literal == nil, !engine.isEmpty else { return false }
+            let snapshot = engine
+            let before = engine.composed
+            let action = engine.feed(ch)
+            if case .replace(let bs, let insert) = action, bs > 0,
+               engine.composed != before + String(ch),
+               safeToApply(action, expected: before, proxy: proxy) {
+                letterUndo = nil
+                apply(action, literal: String(ch), proxy: proxy)
+                letterUndo = LetterUndo(engine: snapshot, removed: String(before.suffix(bs)),
+                                        inserted: insert, ownBoundary: false,
+                                        swipe: open, settled: settledCommit)
+                swipeOpen = SwipeOpen(fresh: false, accepted: open.accepted)
+                lastWasOwnBoundary = false
+                return true
+            }
+            engine = snapshot
+            return false
+        }
+        if !engine.isEmpty {
+            letter(ch, proxy: proxy)
+            return true
+        }
+        guard !lastWasOwnBoundary, settings.reEditWord, reachBackAllowed, isReEditKey(ch) else {
+            return false
+        }
+        letterUndo = nil
+        return seedWordBeforeCaret(then: ch, proxy: proxy)
+    }
+
     /// Phím chữ ngay sau từ vuốt đang mở: phím dấu Telex (s f r x j z w) BIẾN ĐỔI từ ⇒
     /// sửa từ đó (viet vuốt → việt, + s → viết). Phím khác (hoặc phím dấu không đổi
     /// gì) ⇒ dấu cách treo: chốt từ vuốt + " " rồi phím này mở từ mới. Cả hai huỷ được
@@ -197,7 +244,7 @@ final class EngineBridge {
         guard let open = swipeOpen else { return }
         let snapshot = engine
         let before = open.literal ?? engine.composed
-        if open.literal == nil, Self.isReEditKey(ch) {
+        if open.literal == nil, isReEditKey(ch) {
             let action = engine.feed(ch)
             if case .replace(let bs, let insert) = action, bs > 0,
                engine.composed != before + String(ch),
@@ -297,7 +344,7 @@ final class EngineBridge {
     private func letterCore(_ ch: Character, proxy: TextProxyLike) {
         let ownBoundary = lastWasOwnBoundary
         lastWasOwnBoundary = false
-        if engine.isEmpty, !ownBoundary, settings.reEditWord, reachBackAllowed, Self.isReEditKey(ch),
+        if engine.isEmpty, !ownBoundary, settings.reEditWord, reachBackAllowed, isReEditKey(ch),
            seedWordBeforeCaret(then: ch, proxy: proxy) {
             return                                    // sửa từ trên màn hình: không huỷ được
         }
@@ -547,13 +594,22 @@ final class EngineBridge {
     /// Phím được nạp lại từ trước con trỏ: CHỈ dấu thanh / huỷ dấu / móc (s f r x j
     /// z w). KHÔNG a e o d (user 26/09/2026): "to" + o phải ra "too" chứ không "tô" —
     /// mũ/đ chỉ sửa được qua ⌫ mở lại từ. Lọc rẻ trước khi trả giá đọc context.
-    static func isReEditKey(_ ch: Character) -> Bool {
+    /// VNI: tương ứng 1–5 (thanh), 0 (huỷ thanh), 7/8 (móc/trăng ≙ w) — KHÔNG 6/9
+    /// (mũ/đ ≙ a e o d). Chữ cái trong VNI luôn là chữ thường, không bao giờ sửa từ.
+    static func isReEditKey(_ ch: Character, vni: Bool = false) -> Bool {
+        if vni {
+            switch ch {
+            case "1", "2", "3", "4", "5", "0", "7", "8": return true
+            default: return false
+            }
+        }
         switch ch {
         case "s", "f", "r", "x", "j", "z", "w",
              "S", "F", "R", "X", "J", "Z", "W": return true
         default: return false
         }
     }
+    private func isReEditKey(_ ch: Character) -> Bool { Self.isReEditKey(ch, vni: settings.vniMode) }
 
     /// Engine rỗng, con trỏ đứng NGAY SAU một từ (không ở giữa từ, không vùng chọn):
     /// seed engine bằng từ đó rồi feed `ch`. Chỉ áp khi seed round-trip VÀ phím thật sự
@@ -619,6 +675,7 @@ final class EngineBridge {
         e.quickTelex = settings.quickTelex
         e.modernTone = settings.modernTone
         e.teencode = settings.teencode
+        e.vniMode = settings.vniMode
         for ch in raw { _ = e.feed(ch) }
         return e.composed
     }

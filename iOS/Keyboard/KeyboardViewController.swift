@@ -458,12 +458,20 @@ final class KeyboardViewController: UIInputViewController {
         case .replaceLastLetter(let s):
             // Huỷ đúng phím chữ vừa gõ (không được thì ⌫ như cũ) rồi chèn như ký hiệu.
             if !bridge.undoLastLetter(proxy: proxy) { bridge.backspace(proxy: proxy) }
-            commitAndLearn(bridge.boundary(s, proxy: proxy), accepted: openAccepted)
-            lastWord = nil; lastWord2 = nil
+            if let d = Self.singleDigit(s), bridge.vniDigit(d, proxy: proxy) {
+                // VNI: số vuốt xuống (iPad) trong từ = phím dấu
+            } else {
+                commitAndLearn(bridge.boundary(s, proxy: proxy), accepted: openAccepted)
+                lastWord = nil; lastWord2 = nil
+            }
             restoreUndo = nil; undoOfferActive = false
         case .text(let s):                            // numbers, symbols
-            commitAndLearn(bridge.boundary(s, proxy: proxy), accepted: openAccepted)
-            lastWord = nil; lastWord2 = nil            // dấu câu/ký hiệu = ngắt câu
+            if let d = Self.singleDigit(s), bridge.vniDigit(d, proxy: proxy) {
+                // VNI: số trong lúc soạn từ (hàng số / plane 123) mang dấu — phím của từ
+            } else {
+                commitAndLearn(bridge.boundary(s, proxy: proxy), accepted: openAccepted)
+                lastWord = nil; lastWord2 = nil            // dấu câu/ký hiệu = ngắt câu
+            }
             restoreUndo = nil; undoOfferActive = false
         case .space:
             let composedBefore = bridge.composedWord
@@ -572,6 +580,12 @@ final class KeyboardViewController: UIInputViewController {
             guard let self, gen == self.suggestionGen else { return }
             self.updateSuggestions()
         }
+    }
+
+    /// "0"…"9" đơn lẻ (phím số) — ứng viên phím dấu VNI; ký hiệu khác ⇒ nil.
+    private static func singleDigit(_ s: String) -> Character? {
+        guard s.count == 1, let c = s.first, c.isASCII, c.isNumber else { return nil }
+        return c
     }
 
     private var suggestionGen = 0

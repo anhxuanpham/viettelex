@@ -784,16 +784,41 @@ struct KieuGoSection: View {
     private var contextualEnglish = true
     @AppStorage("teencode", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var teencode = false
+    @AppStorage("vniMode", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var vniMode = false
+    @AppStorage("numberRow", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var numberRow = false
 
     var body: some View {
         Section {
-            settingToggle("Telex đơn giản", "Phím w đứng lẻ giữ nguyên là w, không thành ư.", isOn: $simpleTelex)
-            settingToggle("Bỏ dấu tự do", "Phím dấu đặt đâu cũng được, không cần đúng thứ tự.", isOn: $freeMarking)
-            settingToggle("Gõ nhanh (Quick Telex)", "Phụ âm đôi đầu từ thành phụ âm ghép: cc → ch, nn → ng, tt → th…", isOn: $quickTelex)
+            // Telex / VNI loại trừ nhau → segmented (như radio macOS). Chọn VNI TỰ BẬT hàng
+            // phím số (số là phím dấu — không có hàng số thì mỗi dấu phải chuyển plane 123);
+            // tắt lại được ở Tính năng → Giao diện.
+            Picker("Kiểu gõ", selection: Binding(
+                get: { vniMode ? "vni" : "telex" },
+                set: { v in
+                    let vni = v == "vni"
+                    if vni, !vniMode { numberRow = true }
+                    vniMode = vni
+                })) {
+                Text("Telex").tag("telex")
+                Text("VNI").tag("vni")
+            }
+            .pickerStyle(.segmented)
+            if vniMode {
+                Text("Gõ dấu bằng số khi đang gõ một từ: 1 sắc, 2 huyền, 3 hỏi, 4 ngã, 5 nặng, 6 mũ (â ê ô), 7 móc (ơ ư), 8 trăng (ă), 9 đ, 0 xoá dấu — tie6ng1 vie6t5 → tiếng việt. Ngoài từ, phím số vẫn gõ ra số. Chọn VNI tự bật Hàng phím số (tắt được ở Tính năng → Giao diện).")
+                    .font(.footnote).foregroundStyle(.secondary)
+            } else {
+                settingToggle("Telex đơn giản", "Phím w đứng lẻ giữ nguyên là w, không thành ư.", isOn: $simpleTelex)
+                settingToggle("Bỏ dấu tự do", "Phím dấu đặt đâu cũng được, không cần đúng thứ tự.", isOn: $freeMarking)
+                settingToggle("Gõ nhanh (Quick Telex)", "Phụ âm đôi đầu từ thành phụ âm ghép: cc → ch, nn → ng, tt → th…", isOn: $quickTelex)
+            }
             settingToggle("Bỏ dấu kiểu mới", "hoà, thuý thay vì hòa, thúy.", isOn: $modernTone)
             settingToggle("Quyết định theo ngữ cảnh", "Sau một từ tiếng Anh, từ nhập nhằng kế tiếp mà chuỗi phím tạo thành một từ tiếng Anh sẽ được giữ tiếng Anh thay vì tiếng Việt — “he is” → “he is”, không phải “he í”. Sau từ tiếng Việt hoặc không rõ thì để tiếng Việt — “sao í”.", isOn: $contextualEnglish)
             settingToggle("Gợi ý sửa lỗi chạm trượt", "Khi từ đang gõ không phải tiếng Việt, gợi ý từ đúng nếu bạn lỡ chạm phím bên cạnh: nbjeeuf → nhiều, ohims → phím, cahcs → cách. Chạm gợi ý để thay.", isOn: $autoFixAdjacent)
-            settingToggle("Chính tả teencode", "Chấp nhận cách viết khi chat: w/z/k thay cho qu/d/c (wá, zui zẻ, kó) và bíe, thík, gòy, ừk. Tắt = chỉ chính tả chuẩn, từ tiếng Anh như was, war, zoo giữ nguyên.", isOn: $teencode)
+            if !vniMode {
+                settingToggle("Chính tả teencode", "Chấp nhận cách viết khi chat: w/z/k thay cho qu/d/c (wá, zui zẻ, kó) và bíe, thík, gòy, ừk. Tắt = chỉ chính tả chuẩn, từ tiếng Anh như was, war, zoo giữ nguyên.", isOn: $teencode)
+            }
         } header: { Text("Kiểu gõ") } footer: {
             Text("Cài đặt áp dụng ngay lần mở bàn phím kế tiếp.")
         }
@@ -835,7 +860,7 @@ struct TinhNangSections: View {
         Section {
             settingToggle("Tự khôi phục từ tiếng Anh", "Từ không phải tiếng Việt tự trả về như đã gõ (google, github…).", isOn: $autoRestore)
             settingToggle("Kiểm tra chính tả khi gõ", "Ngừng bỏ dấu ngay khi từ không thể là tiếng Việt.", isOn: $liveSpellCheck)
-            settingToggle("Sửa dấu từ đã gõ", "Xoá dấu cách ngay sau một từ để gõ tiếp dấu cho từ đó (tháy ␣ ⌫ a → thấy); hoặc đặt con trỏ ngay sau từ rồi gõ phím dấu s f r x j: viêt + j → việt.", isOn: $reEditWord)
+            settingToggle("Sửa dấu từ đã gõ", "Xoá dấu cách ngay sau một từ để gõ tiếp dấu cho từ đó (tháy ␣ ⌫ a → thấy); hoặc đặt con trỏ ngay sau từ rồi gõ phím dấu s f r x j: viêt + j → việt (VNI: số 1–5, 0).", isOn: $reEditWord)
         } header: { Text("Chính tả") }
 
         ShortcutsSection()

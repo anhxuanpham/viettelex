@@ -106,10 +106,10 @@ class HardwareKeysTest {
 
     private val tracker = SelectionTracker()
 
-    private inner class Rig(initial: String = "") {
+    private inner class Rig(initial: String = "", settings: KeyboardSettings = KeyboardSettings()) {
         val ed = FakeEditor(initial)
         val p = IcProxy({ ed }, tracker).also { tracker.reset(ed.selStart, ed.selEnd); it.startInput(initial, true) }
-        val s = KeyboardSession(UserLangModel(), null) { 0L }.also { it.startInput(KeyboardSettings(), FieldTraits()) }
+        val s = KeyboardSession(UserLangModel(), null) { 0L }.also { it.startInput(settings, FieldTraits()) }
         /** Mô phỏng VietTelexIME.onHardwareKeyDown; trả true = nuốt (app không nhận phím). */
         fun key(keyCode: Int, meta: Int = 0, unicode: Int = 0): Boolean {
             val k = HardwareKeys.classify(keyCode, meta, unicode)
@@ -127,6 +127,7 @@ class HardwareKeysTest {
         fun type(text: String, meta: Int = 0) {
             for (c in text) when (c) {
                 ' ' -> assertTrue(key(KeyEvent.KEYCODE_SPACE, meta))
+                in '0'..'9' -> assertTrue(key(KeyEvent.KEYCODE_0 + (c - '0'), meta, c.code))
                 else -> assertTrue(key(code(c), meta))
             }
         }
@@ -185,5 +186,18 @@ class HardwareKeysTest {
         assertFalse(r.key(KeyEvent.KEYCODE_ENTER, 0, '\n'.code)) // Enter thật tới app
         assertFalse(r.s.bridge.isComposing)
         assertEquals("được, google", r.ed.text)
+    }
+
+    @Test fun vniDigitsOnHardwareKeyboard() {
+        val r = Rig(settings = KeyboardSettings(vniMode = true))
+        r.type("tie6ng1 vie6t5 ")
+        assertEquals("tiếng việt ", r.ed.text)
+        r.type("2026 ")                                          // ngoài từ: số
+        assertEquals("tiếng việt 2026 ", r.ed.text)
+        // Telex: số trên phím cứng vẫn là ranh giới
+        val t = Rig()
+        t.type("vieetj1")
+        assertEquals("việt1", t.ed.text)
+        assertFalse(t.s.bridge.isComposing)
     }
 }

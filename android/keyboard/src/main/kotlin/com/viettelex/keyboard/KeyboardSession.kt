@@ -331,9 +331,16 @@ class KeyboardSession(
         when (key) {
             is Key.Letter -> { bridge.letter(key.ch, proxy); clearUndo() }
             is Key.Text -> {
-                commitAndLearn(bridge.boundary(key.text, proxy, expand = expand))
-                lastWord = null; lastWord2 = null
-                clearUndo()
+                // VNI: số trong lúc soạn từ (hàng số / plane 123 / phím cứng) mang dấu — phím
+                // của từ. Sau từ tiếng Anh vuốt nguyên văn thì số chỉ là số.
+                val d = key.text.singleOrNull()
+                if (literal == null && d != null && bridge.vniDigit(d, proxy)) {
+                    clearUndo()
+                } else {
+                    commitAndLearn(bridge.boundary(key.text, proxy, expand = expand))
+                    lastWord = null; lastWord2 = null
+                    clearUndo()
+                }
             }
             Key.Space -> {
                 val composedBefore = bridge.composedWord

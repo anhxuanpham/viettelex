@@ -125,6 +125,7 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
         e.quickTelex = settings.quickTelex
         e.modernTone = settings.modernTone
         e.teencode = settings.teencode
+        e.vniMode = settings.vniMode
         if (contextual) e.contextualEnglish = settings.contextualEnglish
     }
 
@@ -145,7 +146,7 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
             return
         }
         val ownBoundary = afterOwnBoundary
-        val seedable = settings.reEditWords && engine.isEmpty && !afterOwnBoundary && ReEdit.isTransformKey(ch)
+        val seedable = settings.reEditWords && engine.isEmpty && !afterOwnBoundary && ReEdit.isTransformKey(ch, settings.vniMode)
         afterOwnBoundary = false
         checkpoint(ownBoundary)
         if (seedable && trySeed(ch, proxy)) return
@@ -163,6 +164,24 @@ class EngineBridge(settings: KeyboardSettings = KeyboardSettings()) {
         }
         apply(action, ch.toString(), proxy)
         recordUndo(action, before, ch.toString())
+    }
+
+    /** Kiểu gõ đang là VNI. */
+    val vniMode: Boolean get() = settings.vniMode
+
+    /**
+     * Phím SỐ ở kiểu gõ VNI (hàng số, plane 123, bàn phím cứng). true = đã xử lý như phím của
+     * từ: đang soạn ⇒ feed engine (áp dấu khi áp được, không thì số nằm trong từ — "mp3", như
+     * macOS); engine trống ⇒ chỉ thử sửa dấu từ ngay trước con trỏ (1–5/0/7/8). false = ngoài
+     * từ ⇒ caller chèn số như ký hiệu (boundary) — "2026" vẫn là số. Telex ⇒ luôn false.
+     */
+    fun vniDigit(ch: Char, proxy: TextProxy): Boolean {
+        if (!settings.vniMode || ch !in '0'..'9' || proxy.isSecure || passthrough) return false
+        if (!engine.isEmpty) { letter(ch, proxy); return true }
+        if (!settings.reEditWords || afterOwnBoundary || !ReEdit.isTransformKey(ch, true)) return false
+        undo.valid = false
+        checkpoint(false)
+        return trySeed(ch, proxy)
     }
 
     /**
