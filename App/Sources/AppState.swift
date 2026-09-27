@@ -1140,6 +1140,49 @@ final class AppState: @unchecked Sendable {
         get { defaults.bool(forKey: "axPromptShown") }
         set { defaults.set(newValue, forKey: "axPromptShown") }
     }
+
+    // MARK: - Công cụ văn bản / đồng bộ iCloud (không đọc trên hot path)
+
+    /// Hiện Thêm dấu + đổi chữ HOA/thường… trong menu VietTelex. Mặc định bật.
+    var textToolsInMenu: Bool {
+        get { defaults.object(forKey: "textToolsInMenu") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "textToolsInMenu") }
+    }
+
+    /// Phím tắt Thêm dấu cho vùng chọn: "off" (mặc định) / TextActionHotkey.choices.
+    var addTonesHotkey: String {
+        get { defaults.string(forKey: "addTonesHotkey") ?? "off" }
+        set { defaults.set(newValue, forKey: "addTonesHotkey") }
+    }
+
+    /// Setting đồng bộ iCloud theo key macOS (MacSyncStore.settings). nil = key lạ.
+    func syncedSetting(_ key: String) -> Bool? {
+        switch key {
+        case Key.simpleTelex: return simpleTelex
+        case Key.freeMarking: return freeMarking
+        case Key.quickTelex: return quickTelex
+        case Key.modernOrthography: return modernOrthography
+        case Key.contextualEnglish: return contextualEnglish
+        case Key.teencode: return teencode
+        case Key.autoRestore: return autoRestore
+        case Key.liveSpellCheck: return liveSpellCheck
+        default: return nil
+        }
+    }
+
+    func setSyncedSetting(_ key: String, _ v: Bool) {
+        switch key {
+        case Key.simpleTelex: simpleTelex = v
+        case Key.freeMarking: freeMarking = v
+        case Key.quickTelex: quickTelex = v
+        case Key.modernOrthography: modernOrthography = v
+        case Key.contextualEnglish: contextualEnglish = v
+        case Key.teencode: teencode = v
+        case Key.autoRestore: autoRestore = v
+        case Key.liveSpellCheck: liveSpellCheck = v
+        default: break
+        }
+    }
 }
 
 /// Look up a UI string honoring the user's chosen `AppState.uiLanguage`. Keys are

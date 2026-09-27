@@ -53,8 +53,9 @@ echo "→ cleaning stray legacy code seal + Developer ID sign + hardened runtime
 # then sign fresh so the bundle matches a clean modern signature.
 rm -f "$APP/Contents/CodeResources"
 codesign --remove-signature "$APP" 2>/dev/null || true
+source Scripts/icloud-profile.sh      # → $ENTITLEMENTS (+ embedded.provisionprofile nếu có)
 codesign --force --options runtime --timestamp \
-         --entitlements App/Resources/VietTelex.entitlements \
+         --entitlements "$ENTITLEMENTS" \
          --sign "$SIGN_ID" "$APP"
 if [ -f "$APP/Contents/CodeResources" ]; then
   echo "  WARNING: stray Contents/CodeResources reappeared after signing"; fi

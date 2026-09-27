@@ -136,11 +136,13 @@ targets:
       - Keyboard/SensitiveWords.swift
       - Keyboard/Trackpad.swift
       - Keyboard/SwipeDecoder.swift
+      - Keyboard/SwipeLexicon.swift
       - Keyboard/SwipeGesture.swift
       - Keyboard/SwipeTyping.swift
       - App/Backup/BackupFormat.swift
       - App/TemplateEdit.swift
       - App/Backup/SyncMerge.swift
+      - App/Backup/SyncCore.swift
       - App/Backup/BackupStore.swift
       - Keyboard/SwipeEnglish.swift
       - Keyboard/SyllableBigram.swift
@@ -151,6 +153,7 @@ targets:
       - Keyboard/TouchTarget.swift
       - Keyboard/Shortcuts.swift
       - Keyboard/TextTools.swift
+      - Keyboard/TextToolRunner.swift
       # bảng gõ tắt mẫu ở gốc repo — test khứ hồi parse/export cùng định dạng macOS
       - path: ../sample-shortcuts.yml
       # VietTelex Plus: gate dùng chung + logic mua (không StoreKit) + cấu hình StoreKit test.

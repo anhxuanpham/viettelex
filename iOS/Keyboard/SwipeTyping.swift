@@ -297,8 +297,5 @@ final class SwipeTyping {
     }
 
     /// Bỏ dấu tiếng Việt (đ → d), chữ thường — khoá so với dạng không dấu của lexicon.
-    static func fold(_ w: String) -> String {
-        w.lowercased().replacingOccurrences(of: "đ", with: "d")
-            .folding(options: .diacriticInsensitive, locale: nil)
-    }
+    static func fold(_ w: String) -> String { SwipeLexicon.fold(w) }
 }

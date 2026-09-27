@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Developer ID + iCloud Key-Value Store (đồng bộ với app iOS, ICloudSync.swift).
+         CHỈ dùng khi bundle có Contents/embedded.provisionprofile (Developer ID profile
+         của App ID com.viettelex.inputmethod.telex, bật iCloud) — entitlement hạn chế
+         mà thiếu profile thì macOS không cho process chạy. Scripts/notarize-install.sh
+         tự chọn file này khi tìm thấy profile, không thì dùng VietTelex.entitlements.
+         kvstore-identifier = store của app iOS (com.viettelex.ios) ⇒ Mac và iPhone
+         cùng một kho. -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+    <key>com.apple.application-identifier</key>
+    <string>84T567KMYD.com.viettelex.inputmethod.telex</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>84T567KMYD</string>
+    <key>com.apple.developer.ubiquity-kvstore-identifier</key>
+    <string>84T567KMYD.com.viettelex.ios</string>
+</dict>
+</plist>

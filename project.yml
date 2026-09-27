@@ -39,6 +39,26 @@ targets:
     platform: macOS
     sources:
       - path: App/Sources
+      # Logic thuần DÙNG CHUNG với iOS (cùng file, không bản sao — sửa một chỗ là cả hai
+      # nền tảng thấy; fixture/test ở iOS/KeyboardTests + AppTests):
+      #  • đồng bộ iCloud LWW (cùng định dạng KVS với app iOS) — ICloudSync.swift;
+      #  • công cụ văn bản HOA/thường/xoá dấu + Thêm dấu (Viterbi trên vnlexicon/vnbigram)
+      #    — TextActions.swift. Dữ liệu Thêm dấu chỉ được nạp trong process con
+      #    `VietTelex --add-tones`, không bao giờ trong process IME.
+      - path: iOS/App/Backup/SyncCore.swift
+      - path: iOS/Keyboard/TextTools.swift
+      - path: iOS/Keyboard/AddTones.swift
+      - path: iOS/Keyboard/SwipeLexicon.swift
+      - path: iOS/Keyboard/SwipeEnglish.swift
+      - path: iOS/Keyboard/VNSuggest.swift
+      - path: iOS/Keyboard/VNLexicon2.swift
+      - path: iOS/Keyboard/SyllableBigram.swift
+      - path: iOS/Keyboard/Resources/vnlexicon.bin
+        buildPhase: resources
+      - path: iOS/Keyboard/Resources/vnbigram.bin
+        buildPhase: resources
+      - path: iOS/Keyboard/Resources/enlexicon.bin
+        buildPhase: resources
       # App icon: AppIcon.icns assembled from the palette-quantized PNG slices in
       # Assets.xcassets by Scripts/make_appicon.py (PNG chunks, NOT iconutil, NOT
       # actool). actool re-encoded the 8-bit palette PNGs to 32-bit and emitted a
