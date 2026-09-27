@@ -20,6 +20,10 @@ struct ThemeSettingsView: View {
     @State private var busy = false
     @State private var error: String?
     @State private var confirmReset = false
+    // Tính Năng → Giao diện gộp luôn logo + chiều cao hàng (không thuộc "Khôi phục giao diện gốc").
+    @AppStorage("showSpaceLogo", store: groupDefaults) private var showSpaceLogo = true
+    @AppStorage("rowHeightAdjust", store: groupDefaults) private var rowHeightAdjust = 0
+    @AppStorage("numberRow", store: groupDefaults) private var numberRow = false
 
     private static func loadPreviewImage() -> UIImage? {
         guard let url = Wallpaper.url, let cg = Wallpaper.downsample(url: url, maxPixel: 800) else { return nil }
@@ -96,23 +100,42 @@ struct ThemeSettingsView: View {
             } header: {
                 Text("Độ trong suốt")
             } footer: {
-                Text("Phím: nền bàn phím, ảnh nền, nền và viền phím — 100% là phím vô hình, chỉ còn chữ. Ký tự: chữ và biểu tượng trên phím — 100% là phím trơn không chữ (khung phóng to khi chạm vẫn hiện). iOS luôn giữ lớp kính mờ của hệ thống phía sau bàn phím, nên 100% là lộ lớp kính đó chứ không nhìn xuyên hẳn xuống app.")
+                Text("Phím: nền, ảnh nền, nền và viền phím — 100% chỉ còn chữ. Ký tự: chữ và biểu tượng trên phím — 100% là phím trơn không chữ. iOS luôn giữ lớp kính mờ phía sau bàn phím.")
             }
+
+            Section {
+                Stepper(value: $rowHeightAdjust, in: -10...10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Chiều cao hàng phím")
+                        Text(rowHeightAdjust == 0
+                             ? "Chuẩn"
+                             : String(format: "%+d pt mỗi hàng (%+d pt cả bàn phím)",
+                                      // hàng số cao ¾ hàng chữ ⇒ tổng ×4,75 khi bật
+                                      rowHeightAdjust,
+                                      Int((Double(rowHeightAdjust) * (numberRow ? 4.75 : 4)).rounded())))
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                settingToggle("Hiện logo Vᴛ", "Logo mờ ở góc phải phím cách.", isOn: $showSpaceLogo)
+            } header: { Text("Bàn phím") }
 
             Section {
                 Button("Khôi phục giao diện gốc", role: .destructive) { confirmReset = true }
                     .disabled(settings.isDefault)
             } footer: {
-                Text("Về theme Hệ thống, tắt ảnh nền (ảnh vẫn giữ để bật lại), độ tối/mờ và độ trong suốt về mặc định.")
+                Text("Về theme Hệ thống, tắt ảnh nền (ảnh vẫn giữ để bật lại), độ tối/mờ và độ trong suốt về mặc định. Chiều cao hàng và logo giữ nguyên.")
             }
+
+            GuideLinkSection(page: .giaoDien)
         }
-        .navigationTitle("Giao diện bàn phím")
+        .navigationTitle("Giao diện")
         .navigationBarTitleDisplayMode(.inline)
+        .bottomBarScrollMargin()
         .confirmationDialog("Khôi phục giao diện gốc?", isPresented: $confirmReset, titleVisibility: .visible) {
             Button("Khôi phục", role: .destructive) { resetAppearance() }
             Button("Huỷ", role: .cancel) {}
         } message: {
-            Text("Mọi chỉnh sửa trên màn này về mặc định. Ảnh nền không bị xoá.")
+            Text("Theme, ảnh nền và độ trong suốt về mặc định. Ảnh nền không bị xoá.")
         }
         .onChange(of: pickerItem) { item in
             guard let item else { return }

@@ -192,7 +192,7 @@ window.vtxDetectOS = function (ua, plat, touch) {
         <span class="leg-p"><span class="tag t-mac">macOS</span></span>
         <span class="leg-p"><span class="tag t-win">Windows</span></span>
         <span class="leg-p"><span class="tag t-lin">Linux</span></span>
-        <span data-os="ios android macos"><span class="tag t-exp">Thử nghiệm</span> bật trong mục Thử nghiệm</span>
+        <span data-os="ios android macos"><span class="tag t-exp">Thử nghiệm</span> tính năng đang thử (có nhãn Thử nghiệm trong app)</span>
         <span data-os="ios android"><span class="tag t-plus">Plus</span> gói Plus — hiện đang mở miễn phí cho mọi người</span>
       </div>
     </div>
@@ -279,7 +279,7 @@ sudo apt install viettelex-fcitx5   # hoặc: sudo apt install viettelex-ibus</p
 <section id="sua-dau">
   <div class="wrap">
     <h2 class="n">Sửa dấu từ đã gõ</h2>
-    <p class="lead">Quên dấu? Không cần xoá cả từ gõ lại. <span data-os="ios android">Bật/tắt ở <b>Tính Năng → Chính tả → Sửa dấu từ đã gõ</b> (mặc định bật).</span> <span data-os="macos"><span class="tag t-mac p">macOS</span> luôn bật.</span> <span data-os="windows"><span class="tag t-win p">Windows</span> tab Chính tả → <b>Gõ thêm dấu cho từ trước con trỏ</b>.</span> <span data-os="linux"><span class="tag t-lin p">Linux</span> tab Tuỳ chỉnh → <b>Gõ thêm dấu cho từ ngay trước con trỏ</b>.</span></p>
+    <p class="lead">Quên dấu? Không cần xoá cả từ gõ lại. <span data-os="ios android">Bật/tắt ở <b>Tính Năng → Chính tả &amp; sửa lỗi → Sửa dấu từ đã gõ</b> (mặc định bật).</span> <span data-os="macos"><span class="tag t-mac p">macOS</span> luôn bật.</span> <span data-os="windows"><span class="tag t-win p">Windows</span> tab Chính tả → <b>Gõ thêm dấu cho từ trước con trỏ</b>.</span> <span data-os="linux"><span class="tag t-lin p">Linux</span> tab Tuỳ chỉnh → <b>Gõ thêm dấu cho từ ngay trước con trỏ</b>.</span></p>
     <div class="card">
       <ul>
         <li data-os="ios android macos windows"><b>Xoá dấu cách để mở lại từ:</b> <code>tháy</code> ␣ <kbd>⌫</kbd> <code>a</code> → <b>thấy</b>.</li>
@@ -305,8 +305,8 @@ sudo apt install viettelex-fcitx5   # hoặc: sudo apt install viettelex-ibus</p
         <tr><td><kbd>⌫</kbd> ngay sau khi từ tự khôi phục / gõ tắt vừa bung</td><td>Trả lại chữ bạn đã gõ (hoàn tác gõ tắt) hoặc hiện dạng có dấu trên thanh gợi ý để đổi bằng một chạm.</td></tr>
         <tr data-os="ios"><td>Giữ lâu nút ☰ trên thanh gợi ý</td><td>Bật/tắt <b>chế độ một tay</b> (chỉ iPhone). <span class="tag t-ios p">iOS</span></td></tr>
         <tr data-os="android"><td>Giữ lâu icon con trỏ trên thanh gợi ý</td><td>Bật/tắt chế độ một tay (chỉ điện thoại). Chạm thường = mở bảng sửa văn bản. <span class="tag t-and p">Android</span></td></tr>
-        <tr><td>Giữ phím q w e … p</td><td>Ra số <b>1 2 3 … 0</b> (số nhỏ ở góc trên-phải phím). Giữ ~0,4 giây, ô phóng to hiện số, nhấc tay là chèn; chữ vừa chạm tự gỡ, từ đang gõ vẫn đúng dấu. Mặc định bật, chỉ khi tắt <b>Hàng phím số</b> (Tính năng → Giao diện → “Giữ phím hàng trên để ra số”). Không áp dụng khi VoiceOver/TalkBack bật. <span class="tag t-ios" data-os="ios">iPhone</span> <span class="tag t-and p">Android</span></td></tr>
-        <tr><td>Giữ phím a … l, z … m</td><td>Ra ký hiệu in nhỏ ở góc phím: a <b>@</b> · s <b>#</b> · d <b>$</b> · f <b>_</b> · g <b>&amp;</b> · h <b>-</b> · j <b>+</b> · k <b>(</b> · l <b>)</b> · z <b>*</b> · x <b>"</b> · c <b>%</b> · v <b>:</b> · b <b>/</b> · n <b>!</b> · m <b>?</b>. Mặc định tắt — bật ở Tính năng → Giao diện → “Giữ phím hàng 2, 3 để ra ký tự đặc biệt”. <span class="tag t-ios" data-os="ios">iPhone</span> <span class="tag t-and p">Android</span></td></tr>
+        <tr><td>Giữ phím q w e … p</td><td>Ra số <b>1 2 3 … 0</b> (số nhỏ ở góc trên-phải phím). Giữ ~0,4 giây, ô phóng to hiện số, nhấc tay là chèn; chữ vừa chạm tự gỡ, từ đang gõ vẫn đúng dấu. Mặc định bật, chỉ khi tắt <b>Hàng phím số</b> (Tính Năng → Phím &amp; cử chỉ → “Giữ phím hàng trên để ra số”). Không áp dụng khi VoiceOver/TalkBack bật. <span class="tag t-ios" data-os="ios">iPhone</span> <span class="tag t-and p">Android</span></td></tr>
+        <tr><td>Giữ phím a … l, z … m</td><td>Ra ký hiệu in nhỏ ở góc phím: a <b>@</b> · s <b>#</b> · d <b>$</b> · f <b>_</b> · g <b>&amp;</b> · h <b>-</b> · j <b>+</b> · k <b>(</b> · l <b>)</b> · z <b>*</b> · x <b>"</b> · c <b>%</b> · v <b>:</b> · b <b>/</b> · n <b>!</b> · m <b>?</b>. Mặc định tắt — bật ở Tính Năng → Phím &amp; cử chỉ → “Giữ phím hàng 2, 3 để ra ký tự đặc biệt”. <span class="tag t-ios" data-os="ios">iPhone</span> <span class="tag t-and p">Android</span></td></tr>
         <tr><td>Giữ lâu phím <kbd>,</kbd></td><td>Ra dấu chấm <b>.</b> — khi bật một trong hai tuỳ chọn “Giữ phím…” ở trên. <span data-os="android">Trên Android, nếu máy có bàn phím giọng nói (góc phím có 🎤 mờ) thì giữ lâu <kbd>,</kbd> chuyển sang gõ giọng nói của hệ thống (vd Google voice typing) thay vì ra dấu chấm.</span> <span class="tag t-ios" data-os="ios">iPhone</span> <span class="tag t-and p">Android</span></td></tr>
         <tr data-os="ios"><td>Vuốt xuống trên phím chữ (iPad)</td><td>Gõ ký tự phụ in xám phía trên phím, như bàn phím iPad gốc. <span class="tag t-ios" data-os="ios">iPad</span></td></tr>
         <tr data-os="android"><td>Giữ lâu phím 😊</td><td>Mở danh sách bàn phím để đổi sang bàn phím khác. <span class="tag t-and p">Android</span></td></tr>
@@ -319,7 +319,7 @@ sudo apt install viettelex-fcitx5   # hoặc: sudo apt install viettelex-ibus</p
 <section id="go-vuot" data-os="ios android">
   <div class="wrap">
     <h2 class="n">Gõ vuốt <span class="tag t-exp">Thử nghiệm</span></h2>
-    <p class="lead">Bật ở <b>Tính Năng → Thử nghiệm → Gõ vuốt</b>. <span class="tag t-ios" data-os="ios">iPhone</span> <span class="tag t-and p">Android</span></p>
+    <p class="lead">Bật ở <b>Tính Năng → Gõ vuốt</b>; Luyện vuốt ở cuối trang này. <span class="tag t-ios" data-os="ios">iPhone</span> <span class="tag t-and p">Android</span></p>
     <div class="card">
       <ul>
         <li>Lướt ngón qua các chữ <b>không dấu</b> của một âm tiết rồi nhấc tay: v→i→e→t ra <b>“việt”</b>.</li>
@@ -335,7 +335,7 @@ sudo apt install viettelex-fcitx5   # hoặc: sudo apt install viettelex-ibus</p
 <section id="go-tat">
   <div class="wrap">
     <h2 class="n">Gõ tắt</h2>
-    <p class="lead"><span data-os="ios android"><b>Tính Năng → Gõ tắt</b>.</span> <span data-os="macos"><span class="tag t-mac p">macOS</span> Cài đặt… → tab <b>Gõ tắt</b>.</span> <span data-os="windows"><span class="tag t-win p">Windows</span> Cài đặt → tab <b>Gõ tắt</b>.</span> <span data-os="linux"><span class="tag t-lin p">Linux</span> tab <b>Gõ tắt</b> (công tắc <b>Bật gõ tắt</b>).</span></p>
+    <p class="lead"><span data-os="ios android"><b>Tính Năng → Gõ tắt &amp; mẫu câu</b>.</span> <span data-os="macos"><span class="tag t-mac p">macOS</span> Cài đặt… → tab <b>Gõ tắt</b>.</span> <span data-os="windows"><span class="tag t-win p">Windows</span> Cài đặt → tab <b>Gõ tắt</b>.</span> <span data-os="linux"><span class="tag t-lin p">Linux</span> tab <b>Gõ tắt</b> (công tắc <b>Bật gõ tắt</b>).</span></p>
     <div class="card">
       <ul>
         <li data-os="ios android macos">Gõ chữ tắt rồi dấu cách, Enter hoặc dấu câu để bung: <code>ko</code> → không.</li>
@@ -355,7 +355,7 @@ sudo apt install viettelex-fcitx5   # hoặc: sudo apt install viettelex-ibus</p
 <section id="goi-y" data-os="ios android">
   <div class="wrap">
     <h2 class="n">Thanh gợi ý &amp; chip</h2>
-    <p class="lead">VietTelex <b>không tự sửa chữ của bạn</b> — mọi gợi ý chỉ áp dụng khi bạn chạm. Cài đặt ở <b>Tính Năng → Gợi ý</b>. Nút <b>⌄</b> ở mép phải thu gọn thanh.</p>
+    <p class="lead">VietTelex <b>không tự sửa chữ của bạn</b> — mọi gợi ý chỉ áp dụng khi bạn chạm. Cài đặt ở <b>Tính Năng → Gợi ý &amp; từ điển</b>. Nút <b>⌄</b> ở mép phải thu gọn thanh.</p>
     <div class="card">
       <ul>
         <li><b>Gợi ý từ</b> + tự học từ bạn hay dùng (chỉ lưu trên máy). <b>Từ điển cá nhân</b>: xem, tìm, xoá từ đã học, thêm tên riêng/thuật ngữ. <b>Lọc từ nhạy cảm</b> không chủ động gợi ý từ tục.</li>
@@ -372,7 +372,7 @@ sudo apt install viettelex-fcitx5   # hoặc: sudo apt install viettelex-ibus</p
 <section id="mau-cau" data-os="ios android">
   <div class="wrap">
     <h2 class="n">Mẫu câu &amp; công cụ văn bản</h2>
-    <p class="lead">Bật/tắt ở <b>Tính Năng → Gợi ý → Mẫu câu</b>; quản lý ở tab <b>Mẫu Câu</b>.</p>
+    <p class="lead">Bật/tắt ở <b>Tính Năng → Gõ tắt &amp; mẫu câu → Mẫu câu</b>; quản lý ở tab <b>Mẫu Câu</b>.</p>
     <div class="card">
       <ul>
         <li>Chạm <b>☰</b> trên thanh gợi ý để mở lưới câu soạn sẵn, chạm một câu để chèn. Label ngắn (emoji) giúp lưới gọn hơn.</li>
@@ -388,12 +388,12 @@ sudo apt install viettelex-fcitx5   # hoặc: sudo apt install viettelex-ibus</p
 <section id="clipboard" data-os="ios android">
   <div class="wrap">
     <h2 class="n">Clipboard &amp; ẩn danh</h2>
-    <p class="lead"><b>Tính Năng → Riêng tư</b>.</p>
+    <p class="lead"><b>Tính Năng → Riêng tư &amp; clipboard</b>.</p>
     <div class="card">
       <ul>
         <li><b>Lịch sử clipboard</b> (mặc định tắt): nút 📋 trên thanh gợi ý mở tối đa 20 mục vừa copy — chạm để dán, ghim để giữ lâu. Mục không ghim tự xoá sau 1 giờ (giống mật khẩu/OTP: 2 phút). Bỏ qua ô mật khẩu và nội dung được đánh dấu nhạy cảm.<span data-os="ios"> iOS cần Toàn quyền truy cập.</span></li>
         <li><b>Chip tách số</b> <span class="tag t-plus">Plus</span>: nội dung vừa copy có số tài khoản / SĐT / mã OTP → chip “Dán STK…” chỉ dán đúng phần số. Ghim không giới hạn cũng thuộc Plus.</li>
-        <li><b>Chế độ ẩn danh</b>: không học từ, không lưu clipboard; <span data-os="ios">biểu tượng mắt gạch chéo<span class="leg-p"> (iOS)</span></span><span class="leg-p"> / </span><span data-os="android">🕶<span class="leg-p"> (Android)</span></span> hiện trên bàn phím.<span data-os="android"> Android tự bật trong ô nhập của trình duyệt ẩn danh.</span></li>
+        <li><b>Chế độ ẩn danh</b>: không học từ, không lưu clipboard.<span data-os="android"> Android tự bật trong ô nhập của trình duyệt ẩn danh.</span></li>
       </ul>
     </div>
   </div>
@@ -415,16 +415,18 @@ sudo apt install viettelex-fcitx5   # hoặc: sudo apt install viettelex-ibus</p
 <section id="giao-dien" data-os="ios android">
   <div class="wrap">
     <h2 class="n">Giao diện &amp; một tay</h2>
-    <p class="lead"><b>Tính Năng → Giao diện</b>.</p>
+    <p class="lead"><b>Tính Năng → Giao diện</b> (theme, ảnh nền, độ trong suốt, chiều cao hàng, logo) và <b>Tính Năng → Phím &amp; cử chỉ</b> (hàng số, giữ phím, vuốt phím cách, một tay, phóng to chữ, rung).</p>
     <div class="card">
       <ul>
         <li><b>Theme &amp; ảnh nền</b>: Hệ thống, Tối OLED, Tương phản cao luôn miễn phí; các theme khác (Hồng đào, Bạc hà, Trời xanh, Oải hương, Kính…) và ảnh nền riêng (chỉnh độ tối lớp phủ, độ mờ) <span class="tag t-plus">Plus</span>. Ảnh được nén ngay trên máy.</li>
-        <li><b>Hàng phím số</b> 1…0 trên hàng chữ; <b>Chiều cao hàng phím</b> ±10.</li>
+        <li><b>Độ trong suốt phím</b> và <b>Độ trong suốt ký tự</b> (0–100%, miễn phí mọi theme): phím — nền, ảnh nền, nền và viền phím, 100% chỉ còn chữ; ký tự — chữ và biểu tượng trên phím, 100% là phím trơn không chữ. <span data-os="ios">iOS luôn giữ lớp kính mờ của hệ thống phía sau bàn phím.</span></li>
+        <li><b>Khôi phục giao diện gốc</b>: về theme Hệ thống, tắt ảnh nền (ảnh vẫn giữ để bật lại), độ tối/mờ và độ trong suốt về mặc định.</li>
+        <li><b>Chiều cao hàng phím</b> ±10 và <b>logo Vᴛ</b> mờ trên phím cách (Giao diện); <b>Hàng phím số</b> 1…0 trên hàng chữ (Phím &amp; cử chỉ).</li>
         <li><b>Giữ phím hàng trên để ra số</b> (hiện khi tắt Hàng phím số) và <b>Giữ phím hàng 2, 3 để ra ký tự đặc biệt</b> — xem <a href="#cu-chi">Cử chỉ ẩn</a>.</li>
-        <li><b>Phóng to chữ khi bấm</b>, <b>Rung phím</b><span data-os="ios"> (iOS cần Toàn quyền truy cập)</span>, <b>logo Vᴛ</b> mờ trên phím cách.</li>
+        <li><b>Phóng to chữ khi bấm</b>, <b>Rung phím</b><span data-os="ios"> (iOS cần Toàn quyền truy cập)</span>.</li>
         <li><b>Chế độ một tay</b> (điện thoại): Tắt / Trái / Phải — thu hẹp bàn phím về một bên; nút ở dải trống để đổi bên hoặc thoát. Bật nhanh bằng cử chỉ ở mục <a href="#cu-chi">Cử chỉ ẩn</a>.</li>
-        <li><b>Chọn phím thông minh</b> <span class="tag t-exp">Thử nghiệm</span> (mặc định bật): chạm sát mép giữa hai phím thì chọn phím hợp với chữ đang gõ; chạm giữa phím luôn ra đúng phím đó, chữ đã gõ không bao giờ bị tự sửa.</li>
-        <li><b>Tự sửa từ gõ sai</b> <span class="tag t-exp">Thử nghiệm</span> (mặc định tắt): khi gõ dấu cách, nếu chữ vừa gõ không phải từ hợp lệ và điểm chạm lệch hẳn sang phím bên cạnh thì sửa thành từ phổ biến (<code>tpoi</code> → <code>tôi</code>). Chỉ sửa khi chắc chắn; không đụng từ tiếng Anh, từ bạn hay dùng, ô mật khẩu/email/web. <b>⌫ ngay sau đó</b> (hoặc chạm ô <b>↩︎ chữ gốc</b> trên thanh gợi ý) để trả lại chữ gốc — từ đó sẽ không bị sửa nữa.</li>
+        <li><b>Chọn phím thông minh</b> <span class="tag t-exp">Thử nghiệm</span> (Tính Năng → Chính tả &amp; sửa lỗi, mặc định bật): chạm sát mép giữa hai phím thì chọn phím hợp với chữ đang gõ; chạm giữa phím luôn ra đúng phím đó, chữ đã gõ không bao giờ bị tự sửa.</li>
+        <li><b>Tự sửa từ gõ sai</b> <span class="tag t-exp">Thử nghiệm</span> (Tính Năng → Chính tả &amp; sửa lỗi, mặc định tắt): khi gõ dấu cách, nếu chữ vừa gõ không phải từ hợp lệ và điểm chạm lệch hẳn sang phím bên cạnh thì sửa thành từ phổ biến (<code>tpoi</code> → <code>tôi</code>). Chỉ sửa khi chắc chắn; không đụng từ tiếng Anh, từ bạn hay dùng, ô mật khẩu/email/web. <b>⌫ ngay sau đó</b> (hoặc chạm ô <b>↩︎ chữ gốc</b> trên thanh gợi ý) để trả lại chữ gốc — từ đó sẽ không bị sửa nữa.</li>
       </ul>
     </div>
   </div>
@@ -436,7 +438,7 @@ sudo apt install viettelex-fcitx5   # hoặc: sudo apt install viettelex-ibus</p
     <div class="card">
       <ul>
         <li><b>Bảng sửa văn bản</b>: chạm icon con trỏ trên thanh gợi ý — mũi tên, đầu/cuối dòng, chọn / chọn từ / chọn hết, sao chép / cắt / dán, hoàn tác / làm lại; cuối bảng có hàng công cụ văn bản <span class="tag t-plus">Plus</span>.</li>
-        <li><b>Telex cho bàn phím cứng</b> (Tính Năng → Bàn phím cứng): gõ Telex/VNI bằng bàn phím Bluetooth/USB, Samsung DeX, Chromebook; phím tắt Ctrl/Alt vẫn tới app.</li>
+        <li><b>Telex cho bàn phím cứng</b> (Tính Năng → Phím &amp; cử chỉ → Bàn phím cứng): gõ Telex/VNI bằng bàn phím Bluetooth/USB, Samsung DeX, Chromebook; phím tắt Ctrl/Alt vẫn tới app.</li>
         <li>Ô số / số điện thoại / ngày giờ tự mở <b>bàn số</b> riêng.</li>
       </ul>
     </div>
@@ -446,7 +448,7 @@ sudo apt install viettelex-fcitx5   # hoặc: sudo apt install viettelex-ibus</p
 <section id="sao-luu" data-os="ios android macos">
   <div class="wrap">
     <h2 class="n">Sao lưu &amp; đồng bộ</h2>
-    <p class="lead" data-os="ios android">Tab <b>Giới Thiệu → Sao lưu &amp; đồng bộ</b>.</p>
+    <p class="lead" data-os="ios android"><b>Tính Năng → Sao lưu &amp; đồng bộ</b>.</p>
     <div class="card">
       <ul>
         <li data-os="ios android"><b>Xuất / Nhập file sao lưu</b>: cài đặt, gõ tắt, mẫu câu (và từ đã học nếu bật “Kèm từ đã học”) — một file mở được trên iPhone, iPad và Android. Nhập: cài đặt theo file, gõ tắt và mẫu câu được gộp thêm.</li>

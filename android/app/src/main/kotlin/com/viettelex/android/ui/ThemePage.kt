@@ -135,7 +135,7 @@ object WallpaperStore {
     }
 }
 
-private fun loadThemeSettings(ctx: Context): ThemeSettings {
+internal fun loadThemeSettings(ctx: Context): ThemeSettings {
     val all = Prefs.of(ctx).all
     return ThemeSettings.load { all[it] }
 }
@@ -206,7 +206,7 @@ fun ThemePage(onBack: () -> Unit) {
         }
     }
 
-    VTRow(onClick = onBack) { Text("‹ Tính Năng", style = VTType.body, color = c.accent) }
+    SubPageHeader(FeaturePage.GiaoDien.title, onBack)
 
     val active = s.wallpaperActive(wall != null)
     val pal = (s.effectiveTheme.palette(dark) ?: previewPalette(KeyboardTheme.SYSTEM, dark)).let { if (active) it.overWallpaper() else it }
@@ -277,8 +277,8 @@ fun ThemePage(onBack: () -> Unit) {
     }
 
     VTSection(header = "Độ trong suốt",
-        footer = "Phím: nền bàn phím, ảnh nền, nền và viền phím — 100% là phím vô hình, chỉ còn chữ (nền phía sau là app đang gõ). " +
-            "Ký tự: chữ và biểu tượng trên phím — 100% là phím trơn không chữ (khung phóng to khi chạm vẫn hiện).") {
+        footer = "Phím: nền, ảnh nền, nền và viền phím — 100% chỉ còn chữ (thấy app phía sau). " +
+            "Ký tự: chữ và biểu tượng trên phím — 100% là phím trơn không chữ.") {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             Text("Độ trong suốt phím: ${s.keyboardTransparency}%", style = VTType.body, color = c.label)
             Slider(value = s.keyboardTransparency.toFloat(), valueRange = 0f..100f,
@@ -289,7 +289,24 @@ fun ThemePage(onBack: () -> Unit) {
         }
     }
 
-    VTSection(footer = "Về theme Hệ thống, tắt ảnh nền (ảnh vẫn giữ để bật lại), độ tối/mờ và độ trong suốt về mặc định.") {
+    // Tính Năng → Giao diện gộp luôn chiều cao hàng + logo (không thuộc "Khôi phục giao diện gốc").
+    VTSection(header = "Bàn phím") {
+        var adj by rememberIntPref(Keys.ROW_HEIGHT_ADJUST, Prefs.D.rowHeightAdjust)
+        VTRow {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Chiều cao hàng phím", style = VTType.body, color = c.label)
+                Text(
+                    if (adj == 0) "Chuẩn" else String.format(java.util.Locale.ROOT, "%+d dp mỗi hàng (%+d dp cả bàn phím)", adj, adj * 4),
+                    style = VTType.footnote, color = c.secondary,
+                )
+            }
+            IosStepper(adj, -10..10) { adj = it }
+        }
+        RowDivider()
+        BoolToggle(Keys.SHOW_SPACE_LOGO, Prefs.D.showSpaceLogo, "Hiện logo Vᴛ", "Logo mờ ở góc phải phím cách.")
+    }
+
+    VTSection(footer = "Về theme Hệ thống, tắt ảnh nền (ảnh vẫn giữ để bật lại), độ tối/mờ và độ trong suốt về mặc định. Chiều cao hàng và logo giữ nguyên.") {
         VTRow(onClick = if (s.isDefault || busy) null else { { confirmReset = true } }) {
             Text("Khôi phục giao diện gốc", style = VTType.body, color = if (s.isDefault) c.secondary else c.red)
         }
@@ -297,7 +314,7 @@ fun ThemePage(onBack: () -> Unit) {
     if (confirmReset) AlertDialog(
         onDismissRequest = { confirmReset = false },
         title = { Text("Khôi phục giao diện gốc?") },
-        text = { Text("Mọi chỉnh sửa trên màn này về mặc định. Ảnh nền không bị xoá.") },
+        text = { Text("Theme, ảnh nền và độ trong suốt về mặc định. Ảnh nền không bị xoá.") },
         confirmButton = { TextButton(onClick = {
             confirmReset = false
             val blurChanged = s.blur != 0
