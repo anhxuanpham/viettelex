@@ -735,7 +735,7 @@ struct GeneralTab: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section(header: Label(model.loc("Text tools"), systemImage: "textformat")) {
-                Text(model.loc("Select text in any app, then pick a tool from the VietTelex menu: add tones to unaccented text (toi di hoc → tôi đi học), UPPERCASE, lowercase, Title Case, Sentence case, remove tones."))
+                Text(model.loc("Select text in any app, then open the VietTelex menu → Tools… and pick (or press 1–6): add tones to unaccented text (toi di hoc → tôi đi học), UPPERCASE, lowercase, Title Case, Sentence case, remove tones."))
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle(model.loc("Show text tools in the VietTelex menu"), isOn: $model.textToolsInMenu)
                 Picker(model.loc("Add-tones hotkey"), selection: $model.addTonesHotkey) {

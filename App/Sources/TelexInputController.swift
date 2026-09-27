@@ -2063,55 +2063,43 @@ final class TelexInputController: IMKInputController {
         strategy.toolTip = VTLocalized("Click: open the Typing modes table + copy debug info")
         menu.addItem(strategy)
 
-        // Công cụ văn bản cho vùng chọn (TextActions.swift). Mỗi mục một selector: IMK
-        // chuyển lệnh menu qua process khác nên không dựa vào tag/representedObject.
-        if AppState.shared.textToolsInMenu {
-            let tools: [(TextAction, Selector)] = [
-                (.addTones, #selector(textActionAddTones(_:))),
-                (.upper, #selector(textActionUpper(_:))),
-                (.lower, #selector(textActionLower(_:))),
-                (.title, #selector(textActionTitle(_:))),
-                (.sentence, #selector(textActionSentence(_:))),
-                (.stripDiacritics, #selector(textActionStrip(_:))),
-            ]
-            for (action, sel) in tools {
-                let item = NSMenuItem(title: VTLocalized(action.titleKey), action: sel, keyEquivalent: "")
-                item.target = self
-                menu.addItem(item)
+        // Everything else lives in the Settings window (Chung + Gõ tắt tabs). The menu
+        // stays minimal: status + Settings + System Settings (Keyboard → Input Sources,
+        // where users add/remove the source) + Công cụ….
+        // Công cụ văn bản (TextActions.swift): MỘT mục "Công cụ…" ngay dưới Cài đặt hệ
+        // thống… mở bảng nổi cạnh con trỏ (TextToolsPanel). Không dùng menu con: macOS 27
+        // TextInputMenuAgent vẽ menu con nhưng không chuyển action của mục con về IME
+        // (thử d765295, revert fd8ef15); 6 mục phẳng thì làm menu vướng (maintainer 27/09).
+        for key in Self.trailingMenuKeys(textToolsInMenu: AppState.shared.textToolsInMenu) {
+            let action: Selector
+            switch key {
+            case "Settings…": action = #selector(openSettings(_:))
+            case "System Settings…": action = #selector(openSystemKeyboardSettings(_:))
+            default: action = #selector(openTextTools(_:))
             }
+            let item = NSMenuItem(title: VTLocalized(key), action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
         }
 
-        // Everything else lives in the Settings window (Chung + Gõ tắt tabs). The menu
-        // stays minimal: status + Settings.
-        let settings = NSMenuItem(title: VTLocalized("Settings…"), action: #selector(openSettings(_:)), keyEquivalent: "")
-        settings.target = self
-        menu.addItem(settings)
-
-        // System Settings → Keyboard (Text Input / Input Sources) — where users
-        // add/remove the input source and reach the Edit… sheet.
-        let sysSettings = NSMenuItem(title: VTLocalized("System Settings…"),
-                                     action: #selector(openSystemKeyboardSettings(_:)), keyEquivalent: "")
-        sysSettings.target = self
-        menu.addItem(sysSettings)
-
         return menu
+    }
+
+    /// Khoá chuỗi của mục menu mở bảng công cụ (vi: "Công cụ…").
+    static let toolsItemKey = "Tools…"
+    /// Thứ tự các mục cuối menu (sau dòng Cơ chế gõ) — test giữ đúng vị trí.
+    static func trailingMenuKeys(textToolsInMenu: Bool) -> [String] {
+        ["Settings…", "System Settings…"] + (textToolsInMenu ? [toolsItemKey] : [])
     }
 
     @objc private func openSystemKeyboardSettings(_ sender: Any?) {
         Self.openKeyboardInputSources()
     }
 
-    @objc private func textActionAddTones(_ sender: Any?) { runTextAction(.addTones) }
-    @objc private func textActionUpper(_ sender: Any?) { runTextAction(.upper) }
-    @objc private func textActionLower(_ sender: Any?) { runTextAction(.lower) }
-    @objc private func textActionTitle(_ sender: Any?) { runTextAction(.title) }
-    @objc private func textActionSentence(_ sender: Any?) { runTextAction(.sentence) }
-    @objc private func textActionStrip(_ sender: Any?) { runTextAction(.stripDiacritics) }
-
-    private func runTextAction(_ action: TextAction) {
-        let c = client()
+    @objc private func openTextTools(_ sender: Any?) {
+        let c = client()           // chụp client NGAY lúc bấm — runner cần đúng ô đang gõ
         // Async: menu input-method còn đang đóng (như showStatus).
-        DispatchQueue.main.async { TextActionRunner.run(action, client: c) }
+        DispatchQueue.main.async { TextToolsPanel.show(client: c) }
     }
 
     /// Shared by the IME menu and the Settings window: open System Settings →
