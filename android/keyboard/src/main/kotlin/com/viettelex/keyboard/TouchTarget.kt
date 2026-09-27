@@ -280,5 +280,7 @@ class TelexKeyPrior(val trie: KeyTrie) {
         fun warmUp(): TelexKeyPrior = cached ?: synchronized(this) {
             cached ?: fromLexicon().also { cached = it }
         }
+        /** Tắt tính năng / thiếu RAM: bỏ bảng (GC được); [warmUp] dựng lại khi cần. */
+        fun release() { cached = null }
     }
 }
