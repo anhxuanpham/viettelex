@@ -421,6 +421,9 @@ class TelexEngine {
     /** Clear the cross-word English context (focus / app switch). */
     fun resetContext() { previousWordEnglish = false }
 
+    /** Caller vừa chèn NGUYÊN VĂN một từ ngoài engine (vuốt ra từ tiếng Anh): cập nhật ngữ cảnh chéo từ. */
+    fun noteExternalWord(english: Boolean) { if (contextualEnglish) previousWordEnglish = english }
+
     /** Final text to commit at a word boundary, with auto-restore applied. Resets the word. */
     fun commitText(autoRestore: Boolean): String {
         try {

@@ -165,7 +165,9 @@ class SwipeTypingTests {
         assertTrue("huỷ chữ đầu", undoLastLetter(p))
         val path = SwipeSim(7).path(word, layout, sigma = 0.0, jitter = 0.0)
         val ctx = swipeContext()
-        val choice = SwipeSuggest.choose(decoder.decode(path, SwipeSuggest.TOP_K, ctx.folded), ctx.word, case)
+        // như IME: ctx.english != null ⇒ thêm ứng viên tiếng Anh
+        val cands = decoder.decode(path, SwipeSuggest.TOP_K, ctx.folded, ctx.english, if (ctx.english != null) ctx.englishWord else null)
+        val choice = SwipeSuggest.choose(cands, ctx.word, case)
         assertNotNull(choice)
         commitSwipe(choice!!, p)
         return choice
@@ -173,13 +175,13 @@ class SwipeTypingTests {
 
     @Test fun swipeInSentenceSpacesAndPunctuation() {
         val s = session(); val p = MockProxy()
-        s.type(p, "tooi")                         // đang soạn "tôi"
+        s.type(p, "baif")                         // đang soạn "bài"
         s.swipe(p, "viet")
-        assertEquals("tôi viết", p.text)          // từ đang soạn được chốt + dấu cách treo
+        assertEquals("bài viết", p.text)          // từ đang soạn được chốt + dấu cách treo
         s.type(p, ",")
-        assertEquals("tôi viết,", p.text)         // dấu câu dính sát
+        assertEquals("bài viết,", p.text)         // dấu câu dính sát
         s.swipe(p, "nam")
-        assertTrue(p.text, p.text.startsWith("tôi viết, n"))
+        assertTrue(p.text, p.text.startsWith("bài viết, n"))
         s.type(p, " ")
         s.swipe(p, "rat")
         assertFalse(p.text, p.text.contains("  "))   // sau space của user: không thêm space
@@ -206,13 +208,13 @@ class SwipeTypingTests {
 
     @Test fun firstBackspaceDeletesWholeSwipedWord() {
         val s = session(); val p = MockProxy()
-        s.type(p, "tooi ")
+        s.type(p, "baif ")
         s.swipe(p, "viet")
-        assertEquals("tôi viết", p.text)
+        assertEquals("bài viết", p.text)
         s.handle(Key.Backspace, p)
-        assertEquals("tôi ", p.text)
+        assertEquals("bài ", p.text)
         s.handle(Key.Backspace, p)                // sau đó ⌫ như thường
-        assertEquals("tôi", p.text)
+        assertEquals("bài", p.text)
     }
 
     @Test fun telexKeyAfterSwipeChangesTone() {
@@ -250,6 +252,68 @@ class SwipeTypingTests {
         s.swipe(p, "nam")
         assertTrue(p.text, p.text.startsWith("viết n"))
         assertTrue(s.langModel.count("viết") > 0)
+    }
+
+    // ---- giai đoạn 3: từ tiếng Anh ----
+
+    @Test fun collisionAfterVietnameseStaysVietnameseWithEnglishAlternative() {
+        val s = session(); val p = MockProxy()
+        s.type(p, "tooi ")
+        val c = s.swipe(p, "the")
+        assertFalse(c.english)
+        // dạng Việt "the" (dấu nào do tần suất/ngữ cảnh — thế/thể)
+        assertEquals("the", SwipeSuggest.fold(c.word)); assertNotEquals("the", c.word)
+        assertTrue(c.toString(), "the" in c.alternatives && "the" in c.englishAlternatives)
+        assertEquals("tôi " + c.word, p.text)
+        // chọn "the" trên thanh gợi ý ⇒ tiếng Anh nguyên văn, "thế" thành phương án
+        s.acceptSuggestion("the", p)
+        assertEquals("tôi the", p.text)
+        assertTrue(s.swipeWordIsEnglish)
+        assertTrue(c.word in s.swipeAlternatives!!)
+    }
+
+    @Test fun englishRunCheckMail() {
+        val s = session(); val p = MockProxy()
+        s.type(p, "minhf ddang ")
+        val c1 = s.swipe(p, "check")
+        assertTrue(c1.toString(), c1.english)
+        assertEquals("mình đang check", p.text)
+        assertTrue(s.swipeWordIsEnglish)
+        assertTrue(c1.alternatives.any { it !in c1.englishAlternatives })   // phương án Việt
+        val c2 = s.swipe(p, "mail")
+        assertTrue(c2.toString(), c2.english)
+        assertEquals("mình đang check mail", p.text)
+        assertTrue(s.langModel.count("check") > 0)                          // chốt ⇒ học
+        s.type(p, " ")
+        assertTrue(s.langModel.count("mail") > 0)
+        assertEquals("mình đang check mail ", p.text)
+    }
+
+    @Test fun englishWordBackspaceLetterAndCase() {
+        val s = session(); val p = MockProxy()
+        s.type(p, "guiwr ")
+        val c = s.swipe(p, "file")
+        assertTrue(c.english)
+        assertEquals("gửi file", p.text)
+        s.handle(Key.Backspace, p)                   // ⌫ đầu xoá cả từ
+        assertEquals("gửi ", p.text)
+        s.swipe(p, "file")
+        s.handle(Key.Letter('s'), p)                 // phím dấu Telex KHÔNG sửa từ Anh: dấu cách treo
+        assertEquals("gửi file s", p.text)
+        assertTrue(s.langModel.count("file") > 0)
+        val q = MockProxy(); val s2 = session()
+        val cap = s2.swipe(q, "check", SwipeSuggest.Case.FIRST)
+        assertTrue(cap.english)
+        assertEquals("Check", q.text)
+    }
+
+    @Test fun englishSwitchOff() {
+        val s = session(); val p = MockProxy()
+        s.swipeEnglish = false
+        s.type(p, "minhf ddang ")
+        val c = s.swipe(p, "check")
+        assertFalse(c.english)
+        assertTrue(c.englishAlternatives.isEmpty())
     }
 
     @Test fun leadingSpaceRule() {

@@ -32,5 +32,8 @@ class KeyCommitQueue {
         pending.removeAt(i).fire()
     }
 
+    /** [id] còn đang chờ chốt (chưa release/flush/disarm). */
+    fun isArmed(id: Any): Boolean = pending.any { it.id === id }
+
     fun disarm(id: Any) { pending.removeAll { it.id === id } }
 }

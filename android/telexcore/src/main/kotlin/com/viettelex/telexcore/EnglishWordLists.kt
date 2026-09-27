@@ -131,6 +131,15 @@ grab momo vnpay viettel vinaphone mobifone samsung xiaomi oppo huawei
 """
 }
 
+/**
+ * API công khai (bàn phím — gõ vuốt, giai đoạn 3): phân loại MỘT từ đã chốt theo cùng
+ * bảng với `contextualEnglish` (port iOS EnglishContextLookup). Chữ thường ASCII.
+ */
+object EnglishContextLookup {
+    fun opensEnglishRun(w: String): Boolean = EnglishContextWords.words.contains(w)
+    fun isNeutralLoanword(w: String): Boolean = EnglishContextWords.neutralLoanwords.contains(w)
+}
+
 internal fun parseWords(list: String): HashSet<String> {
     val set = HashSet<String>(1024)
     var i = 0

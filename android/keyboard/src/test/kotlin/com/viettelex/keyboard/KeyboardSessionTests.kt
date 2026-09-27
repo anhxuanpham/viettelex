@@ -328,4 +328,40 @@ class KeyboardSessionTests {
         s.acceptSuggestion(SuggestionSet.NUMBER_TOKEN, p)
         assertEquals("5x", p.text)                             // không xoá mù
     }
+
+    /** Proxy phân biệt "\n" thật (giữ lâu) với Enter thường (có thể là action "Gửi"). */
+    private class EnterProxy : TextProxy {
+        val sb = StringBuilder(); var actions = 0
+        override fun insertText(text: String) { if (text == "\n") actions++ else sb.append(text) }
+        override fun insertLineBreak() { sb.append("\n") }
+        override fun deleteCodePoints(count: Int) { repeat(count) { if (sb.isNotEmpty()) sb.setLength(sb.length - 1) } }
+        override fun deleteBackward() = deleteCodePoints(1)
+        override val isSecure = false
+        override fun contextBeforeInput(): String = sb.toString()
+        override fun confirmTail(expected: String) = sb.endsWith(expected)
+    }
+
+    @Test fun testLineBreakCommitsWordLearnsAndSkipsAction() {
+        val s = session(traits = FieldTraits()); val p = EnterProxy()
+        val before = s.langModel.count("việt")
+        for (c in "vieetj") s.handle(Key.Letter(c), p)
+        val out = s.handle(Key.LineBreak, p)
+        assertEquals("việt\n", p.sb.toString())
+        assertEquals(0, p.actions)
+        assertEquals(before + 1, s.langModel.count("việt"))
+        assertTrue(out.needsAutoShift)
+        // ⌫ sau xuống dòng chỉ xoá "\n", không mở lại từ cũ.
+        s.handle(Key.Backspace, p)
+        assertEquals("việt", p.sb.toString())
+        // Enter thường vẫn đi đường cũ (action).
+        s.handle(Key.Newline, p)
+        assertEquals(1, p.actions)
+    }
+
+    @Test fun testLineBreakPassthroughStillLiteralNewline() {
+        val s = session(traits = FieldTraits(passthrough = true)); val p = EnterProxy()
+        s.handle(Key.Letter('a'), p)
+        s.handle(Key.LineBreak, p)
+        assertEquals("a\n", p.sb.toString()); assertEquals(0, p.actions)
+    }
 }

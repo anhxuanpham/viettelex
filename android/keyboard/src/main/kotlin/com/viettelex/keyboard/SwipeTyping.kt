@@ -84,8 +84,15 @@ class GestureClassifier(val params: Params = Params()) {
     fun end() { state = State.IDLE }
 }
 
-/** Kết quả vuốt: từ chèn + biến thể cho thanh gợi ý (đã theo chữ hoa). */
-data class SwipeChoice(val word: String, val alternatives: List<String>)
+/**
+ * Kết quả vuốt: từ chèn + biến thể cho thanh gợi ý (đã theo chữ hoa). [english] = từ chèn
+ * là tiếng Anh (chèn nguyên văn, không seed Telex); [englishAlternatives] = các phương án
+ * tiếng Anh trong [alternatives].
+ */
+data class SwipeChoice(
+    val word: String, val alternatives: List<String>,
+    val english: Boolean = false, val englishAlternatives: Set<String> = emptySet(),
+)
 
 object SwipeSuggest {
     const val TOP_K = 5
@@ -106,47 +113,105 @@ object SwipeSuggest {
     }
 
     /**
-     * Điểm ngữ cảnh: từ kế tiếp hay gặp sau (prev2, prev1) được cộng [NEXT_BONUS]; từ
-     * người dùng hay gõ cộng ln(1+count)·[PERSONAL_WEIGHT] (trần [PERSONAL_CAP]).
+     * Điểm ngữ cảnh (log-domain, GIỐNG bản iOS SwipeTyping.contextScore):
+     *  - cá nhân: từ kế tiếp hay gặp sau (prev2, prev1) +[NEXT_BONUS]; từ hay gõ
+     *    +ln(1+count)·[PERSONAL_WEIGHT] (trần [PERSONAL_CAP]);
+     *  - tĩnh: PMI bigram âm tiết (vnbigram.bin) sau [prev] ·[STATIC_WEIGHT], trần [STATIC_CAP]
+     *    (< NEXT_BONUS ⇒ dữ liệu cá nhân vẫn thắng); đã có nextWords thì nhân [STATIC_DAMP].
+     * [folded] (cho decoder) = điểm âm tiết tốt nhất của dạng không dấu (tần suất + ngữ cảnh)
+     * trừ phần tần suất decoder đã tính ⇒ decode và expand chấm cùng một thước.
      */
     class Context(private val next: Set<String>, private val nextFolded: Set<String>,
-                  private val count: (String) -> Int) {
-        val folded: ((String) -> Float)? = if (nextFolded.isEmpty()) null else { f -> if (f in nextFolded) NEXT_BONUS else 0f }
-        val word: (String) -> Float = { w ->
+                  private val count: (String) -> Int,
+                  prev: String? = null, bigram: SyllableBigram? = null,
+                  /** Tham số tiếng Anh cho decoder (giai đoạn 3); null = tắt vuốt tiếng Anh. */
+                  val english: SwipeEnglishPrior? = null) {
+        private val row: SyllableBigram.Row? =
+            if (prev == null || bigram == null) null
+            else bigram.row(SyllableBigram.idOf(prev)).takeIf { it.size > 0 }
+        private val staticWeight = if (next.isEmpty()) STATIC_WEIGHT else STATIC_WEIGHT * STATIC_DAMP
+
+        /** Điểm bigram tĩnh của âm tiết có dấu [w] (0 nếu không có dữ liệu). */
+        fun static(w: String): Float {
+            val r = row ?: return 0f
+            val id = SyllableBigram.idOf(w)
+            return if (id < 0) 0f else minOf(STATIC_CAP, staticWeight * r.score(id))
+        }
+
+        /**
+         * Điểm ngữ cảnh cho ứng viên TIẾNG ANH: chỉ phần cá nhân (từ hay gõ / từ hay theo
+         * sau) — bigram tĩnh là của âm tiết Việt ("the" Anh không được ăn PMI của "the" Việt).
+         */
+        val englishWord: (String) -> Float = { w ->
             val c = count(w)
             val p = if (c > 0) minOf(PERSONAL_CAP, PERSONAL_WEIGHT * ln(1.0 + c).toFloat()) else 0f
             p + if (w in next) NEXT_BONUS else 0f
         }
+
+        val word: (String) -> Float = { w ->
+            val c = count(w)
+            val p = if (c > 0) minOf(PERSONAL_CAP, PERSONAL_WEIGHT * ln(1.0 + c).toFloat()) else 0f
+            p + (if (w in next) NEXT_BONUS else 0f) + static(w)
+        }
+
+        val folded: ((String) -> Float)? =
+            if (nextFolded.isEmpty() && row == null) null else { f -> foldedScore(f, word) }
     }
+
+    /** max(tần suất + ngữ cảnh) trên các âm tiết của [f] − tần suất decoder đã cộng (≥ 0). */
+    fun foldedScore(f: String, word: (String) -> Float): Float {
+        val i = SwipeLexicon.indexOf(f)
+        if (i < 0) return 0f
+        val best = SwipeDecoder.expand(f, 1, context = word).firstOrNull() ?: return 0f
+        return maxOf(0f, best.score - LAMBDA_FREQ * SwipeLexicon.forms.freq[i].toFloat() / 255f)
+    }
+
+    private val LAMBDA_FREQ = SwipeDecoder.Params().lambdaFreq
 
     const val NEXT_BONUS = 1.5f
     const val PERSONAL_WEIGHT = 0.4f
     const val PERSONAL_CAP = 1.5f
+    const val STATIC_WEIGHT = 0.3f
+    const val STATIC_CAP = 1.2f
+    const val STATIC_DAMP = 0.5f
 
-    fun context(model: UserLangModel?, prev1: String?, prev2: String?): Context {
-        if (model == null) return Context(emptySet(), emptySet()) { 0 }
-        val next = if (prev1 != null) model.nextWords(prev1, prev2, 24).map { it.lowercase() }.toSet() else emptySet()
-        return Context(next, next.mapTo(HashSet()) { fold(it) }) { model.count(it) }
+    fun context(model: UserLangModel?, prev1: String?, prev2: String?,
+                english: SwipeEnglishPrior? = null,
+                bigram: SyllableBigram? = SyllableBigram.shared): Context {
+        val next = if (model != null && prev1 != null) model.nextWords(prev1, prev2, 24).map { it.lowercase() }.toSet() else emptySet()
+        val count: (String) -> Int = if (model == null) { _ -> 0 } else { w -> model.count(w) }
+        return Context(next, next.mapTo(HashSet()) { fold(it) }, count, prev1, bigram, english)
     }
+
+    /** Từ hiển thị của một ứng viên: tiếng Anh = chính nó; Việt = bung dấu. */
+    private fun wordsFor(c: SwipeCandidate, limit: Int, wordCtx: ((String) -> Float)?): List<String> =
+        if (c.lang == SwipeLang.EN) listOf(c.folded)
+        else SwipeDecoder.expand(c.folded, limit, context = wordCtx).map { it.word }
 
     /**
      * Ứng viên không dấu (đã xếp) → top-1 có dấu + biến thể: dấu khác của dạng top-1 và
      * dạng top-2/3 (cho/co), xen kẽ, tối đa [MAX_ALTERNATIVES]. null nếu không có gì.
      */
     fun choose(cands: List<SwipeCandidate>, wordCtx: ((String) -> Float)?, case: Case = Case.LOWER): SwipeChoice? {
-        var best: List<SwipeWord> = emptyList()
+        var best: List<String> = emptyList()
         var bestIdx = -1
         for ((i, c) in cands.withIndex()) {
-            best = SwipeDecoder.expand(c.folded, 8, context = wordCtx)
+            best = wordsFor(c, 8, wordCtx)
             if (best.isNotEmpty()) { bestIdx = i; break }
         }
         if (bestIdx < 0) return null
-        val word = best[0].word
-        val variants = best.drop(1).map { it.word }
+        val lead = cands[bestIdx].lang
+        val word = best[0]
+        val variants = best.drop(1)
+        val english = HashSet<String>()
+        if (lead == SwipeLang.EN) english.add(word)
         val others = ArrayList<String>()
         for (c in cands.drop(bestIdx + 1)) {
             if (others.size >= 2) break
-            SwipeDecoder.expand(c.folded, 1, context = wordCtx).firstOrNull()?.let { others.add(it.word) }
+            wordsFor(c, 1, wordCtx).firstOrNull()?.let {
+                others.add(it)
+                if (c.lang == SwipeLang.EN) english.add(it)
+            }
         }
         val alts = LinkedHashSet<String>()
         var vi = 0; var oi = 0
@@ -156,7 +221,20 @@ object SwipeSuggest {
             if (alts.size < MAX_ALTERNATIVES && oi < others.size) alts.add(others[oi++])
         }
         alts.remove(word)
-        return SwipeChoice(applyCase(word, case), alts.map { applyCase(it, case) })
+        // Luôn có 1 phương án ngôn ngữ kia nếu decoder có (the ↔ thế): thay phương án cuối.
+        val isOther = { w: String -> (w in english) != (lead == SwipeLang.EN) }
+        if (alts.none(isOther)) {
+            val c = cands.drop(bestIdx + 1).firstOrNull { it.lang != lead && wordsFor(it, 1, wordCtx).isNotEmpty() }
+            val w = c?.let { wordsFor(it, 1, wordCtx)[0] }
+            if (w != null && w != word) {
+                if (c.lang == SwipeLang.EN) english.add(w) else english.remove(w)
+                alts.remove(w)
+                if (alts.size >= MAX_ALTERNATIVES) alts.remove(alts.last())
+                alts.add(w)
+            }
+        }
+        return SwipeChoice(applyCase(word, case), alts.map { applyCase(it, case) },
+            lead == SwipeLang.EN, alts.filter { it in english }.mapTo(HashSet()) { applyCase(it, case) })
     }
 
     fun applyCase(w: String, case: Case): String = when (case) {

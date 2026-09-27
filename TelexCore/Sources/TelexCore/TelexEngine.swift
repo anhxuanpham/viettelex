@@ -860,6 +860,12 @@ public struct TelexEngine {
     /// typing context doesn't inherit the previous field's last word.
     public mutating func resetContext() { previousWordEnglish = false }
 
+    /// Caller vừa chèn NGUYÊN VĂN một từ ngoài engine (gõ vuốt ra từ tiếng Anh): cập nhật
+    /// ngữ cảnh chéo từ như thể từ đó vừa được chốt — "check" vuốt rồi gõ "is" giữ "is".
+    public mutating func noteExternalWord(english: Bool) {
+        if contextualEnglish { previousWordEnglish = english }
+    }
+
     /// Final text to commit at a word boundary, with auto-restore applied
     /// (non-Vietnamese syllables fall back to the raw keystrokes). Resets the engine.
     /// Used by the marked-text controller path.

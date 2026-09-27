@@ -14,15 +14,15 @@ cao 246pt khi bật, 216pt khi tắt) có **ba trạng thái** theo ngữ cảnh
 | Trạng thái | Hiển thị | Nguồn dữ liệu |
 |---|---|---|
 | Field trống, chưa gõ | 3 từ user hay mở đầu nhất | `UserLangModel.topWords` |
-| Vừa space sau một từ ("Anh ␣") | 3 từ **kế tiếp** dự đoán | `UserLangModel.nextWords` (trigram ⊕ bigram ⊕ seed) |
-| Đang gõ dở một từ | `["nguyên văn"] \| ứng viên 1 \| ứng viên 2 (hoặc ≤3 emoji)` | `VNSuggest` (inline) + `EmojiSuggest` |
+| Vừa space sau một từ ("Anh ␣") | 3 từ **kế tiếp** dự đoán | `UserLangModel.nextWords` (trigram ⊕ bigram ⊕ seed), thiếu thì lấp bằng `SyllableBigram` (tầng 7) |
+| Đang gõ dở một từ | `["nguyên văn"] \| ứng viên 1 \| ứng viên 2 (hoặc ≤3 emoji)` | `VNSuggest` (inline) + bigram tĩnh (tầng 7) + `EmojiSuggest` |
 
 Rule ngữ cảnh cứng chạy trước cả ba: token trước con trỏ kết thúc bằng `@` →
 gợi `gmail.com / yahoo.com / outlook.com`; kết thúc bằng `.` sau chữ/số → gợi
 TLD `com / vn / net`. Các fragment này chèn không kèm space và không đi qua
 datastore (token chứa `@`/`.` không phải "từ").
 
-Chip số chạy song song cả hai trạng thái có chữ (xem tầng 7): khi token trước con
+Chip số chạy song song cả hai trạng thái có chữ (xem tầng 8): khi token trước con
 trỏ là số/số tiền/biểu thức "…=", **một** chip chiếm slot GIỮA — literal vẫn ở slot
 đầu, nội dung slot giữa dời sang slot 3.
 
@@ -80,7 +80,9 @@ QuickType). Tự tắt ở field từ chối gợi ý (`isSecureTextEntry`,
   SQLite trong App Group bị bác có chủ ý (anti-pattern iOS — corruption khi
   extension bị suspend).
 - **Ranking inline**: điểm ứng viên khi đang gõ dở =
-  `log(staticFreq+1) + 2.5·log(personalCount+1) + 4·[có trong nextWords ngữ cảnh] + 1.5·[chỉ-còn-thiếu-dấu]`.
+  `log(staticFreq+1) + 2.5·log(personalCount+1) + 4·[có trong nextWords ngữ cảnh] + 1.5·[chỉ-còn-thiếu-dấu] + bigram`
+  (bigram = tầng 7). Logic thuần ở `SuggestRank.rankInline` (SuggestionSupport); hoà điểm giữ
+  thứ tự pool (tần suất tĩnh) để iOS ≡ Android.
 
 ### 3. `SeedData` — mồi ban đầu
 
@@ -121,7 +123,27 @@ App Store review) giấu chúng khỏi thanh. Phân tầng: chỉ token thô (l�
 đời thường (cướp, giết, đánh rắm, mày/má) KHÔNG lọc. Khi lọc, over-fetch 6
 lấy top-3 nên slot luôn được lấp.
 
-### 7. `NumberChips` — đọc số, định dạng tiền, máy tính nhanh
+### 7. `SyllableBigram` — bigram âm tiết tĩnh (27/09/2026)
+
+Bảng `Resources/vnbigram.bin` (PMI chiết khấu cặp âm tiết liền nhau, ~1,2MB; nguồn/giấy phép
+`docs/DATA-SOURCES.md`) — CÙNG một instance `SyllableBigram.shared` với gõ vuốt (map một lần).
+Mục đích: người dùng MỚI (UserLangModel chỉ có seed) vẫn được gợi ý theo ngữ cảnh.
+
+- **Inline**: `bigram = min(8, 2.5·PMI(âm tiết trước → ứng viên))`, nhân **0.45** khi có ứng
+  viên nào của pool nằm trong nextWords (cá nhân/seed đã có ý kiến về lượt này) ⇒ trần hiệu
+  dụng 3.6 < 4 (điểm nextWords) — **cá nhân thắng** khi còn lại ngang nhau (golden: user gõ
+  "sao có" 3 lần ⇒ "co" ra có, dù bigram nghiêng cô). Không âm tiết trước / từ lạ ⇒ 0.
+- **Từ kế tiếp**: nextWords (cá nhân/seed) giữ trước; còn < 3 thì lấp bằng top âm tiết theo
+  `PMI + 12·freq/255` sau từ trước (PMI thuần nghiêng cặp hiếm), qua lọc nhạy cảm + DisplayCase
+  + viết hoa đầu câu như mọi gợi ý; cuối cùng mới đệm topWords.
+- **Hiệu năng**: PMI cho pool tính ở `suggestQueue` (nền, cùng generation token); từ kế tiếp
+  tra trên main ~µs. Bảng mmap `.alwaysMapped`, đọc tại chỗ: RAM bẩn ≈ 0 (test đo
+  phys_footprint sau khi duyệt toàn bảng). Map + hash kiểm lexicon chạy nền ở `viewDidLoad`.
+- **Đo** (`SuggestBigramTests`, câu Tatoeba giữ lại, người dùng mới gõ chạm không dấu):
+  slot1 0.747 → 0.829, 3 slot 0.880 → 0.938, từ kế tiếp top3 0.111 → 0.271; người dùng đã học
+  dần cũng tăng (không tụt). Trọng số chọn bằng lưới `tuneGrid` (Android, `VT_TUNE=1`).
+
+### 8. `NumberChips` — đọc số, định dạng tiền, máy tính nhanh
 
 Hàm thuần `NumberChips.chip(before:)` (Swift) ≡ `NumberChips.chip(before)` (Kotlin),
 cùng kết quả trên fixture chung `KeyboardTests/Fixtures/number-chips.txt`. Không bao
@@ -180,6 +202,8 @@ trước khi xoá — lệch thì bỏ, không xoá mù).
 | `ios/Keyboard/EmojiSuggest.swift` | GENERATED — emoji theo nghĩa |
 | `ios/Keyboard/DisplayCase.swift` | Case chuẩn proper noun |
 | `ios/Keyboard/SensitiveWords.swift` | Bộ lọc từ nhạy cảm |
+| `ios/Keyboard/SyllableBigram.swift` | Bảng bigram âm tiết tĩnh (mmap, dùng chung gõ vuốt) |
+| `ios/Keyboard/SuggestionSupport.swift` | `SuggestRank` (xếp hạng inline + lấp từ kế tiếp), `SuggestionFill` |
 | `ios/Keyboard/NumberChips.swift` | Chip số: đọc chữ / định dạng tiền / máy tính (thuần) |
 | `ios/Keyboard/KeyboardViewController.swift` | Điều phối: context, học, build SuggestionSet |
 | `ios/Keyboard/KeyboardView.swift` | UI thanh gợi ý (SuggestionSet → slots) |
@@ -187,6 +211,8 @@ trước khi xoá — lệch thì bỏ, không xoá mù).
 Tests: `ios/KeyboardTests/EngineBridgeTests.swift` — goldens cho compat-match
 ("tô" ⊅ toàn), shrinkage (1 lần gõ nhầm không đè seed), trigram gating,
 ngưỡng học từ lạ, seed contract (max weight ≤50), filter tiers, display-case.
+`ios/KeyboardTests/SuggestBigramTests.swift` (≡ android `SuggestBigramTests.kt`) — số đo heldout
+trước/sau làm ngưỡng hồi quy, cá nhân thắng, độ trễ, RAM bẩn.
 `ios/KeyboardTests/NumberChipsTests.swift` + android `NumberChipsTests.kt` — cùng
 fixture `number-chips.txt` (đọc số, viết tắt k/tr/tỷ, biểu thức, chip theo context).
 

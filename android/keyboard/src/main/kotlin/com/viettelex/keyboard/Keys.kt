@@ -21,10 +21,17 @@ object Keys {
     const val LIVE_SPELL_CHECK = "liveSpellCheck"
     /** Gõ vuốt (thử nghiệm, mặc định tắt). */
     const val SWIPE_TYPING = "swipeTyping"
+    const val SWIPE_ENGLISH = "swipeEnglish"
+    /** Gõ Telex bằng bàn phím cứng (tablet, DeX, Chromebook, BT/USB) — mặc định BẬT. */
+    const val HARDWARE_TELEX = "hardwareTelex"
+
+    /** Gõ tắt: bật/tắt (mặc định BẬT) + bảng (String YAML phẳng như macOS, xem [ShortcutFile]). */
+    const val SHORTCUTS_ENABLED = "shortcutsEnabled"
+    const val SHORTCUTS = "shortcuts"
 
     /** Key ảnh hưởng engine/EngineBridge — đổi lúc bàn phím đang mở thì áp ngay. */
     val ENGINE_KEYS = setOf(SIMPLE_TELEX, FREE_MARKING, QUICK_TELEX, MODERN_TONE, CONTEXTUAL_ENGLISH,
-        AUTO_FIX_ADJACENT, TEENCODE, AUTO_RESTORE, LIVE_SPELL_CHECK)
+        AUTO_FIX_ADJACENT, TEENCODE, AUTO_RESTORE, LIVE_SPELL_CHECK, SHORTCUTS_ENABLED, SHORTCUTS)
     const val SHOW_SUGGESTIONS = "showSuggestions"
     const val FILTER_SENSITIVE = "filterSensitive"
     const val TEMPLATES_ENABLED = "templatesEnabled"
@@ -32,6 +39,8 @@ object Keys {
     const val HAPTIC_FEEDBACK = "hapticFeedback"
     /** Int −10…10 (dp mỗi hàng). */
     const val ROW_HEIGHT_ADJUST = "rowHeightAdjust"
+    /** Bool — hàng phím số trên plane chữ (tên như iOS App Group). */
+    const val NUMBER_ROW = "numberRow"
     /** String JSON `[{"label":…,"text":…}]`; vắng ⇒ mặc định từ assets/ios-mau-cau.yml. */
     const val USER_TEMPLATES = "userTemplates"
     const val DEBUG_TOUCH_LOG = "debugTouchLog"
@@ -48,6 +57,8 @@ object Keys {
 
     // assets
     const val ASSET_LEXICON = "vnlexicon.bin"
+    const val ASSET_EN_LEXICON = "enlexicon.bin"
+    const val ASSET_BIGRAM = "vnbigram.bin"
     const val ASSET_EMOJI_SUGGEST = "emojisuggest.bin"
     const val ASSET_SEED = "seed.tsv"
     const val ASSET_EMOJI_DATA = "emojidata.tsv"

@@ -28,6 +28,7 @@ targets:
     platform: iOS
     sources:
       - App
+      - Keyboard/Shortcuts.swift
       - path: ios-mau-cau.yml
         buildPhase: resources
     settings:
@@ -118,7 +119,17 @@ targets:
       - Keyboard/SwipeDecoder.swift
       - Keyboard/SwipeGesture.swift
       - Keyboard/SwipeTyping.swift
+      - Keyboard/SwipeEnglish.swift
+      - Keyboard/SyllableBigram.swift
+      - Keyboard/Shortcuts.swift
+      # bảng gõ tắt mẫu ở gốc repo — test khứ hồi parse/export cùng định dạng macOS
+      - path: ../sample-shortcuts.yml
+        buildPhase: resources
       - path: Keyboard/Resources/vnlexicon.bin
+        buildPhase: resources
+      - path: Keyboard/Resources/enlexicon.bin
+        buildPhase: resources
+      - path: Keyboard/Resources/vnbigram.bin
         buildPhase: resources
     settings:
       base:
