@@ -24,6 +24,8 @@ object Keys {
     /** Gõ vuốt (thử nghiệm, mặc định tắt). */
     const val SWIPE_TYPING = "swipeTyping"
     const val SWIPE_ENGLISH = "swipeEnglish"
+    /** Giải mã vuốt bằng mô hình FUTO Swipe (thử nghiệm, mặc định TẮT — FutoSwipe). */
+    const val SWIPE_FUTO = "swipeFuto"
     /** Chọn phím theo ngữ cảnh lúc chạm (thử nghiệm, mặc định BẬT) — TouchTarget. */
     const val SMART_TOUCH = "smartTouch"
     /** Gõ Telex bằng bàn phím cứng (tablet, DeX, Chromebook, BT/USB) — mặc định BẬT. */
@@ -47,6 +49,8 @@ object Keys {
     const val FILTER_SENSITIVE = "filterSensitive"
     const val TEMPLATES_ENABLED = "templatesEnabled"
     const val SHOW_SPACE_LOGO = "showSpaceLogo"
+    /** Bool — ô phóng to chữ khi bấm phím (balloon); tên như iOS App Group. Mặc định BẬT. */
+    const val KEY_PREVIEW = "keyPreviewEnabled"
     const val HAPTIC_FEEDBACK = "hapticFeedback"
     /** Int −10…10 (dp mỗi hàng). */
     const val ROW_HEIGHT_ADJUST = "rowHeightAdjust"
@@ -95,6 +99,8 @@ object Keys {
     const val ASSET_EN_LEXICON = "enlexicon.bin"
     const val ASSET_BIGRAM = "vnbigram.bin"
     const val ASSET_LM = "vnlm.bin"
+    /** Encoder FUTO Swipe fp16 (FUTO Model Weights License 1.0 — chỉ đọc khi bật SWIPE_FUTO). */
+    const val ASSET_FUTO = "futoswipe.bin"
     const val ASSET_EMOJI_SUGGEST = "emojisuggest.bin"
     const val ASSET_SEED = "seed.tsv"
     /** Emoji + khoá tìm tiếng Việt + kaomoji (Scripts/gen-emoji-data.py, chung iOS). */

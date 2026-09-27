@@ -347,14 +347,6 @@ extension View {
     }
 }
 
-/// Một mẫu câu: text đầy đủ + label tuỳ chọn (emoji/chữ ngắn) để bubble trên
-/// bàn phím render gọn.
-struct TemplateItem: Equatable, Identifiable {
-    var label: String
-    var text: String
-    var id: String { label + "\u{1}" + text }
-}
-
 /// Tab Mẫu Câu — quản lý câu soạn sẵn cho nút ☰ trên bàn phím
 /// (App Group key "userTemplates", mỗi entry ["label": …, "text": …]).
 struct MauCauSections: View {
@@ -387,19 +379,40 @@ struct MauCauSections: View {
     @State private var editLabel = ""
     @State private var editText = ""
 
-    /// Lưu dòng đang sửa; bỏ qua nếu rỗng hoặc trùng câu của dòng khác.
+    /// Báo lý do ở ngay dưới hàng đang thao tác (thêm mới / sửa).
+    @State private var addNotice: String?
+
+    /// Lưu dòng đang sửa; rỗng/trùng câu dòng khác → báo lý do, giữ nguyên ô sửa.
     private func commitEdit() {
         guard let i = editingIndex, templates.indices.contains(i) else { editingIndex = nil; return }
-        let t = editText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let l = editLabel.trimmingCharacters(in: .whitespaces)
-        guard !t.isEmpty else { return }
-        if templates.enumerated().contains(where: { $0.offset != i && $0.element.text == t }) {
-            notice = "Mẫu câu này đã có."
-            return
+        switch TemplateEdit.update(templates, at: i, label: editLabel, text: editText) {
+        case .ok(let items):
+            templates = items
+            editingIndex = nil
+            addNotice = nil
+            persist()
+        case .rejected(let r):
+            addNotice = TemplateEdit.message(r, items: templates)
         }
-        templates[i] = TemplateItem(label: l, text: t)
-        editingIndex = nil
-        persist()
+    }
+
+    /// Nút ⊕: thêm, hoặc báo lý do không thêm (trước đây trùng câu → return IM LẶNG).
+    private func commitAdd() {
+        endEditing()
+        switch TemplateEdit.add(templates, label: newLabel, text: newText) {
+        case .ok(let items):
+            templates = items
+            addNotice = "Đã thêm mẫu câu (dòng \(items.count))."
+            newLabel = ""; newText = ""
+            persist()
+        case .rejected(let r):
+            addNotice = TemplateEdit.message(r, items: templates)
+        }
+    }
+
+    /// Chốt chữ đang soạn (marked text của bàn phím) vào binding trước khi đọc ô.
+    private func endEditing() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
     private func persist() {
@@ -412,6 +425,7 @@ struct MauCauSections: View {
             ForEach(Array(templates.enumerated()), id: \.element.id) { i, t in
                 if editingIndex == i {
                     // Sửa tại chỗ (không dùng sheet/alert — trong List chúng không hiện).
+                    VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         TextField("👋", text: $editLabel)
                             .frame(width: 44)
@@ -419,20 +433,23 @@ struct MauCauSections: View {
                         Divider()
                         TextField("Mẫu câu", text: $editText, axis: .vertical)
                             .lineLimit(1...4)
-                        Button { commitEdit() } label: {
+                        Button { endEditing(); commitEdit() } label: {
                             Image(systemName: "checkmark.circle.fill").font(.title3)
                         }
                         .buttonStyle(.borderless)
-                        .disabled(editText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        Button { editingIndex = nil } label: {
+                        Button { editingIndex = nil; addNotice = nil } label: {
                             Image(systemName: "xmark.circle").font(.title3)
                         }
                         .buttonStyle(.borderless)
                         .foregroundStyle(.secondary)
                     }
+                    if let addNotice, !addNotice.hasPrefix("Đã") {
+                        Text(addNotice).font(.footnote).foregroundStyle(.orange)
+                    }
+                    }
                 } else {
                     Button {
-                        editLabel = t.label; editText = t.text; editingIndex = i
+                        editLabel = t.label; editText = t.text; editingIndex = i; addNotice = nil
                     } label: {
                         HStack {
                             Text(t.label.isEmpty ? "💬" : t.label).frame(minWidth: 30)
@@ -463,26 +480,24 @@ struct MauCauSections: View {
                 Divider()
                 TextField("Thêm mẫu câu…", text: $newText, axis: .vertical)
                     .lineLimit(1...3)
-                Button {
-                    let t = newText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let l = newLabel.trimmingCharacters(in: .whitespaces)
-                    guard !t.isEmpty, !templates.contains(where: { $0.text == t })
-                    else { return }
-                    templates.append(TemplateItem(label: l, text: t))
-                    newLabel = ""; newText = ""
-                    persist()
-                } label: { Image(systemName: "plus.circle.fill").font(.title3) }
+                // KHÔNG .disabled theo newText: chữ đang soạn (marked text) chưa vào
+                // binding → nút xám dù ô có chữ; bấm luôn được, lý do báo ở footer.
+                Button { commitAdd() } label: { Image(systemName: "plus.circle.fill").font(.title3) }
                 .buttonStyle(.borderless)
-                .disabled(newText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityLabel("Thêm mẫu câu")
             }
         } header: { Text("Thêm mới") } footer: {
-            Text("Ô nhỏ bên trái là label (không bắt buộc).")
+            if let addNotice {
+                Text(addNotice).foregroundStyle(addNotice.hasPrefix("Đã") ? Color.secondary : Color.orange)
+            } else {
+                Text("Ô nhỏ bên trái là label (không bắt buộc).")
+            }
         }
 
         Section {
             FullAccessNotice(reason: "Mẫu câu động")
         } header: { Text("Mẫu câu động (https://)") } footer: {
-            Text("Mẫu có nội dung bắt đầu bằng https:// sẽ fetch dữ liệu NGAY LÚC BẤM và chèn kết quả (tối đa 1000 bytes) — ví dụ IP❓ chèn địa chỉ IP hiện tại. Chưa cấp Toàn quyền thì bàn phím không có mạng, bấm sẽ chèn chính URL.")
+            Text("Mẫu có nội dung bắt đầu bằng https:// sẽ fetch dữ liệu NGAY LÚC BẤM và chèn kết quả (tối đa 1000 bytes) — ví dụ 🌐 IP chèn địa chỉ IP hiện tại. Chưa cấp Toàn quyền thì bàn phím không có mạng, bấm sẽ chèn chính URL.")
         }
 
         Section {
@@ -526,34 +541,8 @@ struct MauCauSections: View {
         }
     }
 
-    /// Flat YAML: `- "label | text"` hoặc `- text`; bỏ comment/dòng trống.
-    static func parseYAML(_ text: String) -> [TemplateItem] {
-        text.split(separator: "\n").compactMap { line in
-            var s = line.trimmingCharacters(in: .whitespaces)
-            guard !s.isEmpty, !s.hasPrefix("#"), s.hasPrefix("- ") else { return nil }
-            s = String(s.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-            if s.count >= 2, s.hasPrefix("\""), s.hasSuffix("\"") {
-                s = String(s.dropFirst().dropLast())
-                    .replacingOccurrences(of: "\\\"", with: "\"")
-            }
-            guard !s.isEmpty else { return nil }
-            if let r = s.range(of: " | ") {
-                let label = String(s[..<r.lowerBound]).trimmingCharacters(in: .whitespaces)
-                let body = String(s[r.upperBound...]).trimmingCharacters(in: .whitespaces)
-                return body.isEmpty ? nil : TemplateItem(label: label, text: body)
-            }
-            return TemplateItem(label: "", text: s)
-        }
-    }
-
-    static func exportYAML(_ items: [TemplateItem]) -> String {
-        func esc(_ s: String) -> String { s.replacingOccurrences(of: "\"", with: "\\\"") }
-        return "# VietTelex — mẫu câu (\(items.count))\n"
-            + items.map {
-                $0.label.isEmpty ? "- \"\(esc($0.text))\""
-                                 : "- \"\(esc($0.label)) | \(esc($0.text))\""
-            }.joined(separator: "\n") + "\n"
-    }
+    static func parseYAML(_ text: String) -> [TemplateItem] { TemplateEdit.parseYAML(text) }
+    static func exportYAML(_ items: [TemplateItem]) -> String { TemplateEdit.exportYAML(items) }
 }
 
 /// FileDocument tối giản cho export YAML.
@@ -857,6 +846,9 @@ struct TinhNangSections: View {
     private var oneHandMode = "off"
     @AppStorage("hapticFeedback", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var hapticFeedback = false
+    /// Ô phóng to chữ khi bấm phím — mặc định BẬT (KeyboardView.keyPreviewKey).
+    @AppStorage("keyPreviewEnabled", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var keyPreview = true
     @AppStorage("reEditWord", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var reEditWord = true
     @AppStorage("swipeTyping", store: UserDefaults(suiteName: "group.com.viettelex"))
@@ -864,6 +856,9 @@ struct TinhNangSections: View {
     /// Công tắc con (giai đoạn 3) — mặc định BẬT, xem KeyboardSettings.swipeEnglish.
     @AppStorage("swipeEnglish", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var swipeEnglish = true
+    /// Decoder FUTO Swipe (thử nghiệm) — mặc định TẮT, xem KeyboardSettings.swipeFuto.
+    @AppStorage("swipeFuto", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var swipeFuto = false
     /// Chọn phím theo ngữ cảnh (thử nghiệm) — mặc định BẬT, xem KeyboardSettings.smartTouch.
     @AppStorage("smartTouch", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var smartTouch = true
@@ -913,6 +908,7 @@ struct TinhNangSections: View {
                 Label("Theme & ảnh nền", systemImage: "paintpalette")
             }
             settingToggle("Hiện logo Vᴛ", "Logo mờ ở góc phải phím space.", isOn: $showSpaceLogo)
+            settingToggle("Phóng to chữ khi bấm", "Ô chữ lớn nổi lên trên phím vừa chạm (như iPhone). Tắt cho gọn và nhẹ máy hơn.", isOn: $keyPreview)
             settingToggle("Rung phím", "Rung nhẹ mỗi lần chạm phím.", isOn: $hapticFeedback)
             if hapticFeedback {
                 FullAccessNotice(reason: "Rung phím")
@@ -953,6 +949,14 @@ struct TinhNangSections: View {
             settingToggle("Gõ vuốt", "Vuốt qua các chữ không dấu rồi nhấc tay: v→i→e→t ra “việt”. Gõ tiếp phím dấu (s f r x j) để đổi dấu, ⌫ ngay sau đó xoá cả từ, thanh gợi ý có các cách viết khác. Chỉ trên iPhone; tắt khi dùng VoiceOver và ở ô email/mật khẩu/URL.", isOn: $swipeTyping)
             if swipeTyping {
                 settingToggle("Vuốt từ tiếng Anh", "Vuốt ra cả từ tiếng Anh xen trong câu: check, mail, file, meeting… Khi một nét vuốt vừa là từ Việt vừa là từ Anh (the/thế, can/cần), bàn phím ưu tiên tiếng Việt — trừ khi đang gõ tiếng Anh — và luôn để phương án kia trên thanh gợi ý.", isOn: $swipeEnglish)
+                settingToggle("Mô hình nơ-ron gõ vuốt", "Thêm mạng nơ-ron nhận dạng nét vuốt (chạy hoàn toàn trên máy) để chấm cùng bộ giải mã hiện có. Tốn thêm khoảng 3 MB bộ nhớ khi bàn phím mở.", isOn: $swipeFuto)
+                // Ghi công BẮT BUỘC theo FUTO Model Weights License 1.0 ("visible notice …
+                // within the product's settings") — Phil 27/09/2026: chỉ hiện ở đây (dưới công
+                // tắc, khi đã bật Gõ vuốt), chữ nhỏ mờ. KHÔNG xoá. Xem docs/DATA-SOURCES.md.
+                Link(destination: URL(string: "https://github.com/ptrinh/viettelex/blob/main/docs/DATA-SOURCES.md#futo-swipe")!) {
+                    Text("powered by FUTO Swipe")
+                }
+                .font(.caption2).foregroundStyle(.tertiary)
             }
         } header: { Text("Thử nghiệm") } footer: {
             Text("Tính năng đang thử — áp dụng lần mở bàn phím kế tiếp.")

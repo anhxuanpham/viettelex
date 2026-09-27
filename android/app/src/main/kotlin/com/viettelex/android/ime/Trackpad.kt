@@ -116,6 +116,37 @@ class TrackpadGesture {
 }
 
 /**
+ * Gom bước trackpad theo FRAME (Choreographer): cộng dồn các bước cùng trục, ≤ 1 lệnh dời
+ * con trỏ (IPC) mỗi frame. Đổi trục giữa frame ⇒ [add] trả bước trục cũ để phát NGAY
+ * (giữ đúng thứ tự ngang/dọc). THUẦN — pinned by TrackpadTest.
+ */
+class TrackpadBatcher {
+    private var axis = TrackpadGesture.Axis.H
+    private var count = 0
+    val hasPending get() = count != 0
+
+    /** Thêm bước; != null ⇒ bước cũ khác trục, phát ngay trước khi gom tiếp. */
+    fun add(step: TrackpadGesture.Step): TrackpadGesture.Step? {
+        if (step.count == 0) return null
+        var out: TrackpadGesture.Step? = null
+        if (count != 0 && step.axis != axis) { out = TrackpadGesture.Step(axis, count); count = 0 }
+        axis = step.axis
+        count += step.count
+        return out
+    }
+
+    /** Frame tới / nhả tay: bước đã gom (null nếu không có hoặc triệt tiêu nhau). */
+    fun drain(): TrackpadGesture.Step? {
+        if (count == 0) return null
+        val s = TrackpadGesture.Step(axis, count)
+        count = 0
+        return s
+    }
+
+    fun clear() { count = 0 }
+}
+
+/**
  * Lên/xuống dòng — tính THUẦN trên văn bản quanh con trỏ.
  *
  * [plan] chọn cách:

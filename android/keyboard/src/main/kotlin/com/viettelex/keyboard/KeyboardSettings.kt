@@ -42,6 +42,8 @@ data class KeyboardSettings(
      * vuốt đang bật. Giống iOS.
      */
     var swipeEnglish: Boolean = true,
+    /** Giải mã vuốt bằng mô hình FUTO Swipe (thử nghiệm, mặc định TẮT — [FutoSwipe]). Giống iOS. */
+    var swipeFuto: Boolean = false,
     /** Chọn phím theo ngữ cảnh lúc chạm vùng biên 2 phím (TouchTarget) — thử nghiệm, mặc định BẬT. */
     var smartTouch: Boolean = true,
     /** Telex cho bàn phím cứng — mặc định BẬT; tắt ⇒ IME không đụng KeyEvent. */
@@ -52,6 +54,8 @@ data class KeyboardSettings(
     // Phần UI (iOS đọc rải rác trong KeyboardView) — gom về đây cho IME.
     var templatesEnabled: Boolean = true,
     var showSpaceLogo: Boolean = true,
+    /** Ô phóng to chữ khi bấm phím — mặc định BẬT; tắt ⇒ không tạo/vẽ balloon. */
+    var keyPreview: Boolean = true,
     /** −10…10 dp mỗi hàng. */
     var rowHeightAdjust: Int = 0,
     /** Hàng phím số 1…0 trên hàng chữ — mặc định TẮT. */
@@ -89,12 +93,14 @@ data class KeyboardSettings(
             s.reEditWords = b(Keys.RE_EDIT_WORDS, s.reEditWords)
             s.swipeTyping = b(Keys.SWIPE_TYPING, s.swipeTyping)
             s.swipeEnglish = b(Keys.SWIPE_ENGLISH, s.swipeEnglish)
+            s.swipeFuto = b(Keys.SWIPE_FUTO, s.swipeFuto)
             s.smartTouch = b(Keys.SMART_TOUCH, s.smartTouch)
             s.hardwareTelex = b(Keys.HARDWARE_TELEX, s.hardwareTelex)
             s.shortcutsEnabled = b(Keys.SHORTCUTS_ENABLED, s.shortcutsEnabled)
             if (s.shortcutsEnabled) s.shortcuts = ShortcutTable(ShortcutFile.parse(get(Keys.SHORTCUTS) as? String))
             s.templatesEnabled = b(Keys.TEMPLATES_ENABLED, s.templatesEnabled)
             s.showSpaceLogo = b(Keys.SHOW_SPACE_LOGO, s.showSpaceLogo)
+            s.keyPreview = b(Keys.KEY_PREVIEW, s.keyPreview)
             s.debugTouchLog = b(Keys.DEBUG_TOUCH_LOG, s.debugTouchLog)
             s.numberRow = b(Keys.NUMBER_ROW, s.numberRow)
             s.oneHandMode = (get(Keys.ONE_HAND_MODE) as? String)?.takeIf { it == "left" || it == "right" } ?: "off"

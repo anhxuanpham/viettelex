@@ -119,6 +119,7 @@ targets:
       - Keyboard/KeyCommitQueue.swift
       - Keyboard/AdjacentKeyFixer.swift
       - Keyboard/TouchGeometry.swift
+      - Keyboard/KeyGeometry.swift
       - Keyboard/TouchLog.swift
       - Keyboard/SuggestionSupport.swift
       - Keyboard/SuggestionSlots.swift
@@ -136,12 +137,15 @@ targets:
       - Keyboard/SwipeGesture.swift
       - Keyboard/SwipeTyping.swift
       - App/Backup/BackupFormat.swift
+      - App/TemplateEdit.swift
       - App/Backup/SyncMerge.swift
       - App/Backup/BackupStore.swift
       - Keyboard/SwipeEnglish.swift
       - Keyboard/SyllableBigram.swift
       - Keyboard/AddTones.swift
       - Keyboard/SyllableLM.swift
+      - Keyboard/FutoSwipeModel.swift
+      - Keyboard/FutoSwipe.swift
       - Keyboard/TouchTarget.swift
       - Keyboard/Shortcuts.swift
       - Keyboard/TextTools.swift
@@ -167,6 +171,8 @@ targets:
       - path: Keyboard/Resources/vnbigram.bin
         buildPhase: resources
       - path: Keyboard/Resources/vnlm.bin
+        buildPhase: resources
+      - path: Keyboard/Resources/futoswipe.bin
         buildPhase: resources
     settings:
       base:

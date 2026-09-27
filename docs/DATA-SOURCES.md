@@ -182,6 +182,123 @@ quy: `SyllableLMTests` (iOS + Android) — top-1 ≥ 87,7 %, top-3 ≥ 95 %, hơ
 - Tần suất: tỉ lệ token quy về cùng thang với `vnlexicon.bin` (255·ln(count)/ln(max) trên
   corpus OpenSubtitles tiếng Việt ~26,4 triệu token) để decoder so hai từ điển trên một thang.
 
+## FUTO Swipe
+
+**futoswipe.bin — encoder FUTO Swipe cho gõ vuốt (THỬ NGHIỆM, mặc định tắt).**
+
+`iOS/Keyboard/Resources/futoswipe.bin` = `android/app/src/main/assets/futoswipe.bin` (1,27 MB,
+sha256 `59e41b22…3f089`), kèm `futoswipe-LICENSE.md` (thông báo sửa đổi + nguyên văn giấy phép)
+ở cùng thư mục — cả hai được đóng gói vào app. Chỉ đọc khi bật công tắc **Thử nghiệm → Gõ vuốt →
+Mô hình nơ-ron gõ vuốt** (Keys.SWIPE_FUTO / KeyboardSettings.swipeFuto, mặc định TẮT).
+**Powered by FUTO Swipe.**
+
+### Nguồn
+
+| Thành phần | Bản dùng | Giấy phép | Dùng thế nào |
+|---|---|---|---|
+| [futo-org/futo-swipe](https://huggingface.co/futo-org/futo-swipe) `honorable_sturgeon/model_fp32.pte` (encoder TCN 635K tham số; bài [arXiv 2606.25247](https://arxiv.org/abs/2606.25247)) | revision `18328c30…` (26/06/2026), sha256 `725242ba…1fbaf` | **FUTO Model Weights License 1.0** | weights → fp16 (Derivative Model đã sửa) |
+| Decoder `magic_macaw`, context LM `hungry_jellyfish` (cùng repo) | — | cùng giấy phép | KHÔNG dùng (chỉ tiếng Anh/QWERTY) |
+| [swipe-library](https://gitlab.futo.org/keyboard/swipe-library) (runtime C++/Kotlin của FUTO) | — | **GPL-3.0** | KHÔNG dùng, không chép code — repo MIT |
+| Schema flatbuffer ExecuTorch/XNNPACK (`program.fbs`, `runtime_schema.fbs`) | v1.2.0 | BSD-3-Clause | chỉ để đọc định dạng `.pte` trong Scripts/futo-swipe (không kèm file schema) |
+
+### Giấy phép — kết luận (đọc LICENSE.md 27/09/2026)
+
+Dùng trong app thương mại, đóng gói và phân phối lại (kể cả trong repo công khai) **ĐƯỢC PHÉP**,
+với điều kiện:
+
+- Quyền: *"non-exclusive, royalty-free, worldwide, non-sublicensable, non-transferable license to
+  use, copy, distribute, make available, and prepare Derivative Models of the Weights for any
+  purpose"* ⇒ được commit `futoswipe.bin` vào repo và đóng gói vào app; KHÔNG được cấp lại
+  (sublicense) ⇒ giấy phép MIT của VietTelex **không** áp lên file này (ghi rõ trong
+  `futoswipe-LICENSE.md`); người nhận nhận quyền trực tiếp từ FUTO theo bản giấy phép kèm theo.
+- Ghi công bắt buộc: *"You may use the Weights or any Derivative Model for any purpose, including in
+  commercial products and services, provided that you display a visible notice to end users stating
+  that the product is powered by "FUTO Swipe" technology … such as within the product's settings,
+  about screen … Failure to include this notice is a material breach"* ⇒ dòng "powered by FUTO
+  Swipe" ở mục **Giới thiệu** (iOS + Android) và trong mô tả công tắc. Luôn hiện, kể cả khi công
+  tắc tắt (model vẫn nằm trong app).
+- Tên/nhãn hiệu: *"… solely as required by the attribution notice … You may not use the name …
+  to suggest a relationship"* ⇒ công tắc đặt tên trung tính ("Mô hình nơ-ron gõ vuốt"), "FUTO
+  Swipe" chỉ xuất hiện trong câu ghi công; ghi rõ không liên kết/không được FUTO bảo trợ.
+- Derivative Model: *"If you distribute a Derivative Model, you must ensure that anyone who receives
+  it also receives a copy of these terms … prominent notice … that the model is derived from FUTO
+  Swipe … If you modify the Weights, you must include … a prominent notice stating that you have
+  modified them"* ⇒ fp16 + đổi bố cục = đã sửa: `futoswipe-LICENSE.md` (đi kèm file trong repo
+  VÀ trong bundle/APK) nói rõ nguồn, sha256, cách sửa, và chứa nguyên văn giấy phép;
+  `Scripts/futo-swipe/README.md` cũng ghi.
+- *"Inference code, source code, and datasets distributed alongside the Weights are governed by
+  their own separate licenses"* ⇒ runtime FUTO (GPL) không được kéo theo; suy luận tự viết.
+- Điều khoản bằng sáng chế: kiện FUTO về bằng sáng chế ⇒ mất giấy phép. Công bố nghiên cứu dùng
+  weights phải trích "FUTO Swipe Model".
+
+### Kiến trúc (đọc từ đồ thị .pte, Scripts/futo-swipe/interp.py)
+
+Đầu vào 64 điểm (x, y chuẩn hoá theo vùng phím chữ 0–1; resample theo thời gian 60 Hz rồi 64 điểm)
+→ 8 kênh: x, y, vx, vy (Savitzky–Golay bậc 1, 7 điểm, đệm lặp biên), ax, ay (SG bậc 2),
+√(vx²+vy²+1e-8), độ cong = SG bậc 1 của góc hướng atan2 đã unwrap (kẹp ±2) → conv 8→128 k7 +
+hardswish → 5 khối (dwconv k7 dilation 1/2/3/5/8 "same" → pw 128→512 → GLU sigmoid(a)·b → GRN
+(√mean_t x² + 1e-6, chia trung bình kênh) → pw 256→128 → SE 128→32→128 + residual) → adapter conv
+k2 stride 2 (128→256, 64→32 bước) → λ = sigmoid(lin 256→1) ("ý định"), hệ số DCT 8×8 (lin 256→64)
+→ logit phím = Σ hệ số·cos(π·u·x_phím)·cos(π·v·y_phím) → log_softmax trên phím + ln λ, blank =
+ln(1−λ), kẹp ≥ −100. Không phụ thuộc layout (tâm phím là đầu vào). Tự viết lại: python
+(`mine.py`), Swift (`FutoSwipeModel.swift`, vDSP_mmul), Kotlin (`FutoSwipeModel.kt`, khối 4×2).
+
+Kiểm: `mine.py` (weights fp32) vs thông dịch đồ thị gốc: max |Δlog-prob| ≈ 4e-6; fp16 ≈ 0,04–0,08
+(greedy giống hệt). Swift / Kotlin vs python trên fixture chung `futo-swipe-fixture.txt`: max |Δ| ≈
+1e-4 (đường thường), 3–5e-3 (đường "computer" có đoạn gần đứng yên — góc hướng nhạy).
+
+### Decoder (VietTelex, `FutoSwipe.swift` / `FutoSwipe.kt`)
+
+CTC Viterbi trên chuỗi phím đã gộp chữ lặp của từ vựng hiện có (1.666 dạng Việt không dấu + 20k từ
+Anh khi bật), duyệt theo tiền tố (dùng lại cột CTC tiền tố chung, cắt nhánh bằng cận max_t α).
+Mặc định **ensemble**: điểm SHARK2 (hình học + tần suất + ngữ cảnh UserLangModel/trigram + phân xử
+Việt/Anh) + β·(âm học − âm học tốt nhất), β = 0,1 (tune trên dev), pool = top-16 SHARK2 ∪ top-4 âm
+học. Chế độ FUTO một mình (A·âm học + λ·tần suất + ngữ cảnh) giữ trong code để đo.
+
+### Đo (27/09/2026, JVM + simulator, `FutoSwipeEvalTests.kt` / `FutoSwipeTests.swift`, VT_SLOW_TESTS)
+
+Model học từ vuốt THẬT tiếng Anh; đường vuốt ở đây là GIẢ nên số có thể khác thật. Hai kiểu đường:
+**nhịp** = FutoSim (minimum-jerk: chậm dần tới phím như tay người), **đều** = SwipeSim hiện có
+(tốc độ không đổi, không có nhịp — FUTO dựa nhiều vào nhịp nên bị thiệt).
+
+Câu giữ lại Tatoeba (bigram-heldout, dev = chuỗi %12==0, test = %12==6, n≈1.040 âm tiết, có LM
+trigram):
+
+| test | SHARK2 | FUTO một mình | ensemble β=0,1 |
+|---|---|---|---|
+| nhịp — không dấu top-1 | 0,966 | 0,970 | **0,985** |
+| nhịp — có dấu top-1 / top-3 | 0,913 / 0,963 | 0,913 / 0,964 | **0,927** / 0,964 |
+| nhịp + bật vuốt tiếng Anh (n=521) — có dấu top-1 | 0,916 | 0,921 | **0,927** |
+| đều — không dấu top-1 | 0,967 | 0,884 | 0,964 |
+| đều — có dấu top-1 / top-3 | 0,911 / 0,961 | 0,837 / 0,904 | 0,909 / 0,960 |
+
+iOS (Swift) cùng tập test, nhịp: SHARK2 0,913 · FUTO 0,908 · ensemble 0,927 (khớp Kotlin).
+
+Từ rời (500 dạng Việt phổ biến, không ngữ cảnh) top-1 theo độ dài dạng gộp 2/3/4/5+ chữ — nhịp:
+SHARK2 0,92/0,89/0,88/0,90 · FUTO 0,94/0,86/0,92/0,90 · ensemble 0,95/0,91/0,94/0,97; đều: SHARK2
+0,88/0,90/0,90/0,94 · FUTO 0,85/0,76/0,66/0,59 · ensemble 0,91/0,91/0,82/0,83. Tiếng Anh (500 từ,
+prior đang gõ Anh) top-1 — nhịp: SHARK2 0,956 · FUTO 0,946 · ensemble 0,960; đều: 0,960 · 0,820 ·
+0,914.
+
+**Thiên lệch tiền nghiệm tiếng Anh:** greedy CTC (không từ điển) trên đường nhịp có tỉ lệ lỗi ký
+tự tiếng Việt ≈ 0,09–0,15 so với tiếng Anh ≈ 0,04–0,10 cùng độ dài (gấp ~1,5–2 lần); cặp chữ hay
+mất nhất là đặc trưng Việt: hi, ng, uo, hu, ch, ho, ie, th (h trong nh/ch/th, nguyên âm đôi uo/ie
+đi qua phím kề). Vì vậy chỉ dùng encoder làm KÊNH PHỤ trọng số nhỏ (β=0,1) cạnh SHARK2 + từ điển
+Việt, không thay SHARK2. (Nhận xét người dùng Reddit "FUTO vuốt tiếng Việt rất tệ" là với decoder
+cũ + từ điển AOSP; ở đây không tái hiện được mức đó nhờ ràng buộc từ vựng Việt + LM.)
+
+**Độ trễ** (máy dev đang tải nặng, số thật sẽ khác): encoder Swift −O simulator ≈ 3,7 ms, cả
+decode ensemble ≈ 4,9 ms; JVM ≈ 14 ms/lần (Android ART dự kiến chậm hơn — decode chạy trên luồng
+chính lúc nhấc tay ⇒ có thể tụt 1–2 khung hình; cần đo trên máy thật). SHARK2 ≈ 0,1–0,4 ms.
+**RAM** khi bật: weights Float 2,54 MB + scratch ≈ 0,37 MB (file mmap 1,27 MB chỉ lúc nạp); nhả
+khi ẩn bàn phím / cảnh báo bộ nhớ (iOS didReceiveMemoryWarning, Android onTrimMemory). Công tắc
+tắt: không tạo đối tượng, không đọc file — đường gõ vuốt y như cũ. Kích thước app +1,27 MB.
+
+### Tái tạo
+
+`sh Scripts/futo-swipe/build.sh` (python3 stdlib + curl): tải `.pte` theo revision + kiểm sha256 →
+`convert.py` → `verify.py` → chép asset iOS/Android → sinh lại fixture. Kết quả byte-giống bản commit.
+
 ## vnlexicon.bin — danh sách âm tiết + tần suất
 
 Có từ trước (không đổi trong đợt bigram); nguồn ghi ở `Scripts/gen-vnlexicon.py`:

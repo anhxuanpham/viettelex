@@ -39,6 +39,11 @@ final class SwipeTyping {
     private let queue = DispatchQueue(label: "com.viettelex.swipe", qos: .userInitiated)
     /// Layout lần cuối đã gửi xuống hàng đợi (chỉ đọc/ghi trên main).
     private(set) var layout: SwipeLayout?
+    /// FUTO Swipe (thử nghiệm, FutoSwipe.swift) — CHỈ đụng trên `queue`; nil = tắt (mặc định):
+    /// không tạo, không tải, decode SHARK2 y như cũ.
+    private var futo: FutoSwipe?
+    /// Công tắc FUTO đã bật (main).
+    private(set) var futoActive = false
 
     /// Điểm ngữ cảnh (log-domain, GIỐNG bản Android SwipeSuggest.Context):
     ///  - cá nhân: +1.5 nếu là từ kế tiếp hay gặp sau từ trước (UserLangModel.nextWords);
@@ -137,14 +142,35 @@ final class SwipeTyping {
         guard l != layout else { return }
         layout = l
         let d = decoder
-        queue.async {
+        queue.async { [weak self] in
             d.setLayout(l)
+            if let f = self?.futo { f.setLayout(l); if prepare { f.load() } }
             if prepare {
                 d.prepare()
                 _ = SyllableBigram.shared   // bảng bigram tĩnh dùng chung (thanh gợi ý cũng map sẵn)
                 _ = SyllableLM.shared       // map mô hình trigram (vnlm.bin)
             }
         }
+    }
+
+    /// Bật/tắt decoder FUTO Swipe (main). Bật ⇒ tạo + tải model ở nền (đã bật mà model bị nhả
+    /// lúc ẩn bàn phím ⇒ tải lại); tắt ⇒ bỏ hẳn (RAM trả lại).
+    func setFuto(enabled: Bool) {
+        let was = futoActive
+        futoActive = enabled
+        let l = layout
+        queue.async { [weak self] in
+            guard let self else { return }
+            if !enabled { self.futo = nil; return }
+            if !was || self.futo == nil { self.futo = FutoSwipe(source: FutoSwipe.bundledWeights) }
+            if let f = self.futo, let l { f.setLayout(l); f.load() }
+        }
+    }
+
+    /// Nhả model FUTO (ẩn bàn phím / cảnh báo bộ nhớ) — công tắc giữ nguyên, lần hiện sau tải lại.
+    func releaseFuto() {
+        guard futoActive else { return }
+        queue.async { [weak self] in self?.futo?.release() }
     }
 
     /// Nạp từ điển tiếng Anh ở nền (lần vuốt đầu khỏi chờ ~vài chục ms). An toàn gọi lại.
@@ -180,8 +206,14 @@ final class SwipeTyping {
         let enCtx: ((String) -> Float)? = english == nil ? nil : { w in
             Self.contextScore(w, next: next, count: count) + ctx.englishFreqShift(w)
         }
-        let cands = queue.sync {
-            d.decode(path, topK: 5, context: ctx.folded, english: english, englishContext: enCtx)
+        let cands = queue.sync { () -> [SwipeCandidate] in
+            if let f = futo {
+                if let r = f.decode(path, topK: 5, context: ctx.folded, english: english, englishContext: enCtx,
+                                    shark: d) { return r }
+                // model chưa sẵn/bị nhả ⇒ SHARK2 lần này, tải nền cho lần sau
+                queue.async { f.load() }
+            }
+            return d.decode(path, topK: 5, context: ctx.folded, english: english, englishContext: enCtx)
         }
         return Self.pick(cands, context: ctx, case: sc)
     }

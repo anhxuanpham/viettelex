@@ -91,6 +91,7 @@ class IcProxy(
     /** Mở batch; trả false nếu không có ô nhập. */
     fun begin(): Boolean {
         val c = portOf() ?: return false
+        afterCache = null                     // edit thường: văn bản sau con trỏ có thể đổi
         if (depth++ == 0) {
             ic = c
             c.beginBatch()
@@ -108,7 +109,7 @@ class IcProxy(
     private fun conn(): EditorPort? = ic ?: portOf()
 
     /** Cổng thô cho bảng sửa văn bản ([EditCommands]); trong batch nếu đang mở. */
-    internal fun editorPort(): EditorPort? = conn()
+    internal fun editorPort(): EditorPort? { afterCache = null; return conn() }
 
     /** onStartInputView: [initialBefore] = getInitialTextBeforeCursor đã đối chiếu initialSel (null nếu không tin). */
     fun startInput(initialBefore: CharSequence?, atFieldStart: Boolean) {
@@ -118,7 +119,7 @@ class IcProxy(
     }
 
     /** Đổi từ ngoài (onUpdateSelection không khớp mốc): văn bản trước con trỏ phải đọc lại. */
-    fun invalidateShadow() = shadow.invalidate()
+    fun invalidateShadow() { shadow.invalidate(); afterCache = null }
 
     /** onUpdateSelection báo composing span còn sót ⇒ finishComposingText ở phím kế. */
     fun finishComposingOnNextEdit() { finishComposingPending = true }
@@ -130,6 +131,7 @@ class IcProxy(
         failed = true
         tracker.unknown()
         shadow.invalidate()
+        afterCache = null
         TouchLog.write("ic $what FAILED → reset")
     }
 
@@ -297,24 +299,52 @@ class IcProxy(
                     val units = Graphemes.unitsBack(before, steps)
                     if (units == 0) return                    // đầu ô
                     if (c.setSelection(cur - units, cur - units)) {
-                        tracker.movedTo(cur - units); shadow.deleted(units); return
+                        tracker.movedTo(cur - units); shadow.deleted(units)
+                        if (afterPos != cur) afterCache = null
+                        afterCache?.let { a ->
+                            val grown = before.substring(before.length - units) + a
+                            if (grown.length > 2 * CONTEXT_CAP) { afterCache = grown.substring(0, 2 * CONTEXT_CAP); afterAtEnd = false }
+                            else afterCache = grown
+                            afterPos = cur - units
+                        }
+                        return
                     }
                 }
             } else {
-                val after = c.textAfter(CONTEXT_CAP)?.toString()
+                val after = cachedAfter(c, cur, steps)
                 if (after != null) {
                     val units = Graphemes.unitsForward(after, steps)
                     if (units == 0) return                    // cuối ô
                     if (c.setSelection(cur + units, cur + units)) {
-                        tracker.movedTo(cur + units); shadow.inserted(after.substring(0, units)); return
+                        tracker.movedTo(cur + units); shadow.inserted(after.substring(0, units))
+                        afterCache = after.substring(units); afterPos = cur + units
+                        return
                     }
                 }
             }
         }
+        afterCache = null
         val key = if (delta < 0) EditorPort.PortKey.LEFT else EditorPort.PortKey.RIGHT
         repeat(steps) { c.sendKey(key) }
         tracker.unknown()
         shadow.invalidate()
+    }
+
+    // Văn bản SAU con trỏ khi kéo trackpad sang phải: đọc 1 lần rồi tự trượt theo từng bước
+    // (không getTextAfterCursor mỗi bước). Chỉ tin khi con trỏ vẫn ở [afterPos]; mọi edit/
+    // đổi từ ngoài (begin, invalidateShadow, fail, editorPort) xoá cache.
+    private var afterCache: String? = null
+    private var afterPos = -1
+    /** [afterCache] kéo tới cuối ô (lần đọc ngắn hơn cap). */
+    private var afterAtEnd = false
+
+    private fun cachedAfter(c: EditorPort, cur: Int, steps: Int): String? {
+        val a = afterCache
+        // Còn đủ (≥ 4 UTF-16/bước cho grapheme ghép) hoặc đã thấy cuối ô ⇒ dùng cache.
+        if (a != null && afterPos == cur && (afterAtEnd || a.length >= steps * 4)) return a
+        val s = c.textAfter(CONTEXT_CAP)?.toString()
+        afterCache = s; afterPos = cur; afterAtEnd = s != null && s.length < CONTEXT_CAP
+        return s
     }
 
     // MARK: vuốt ⌫ xoá theo từ (điều phối ở SwipeDeleteController)
@@ -378,6 +408,7 @@ class IcProxy(
      */
     fun moveCursorVertical(lines: Int) {
         if (lines == 0 || uriField) return
+        afterCache = null
         val c = conn() ?: return
         val cur = if (tracker.hasSelection) -1 else tracker.cursor
         var before: String? = null

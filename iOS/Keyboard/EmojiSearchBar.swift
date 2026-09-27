@@ -24,7 +24,8 @@ final class EmojiSearchBar: UIView {
         super.init(frame: .zero)
         let ink: UIColor = dark ? .white : .black
         backgroundColor = KeyboardView.touchableClear
-        field.backgroundColor = dark ? UIColor(white: 0.30, alpha: 1) : .white
+        // Cùng nền ô tìm ở lưới emoji (≈ tertiarySystemFill) — chuyển qua lại không đổi màu.
+        field.backgroundColor = UIColor(red: 118 / 255, green: 118 / 255, blue: 128 / 255, alpha: dark ? 0.24 : 0.12)
         field.layer.cornerRadius = 9
         field.translatesAutoresizingMaskIntoConstraints = false
         addSubview(field)
@@ -106,7 +107,7 @@ final class EmojiSearchBar: UIView {
         clear.isHidden = query.isEmpty
         let textW = (label.text! as NSString).size(withAttributes: [.font: label.font!]).width
         let maxW = max((bounds.width > 0 ? bounds.width : 320) * 0.45, 120)
-        fieldWidth.constant = min(max(textW + 60, 120), maxW)
+        fieldWidth.constant = min(max(textW + 84, 120), maxW)   // chừa icon + nút xoá: placeholder khỏi bị cắt "…m emoji"
 
         shownResults = list
         resultButtons.forEach { $0.removeFromSuperview() }

@@ -8,6 +8,11 @@ enum TouchGeometry {
     static func keySelectionPoint(_ p: CGPoint) -> CGPoint {
         CGPoint(x: p.x, y: p.y - yOffset)
     }
+    /// Như trên nhưng không đẩy điểm lên QUÁ đỉnh vùng phím `top`: chạm sát mép trên hàng
+    /// đầu (khe trên q…p) trước đây bị dời ra ngoài vùng phím → router bỏ → mất phím.
+    static func keySelectionPoint(_ p: CGPoint, top: CGFloat) -> CGPoint {
+        CGPoint(x: p.x, y: max(p.y - yOffset, min(p.y, top)))
+    }
 }
 
 import UIKit

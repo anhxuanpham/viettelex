@@ -306,6 +306,16 @@ fun TinhNangTab() {
             RowDivider()
             BoolToggle(Keys.SWIPE_ENGLISH, Prefs.D.swipeEnglish, "Vuốt từ tiếng Anh",
                 "Vuốt ra cả từ tiếng Anh xen trong câu: check, mail, file, meeting… Khi một nét vuốt vừa là từ Việt vừa là từ Anh (the/thế, can/cần), bàn phím ưu tiên tiếng Việt — trừ khi đang gõ tiếng Anh — và luôn để phương án kia trên thanh gợi ý.")
+            RowDivider()
+            BoolToggle(Keys.SWIPE_FUTO, Prefs.D.swipeFuto, "Mô hình nơ-ron gõ vuốt",
+                "Thêm mạng nơ-ron nhận dạng nét vuốt (chạy hoàn toàn trên máy) để chấm cùng bộ giải mã hiện có. Tốn thêm khoảng 3 MB bộ nhớ khi bàn phím mở.")
+            // Ghi công BẮT BUỘC theo FUTO Model Weights License 1.0 ("visible notice … within
+            // the product's settings") — Phil 27/09/2026: chỉ hiện ở đây (dưới công tắc, khi đã
+            // bật Gõ vuốt), chữ nhỏ mờ. KHÔNG xoá. Xem docs/DATA-SOURCES.md.
+            val futoCtx = LocalContext.current
+            VTRow(onClick = { openUrl(futoCtx, "https://github.com/ptrinh/viettelex/blob/main/docs/DATA-SOURCES.md#futo-swipe") }) {
+                Text("powered by FUTO Swipe", style = VTType.caption2, color = LocalVT.current.tertiary)
+            }
         }
     }
     VTSection(header = "Giao diện", footer = APPLY_NOTE) {
@@ -314,6 +324,9 @@ fun TinhNangTab() {
         BoolToggle(Keys.SHOW_SPACE_LOGO, Prefs.D.showSpaceLogo, "Hiện logo Vᴛ", "Logo mờ ở góc phải phím space.")
         RowDivider()
         BoolToggle(Keys.HAPTIC_FEEDBACK, Prefs.D.hapticFeedback, "Rung phím", "Rung nhẹ mỗi lần chạm phím.")
+        RowDivider()
+        BoolToggle(Keys.KEY_PREVIEW, Prefs.D.keyPreview, "Phóng to chữ khi bấm",
+            "Hiện ô chữ lớn phía trên phím khi chạm. Tắt nếu thấy rối mắt.")
         RowDivider()
         var adj by rememberIntPref(Keys.ROW_HEIGHT_ADJUST, Prefs.D.rowHeightAdjust)
         VTRow {
@@ -375,6 +388,8 @@ fun MauCauTab() {
     var newLabel by rememberSaveable { mutableStateOf("") }
     var newText by rememberSaveable { mutableStateOf("") }
     var notice by remember { mutableStateOf<String?>(null) }
+    /** Kết quả bấm ⊕ ở "Thêm mới" — hiện ngay dưới ô nhập. */
+    var addNotice by remember { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf<Int?>(null) }
     var editLabel by remember { mutableStateOf("") }
     var editText by remember { mutableStateOf("") }
@@ -419,7 +434,7 @@ fun MauCauTab() {
                             Box(
                                 Modifier.padding(start = 8.dp).size(28.dp).clickable(enabled = canSave) {
                                     val r = Templates.edit(templates, i, editLabel, editText)
-                                    if (r != null) { persist(r); editing = null } else notice = "Mẫu câu này đã có."
+                                    if (r != null) { persist(r); editing = null } else addNotice = "Không lưu được: mẫu câu này trùng một dòng khác."
                                 },
                                 contentAlignment = Alignment.Center,
                             ) { GlyphIcon(Glyph.Check, if (canSave) c.accent else c.tertiary, 24.dp) }
@@ -443,24 +458,33 @@ fun MauCauTab() {
         val trimmed = newText.trim()
         val canAdd = trimmed.isNotEmpty()
         VTRow {
-            VTTextField(newLabel, { newLabel = it }, "👋", center = true, modifier = Modifier.width(44.dp))
+            VTTextField(newLabel, { newLabel = it; addNotice = null }, "👋", center = true, modifier = Modifier.width(44.dp))
             Box(Modifier.padding(horizontal = 10.dp).width(0.5.dp).height(28.dp).background(c.separator))
-            VTTextField(newText, { newText = it }, "Thêm mẫu câu…", maxLines = 3, modifier = Modifier.weight(1f))
+            VTTextField(newText, { newText = it; addNotice = null }, "Thêm mẫu câu…", maxLines = 3, modifier = Modifier.weight(1f))
             Box(
-                Modifier.padding(start = 8.dp).size(28.dp).clickable(enabled = canAdd) {
-                    Templates.add(templates, newLabel, newText)?.let {
-                        persist(it)
-                        newLabel = ""; newText = ""
+                // Luôn bấm được: không thêm ⇒ báo lý do (không im lặng — lỗi iOS 27/09/2026).
+                Modifier.padding(start = 8.dp).size(28.dp).clickable {
+                    when (val r = Templates.tryAdd(templates, newLabel, newText)) {
+                        is Templates.AddResult.Added -> {
+                            persist(r.list)
+                            newLabel = ""; newText = ""
+                            addNotice = "Đã thêm mẫu câu (dòng ${r.list.size})."
+                        }
+                        else -> addNotice = Templates.addNotice(r)
                     }
                 },
                 contentAlignment = Alignment.Center,
             ) { GlyphIcon(Glyph.Plus, if (canAdd) c.accent else c.tertiary, 24.dp) }
         }
+        addNotice?.let {
+            RowDivider()
+            VTRow { Text(it, style = VTType.footnote, color = c.secondary) }
+        }
     }
 
     VTSection(
         header = "Mẫu câu động (https://)",
-        footer = "Mẫu có nội dung bắt đầu bằng https:// sẽ fetch dữ liệu NGAY LÚC BẤM và chèn kết quả (tối đa 1000 bytes) — ví dụ IP❓ chèn địa chỉ IP hiện tại. Không có mạng thì bấm sẽ chèn chính URL.",
+        footer = "Mẫu có nội dung bắt đầu bằng https:// sẽ fetch dữ liệu NGAY LÚC BẤM và chèn kết quả (tối đa 1000 bytes) — ví dụ 🌐 IP chèn địa chỉ IP hiện tại. Không có mạng thì bấm sẽ chèn chính URL.",
         plain = true,
     ) {}
 
