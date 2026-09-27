@@ -39,6 +39,30 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private static var keyGap: CGFloat { isPad ? 10 : 6 }
     /// Lề trái/phải hàng phím (iPhone 6.5 như stock — KeyGeometry).
     private static var sideMargin: CGFloat { KeyGeometry.sideMargin(pad: isPad) }
+    /// SF Compact như stock iOS 26/27 (KeyGeometry.Typography); nil nếu hệ thống không có
+    /// (lọt về font khác) → SF Pro cỡ fallback.
+    private static let compactDescriptor: UIFontDescriptor? = {
+        let design = UIFontDescriptor.SystemDesign(rawValue: "NSCTFontUIFontDesignCompact")
+        guard let d = UIFont.systemFont(ofSize: 20).fontDescriptor.withDesign(design) else { return nil }
+        return UIFont(descriptor: d, size: 20).fontName.localizedCaseInsensitiveContains("compact") ? d : nil
+    }()
+    static var hasCompactFont: Bool { compactDescriptor != nil }
+    static func keyFont(_ size: CGFloat) -> UIFont {
+        compactDescriptor.map { UIFont(descriptor: $0, size: size) } ?? .systemFont(ofSize: size)
+    }
+    /// Nhãn chữ phím iPhone: cỡ theo hoa/thường + canh baseline stock. iPad giữ SF 23 cũ.
+    private func applyKeycapFont(_ b: KeyButton, title: String) {
+        guard !Self.isPad else { return }
+        let size = KeyGeometry.Typography.size(for: title, compact: Self.hasCompactFont)
+        if b.titleLabel?.font.pointSize != size { b.titleLabel?.font = Self.keyFont(size) }
+        b.baselineAligned = true
+    }
+    /// Nhãn chữ phím chức năng iPhone (123/ABC/#+=): SF Compact cỡ stock, cùng baseline.
+    private func applyLabelFont(_ b: KeyButton, size: CGFloat) {
+        guard !Self.isPad else { return }
+        b.titleLabel?.font = Self.keyFont(size)
+        b.baselineAligned = true
+    }
     /// Khe shift↔Z, M↔⌫ (khe giữa chữ là 6).
     static let shiftGap: CGFloat = 12
     /// Đệm trên của bar (user 25/09/2026): host có app KHÔNG vẽ dải khung phía trên
@@ -1124,7 +1148,9 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private var shiftKeys: [KeyButton] = []   // iPad có 2 shift
     private func applyShiftAppearance() {
         for (b, s) in letterKeys {
-            b.setTitle(shift == .off ? s : s.uppercased(), for: .normal)
+            let t = shift == .off ? s : s.uppercased()
+            b.setTitle(t, for: .normal)
+            if let k = b as? KeyButton { applyKeycapFont(k, title: t) }
         }
         for b in shiftKeys {
             let symbol = shift == .caps ? "capslock.fill" : (shift == .on ? "shift.fill" : "shift")
@@ -1587,9 +1613,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         else { return }
         let trim = bottomTrim
         if c.constant != -trim { c.constant = -trim }
+        let top = KeyGeometry.bottomRowTopMargin(pad: false, landscape: isLandscapeNow)
         if let bottom = rowsContainer.arrangedSubviews.last as? UIStackView,
-           bottom.layoutMargins.top != KeyGeometry.rowGap - trim {
-            bottom.layoutMargins.top = KeyGeometry.rowGap - trim
+           bottom.layoutMargins.top != top {
+            bottom.layoutMargins.top = top
         }
     }
 
@@ -1807,6 +1834,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             self.rebuild()
         }
         more.accessibilityLabel = moreKey == "#+=" ? "Ký hiệu" : "Số"
+        applyLabelFont(more, size: KeyGeometry.Typography.rowToggleSize)
         var third: [UIView] = [more]
         third += [".",",","?","!","'"].map(textButton)
         third.append(backspaceButton())
@@ -1857,6 +1885,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             self.rebuild()
         }
         planeBtn.accessibilityLabel = planeKey == "123" ? "Số" : "Chữ"
+        applyLabelFont(planeBtn, size: KeyGeometry.Typography.planeKeySize)
         views.append(planeBtn)
         // globe sát bên phải [123] như stock (muscle memory), emoji sau đó
         var globeBtn: KeyButton?
@@ -2037,8 +2066,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // 214px, VietTelex 241px): cùng chiều cao phím, dời xuống 3pt (top 8/bottom 2
         // thay 5/5). Vùng globe/mic dưới đó do host vẽ — không dời được.
         // Phím phẳng không bóng như stock (26/09/2026) → hàng đáy sát đáy 0pt.
-        // iPhone dọc: khe trên hàng đáy 6 (vùng 50, phím vẫn 44) — applyBottomTrim.
-        stack.layoutMargins = UIEdgeInsets(top: KeyGeometry.rowGap - bottomTrim, left: Self.sideMargin,
+        // iPhone dọc: vùng 50 = khe 7 + phím 43 như stock (27/09: phím đáy 44 trông cao
+        // hơn stock) — applyBottomTrim chỉnh lại khi xoay.
+        let bottomTop = KeyGeometry.bottomRowTopMargin(pad: Self.isPad, landscape: isLandscapeNow)
+        stack.layoutMargins = UIEdgeInsets(top: bottomTop, left: Self.sideMargin,
                                            bottom: 0, right: Self.sideMargin)
         // Tỉ lệ từ KeyLayout (test: đúng một phím co giãn = space).
         let spec = padLetters ? KeyLayout.padBottom : KeyLayout.phoneBottom
@@ -2112,6 +2143,16 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         /// 16pt phủ hết strip 36 — tâm ngón tay hay rơi dưới đáy bar là vùng
         /// chết, nguồn của "chevron/burger bấm mãi không ăn".
         var hitInsets: UIEdgeInsets?
+        /// Nhãn chữ đặt theo baseline stock (KeyGeometry.Typography) thay vì căn giữa hộp dòng.
+        var baselineAligned = false
+        override func titleRect(forContentRect contentRect: CGRect) -> CGRect {
+            let r = super.titleRect(forContentRect: contentRect)
+            guard baselineAligned, let f = titleLabel?.font, bounds.height > 0 else { return r }
+            // Hộp nhãn đang căn giữa phím; dời để baseline về đúng chỗ stock.
+            let dy = KeyGeometry.Typography.titleOffsetY(keyHeight: bounds.height,
+                                                         ascender: f.ascender, descender: f.descender)
+            return r.offsetBy(dx: 0, dy: (bounds.midY - r.midY) + dy)
+        }
         // Khe hở giữa phím (spacing 6 + padding hàng 5) là VÙNG CHẾT với
         // UIButton thường — chạm trúng khe = mất phím. Stock keyboard route
         // mọi điểm chạm về phím gần nhất; mở rộng hit area phủ nửa khe cho
@@ -2178,6 +2219,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         b.isSpecial = special
         b.setTitle(title, for: .normal)
         b.titleLabel?.font = .systemFont(ofSize: special ? 16 : 23)
+        if !special { applyKeycapFont(b, title: title) }
         b.layer.cornerRadius = Self.keyRadius
         if let border = palette.keyBorder {
             b.layer.borderWidth = 1
