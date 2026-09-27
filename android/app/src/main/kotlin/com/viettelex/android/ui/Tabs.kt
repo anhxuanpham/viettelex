@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.viettelex.android.BuildConfig
 import com.viettelex.android.R
+import com.viettelex.keyboard.KeyAlternates
 import com.viettelex.keyboard.Keys
 import com.viettelex.keyboard.TemplateItem
 import com.viettelex.keyboard.Templates
@@ -232,6 +233,8 @@ private fun KieuGoSection() {
         }
         BoolToggle(Keys.MODERN_TONE, Prefs.D.modernTone, "Bỏ dấu kiểu mới", "hoà, thuý thay vì hòa, thúy.")
         RowDivider()
+        BoolToggle(Keys.AUTO_CAPITALIZE, Prefs.D.autoCapitalize, "Tự động viết hoa đầu câu", "Bật shift ở đầu ô, sau . ! ? và khi xuống dòng.")
+        RowDivider()
         BoolToggle(Keys.CONTEXTUAL_ENGLISH, Prefs.D.contextualEnglish, "Quyết định theo ngữ cảnh", "Sau một từ tiếng Anh, từ nhập nhằng kế tiếp mà chuỗi phím tạo thành một từ tiếng Anh sẽ được giữ tiếng Anh thay vì tiếng Việt — “he is” → “he is”, không phải “he í”. Sau từ tiếng Việt hoặc không rõ thì để tiếng Việt — “sao í”.")
         RowDivider()
         BoolToggle(Keys.RE_EDIT_WORDS, Prefs.D.reEditWords, "Sửa dấu từ đã gõ", "Bấm ⌫ ngay sau dấu cách để sửa tiếp từ vừa gõ (tháy ␣ ⌫ a → thấy), hoặc đặt con trỏ ngay sau một từ rồi gõ phím dấu thanh để thêm dấu (chao + f → chào; VNI: chao + 2).")
@@ -310,8 +313,8 @@ fun TinhNangTab() {
             BoolToggle(Keys.SWIPE_ENGLISH, Prefs.D.swipeEnglish, "Vuốt từ tiếng Anh",
                 "Vuốt ra cả từ tiếng Anh xen trong câu: check, mail, file, meeting… Khi một nét vuốt vừa là từ Việt vừa là từ Anh (the/thế, can/cần), bàn phím ưu tiên tiếng Việt — trừ khi đang gõ tiếng Anh — và luôn để phương án kia trên thanh gợi ý.")
             RowDivider()
-            BoolToggle(Keys.SWIPE_FUTO, Prefs.D.swipeFuto, "Mô hình nơ-ron gõ vuốt",
-                "Thêm mạng nơ-ron nhận dạng nét vuốt (chạy hoàn toàn trên máy) để chấm cùng bộ giải mã hiện có. Tốn thêm khoảng 3 MB bộ nhớ khi bàn phím mở.")
+            BoolToggle(Keys.SWIPE_FUTO, Prefs.D.swipeFuto, "Mô hình neural gõ vuốt",
+                "Thêm mạng neural nhận dạng nét vuốt (chạy hoàn toàn trên máy) để chấm cùng bộ giải mã hiện có. Tốn thêm khoảng 3 MB bộ nhớ khi bàn phím mở.")
             RowDivider()
             var showPractice by remember { mutableStateOf(false) }
             VTRow(onClick = { showPractice = true }) {
@@ -356,8 +359,18 @@ fun TinhNangTab() {
             IosStepper(adj, -10..10) { adj = it }
         }
         RowDivider()
+        val numberRow by rememberBoolPref(Keys.NUMBER_ROW, Prefs.D.numberRow)
         BoolToggle(Keys.NUMBER_ROW, Prefs.D.numberRow, "Hàng phím số",
             "Thêm hàng 1 2 3 … 0 phía trên hàng chữ — gõ số không cần chuyển sang bàn phím ?123. Bàn phím cao thêm khoảng ¾ hàng.")
+        RowDivider()
+        // Hàng số bật ⇒ giữ q…p ra số vô nghĩa (KeyAlternates.numbersSettingVisible).
+        if (KeyAlternates.numbersSettingVisible(numberRow)) {
+            BoolToggle(Keys.LONG_PRESS_NUMBERS, Prefs.D.longPressNumbers, "Giữ phím hàng trên để ra số",
+                "Giữ q w e … p một chút để gõ 1 2 3 … 0 — số nhỏ ở góc phím. Chỉ dùng khi tắt Hàng phím số.")
+            RowDivider()
+        }
+        BoolToggle(Keys.LONG_PRESS_SYMBOLS, Prefs.D.longPressSymbols, "Giữ phím hàng 2, 3 để ra ký tự đặc biệt",
+            "Giữ a … l, z … m để gõ @ # \$ _ & - + ( ) * \" % : / ! ? — ký hiệu nhỏ ở góc phím. Giữ , để ra . khi bật một trong các công tắc giữ phím (nếu , chưa dùng để gõ giọng nói).")
         RowDivider()
         OneHandRow()
     }
@@ -555,7 +568,7 @@ fun GioiThieuTab(plus: com.viettelex.android.plus.PlusController, onOpenPlus: ()
     }
     PlusEntryRow(plus, onOpenPlus)
     VTSection(header = "Tài nguyên") {
-        LinkRow(Glyph.Info, "Hướng dẫn sử dụng") { openUrl(ctx, "https://viettelex.com/hdsd") }
+        LinkRow(Glyph.Info, "Hướng dẫn sử dụng") { openUrl(ctx, "https://viettelex.com/hdsd/?os=android") }
         RowDivider(52.dp)
         LinkRow(Glyph.Globe, "Website") { openUrl(ctx, "https://ptrinh.github.io/viettelex/") }
         RowDivider(52.dp)

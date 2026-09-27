@@ -11,10 +11,12 @@ final class PerfSwitchTests: XCTestCase {
         XCTAssertTrue(s.numberChips)
         XCTAssertTrue(s.emojiSuggest)
         XCTAssertTrue(s.pasteButton)
+        XCTAssertTrue(s.autoCapitalize)
         let d = UserDefaults(suiteName: "vt-perf-switch")!
         d.removePersistentDomain(forName: "vt-perf-switch")
         d.set(true, forKey: "addTonesChip"); d.set(false, forKey: "numberChips")
         d.set(false, forKey: "emojiSuggest"); d.set(false, forKey: "pasteButton")
+        d.set(false, forKey: "autoCapitalize")
         let saved = UserDefaultsProvider.shared
         UserDefaultsProvider.shared = d
         defer { UserDefaultsProvider.shared = saved }
@@ -23,6 +25,7 @@ final class PerfSwitchTests: XCTestCase {
         XCTAssertFalse(l.numberChips)
         XCTAssertFalse(l.emojiSuggest)
         XCTAssertFalse(l.pasteButton)
+        XCTAssertFalse(l.autoCapitalize)
     }
 
     /// Không có người dùng checkpoint (iPhone, gõ vuốt tắt) ⇒ không chụp engine mỗi phím;

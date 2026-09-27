@@ -78,10 +78,17 @@ struct KeyboardSettings {
     /// Nút "Dán" nội dung vừa copy trên thanh gợi ý — mặc định BẬT; tắt ⇒ không hỏi
     /// UIPasteboard (XPC) ở đầu từ.
     var pasteButton = true
+    /// Tự động viết hoa đầu câu (auto-shift) — mặc định BẬT. Bàn phím bên thứ ba không đọc
+    /// được công tắc Tự động viết hoa của iOS nên có công tắc riêng; tắt ⇒ không đọc context.
+    var autoCapitalize = true
     /// Vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh (mặc định TẮT ⇒ luôn Tiếng Việt).
     var spaceSwipeLanguage = false
     /// Tự sửa từ gõ sai ở dấu cách (AutoCorrect) — thử nghiệm, mặc định TẮT. Giống Android.
     var autoCorrect = false
+    /// Giữ q…p ra 1…0 (chỉ khi hàng phím số TẮT) — mặc định BẬT. KeyAlternates.
+    var longPressNumbers = true
+    /// Giữ a–l, z–m ra ký hiệu — mặc định TẮT. KeyAlternates.
+    var longPressSymbols = false
 
     static func load() -> KeyboardSettings {
         var s = KeyboardSettings()
@@ -111,7 +118,9 @@ struct KeyboardSettings {
         let flags: [(String, WritableKeyPath<KeyboardSettings, Bool>)] = [
             ("addTonesChip", \.addTonesChip), ("numberChips", \.numberChips),
             ("emojiSuggest", \.emojiSuggest), ("pasteButton", \.pasteButton),
-            ("spaceSwipeLanguage", \.spaceSwipeLanguage), ("autoCorrect", \.autoCorrect)]
+            ("autoCapitalize", \.autoCapitalize), ("spaceSwipeLanguage", \.spaceSwipeLanguage),
+            ("longPressNumbers", \.longPressNumbers), ("longPressSymbols", \.longPressSymbols),
+            ("autoCorrect", \.autoCorrect)]
         for (k, kp) in flags where d.object(forKey: k) != nil { s[keyPath: kp] = d.bool(forKey: k) }
         s.learnWords = s.showSuggestions   // bật gợi ý = bật học (quyết định 2026-07-24)
         return s

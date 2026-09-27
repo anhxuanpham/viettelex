@@ -5,8 +5,11 @@ package com.viettelex.keyboard
 sealed class Key {
     /** Phím chữ, đã theo shift. */
     data class Letter(val ch: Char) : Key()
-    /** Số / ký hiệu / dấu câu (boundary + ngắt câu). */
-    data class Text(val text: String) : Key()
+    /**
+     * Số / ký hiệu / dấu câu (boundary + ngắt câu). [replacesLetter]: ký tự phụ của cú giữ
+     * phím chữ ([KeyAlternates]) — huỷ đúng phím chữ vừa chèn lúc chạm trước khi chèn.
+     */
+    data class Text(val text: String, val replacesLetter: Boolean = false) : Key()
     object Space : Key()
     /** Space thứ 2 trong < 0.35 s (IME đo nhịp). */
     object DoubleSpacePeriod : Key()
@@ -193,6 +196,8 @@ class KeyboardSession(
     private var lastInsertWasSpace = false
     /** Auto-shift đang bật (gợi ý viết hoa chữ đầu). */
     var autoShiftOn = false; private set
+    /** Công tắc "Tự động viết hoa đầu câu" ([KeyboardSettings.autoCapitalize]). */
+    var autoCapitalize = true
     /** Bar tắt ở setting hoặc ô cấm. */
     var suggestionsActive = true; private set
     /** Bar thu gọn — pipeline gợi ý ngừng. IME set theo chevron. */
@@ -287,6 +292,7 @@ class KeyboardSession(
         initialCapsPending = true
         filterSensitive = settings.filterSensitive
         swipeEnglish = settings.swipeEnglish
+        autoCapitalize = settings.autoCapitalize
         recentEnglish.clear()
         suggestionsActive = settings.showSuggestions && field.suggestionsAllowed && !field.isSecure && !field.passthrough
         lastWord = null; lastWord2 = null
@@ -353,8 +359,15 @@ class KeyboardSession(
     /** IME bật/tắt gõ vuốt cho ô hiện tại (sau [startInput]). Tắt ⇒ bridge thôi ghi checkpoint. */
     fun setSwipeTyping(on: Boolean) {
         swipeTypingActive = on
-        bridge.trackLetterUndo = on
+        bridge.trackLetterUndo = on || letterAlternates
         if (!on) clearSwipe()
+    }
+
+    /** Giữ phím chữ ra ký tự phụ đang bật ([KeyAlternates]) — cần checkpoint huỷ phím chữ. */
+    private var letterAlternates = false
+    fun setLetterAlternates(on: Boolean) {
+        letterAlternates = on
+        bridge.trackLetterUndo = swipeTypingActive || on
     }
 
     private fun clearSwipe() {
@@ -417,6 +430,8 @@ class KeyboardSession(
      * nên bật shift sai giữa câu). Chỉ nâng OFF→ON là việc của IME (không hạ CAPS).
      */
     fun updateAutoShift(proxy: TextProxy): Boolean? {
+        // Tắt: không đọc context; chỉ hạ shift do chính mình bật trước đó (shift tay giữ nguyên).
+        if (!autoCapitalize) return if (autoShiftOn) { autoShiftOn = false; false } else null
         val mode = capMode(traits)
         if (mode == CapMode.NONE) return null
         val before = proxy.contextBeforeInput()
@@ -435,6 +450,9 @@ class KeyboardSession(
     /** [touch]: điểm chạm của phím chữ (bàn phím cảm ứng) — cho tự sửa; null = không biết. */
     fun handle(key: Key, proxy: TextProxy, touch: AutoCorrect.Touch? = null): KeyOutcome {
         val t0 = if (TouchLog.enabled) System.nanoTime() else 0L
+        // Giữ phím ra ký tự phụ: gỡ phím chữ bằng checkpoint (không ⌫ — phím dấu Telex đã đổi
+        // từ); không được (ô đổi / thao tác xen) thì ⌫ như iOS.
+        if (key is Key.Text && key.replacesLetter && !undoLastLetter(proxy)) bridge.backspace(proxy)
         // ⌫ NGAY SAU khi thêm dấu = hoàn tác (một lần); phím khác bỏ lời mời hoàn tác.
         if (key == Key.Backspace && tonesUndo != null && !bridge.isComposing && openSwipeWord() == null) {
             undoAddTones(proxy)
@@ -538,7 +556,7 @@ class KeyboardSession(
         lastInsertWasSpace = key == Key.Space || key == Key.DoubleSpacePeriod
         lastKeyWasEmailTrigger = key is Key.Text && (key.text == "@" || key.text == ".")
         initialCapsPending = false
-        val needsAutoShift = when (key) {
+        val needsAutoShift = autoCapitalize && when (key) {
             Key.Space, Key.Newline, Key.LineBreak, Key.DoubleSpacePeriod, Key.Backspace, is Key.MoveCursor, Key.ClearField -> true
             // CAP_CHARACTERS: shift ON bị bàn phím hạ sau mỗi chữ → bật lại.
             else -> traits.capCharacters

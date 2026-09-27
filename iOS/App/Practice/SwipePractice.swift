@@ -229,7 +229,10 @@ enum PracticeKeyboardGeometry {
         return out
     }
 
-    static func layout(width: CGFloat, rowHeight: CGFloat = 54) -> SwipeLayout {
+    /// nil khi chưa có bề rộng (GeometryReader đo lần đầu = 0 ⇒ bước phím 0, SwipeLayout
+    /// precondition crash — Phil 27/09 bấm "Luyện vuốt" là văng app).
+    static func layout(width: CGFloat, rowHeight: CGFloat = 54) -> SwipeLayout? {
+        guard pitch(width: width) > 0 else { return nil }
         var m: [Character: (x: Float, y: Float)] = [:]
         for (c, f) in keys(width: width, rowHeight: rowHeight) { m[c] = (Float(f.midX), Float(f.midY)) }
         return SwipeLayout(keyWidth: Float(pitch(width: width)), centers: m)

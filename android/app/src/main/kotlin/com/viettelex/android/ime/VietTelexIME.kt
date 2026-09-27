@@ -24,6 +24,7 @@ import com.viettelex.android.shared.DebugLog
 import com.viettelex.android.shared.VTPrefs
 import com.viettelex.keyboard.ThemeSettings
 import com.viettelex.keyboard.AutoCorrect
+import com.viettelex.keyboard.KeyAlternates
 import com.viettelex.keyboard.Cancellable
 import com.viettelex.keyboard.EmojiData
 import com.viettelex.keyboard.ClipboardHistory
@@ -153,9 +154,11 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         // Bật/tắt gõ vuốt trong app khi bàn phím đang mở (ô Thử gõ).
         else if (key == Keys.SWIPE_TYPING) { swipeSetting = settings().swipeTyping; updateSwipeTyping() }
         else if (key == Keys.SWIPE_ENGLISH) session.swipeEnglish = settings().swipeEnglish
+        else if (key == Keys.AUTO_CAPITALIZE) session.autoCapitalize = settings().autoCapitalize
         else if (key == Keys.SWIPE_FUTO) { futoSetting = settings().swipeFuto; updateSwipeTyping() }
         else if (key == Keys.SMART_TOUCH) { smartTouchSetting = settings().smartTouch; warmSmartTouch() }
         else if (key == Keys.HARDWARE_TELEX) hwSetting = settings().hardwareTelex
+        else if (key == Keys.LONG_PRESS_NUMBERS || key == Keys.LONG_PRESS_SYMBOLS) updateAlternates()
         // Bật/tắt kiểu gõ trong app khi bàn phím đang mở (ô Thử gõ) → áp ngay, không đợi mở lại.
         else if (key in Keys.ENGINE_KEYS) session.bridge.applySettings(settings())
         // Tắt lịch sử clipboard trong app: bỏ bản RAM (app đã xoá file).
@@ -602,6 +605,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
 
     /** Bật khi: setting + ô hợp lệ + KHÔNG TalkBack/touch exploration. Tắt ⇒ bỏ decoder (template GC được). */
     private fun updateSwipeTyping() {
+        updateAlternates()
         val on = swipeSetting && swipeFieldOk && accessibility?.isTouchExplorationEnabled != true
         if (!on) {
             keyboard?.swipeTyping = false
@@ -615,6 +619,16 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         session.setSwipeTyping(true)
         if (fresh) keyboard?.swipeTyping = false   // decoder mới (sau onTrimMemory) ⇒ phát lại layout
         keyboard?.swipeTyping = true      // → onSwipeLayout khi plane chữ đã dựng
+    }
+
+    /** Giữ phím chữ ra ký tự phụ (KeyAlternates): tắt khi TalkBack (giữ là cử chỉ của trình đọc). */
+    private fun updateAlternates() {
+        if (!::session.isInitialized) return
+        val st = settings()
+        val m = KeyAlternates.map(st.longPressNumbers, st.longPressSymbols, st.numberRow,
+            accessibility = accessibility?.isTouchExplorationEnabled == true)
+        keyboard?.setAlternates(m)
+        session.setLetterAlternates(m.isNotEmpty())
     }
 
     /** Công tắc FUTO Swipe: bật ⇒ tạo + tải model ở nền (nhả lúc ẩn thì tải lại); tắt ⇒ bỏ. */

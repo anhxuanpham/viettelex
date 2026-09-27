@@ -41,6 +41,9 @@ final class KeyCommitQueue {
         p.fire()
     }
 
+    /// `id` is still pending (not released / flushed / disarmed).
+    func isArmed(_ id: ObjectIdentifier) -> Bool { pending.contains { $0.id == id } }
+
     /// Drop `id` without committing.
     func disarm(_ id: ObjectIdentifier) {
         pending.removeAll { $0.id == id }

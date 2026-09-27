@@ -60,7 +60,8 @@ class BackupTests {
         val p = BackupCodec.decode(fixture("backup-ios-v1"))
         assertEquals("ios", p.platform)
         assertEquals(Instant.parse("2026-09-27T08:00:00Z"), p.createdAt)
-        assertEquals(25, p.settings!!.size)             // emojiSuggest/pasteButton chỉ iOS, bị bỏ qua
+        assertEquals(28, p.settings!!.size)             // emojiSuggest/pasteButton chỉ iOS, bị bỏ qua
+        assertEquals(false, p.settings!!["autoCapitalize"])
         assertEquals(true, p.settings!!["shortcutsEnabled"])
         assertEquals(false, p.settings!!["reEditWords"])
         assertEquals(true, p.settings!!["autoCorrect"])
@@ -115,9 +116,10 @@ class BackupTests {
         val prefs = mapOf<String, Any?>("quickTelex" to true, "rowHeightAdjust" to 42, "debugTouchLog" to true,
             BackupPrefs.SHORTCUTS_KEY to "# VietTelex — bảng gõ tắt\nko: không\n")
         val p = BackupPrefs.snapshot({ prefs[it] }, listOf(TemplateItem("", "a")), null)
-        assertEquals(26, p.settings!!.size)
+        assertEquals(29, p.settings!!.size)
         assertEquals(true, p.settings!!["smartTouch"])
         assertEquals(false, p.settings!!["autoCorrect"])
+        assertEquals(true, p.settings!!["autoCapitalize"])
         assertEquals(false, p.settings!!["spaceSwipeLanguage"])
         assertEquals(true, p.settings!!["quickTelex"])
         assertEquals(true, p.settings!!["simpleTelex"])
@@ -133,6 +135,7 @@ class BackupTests {
             listOf(TemplateItem("👋", "Chào buổi sáng")))
         assertEquals(false, plan.writes["reEditWords"])
         assertEquals(-3, plan.writes["rowHeightAdjust"])
+        assertEquals(false, plan.writes[Keys.AUTO_CAPITALIZE])
         assertNull(plan.writes["hardwareTelex"])   // file iOS không có ⇒ không đụng
         // Pref gõ tắt ghi đúng dạng IME đọc: chuỗi YAML của ShortcutFile.
         assertTrue((plan.writes[Keys.SHORTCUTS] as String).startsWith(ShortcutFile.HEADER))

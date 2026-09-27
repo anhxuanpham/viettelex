@@ -194,7 +194,7 @@ struct RootView: View {
         }
         Section { PlusEntryRow() }
         Section {
-            Link(destination: URL(string: "https://viettelex.com/hdsd")!) {
+            Link(destination: URL(string: "https://viettelex.com/hdsd/?os=ios")!) {
                 Label("Hướng dẫn sử dụng", systemImage: "book")
             }
             Link(destination: URL(string: "https://ptrinh.github.io/viettelex/")!) {
@@ -780,6 +780,8 @@ struct KieuGoSection: View {
     private var vniMode = false
     @AppStorage("numberRow", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var numberRow = false
+    @AppStorage("autoCapitalize", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var autoCapitalize = true
 
     var body: some View {
         Section {
@@ -806,6 +808,8 @@ struct KieuGoSection: View {
                 settingToggle("Gõ nhanh (Quick Telex)", "Phụ âm đôi đầu từ thành phụ âm ghép: cc → ch, nn → ng, tt → th…", isOn: $quickTelex)
             }
             settingToggle("Bỏ dấu kiểu mới", "hoà, thuý thay vì hòa, thúy.", isOn: $modernTone)
+            // iOS không cho bàn phím bên thứ ba đọc công tắc Tự động viết hoa của hệ thống.
+            settingToggle("Tự động viết hoa đầu câu", "Bật shift ở đầu ô, sau . ! ? và khi xuống dòng. Công tắc “Tự động viết hoa” trong Cài đặt → Bàn phím của iOS không áp dụng cho bàn phím bên thứ ba — tắt ở đây.", isOn: $autoCapitalize)
             settingToggle("Quyết định theo ngữ cảnh", "Sau một từ tiếng Anh, từ nhập nhằng kế tiếp mà chuỗi phím tạo thành một từ tiếng Anh sẽ được giữ tiếng Anh thay vì tiếng Việt — “he is” → “he is”, không phải “he í”. Sau từ tiếng Việt hoặc không rõ thì để tiếng Việt — “sao í”.", isOn: $contextualEnglish)
             settingToggle("Gợi ý sửa lỗi chạm trượt", "Khi từ đang gõ không phải tiếng Việt, gợi ý từ đúng nếu bạn lỡ chạm phím bên cạnh: nbjeeuf → nhiều, ohims → phím, cahcs → cách. Chạm gợi ý để thay.", isOn: $autoFixAdjacent)
             if !vniMode {
@@ -844,6 +848,11 @@ struct TinhNangSections: View {
     private var rowHeightAdjust = 0
     @AppStorage("numberRow", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var numberRow = false
+    /// Giữ phím chữ ra ký tự phụ (KeyAlternates) — số mặc định BẬT, ký hiệu TẮT.
+    @AppStorage("longPressNumbers", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var longPressNumbers = true
+    @AppStorage("longPressSymbols", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var longPressSymbols = false
     /// "off" | "left" | "right" — bàn phím đọc lúc hiện (OneHand.resolve).
     @AppStorage("oneHandMode", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var oneHandMode = "off"
@@ -936,6 +945,13 @@ struct TinhNangSections: View {
                 }
             }
             settingToggle("Hàng phím số", "Thêm hàng 1 2 3 … 0 phía trên hàng chữ — gõ số không cần chuyển sang bàn phím 123. Bàn phím cao thêm khoảng ¾ hàng.", isOn: $numberRow)
+            // iPad có ký tự phụ vuốt xuống riêng ⇒ chỉ iPhone.
+            if UIDevice.current.userInterfaceIdiom == .phone {
+                if !numberRow {
+                    settingToggle("Giữ phím hàng trên để ra số", "Giữ q w e … p một chút để gõ 1 2 3 … 0 — số nhỏ ở góc phím. Chỉ dùng khi tắt Hàng phím số.", isOn: $longPressNumbers)
+                }
+                settingToggle("Giữ phím hàng 2, 3 để ra ký tự đặc biệt", "Giữ a … l, z … m để gõ @ # $ _ & - + ( ) * \" % : / ! ? — ký hiệu nhỏ ở góc phím. Giữ , để ra . khi bật một trong các công tắc giữ phím.", isOn: $longPressSymbols)
+            }
             if UIDevice.current.userInterfaceIdiom == .phone {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Chế độ một tay")
@@ -960,7 +976,7 @@ struct TinhNangSections: View {
             settingToggle("Gõ vuốt", "Vuốt qua các chữ không dấu rồi nhấc tay: v→i→e→t ra “việt”. Gõ tiếp phím dấu (s f r x j) để đổi dấu, ⌫ ngay sau đó xoá cả từ, thanh gợi ý có các cách viết khác. Chỉ trên iPhone; tắt khi dùng VoiceOver và ở ô email/mật khẩu/URL.", isOn: $swipeTyping)
             if swipeTyping {
                 settingToggle("Vuốt từ tiếng Anh", "Vuốt ra cả từ tiếng Anh xen trong câu: check, mail, file, meeting… Khi một nét vuốt vừa là từ Việt vừa là từ Anh (the/thế, can/cần), bàn phím ưu tiên tiếng Việt — trừ khi đang gõ tiếng Anh — và luôn để phương án kia trên thanh gợi ý.", isOn: $swipeEnglish)
-                settingToggle("Mô hình nơ-ron gõ vuốt", "Thêm mạng nơ-ron nhận dạng nét vuốt (chạy hoàn toàn trên máy) để chấm cùng bộ giải mã hiện có. Tốn thêm khoảng 3 MB bộ nhớ khi bàn phím mở.", isOn: $swipeFuto)
+                settingToggle("Mô hình neural gõ vuốt", "Thêm mạng neural nhận dạng nét vuốt (chạy hoàn toàn trên máy) để chấm cùng bộ giải mã hiện có. Tốn thêm khoảng 3 MB bộ nhớ khi bàn phím mở.", isOn: $swipeFuto)
                 NavigationLink {
                     SwipePracticeView()
                 } label: {

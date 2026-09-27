@@ -30,4 +30,20 @@ final class AutoShiftTests: XCTestCase {
         XCTAssertEqual(FieldPolicy.autoShift(autocap: .words, before: "Nguy"), false)
         XCTAssertEqual(FieldPolicy.autoShift(autocap: .allCharacters, before: "AB"), true)
     }
+
+    /// Công tắc "Tự động viết hoa đầu câu" TẮT (công tắc iOS không áp cho bàn phím bên
+    /// thứ ba): không auto-shift ở đầu câu và KHÔNG đọc context.
+    func testSettingOffNeverShiftsAndSkipsContextRead() {
+        var reads = 0
+        for cap: UITextAutocapitalizationType? in [nil, .sentences, .words, .allCharacters] {
+            XCTAssertNil(FieldPolicy.autoShift(enabled: false, autocap: cap, before: { reads += 1; return "" }))
+        }
+        XCTAssertEqual(reads, 0)
+    }
+    func testSettingOnUnchanged() {
+        var reads = 0
+        XCTAssertEqual(FieldPolicy.autoShift(enabled: true, autocap: nil, before: { reads += 1; return "Xin chào. " }), true)
+        XCTAssertEqual(FieldPolicy.autoShift(enabled: true, autocap: .sentences, before: { reads += 1; return "Xin " }), false)
+        XCTAssertEqual(reads, 2)
+    }
 }

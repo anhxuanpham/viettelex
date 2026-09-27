@@ -11,6 +11,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.animation.DecelerateInterpolator
 import com.viettelex.android.R
+import com.viettelex.keyboard.KeyAlternates
 import com.viettelex.keyboard.EmojiSearch
 import com.viettelex.keyboard.EmojiSearchSession
 import com.viettelex.keyboard.GestureClassifier
@@ -111,6 +112,21 @@ class KeyboardView(
     private var showLogo = true
     /** Ô phóng to chữ khi bấm (Keys.KEY_PREVIEW); tắt ⇒ không show balloon phím chữ/ký tự. */
     var keyPreview = true
+
+    // --- giữ phím chữ ra ký tự phụ (KeyAlternates, issue #98) ---
+    /** Bảng đang dùng (IME đặt theo cài đặt + hàng số + TalkBack). Rỗng ⇒ không nhãn, không hẹn giờ. */
+    private var alts: Map<Char, String> = emptyMap()
+    fun setAlternates(map: Map<Char, String>) {
+        if (map == alts) return
+        alts = map
+        dropAlt()
+        if (plane == Plane.LETTERS || plane == Plane.EMOJI_SEARCH) invalidate()
+    }
+    private var altHold: KeyAlternates.Hold? = null
+    private var altPid = -1
+    private var altKey: LaidKey? = null
+    private var altShiftWas = Shift.OFF
+    private val altRun = Runnable { fireAlt() }
     private var templatesEnabled = true
     private var templates: List<TemplateItem> = emptyList()
 
@@ -293,9 +309,25 @@ class KeyboardView(
         keys.firstOrNull { it.kind == KeyKind.PUNCT && it.label == "," }?.let { invalidateKey(it) }
     }
     private fun isVoiceComma(k: LaidKey) = voiceAvailable && plane == Plane.LETTERS && k.kind == KeyKind.PUNCT && k.label == ","
-    private fun cancelVoiceHold() {
+    // --- giữ "," ra "." (KeyAlternates.commaHold: bảng ký tự phụ không rỗng) — chỉ khi "," KHÔNG
+    // phải phím giọng nói (có IME giọng nói ⇒ giữ nguyên hành động cũ, không ra ".") ---
+    private var periodFired = false
+    private fun isPeriodComma(k: LaidKey) =
+        plane == Plane.LETTERS && k.kind == KeyKind.PUNCT && k.label == "," && KeyAlternates.commaHold(alts, voiceAvailable)
+    /** Hết giờ mà "," còn chờ chốt ⇒ đổi thành "." (chốt lúc nhấc / khi ngón khác chạm, như ","). */
+    private val periodRun = Runnable {
+        val k = commaKey ?: return@Runnable
+        if (!KeyAlternates.holdComma(commits, k, ::textFire)) return@Runnable
+        periodFired = true
+        feedback.longPress(this)
+        showBalloon(k, KeyAlternates.COMMA_ALT)
+    }
+    private fun cancelCommaHold() {
         if (commaPtr < 0) return
-        removeCallbacks(voiceLongRun); commaPtr = -1; commaKey = null
+        removeCallbacks(voiceLongRun); removeCallbacks(periodRun)
+        if (periodFired) commaKey?.let { hideBalloon(it) }
+        periodFired = false
+        commaPtr = -1; commaKey = null
     }
 
     /** Ô cho giữ lâu Enter = xuống dòng thật (IME đặt theo [FieldConfig.holdNewline]). */
@@ -332,7 +364,7 @@ class KeyboardView(
         if (plane != Plane.EMOJI_SEARCH) { listener?.onKey(k); return }
         when (k) {
             is Key.Letter -> search.type(k.ch)
-            is Key.Text -> search.insert(k.text)
+            is Key.Text -> { if (k.replacesLetter) search.backspace(); search.insert(k.text) }
             Key.Space, Key.DoubleSpacePeriod -> search.space()
             Key.Backspace -> search.backspace()
             Key.Newline, Key.LineBreak -> { setPlane(Plane.EMOJI); return }
@@ -450,6 +482,7 @@ class KeyboardView(
 
     private fun rebuild() {
         if (width == 0) return
+        dropAlt()                         // phím có thể dời / đổi plane
         val sig = signature()
         if (sig != builtSig) { planeCache.clear(); builtSig = sig }
         keys = planeCache.getOrPut(plane) {
@@ -619,7 +652,13 @@ class KeyboardView(
         val contentAlpha = if (trackpad) 51 else 255   // 0.2
         val cx = k.centerX; val cy = k.centerY
         when (k.kind) {
-            KeyKind.LETTER -> drawLabel(c, if (shift == Shift.OFF) k.label else k.upper, cx, cy, letterPaint, letterOff, contentAlpha)
+            KeyKind.LETTER -> {
+                drawLabel(c, if (shift == Shift.OFF) k.label else k.upper, cx, cy, letterPaint, letterOff, contentAlpha)
+                // Ký tự phụ nhỏ, mờ ở góc trên-phải như Gboard.
+                if (alts.isNotEmpty()) alts[k.label[0]]?.let {
+                    drawLabel(c, it, k.right - hintInset + theme.dp(2f), k.top + hintInset, hintPaint, hintOff, (contentAlpha * 0.55f).toInt())
+                }
+            }
             KeyKind.CHAR -> drawLabel(c, k.label, cx, cy, letterPaint, letterOff, contentAlpha)
             KeyKind.PAD -> if (k.hint.isEmpty()) {
                 drawLabel(c, k.label, cx, cy, if (k.side) sidePaint else digitPaint, if (k.side) sideOff else digitOff, contentAlpha)
@@ -633,6 +672,7 @@ class KeyboardView(
                 else drawLabel(c, k.label, cx, cy, letterPaint, letterOff, contentAlpha)
                 // Gợi ý giữ lâu kiểu Gboard: 🎤 nhỏ, mờ ở góc trên-phải phím ",".
                 if (isVoiceComma(k)) icon(c, ImeIcons.MIC, k.right - hintInset, k.top + hintInset, 10f, theme.ink, (contentAlpha * 0.55f).toInt())
+                else if (isPeriodComma(k)) drawLabel(c, KeyAlternates.COMMA_ALT, k.right - hintInset + theme.dp(2f), k.top + hintInset, hintPaint, hintOff, (contentAlpha * 0.55f).toInt())
             }
             KeyKind.PLANE, KeyKind.MORE -> drawLabel(c, k.label, cx, cy, controlPaint, controlOff, contentAlpha)
             KeyKind.SHIFT -> {
@@ -814,6 +854,7 @@ class KeyboardView(
             }
             MotionEvent.ACTION_MOVE -> for (i in 0 until e.pointerCount) {
                 val pid = e.getPointerId(i)
+                if (pid == altPid) altMove(e.getX(i), e.getY(i))
                 if (pid == swipePid) swipeMove(e, i) else move(pid, e.getX(i), e.getY(i))
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
@@ -831,6 +872,7 @@ class KeyboardView(
         // Đang vuốt: ngón khác bỏ qua (không gõ chữ lạc); đang chờ phân loại: khoá là chạm.
         if (swiping) return
         if (swipePid >= 0 && pid != swipePid) { classifier.pointerAdded(); stopSwipeTracking() }
+        settleAlt()                       // ký tự phụ đang giữ chốt TRƯỚC phím mới
         ptrDownX[pid] = x; ptrDownY[pid] = y
         if (plane == Plane.EMOJI) { commits.flush(); ptrPane[pid] = true; emojiPane.down(pid, x, y); return }
         if (plane == Plane.TEMPLATES && templatesPane.contains(x, y)) {
@@ -849,7 +891,7 @@ class KeyboardView(
             }
         }
         val hit = KeyLayout.hit(keys, plane, x, y, TouchGeometry.yOffset * d, d)
-        cancelVoiceHold()                 // ngón khác chạm ⇒ "," đang giữ là gõ thường
+        cancelCommaHold()                 // ngón khác chạm ⇒ "," đang giữ là gõ thường
         if (TouchLog.enabled) {
             val lag = (SystemClock.uptimeMillis() - e.eventTime).toDouble()
             TouchLog.touchBegan(activeCount(), e.pointerCount, lag, hit != null, (y / d).toDouble(),
@@ -877,6 +919,7 @@ class KeyboardView(
                 lastLetterDownT = e.eventTime
                 if (swipeTyping && plane == Plane.LETTERS && activeCount() == 1)
                     startSwipeTracking(pid, k, x, y, e.eventTime, since, shiftWas)
+                if (alts.isNotEmpty()) armAlt(pid, k, x, y, shiftWas)
             }
             KeyKind.CHAR -> {
                 feedback.click(Feedback.LETTER, this)
@@ -895,6 +938,9 @@ class KeyboardView(
                 if (isVoiceComma(k)) {
                     commaPtr = pid; commaKey = k
                     postDelayed(voiceLongRun, GLOBE_HOLD_MS)
+                } else if (isPeriodComma(k)) {
+                    commaPtr = pid; commaKey = k; periodFired = false
+                    postDelayed(periodRun, KeyAlternates.HOLD_MS)
                 }
             }
             KeyKind.SPACE -> {
@@ -990,7 +1036,7 @@ class KeyboardView(
                 }
             }
             k.kind == KeyKind.BACKSPACE && pid == bsPtr -> moveBackspace(k, x - ptrDownX[pid], y - ptrDownY[pid], movedFar)
-            pid == commaPtr && movedFar -> cancelVoiceHold()
+            pid == commaPtr && movedFar && !periodFired -> cancelCommaHold()   // đã ra "." thì trôi không huỷ
         }
     }
 
@@ -1020,11 +1066,18 @@ class KeyboardView(
         ptrKey[pid] = null
         if (TouchLog.enabled) TouchLog.touchEnded(cancelled, true)
         when (k.kind) {
-            KeyKind.LETTER -> hideBalloon(k)
+            KeyKind.LETTER -> {
+                hideBalloon(k)
+                if (pid == altPid) {
+                    val alt = altHold?.commit
+                    dropAlt()
+                    if (alt != null) commitAlt(alt, k)   // cancel vẫn chốt như chữ thường
+                }
+            }
             KeyKind.CHAR -> { hideBalloon(k); commits.release(k) }
             KeyKind.PUNCT, KeyKind.PAD -> {
-                if (pid == commaPtr) cancelVoiceHold()
-                commits.release(k)        // "," đã giữ lâu ⇒ disarm rồi, không chèn gì
+                if (pid == commaPtr) cancelCommaHold()
+                commits.release(k)        // giữ lâu giọng nói ⇒ disarm rồi, không chèn gì; giữ ra "." ⇒ chèn "."
             }
             KeyKind.RETURN -> {
                 if (pid == returnPtr) { removeCallbacks(returnHoldRun); returnPtr = -1; hideBalloon(k) }
@@ -1110,6 +1163,7 @@ class KeyboardView(
 
     private fun cancelAllTouches() {
         abortSwipe()
+        dropAlt()
         for (i in 0 until MAX_PTR) {
             ptrKey[i]?.pressed = false
             ptrKey[i] = null; ptrPane[i] = false
@@ -1118,7 +1172,7 @@ class KeyboardView(
         endSwipe(commit = false)
         removeCallbacks(spaceHoldRun); removeCallbacks(bsStartRun); removeCallbacks(bsTickRun)
         removeCallbacks(globeLongRun); removeCallbacks(returnHoldRun); removeCallbacks(editRepeatRun)
-        cancelVoiceHold()
+        cancelCommaHold()
         spacePtr = -1; bsPtr = -1; globePtr = -1; returnPtr = -1; bsRepeating = false
         editPtr = -1; editRepeatKey = null; railPtr = -1; railPressed = -1
         if (trackpad) endTrackpad()
@@ -1183,6 +1237,7 @@ class KeyboardView(
     private fun beginSwipe(p: SwipePath) {
         if (listener?.onSwipeTypingStart() != true) { stopSwipeTracking(); return }
         swiping = true
+        dropAlt()
         swipeKey?.let { hideBalloon(it) }
         // Chữ đầu đã huỷ ⇒ shift một-lần bị nhả lúc chạm phải bật lại (từ vuốt viết hoa).
         if (swipeShift == Shift.ON && shift == Shift.OFF) { shift = Shift.ON; invalidate() }
@@ -1220,6 +1275,52 @@ class KeyboardView(
         if (pid in 0 until MAX_PTR) { ptrKey[pid]?.let { hideBalloon(it) }; ptrKey[pid] = null }
         trail?.end(fade = false)
         listener?.onSwipeTypingCancel()
+    }
+
+    // MARK: giữ phím ra ký tự phụ
+
+    /** Chạm phím có ký tự phụ: hẹn giờ [KeyAlternates.HOLD_MS]; chữ đã chèn lúc chạm. */
+    private fun armAlt(pid: Int, k: LaidKey, x: Float, y: Float, shiftWas: Shift) {
+        val alt = alts[k.label[0]] ?: return
+        altHold = KeyAlternates.Hold(alt, x / d, y / d)
+        altPid = pid; altKey = k; altShiftWas = shiftWas
+        removeCallbacks(altRun)
+        postDelayed(altRun, KeyAlternates.HOLD_MS)
+    }
+
+    private fun altMove(x: Float, y: Float) {
+        if (altHold?.move(x / d, y / d) == true) dropAlt()
+    }
+
+    /** Hết giờ, ngón chưa trôi / chưa thành vuốt ⇒ balloon hiện ký tự phụ (kể cả khi tắt phóng to chữ). */
+    private fun fireAlt() {
+        val h = altHold ?: return
+        val k = altKey ?: return
+        if (swiping || !h.fire()) return
+        if (swipePid == altPid) stopSwipeTracking()   // đã là giữ: trôi sau đó không thành vuốt
+        feedback.longPress(this)
+        showBalloon(k, h.alt)
+    }
+
+    /** Ngón mới chạm: giữ chưa đủ giờ ⇒ chỉ là chạm; đã bắn ⇒ chốt NGAY (checkpoint đúng phím). */
+    private fun settleAlt() {
+        val h = altHold ?: return
+        val k = altKey
+        dropAlt()
+        val alt = h.commit ?: return
+        if (k != null) { hideBalloon(k); commitAlt(alt, k) }
+    }
+
+    private fun dropAlt() {
+        if (altHold == null) return
+        removeCallbacks(altRun)
+        altHold = null; altPid = -1; altKey = null
+    }
+
+    private fun commitAlt(alt: String, k: LaidKey) {
+        hideBalloon(k)
+        if (altShiftWas == Shift.ON && shift == Shift.OFF) { shift = Shift.ON; invalidate() }
+        emit(Key.Text(alt, replacesLetter = true))
     }
 
     // MARK: trackpad

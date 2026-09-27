@@ -26,6 +26,7 @@
   "platform" : "ios",
   "settings" : {
     "addTonesChip" : false,
+    "autoCapitalize" : false,
     "autoCorrect" : true,
     "autoFixAdjacent" : true,
     "autoRestore" : true,
@@ -35,6 +36,8 @@
     "freeMarking" : true,
     "hapticFeedback" : true,
     "liveSpellCheck" : true,
+    "longPressNumbers" : true,
+    "longPressSymbols" : false,
     "modernTone" : true,
     "numberChips" : true,
     "numberRow" : true,

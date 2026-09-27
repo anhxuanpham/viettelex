@@ -166,6 +166,7 @@ final class KeyboardViewController: UIInputViewController {
         keyboard.setIncognito(clip.incognito)
         filterSensitive = settings.filterSensitive
         showSuggestionsSetting = settings.showSuggestions
+        autoCapitalizeSetting = settings.autoCapitalize
         swipeSetting = settings.swipeTyping
         swipeEnglishSetting = settings.swipeEnglish
         swipeFutoSetting = settings.swipeFuto
@@ -187,6 +188,7 @@ final class KeyboardViewController: UIInputViewController {
             flickEnabled: spaceFlickSetting)
         if language == .en { bridge.setEnglish(true, proxy: Proxy(p: textDocumentProxy)); warmUpEnglish() }
         keyboard.configureSpaceFlick(enabled: spaceFlickSetting, language: language)
+        keyboard.configureKeyAlternates(numbers: settings.longPressNumbers, symbols: settings.longPressSymbols)
         warmUpData()
         swipeSuggest = nil
         recentEnglish = []
@@ -321,9 +323,12 @@ final class KeyboardViewController: UIInputViewController {
     /// Apple behavior: shift turns on at sentence start when the field asks for
     /// .sentences autocapitalization (empty context, or after ".!?" + space).
     private func updateAutoShift() {
+        // Tắt viết hoa đầu câu: chỉ hạ shift do chính mình bật trước đó (shift tay giữ nguyên).
+        if !autoCapitalizeSetting, autoShiftOn { autoShiftOn = false; keyboard.setAutoShift(false) }
         guard let auto = FieldPolicy.autoShift(
+            enabled: autoCapitalizeSetting,
             autocap: textDocumentProxy.autocapitalizationType ?? nil,
-            before: textDocumentProxy.documentContextBeforeInput ?? "") else { return }
+            before: { textDocumentProxy.documentContextBeforeInput ?? "" }) else { return }
         autoShiftOn = auto
         keyboard.setAutoShift(auto)
     }
@@ -331,6 +336,7 @@ final class KeyboardViewController: UIInputViewController {
     /// Trait ô hiện tại (nil = chưa đọc lần nào trong phiên).
     private var fieldTraits: FieldTraits?
     private var showSuggestionsSetting = true
+    private var autoCapitalizeSetting = true
 
     /// Đọc trait ô và cấu hình lại bàn phím CHỈ khi trait đổi (hoặc `force` ở
     /// viewWillAppear). Host đổi ô trong cùng app không gọi viewWillAppear → gọi
@@ -1496,8 +1502,11 @@ extension KeyboardViewController {
                                      traits: fieldTraits,
                                      voiceOver: UIAccessibility.isVoiceOverRunning)
         keyboard.swipeEnabled = on
-        // Checkpoint huỷ phím chữ chỉ có người dùng khi gõ vuốt / iPad vuốt xuống.
+        keyboard.altAccessibility = UIAccessibility.isVoiceOverRunning
+        // Checkpoint huỷ phím chữ chỉ có người dùng khi gõ vuốt / iPad vuốt xuống / giữ phím
+        // ra ký tự phụ.
         bridge.letterUndoEnabled = on || UIDevice.current.userInterfaceIdiom == .pad
+            || keyboard.altHoldActive
         if on, swipe == nil { swipe = SwipeTyping() }
         if on { pushSwipeLayout(prepare: true) }
         if on, swipeEnglishSetting { swipe?.preloadEnglish() }

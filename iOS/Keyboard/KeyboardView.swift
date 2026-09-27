@@ -443,6 +443,30 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     }
     static let numberRowKey = "numberRow"
 
+    // MARK: giữ phím chữ ra ký tự phụ (KeyAlternates, issue #98)
+    private var altNumbersSetting = true
+    private var altSymbolsSetting = false
+    /// VoiceOver bật ⇒ tắt ký tự phụ (giữ phím là cử chỉ của VoiceOver). Controller đặt.
+    var altAccessibility = false {
+        didSet { if altAccessibility != oldValue { rebuild() } }
+    }
+    /// Bảng ký tự phụ của lần dựng hiện tại (rỗng ⇒ không nhãn, không hẹn giờ).
+    private var activeAlts: [Character: String] = [:]
+    private var builtAlts: [Character: String] = [:]
+    private func currentAlts() -> [Character: String] {
+        KeyAlternates.map(numbers: altNumbersSetting, symbols: altSymbolsSetting,
+                          numberRow: numberRowEnabled, isPad: Self.isPad, accessibility: altAccessibility)
+    }
+    func configureKeyAlternates(numbers: Bool, symbols: Bool) {
+        guard numbers != altNumbersSetting || symbols != altSymbolsSetting else { return }
+        altNumbersSetting = numbers; altSymbolsSetting = symbols
+        rebuild()
+    }
+    /// Có phím nào ra ký tự phụ không — controller bật checkpoint huỷ phím chữ theo cờ này.
+    var altHoldActive: Bool { !currentAlts().isEmpty }
+    private var altHold: (id: ObjectIdentifier, button: UIButton, hold: KeyAlternates.Hold)?
+    private var altTimer: DispatchWorkItem?
+
     /// iPhone 216pt dọc / 162pt ngang; iPad 240/300 — GỌN hơn stock (264/352)
     /// theo ý user 2026-07-24, phím vẫn rộng thoải mái nhờ bề ngang iPad.
     /// Tổng key area = base + rowHeightAdjust × 4 hàng — heightConstraint và
@@ -1350,12 +1374,14 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private func rebuild() {
         guard !rebuildDeferred else { return }   // batchConfigure rebuild 1 lần cuối
         letterGeometryCache = nil
+        activeAlts = currentAlts()
         updateSuggestionChrome()
         applyOneHand()                           // plane mới có thể thu hẹp / đầy bề ngang
         let styleChanged = builtReturn != returnTitle || builtDark != dark
             || builtPalette != palette
             || builtGlobe != needsGlobe || builtKind != inputKind
             || builtNumberRow != numberRowEnabled
+            || builtAlts != activeAlts
         let widthChanged = builtWidth != bounds.width
         let sigChanged = styleChanged || widthChanged
         if builtPlane == plane, !sigChanged { return }
@@ -1388,6 +1414,9 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         builtDark = dark; builtPalette = palette; builtWidth = bounds.width
         builtGlobe = needsGlobe; builtKind = inputKind
         builtNumberRow = numberRowEnabled
+        builtAlts = activeAlts
+        dropAltHold()                            // phím cũ sắp bị gỡ
+        commaTimer?.cancel(); commaTimer = nil; commaFired = false
         letterKeys.removeAll()
         shiftKeys = []
         crossRowConstraints = []
@@ -2067,6 +2096,11 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             b.pressedBackground = specialFill
             if p.title == ".com" { b.titleLabel?.font = .systemFont(ofSize: 17) }
             armCommit(b) { [weak self] in self?.tapped(.text(p.insert)) }
+            // Bàn chữ iPhone: giữ "," ra "." (KeyAlternates.commaHold — bảng ký tự phụ không
+            // rỗng; iPad/VoiceOver đã rỗng sẵn).
+            if p.title == ",", planeKey == "123", KeyAlternates.commaHold(alternates: activeAlts) {
+                armCommaHold(b)
+            }
             views.append(b)
             punctKeys.append((b, p.mult))
         }
@@ -2268,6 +2302,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // các phím nhấc-mới-chốt đang đè TRƯỚC khi phím này làm gì — đúng thứ tự
         // khi gõ chồng ngón (KeyCommitQueue).
         b.addAction(UIAction { [weak self, weak b] _ in
+            self?.settleAltHold()                 // ký tự phụ đang giữ chốt TRƯỚC phím mới
             self?.commits.flush(except: b.map(ObjectIdentifier.init))
         }, for: .touchDown)
         b.isMultipleTouchEnabled = true
@@ -2343,6 +2378,20 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             ])
             b.contentVerticalAlignment = .bottom
             b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 0, bottom: 7, right: 0)
+        } else if let c = s.first, let alt = activeAlts[c] {
+            // Nhãn ký tự phụ nhỏ, mờ ở góc trên-phải như Gboard — dựng một lần theo layout.
+            let l = UILabel()
+            l.text = alt
+            l.font = .systemFont(ofSize: 10, weight: .medium)
+            l.textColor = ink.withAlphaComponent(0.45)
+            l.translatesAutoresizingMaskIntoConstraints = false
+            l.isUserInteractionEnabled = false
+            l.isAccessibilityElement = false
+            b.addSubview(l)
+            NSLayoutConstraint.activate([
+                l.trailingAnchor.constraint(equalTo: b.trailingAnchor, constant: -3),
+                l.topAnchor.constraint(equalTo: b.topAnchor, constant: 2),
+            ])
         }
         // Chèn NGAY touch-down như stock iOS: chữ lên tức thì, không phụ thuộc
         // vào việc giao touch-up (main thread bận → touch-up trễ → "phím không
@@ -2445,8 +2494,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private var balloonMade = false
     private lazy var balloon: BalloonView = { balloonMade = true; return BalloonView() }()
     var debugBalloonMade: Bool { balloonMade }
-    private func showBalloon(over key: UIView, text: String) {
-        guard keyPreviewEnabled else { return }
+    private func showBalloon(over key: UIView, text: String, force: Bool = false) {
+        guard keyPreviewEnabled || force else { return }
         let f = convert(key.bounds, from: key)
         // Strip gợi ý (36 mở / 14 thu gọn) = headroom phía trên hàng phím đầu —
         // cho balloon leo vào đó thay vì kẹp sát -6.
@@ -3101,9 +3150,102 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             startClassifying(id, at: p, time: time, key: convert(b.bounds, from: b),
                              keyWidth: kw, since: since)
         }
+        if !activeAlts.isEmpty { armAltHold(id, button: b, at: raw) }
+    }
+
+    /// Chạm phím có ký tự phụ: hẹn giờ `holdDelay`. Chữ đã chèn lúc chạm; hết giờ mà
+    /// ngón chưa trôi / chưa thành vuốt ⇒ balloon hiện ký tự phụ, nhấc tay thì thay chữ.
+    private func armAltHold(_ id: ObjectIdentifier, button b: UIButton, at raw: CGPoint) {
+        guard let base = letterKeys.first(where: { $0.button === b })?.base.first,
+              let alt = activeAlts[base] else { return }
+        altHold = (id, b, KeyAlternates.Hold(alt: alt, start: raw))
+        let w = DispatchWorkItem { [weak self] in self?.fireAltHold() }
+        altTimer = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + KeyAlternates.holdDelay, execute: w)
+    }
+
+    private func fireAltHold() {
+        altTimer = nil
+        guard var h = altHold, !swipeActive, h.hold.fire() else { return }
+        altHold = h
+        if swipeTouchID == h.id { stopClassifying() }   // đã là giữ: trôi sau đó không thành vuốt
+        Self.flickFeedback()
+        showBalloon(over: h.button, text: h.hold.alt, force: true)
+    }
+
+    /// Ngón mới chạm (phím bất kỳ): giữ chưa đủ giờ ⇒ chỉ là chạm; đã bắn ⇒ chốt ký tự phụ
+    /// NGAY (trước phím mới, kẻo checkpoint huỷ chữ trỏ nhầm phím).
+    private func settleAltHold() {
+        guard let h = altHold else { return }
+        altTimer?.cancel(); altTimer = nil
+        altHold = nil
+        if let alt = h.hold.commit { commitAlt(alt) }
+    }
+
+    private func dropAltHold() {
+        altTimer?.cancel(); altTimer = nil
+        altHold = nil
+    }
+
+    /// Phím "," có giữ ra ".": nhãn nhỏ góc trên-phải như phím chữ; chạm hẹn giờ `holdDelay`,
+    /// hết giờ mà "," còn chờ chốt ⇒ đổi thành "." (KeyAlternates.holdComma) + balloon + rung.
+    /// Chốt lúc nhấc / khi ngón khác chạm như "," ⇒ từ đang gõ được chốt y hệt.
+    private func armCommaHold(_ b: KeyButton) {
+        let l = UILabel()
+        l.text = KeyAlternates.commaAlt
+        l.font = .systemFont(ofSize: 10, weight: .medium)
+        l.textColor = ink.withAlphaComponent(0.45)
+        l.translatesAutoresizingMaskIntoConstraints = false
+        l.isUserInteractionEnabled = false
+        l.isAccessibilityElement = false
+        b.addSubview(l)
+        NSLayoutConstraint.activate([
+            l.trailingAnchor.constraint(equalTo: b.trailingAnchor, constant: -3),
+            l.topAnchor.constraint(equalTo: b.topAnchor, constant: 2),
+        ])
+        b.addAction(UIAction { [weak self, weak b] _ in
+            guard let self, let b else { return }
+            self.commaTimer?.cancel()
+            let w = DispatchWorkItem { [weak self, weak b] in
+                guard let self, let b else { return }
+                self.fireCommaHold(b)
+            }
+            self.commaTimer = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + KeyAlternates.holdDelay, execute: w)
+        }, for: .touchDown)
+        b.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            self.commaTimer?.cancel(); self.commaTimer = nil
+            if self.commaFired { self.commaFired = false; self.hideBalloon() }
+        }, for: [.touchUpInside, .touchUpOutside, .touchCancel])
+    }
+
+    private func fireCommaHold(_ b: KeyButton) {
+        commaTimer = nil
+        let fired = KeyAlternates.holdComma(commits, id: ObjectIdentifier(b)) { [weak self] alt in
+            self?.hideBalloon()
+            self?.tapped(.text(alt))
+        }
+        guard fired else { return }
+        commaFired = true
+        Self.flickFeedback()
+        showBalloon(over: b, text: KeyAlternates.commaAlt, force: true)
+    }
+    private var commaTimer: DispatchWorkItem?
+    private var commaFired = false
+
+    private func commitAlt(_ alt: String) {
+        hideBalloon()
+        if shiftBeforeLastLetter == .on, shift == .off { shift = .on; applyShiftAppearance() }
+        tapped(.replaceLastLetter(alt))
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if let h = altHold, !h.hold.fired {
+            for t in touches where ObjectIdentifier(t) == h.id {
+                if altHold?.hold.move(to: t.location(in: self)) == true { dropAltHold() }
+            }
+        }
         guard let id = swipeTouchID else { return }     // tắt / không theo dõi ⇒ 0 việc
         for t in touches where ObjectIdentifier(t) == id {
             for c in event?.coalescedTouches(for: t) ?? [t] {
@@ -3125,7 +3267,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let start = routedStart.removeValue(forKey: id)
         TouchLog.touchEnded(cancelled: cancelled, routed: b != nil)
         guard let b else { return }
+        var alt: String?
+        if let h = altHold, h.id == id { alt = h.hold.commit; dropAltHold() }
         b.sendActions(for: .touchUpInside)
+        if let alt, !swiped { commitAlt(alt); return }  // cancel vẫn chốt như chữ thường
         guard !swiped, !cancelled else { return }
         // iPad: vuốt xuống trên phím chữ = ký tự phụ như stock. Chữ đã chèn lúc
         // chạm (touchDown) → HUỶ đúng phím đó (không ⌫: phím dấu Telex đã đổi từ)
@@ -3230,6 +3375,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private func beginSwipe() {
         swipeActive = true
         classifier = nil
+        dropAltHold()
         hideBalloon()
         // Phím chữ đầu đã nhả shift một lần — trả lại để từ vuốt viết hoa đúng.
         if shiftBeforeLastLetter == .on, shift == .off { shift = .on; applyShiftAppearance() }
@@ -3435,6 +3581,67 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         routeUp(id, at: points.last ?? p0, time: t, cancelled: false)
         withExtendedLifetime(token) {}
         return swiped
+    }
+    /// Test hook giữ phím ký tự phụ: chạm tâm phím `s`, trôi `drift` pt, (tuỳ) hết giờ giữ
+    /// (gọi thẳng như timer bắn), rồi nhấc — đường router thật. Trả có hẹn giờ không.
+    @discardableResult
+    func debugHold(_ s: String, drift: CGFloat = 0, fire: Bool = true, secondTouch: String? = nil) -> Bool {
+        guard let f = debugLetterFrame(s) else { return false }
+        let token = NSObject(), id = ObjectIdentifier(token)
+        let c = CGPoint(x: f.midX, y: f.midY)
+        routeDown(id, at: c, time: 1, batch: 1)
+        let armed = altHold != nil
+        if drift > 0, let h = altHold, h.id == id, altHold?.hold.move(to: CGPoint(x: c.x + drift, y: c.y)) == true {
+            dropAltHold()
+        }
+        if fire { altTimer?.cancel(); fireAltHold() }
+        if let s2 = secondTouch, let f2 = debugLetterFrame(s2) {
+            let t2 = NSObject(), id2 = ObjectIdentifier(t2)
+            routeDown(id2, at: CGPoint(x: f2.midX, y: f2.midY), time: 1.1, batch: 1)
+            routeUp(id2, at: CGPoint(x: f2.midX, y: f2.midY), time: 1.2, cancelled: false)
+            withExtendedLifetime(t2) {}
+        }
+        routeUp(id, at: CGPoint(x: c.x + drift, y: c.y), time: 2, cancelled: false)
+        withExtendedLifetime(token) {}
+        return armed
+    }
+    /// Test hook giữ phím "," hàng đáy: chạm, (tuỳ) hết giờ giữ, (tuỳ) ngón khác chạm phím chữ
+    /// `secondTouch`, rồi nhấc — đường action thật của nút. Trả có hẹn giờ không.
+    @discardableResult
+    func debugCommaHold(fire: Bool = true, secondTouch: String? = nil, secondBeforeFire: Bool = false) -> Bool {
+        guard let b = debugCommaButton else { return false }
+        b.sendActions(for: .touchDown)
+        let armed = commaTimer != nil
+        func second() {
+            guard let s2 = secondTouch, let f2 = debugLetterFrame(s2) else { return }
+            let t2 = NSObject(), id2 = ObjectIdentifier(t2)
+            routeDown(id2, at: CGPoint(x: f2.midX, y: f2.midY), time: 1.1, batch: 1)
+            routeUp(id2, at: CGPoint(x: f2.midX, y: f2.midY), time: 1.2, cancelled: false)
+            withExtendedLifetime(t2) {}
+        }
+        if secondBeforeFire { second() }
+        if fire, armed { commaTimer?.cancel(); fireCommaHold(b) }   // như timer bắn
+        if !secondBeforeFire { second() }
+        b.sendActions(for: .touchUpInside)
+        return armed
+    }
+    private var debugCommaButton: KeyButton? {
+        func find(_ v: UIView) -> KeyButton? {
+            if let b = v as? KeyButton, b.currentTitle == "," { return b }
+            for s in v.subviews { if let b = find(s) { return b } }
+            return nil
+        }
+        return find(rowsContainer)
+    }
+    /// Nhãn "." nhỏ trên phím "," (nil = không có nhãn).
+    var debugCommaHint: String? {
+        guard let b = debugCommaButton else { return nil }
+        return b.subviews.compactMap { ($0 as? UILabel) }.first { $0 !== b.titleLabel }?.text
+    }
+    /// Nhãn ký tự phụ đang vẽ trên phím chữ `s` (nil = không có nhãn).
+    func debugAltHint(_ s: String) -> String? {
+        guard let b = letterKeys.first(where: { $0.base == s })?.button else { return nil }
+        return b.subviews.compactMap { ($0 as? UILabel) }.first { $0 !== b.titleLabel }?.text
     }
     /// Test hook: vào chế độ tìm emoji (như bấm 🔍), gõ từng phím chữ/space qua
     /// đường tapped thật; trả (query, kết quả đang hiện).

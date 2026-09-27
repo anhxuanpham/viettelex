@@ -40,6 +40,14 @@ extension FieldPolicy {
         @unknown default: return nil
         }
     }
+
+    /// Như trên + công tắc "Tự động viết hoa đầu câu": tắt ⇒ nil (không đụng shift tay)
+    /// và KHÔNG gọi `before` (documentContextBeforeInput là XPC).
+    static func autoShift(enabled: Bool, autocap: UITextAutocapitalizationType?,
+                          before: () -> String) -> Bool? {
+        guard enabled else { return nil }
+        return autoShift(autocap: autocap, before: before())
+    }
 }
 
 /// Ảnh chụp trait của ô nhập — phần THUẦN của refreshFieldTraits(). Host đổi ô trong

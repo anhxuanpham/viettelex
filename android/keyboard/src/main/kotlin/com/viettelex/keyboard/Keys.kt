@@ -16,6 +16,8 @@ object Keys {
     const val RE_EDIT_WORDS = "reEditWords"
     const val AUTO_FIX_ADJACENT = "autoFixAdjacent"
     const val TEENCODE = "teencode"
+    /** Tự động viết hoa đầu câu (Bool, mặc định BẬT) — tắt ⇒ không auto-shift, không đọc context. */
+    const val AUTO_CAPITALIZE = "autoCapitalize"
     /** Kiểu gõ VNI (Bool, mặc định false = Telex) — tên như iOS App Group / macOS. */
     const val VNI_MODE = "vniMode"
     // Tính Năng
@@ -66,6 +68,10 @@ object Keys {
     const val ROW_HEIGHT_ADJUST = "rowHeightAdjust"
     /** Bool — hàng phím số trên plane chữ (tên như iOS App Group). */
     const val NUMBER_ROW = "numberRow"
+    /** Bool — giữ q…p ra 1…0 (chỉ khi hàng số tắt), mặc định BẬT — [KeyAlternates]. */
+    const val LONG_PRESS_NUMBERS = "longPressNumbers"
+    /** Bool — giữ a–l, z–m ra ký hiệu, mặc định TẮT — [KeyAlternates]. */
+    const val LONG_PRESS_SYMBOLS = "longPressSymbols"
     /** String "off" | "left" | "right" — chế độ một tay (điện thoại; tên như iOS App Group). */
     const val ONE_HAND_MODE = "oneHandMode"
     /** String "left" | "right" — bên dùng gần nhất (giữ lâu icon con trỏ bật lại bên này). */
