@@ -129,6 +129,8 @@ struct RootView: View {
             if phase == .active {
                 keyboardEnabled = isKeyboardEnabled()
                 pasteReady = Self.readPasteReady()
+                // Plus: đọc entitlement đã verify → cờ App Group cho bàn phím.
+                Task { await PlusShared.model.refreshEntitlements() }
                 ICloudSync.shared.start()          // tắt ⇒ không làm gì
             } else if phase == .background {
                 ICloudSync.shared.syncNow()        // đẩy thay đổi vừa sửa lên iCloud
@@ -190,6 +192,7 @@ struct RootView: View {
             .padding(.vertical, 8)
             .listRowBackground(Color.clear)
         }
+        Section { PlusEntryRow() }
         Section {
             Link(destination: URL(string: "https://ptrinh.github.io/viettelex/")!) {
                 Label("Website", systemImage: "globe")
@@ -831,6 +834,8 @@ struct TinhNangSections: View {
             settingToggle("Kiểm tra chính tả khi gõ", "Ngừng bỏ dấu ngay khi từ không thể là tiếng Việt.", isOn: $liveSpellCheck)
             settingToggle("Sửa dấu từ đã gõ", "Xoá dấu cách ngay sau một từ để gõ tiếp dấu cho từ đó (tháy ␣ ⌫ a → thấy); hoặc đặt con trỏ ngay sau từ rồi gõ phím dấu s f r x j: viêt + j → việt.", isOn: $reEditWord)
         } header: { Text("Chính tả") }
+
+        ShortcutsSection()
 
         Section {
             // Thanh gợi ý bật = tự học từ hay dùng (learnWords đi theo, không

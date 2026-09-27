@@ -30,7 +30,7 @@ class BackupTests {
             "autoRestore" to true, "liveSpellCheck" to true, "swipeTyping" to false, "swipeEnglish" to true,
             "hardwareTelex" to false, "showSuggestions" to true, "filterSensitive" to false,
             "templatesEnabled" to true, "showSpaceLogo" to true, "hapticFeedback" to false,
-            "numberRow" to false, "rowHeightAdjust" to 4),
+            "numberRow" to false, "rowHeightAdjust" to 4, "shortcutsEnabled" to false),
         shortcuts = mapOf("mn" to "mọi người", "vn" to "Việt Nam"),
         templates = listOf(TemplateItem("📍", "Mình đang trên đường tới"), TemplateItem("IP❓", "https://api.ipify.org")),
     )
@@ -60,7 +60,8 @@ class BackupTests {
         val p = BackupCodec.decode(fixture("backup-ios-v1"))
         assertEquals("ios", p.platform)
         assertEquals(Instant.parse("2026-09-27T08:00:00Z"), p.createdAt)
-        assertEquals(19, p.settings!!.size)
+        assertEquals(20, p.settings!!.size)
+        assertEquals(true, p.settings!!["shortcutsEnabled"])
         assertEquals(false, p.settings!!["reEditWords"])
         assertEquals(-3, p.settings!!["rowHeightAdjust"])
         assertEquals(true, p.settings!!["numberRow"])
@@ -95,9 +96,9 @@ class BackupTests {
 
     @Test fun snapshotFillsDefaultsAndClamps() {
         val prefs = mapOf<String, Any?>("quickTelex" to true, "rowHeightAdjust" to 42, "debugTouchLog" to true,
-            BackupPrefs.SHORTCUTS_KEY to "{\"ko\":\"không\"}")
+            BackupPrefs.SHORTCUTS_KEY to "# VietTelex — bảng gõ tắt\nko: không\n")
         val p = BackupPrefs.snapshot({ prefs[it] }, listOf(TemplateItem("", "a")), null)
-        assertEquals(20, p.settings!!.size)
+        assertEquals(21, p.settings!!.size)
         assertEquals(true, p.settings!!["quickTelex"])
         assertEquals(true, p.settings!!["simpleTelex"])
         assertEquals(10, p.settings!!["rowHeightAdjust"])
@@ -107,12 +108,14 @@ class BackupTests {
     }
 
     @Test fun importIOSFileIntoAndroidPrefs() {
-        val prefs = mapOf<String, Any?>(BackupPrefs.SHORTCUTS_KEY to "{\"ko\":\"hông\",\"hn\":\"Hà Nội\"}")
+        val prefs = mapOf<String, Any?>(BackupPrefs.SHORTCUTS_KEY to ShortcutFile.exportYAML(mapOf("ko" to "hông", "hn" to "Hà Nội")))
         val plan = BackupPrefs.plan(BackupCodec.decode(fixture("backup-ios-v1")), { prefs[it] },
             listOf(TemplateItem("👋", "Chào buổi sáng")))
         assertEquals(false, plan.writes["reEditWords"])
         assertEquals(-3, plan.writes["rowHeightAdjust"])
         assertNull(plan.writes["hardwareTelex"])   // file iOS không có ⇒ không đụng
+        // Pref gõ tắt ghi đúng dạng IME đọc: chuỗi YAML của ShortcutFile.
+        assertTrue((plan.writes[Keys.SHORTCUTS] as String).startsWith(ShortcutFile.HEADER))
         assertEquals(mapOf("hn" to "Hà Nội", "ko" to "không", "stk" to "số tài khoản", "đc" to "được"),
             BackupPrefs.shortcutsFromPref(plan.writes[BackupPrefs.SHORTCUTS_KEY]))
         assertEquals(listOf("Chào buổi sáng", "Anh nói \"ok\" nhé\nDòng 2"), plan.templates!!.map { it.text })

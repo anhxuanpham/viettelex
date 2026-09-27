@@ -63,7 +63,8 @@ final class BackupTests: XCTestCase {
         XCTAssertEqual(p.settings?["quickTelex"], .bool(true))
         XCTAssertEqual(p.settings?["hardwareTelex"], .bool(false))
         XCTAssertEqual(p.settings?["rowHeightAdjust"], .int(4))
-        XCTAssertEqual(p.settings?.count, 20)
+        XCTAssertEqual(p.settings?.count, 21)
+        XCTAssertEqual(p.settings?["shortcutsEnabled"], .bool(false))
         XCTAssertEqual(p.shortcuts, ["mn": "mọi người", "vn": "Việt Nam"])
         XCTAssertEqual(p.templates, [BackupTemplate(label: "📍", text: "Mình đang trên đường tới"),
                                      BackupTemplate(label: "IP❓", text: "https://api.ipify.org")])

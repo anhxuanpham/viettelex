@@ -23,8 +23,8 @@ final class ICloudSync: ObservableObject {
     static let shared = ICloudSync()
     static let enabledKey = "icloudSyncEnabled"
     static let lastSyncKey = "icloudLastSync"
-    /// TODO(PlusGate): có IAP thì trả về trạng thái Plus. Tạm MỞ cho mọi người.
-    static var isUnlocked: () -> Bool = { true }
+    /// Tính năng Plus (PlusConfig: paywall tắt ⇒ mở cho mọi người).
+    static var isUnlocked: () -> Bool = { PlusGate.isUnlocked(.iCloudSync) }
 
     let store: BackupStore
     private let cloud = KVSCloud()

@@ -13,9 +13,8 @@ final class BackupStore: SyncLocal {
     /// Setting iOS không có (bỏ qua khi nhập/đồng bộ, không xuất).
     static let unsupported: Set<String> = ["hardwareTelex"]
     static let templatesKey = "userTemplates"
-    /// Gõ tắt: dict trigger → cụm từ, cùng key/kiểu với macOS AppState ("shortcuts").
-    /// TODO(gõ tắt iOS): agent làm gõ tắt chốt nơi lưu thì chỉ sửa 2 hàm dưới.
-    static let shortcutsKey = "shortcuts"
+    /// Gõ tắt: dict [khoá: nội dung] ở App Group — đúng chỗ bàn phím đọc (Keyboard/Shortcuts.swift).
+    static let shortcutsKey = ShortcutFile.storeKey
     static let learnedFile = "userlm.plist"
     static func ledgerKey(_ s: SyncSection) -> String { "syncLedger.\(s.rawValue)" }
 

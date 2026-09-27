@@ -48,6 +48,7 @@ object BackupSettings {
         Spec(Keys.HAPTIC_FEEDBACK, SettingKind.Bool(false)),
         Spec(Keys.NUMBER_ROW, SettingKind.Bool(false)),
         Spec(Keys.ROW_HEIGHT_ADJUST, SettingKind.IntRange(0, -10..10)),
+        Spec(Keys.SHORTCUTS_ENABLED, SettingKind.Bool(true)),
     )
     val byKey: Map<String, Spec> = all.associateBy { it.key }
 }
@@ -206,9 +207,8 @@ object BackupMerge {
  * không phụ thuộc Android: [read] = giá trị thô của key (vd `prefs.all[key]`).
  */
 object BackupPrefs {
-    /** Gõ tắt: JSON object `{"trigger": "cụm từ"}` trong pref này.
-     *  TODO(gõ tắt Android): agent làm gõ tắt chốt nơi lưu thì chỉ sửa chỗ này + [shortcutsFromPref]. */
-    const val SHORTCUTS_KEY = "shortcuts"
+    /** Gõ tắt: pref [Keys.SHORTCUTS] lưu CHUỖI YAML ([ShortcutFile]) — đúng chỗ IME đọc. */
+    const val SHORTCUTS_KEY = Keys.SHORTCUTS
     /** Tuỳ chọn "Kèm từ đã học khi xuất file" (không sao lưu chính nó). */
     const val INCLUDE_LEARNED_KEY = "backupIncludeLearned"
 
@@ -221,14 +221,8 @@ object BackupPrefs {
         return out
     }
 
-    fun shortcutsFromPref(raw: Any?): Map<String, String> {
-        val s = raw as? String ?: return emptyMap()
-        val o = runCatching { MiniJson.parse(s) }.getOrNull() as? Map<*, *> ?: return emptyMap()
-        val out = LinkedHashMap<String, String>()
-        for ((k, v) in o) if (v is String) out[k as String] = v
-        return out
-    }
-    fun shortcutsToPref(m: Map<String, String>): String = MiniJson.write(m.toSortedMap(), pretty = false)
+    fun shortcutsFromPref(raw: Any?): Map<String, String> = ShortcutFile.parse(raw as? String)
+    fun shortcutsToPref(m: Map<String, String>): String = ShortcutFile.exportYAML(m)
 
     fun snapshot(read: (String) -> Any?, templates: List<TemplateItem>, learned: LearnedWords?, now: Instant = Instant.now()) =
         BackupPayload(now, "android", settings(read), shortcutsFromPref(read(SHORTCUTS_KEY)), templates, learned)

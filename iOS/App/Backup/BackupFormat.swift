@@ -47,6 +47,7 @@ enum BackupSettings {
         Spec(key: "hapticFeedback", kind: .bool(false)),
         Spec(key: "numberRow", kind: .bool(false)),
         Spec(key: "rowHeightAdjust", kind: .int(0, -10...10)),
+        Spec(key: "shortcutsEnabled", kind: .bool(true)),
     ]
     static let byKey: [String: Spec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
 }

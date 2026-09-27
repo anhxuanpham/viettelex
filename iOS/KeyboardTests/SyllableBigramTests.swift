@@ -129,7 +129,7 @@ final class SyllableBigramTests: XCTestCase {
         let both = measure(chains, useBigram: true, english: true)
         print(String(format: "BIGRAM+EN heldout iOS: chỉ Việt top1 %.3f | bật tiếng Anh top1 %.3f (n=%d)",
                      Double(vi.top1) / Double(vi.n), Double(both.top1) / Double(both.n), both.n))
-        XCTAssertGreaterThanOrEqual(Double(both.top1) / Double(both.n), 0.84)
+        XCTAssertGreaterThanOrEqual(Double(both.top1) / Double(both.n), 0.845)
         XCTAssertLessThanOrEqual(Double(vi.top1 - both.top1) / Double(vi.n), 0.01)
     }
 
@@ -147,8 +147,9 @@ final class SyllableBigramTests: XCTestCase {
         _ = measure(Array(chains.prefix(100)), useBigram: true)
         print(String(format: "BIGRAM resolve iOS (Debug): %.2f ms/vuốt", (CFAbsoluteTimeGetCurrent() - t0) * 1000
             / Double(chains.prefix(100).reduce(0) { $0 + $1.count - 1 })))
-        // cùng ngưỡng với Kotlin (đo 27/09/2026: 0.704/0.865 → 0.856/0.948)
-        XCTAssertGreaterThanOrEqual(Double(after.top1) / Double(after.n), 0.84, f(after))
+        // cùng ngưỡng với Kotlin (đo 27/09/2026: 0.704/0.865 → 0.856/0.948;
+        // + tầng 2 decoder: 0.710/0.870 → 0.861/0.951)
+        XCTAssertGreaterThanOrEqual(Double(after.top1) / Double(after.n), 0.845, f(after))
         XCTAssertGreaterThanOrEqual(Double(after.top3) / Double(after.n), 0.935, f(after))
         XCTAssertGreaterThanOrEqual(Double(after.top1 - before.top1) / Double(after.n), 0.13)
     }
