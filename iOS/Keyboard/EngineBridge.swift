@@ -53,6 +53,9 @@ struct KeyboardSettings {
     /// tiếng Anh khi hình vuốt thắng rõ / đang trong mạch Anh, từ điển chỉ nạp khi gõ vuốt
     /// bật. Giống Android.
     var swipeEnglish = true
+    /// Chọn phím theo ngữ cảnh lúc chạm vùng biên 2 phím (TouchTarget) — thử nghiệm, mặc
+    /// định BẬT (mô phỏng: lỗi phím giảm ~55%, người gõ chuẩn không tệ hơn). Giống Android.
+    var smartTouch = true
 
     static func load() -> KeyboardSettings {
         var s = KeyboardSettings()
@@ -72,6 +75,7 @@ struct KeyboardSettings {
         if d.object(forKey: "reEditWord") != nil { s.reEditWord = d.bool(forKey: "reEditWord") }
         if d.object(forKey: "swipeTyping") != nil { s.swipeTyping = d.bool(forKey: "swipeTyping") }
         if d.object(forKey: "swipeEnglish") != nil { s.swipeEnglish = d.bool(forKey: "swipeEnglish") }
+        if d.object(forKey: "smartTouch") != nil { s.smartTouch = d.bool(forKey: "smartTouch") }
         s.learnWords = s.showSuggestions   // bật gợi ý = bật học (quyết định 2026-07-24)
         return s
     }

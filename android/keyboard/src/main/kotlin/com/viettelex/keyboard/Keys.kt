@@ -22,6 +22,8 @@ object Keys {
     /** Gõ vuốt (thử nghiệm, mặc định tắt). */
     const val SWIPE_TYPING = "swipeTyping"
     const val SWIPE_ENGLISH = "swipeEnglish"
+    /** Chọn phím theo ngữ cảnh lúc chạm (thử nghiệm, mặc định BẬT) — TouchTarget. */
+    const val SMART_TOUCH = "smartTouch"
     /** Gõ Telex bằng bàn phím cứng (tablet, DeX, Chromebook, BT/USB) — mặc định BẬT. */
     const val HARDWARE_TELEX = "hardwareTelex"
 

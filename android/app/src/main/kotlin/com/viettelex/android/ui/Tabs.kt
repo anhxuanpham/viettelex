@@ -232,6 +232,9 @@ fun TinhNangTab() {
             "Gõ Telex bằng bàn phím Bluetooth/USB, Samsung DeX, Chromebook. Phím tắt có Ctrl/Alt/⌘ vẫn đi thẳng tới app. Bàn phím ảo tự ẩn khi có bàn phím cứng (bật lại trong Cài đặt hệ thống → Bàn phím vật lý → Hiện bàn phím ảo).")
     }
     VTSection(header = "Thử nghiệm") {
+        BoolToggle(Keys.SMART_TOUCH, Prefs.D.smartTouch, "Chọn phím thông minh",
+            "Chạm lệch sát mép giữa hai phím thì bàn phím chọn phím hợp với chữ đang gõ (như iPhone) — bớt gõ trượt sang phím bên cạnh. Chạm giữa phím luôn ra đúng phím đó; chữ đã gõ không bao giờ bị tự sửa.")
+        RowDivider()
         BoolToggle(Keys.SWIPE_TYPING, Prefs.D.swipeTyping, "Gõ vuốt",
             "Lướt ngón qua các chữ KHÔNG DẤU của một âm tiết rồi nhấc tay: viet → việt. Thanh gợi ý hiện các dấu khác; gõ phím dấu Telex ngay sau đó để đổi dấu, ⌫ xoá cả từ vừa vuốt. Tự tắt khi bật TalkBack và ở ô mật khẩu, email, địa chỉ web.")
         val swipeOn by rememberBoolPref(Keys.SWIPE_TYPING, Prefs.D.swipeTyping)
