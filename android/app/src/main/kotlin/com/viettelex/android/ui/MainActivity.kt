@@ -9,7 +9,13 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.mutableStateOf
+import androidx.lifecycle.lifecycleScope
+import com.viettelex.android.plus.PlayPlusStore
+import com.viettelex.android.plus.PlusController
+import com.viettelex.android.plus.PlusPrefs
 import com.viettelex.keyboard.Keys
+import com.viettelex.keyboard.PlusGate
+import kotlinx.coroutines.launch
 
 /** Trạng thái IME trong hệ thống — làm mới mỗi onResume / khi lấy lại focus (sau picker). */
 data class ImeStatus(val enabled: Boolean, val selected: Boolean)
@@ -23,6 +29,8 @@ class MainActivity : ComponentActivity() {
     private val ime = mutableStateOf(ImeStatus(false, false))
     /** Tăng mỗi lần có deep link viettelex://maucau. */
     private val openMauCau = mutableStateOf(0)
+    /** VietTelex Plus — Play Billing; ghi cờ [Keys.PLUS_UNLOCKED] cho IME. */
+    private lateinit var plus: PlusController
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
@@ -30,6 +38,13 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
+        PlusPrefs.install(this)
+        plus = PlusController(
+            store = PlayPlusStore(this) { this },
+            writeFlag = { PlusPrefs.writePurchased(this, it) },
+            initialPurchased = PlusGate.purchased,
+            scope = lifecycleScope,
+        )
         handleDeepLink(intent)
         setContent {
             VTTheme {
@@ -42,6 +57,7 @@ class MainActivity : ComponentActivity() {
                     onPickIme = {
                         getSystemService(InputMethodManager::class.java).showInputMethodPicker()
                     },
+                    plus = plus,
                 )
             }
         }
@@ -55,6 +71,8 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshIme()
+        // Đồng bộ giao dịch (mua ở máy khác / hoàn tiền / pending vừa xong).
+        lifecycleScope.launch { plus.refresh(loadProducts = false) }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

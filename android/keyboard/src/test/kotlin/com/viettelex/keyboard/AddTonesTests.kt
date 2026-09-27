@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import java.io.File
@@ -15,7 +16,9 @@ import java.util.Locale
  * → khôi phục → tỉ lệ âm tiết đúng.
  */
 class AddTonesTests {
-    @Before fun setUp() = TestAssets.install()
+    private var savedPaywall = PlusGate.paywallEnabled
+    @Before fun setUp() { TestAssets.install(); savedPaywall = PlusGate.paywallEnabled; PlusGate.paywallEnabled = false }
+    @After fun tearDown() { PlusGate.paywallEnabled = savedPaywall }
 
     private fun fixture(name: String): File =
         listOf("../../iOS", "../iOS", "iOS").map { File(it, "KeyboardTests/Fixtures/$name") }
@@ -239,5 +242,14 @@ class AddTonesTests {
         p.reEdit = true
         s.handle(Key.Letter('t'), p)                             // đang gõ dở ⇒ không chip
         assertNull(s.suggestionsNow(p)!!.action)
+    }
+
+    @Test fun sessionGatedByPlus() {
+        val s = session(); val p = MockProxy()
+        p.insertText("khong co gi ")
+        PlusGate.paywallEnabled = true                          // bật thanh toán, chưa mua
+        assertNull(s.suggestionsNow(p)!!.action)
+        s.acceptSuggestion(SuggestionSet.ADD_TONES_TOKEN, p)
+        assertEquals("khong co gi ", p.text)
     }
 }
