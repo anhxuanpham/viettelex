@@ -85,6 +85,7 @@ object Keys {
     const val ASSET_LEXICON = "vnlexicon.bin"
     const val ASSET_EN_LEXICON = "enlexicon.bin"
     const val ASSET_BIGRAM = "vnbigram.bin"
+    const val ASSET_LM = "vnlm.bin"
     const val ASSET_EMOJI_SUGGEST = "emojisuggest.bin"
     const val ASSET_SEED = "seed.tsv"
     /** Emoji + khoá tìm tiếng Việt + kaomoji (Scripts/gen-emoji-data.py, chung iOS). */

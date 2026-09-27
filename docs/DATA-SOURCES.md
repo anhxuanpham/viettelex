@@ -81,6 +81,60 @@ Test hồi quy: `SyllableBigramTests` (iOS + Android) — ngưỡng top-1 ≥ 84
 và các cặp điển hình (không có, cho tôi, hôm nay, ngay lập, môi trường, một nửa…) phải
 lên top-1.
 
+## vnlm.bin — mô hình trigram âm tiết cho gõ vuốt
+
+`iOS/Keyboard/Resources/vnlm.bin` = `android/app/src/main/assets/vnlm.bin` (~2,6 MB:
+332.396 bigram, 92.541 ngữ cảnh trigram, 259.909 trigram). Sinh bởi
+`Scripts/gen-syllable-lm.py` (lệnh + định dạng ở docstring). Gõ vuốt dùng nó thay
+vnbigram.bin khi có (vnbigram.bin vẫn giữ cho thanh gợi ý gõ chạm).
+
+- **Nguồn, trọng số, tách âm tiết, tập kiểm thử/dev: y hệt vnbigram.bin** (bảng nguồn ở
+  trên; script dùng lại hàm của `gen-syllable-bigram.py`). Chỉ chứa số liệu thống kê
+  (điểm log-xác suất lượng tử 1 byte theo cặp/bộ ba âm tiết), không chứa câu nào.
+- **Giấy phép: CC BY-SA 4.0**, cùng lý do và cùng hệ quả như vnbigram.bin (mã đọc nó vẫn
+  MIT). Thông báo ghi công (dùng nguyên văn khi phân phối lại vnlm.bin):
+
+> vnlm.bin chứa số liệu thống kê n-gram âm tiết suy ra từ nội dung Wikipedia,
+> Wikisource, Wikibooks, Wikivoyage và Wikiquote tiếng Việt (© các tác giả Wikimedia,
+> CC BY-SA 4.0) và từ câu tiếng Việt của Tatoeba (© các thành viên Tatoeba, CC BY 2.0 FR).
+> Đã biến đổi: tách âm tiết, đếm n-gram, làm trơn Kneser-Ney, cắt tỉa, lượng tử hoá
+> 1 byte. vnlm.bin phát hành theo CC BY-SA 4.0.
+
+### Mô hình
+
+Kneser-Ney nội suy bậc 3 (D = 0.75), lưu s = ln(P(c | 2 âm tiết trước) / P₁(c)) — có cả
+điểm ÂM ("hiếm sau ngữ cảnh này"), điều vnbigram.bin (chỉ PMI dương) không có. Cắt tỉa
+"weighted difference" (Seymore & Rosenfeld 1996) trên chính điểm decoder dùng (β·s kẹp
+[−1, 1]), ngưỡng bigram 10 / trigram 20 (đếm có trọng số). Decoder: điểm = 0.15·s kẹp
+[−1, 1]; khi có trigram, λ tần suất lúc chọn dạng/bung dấu hạ 2.5 → 1.0 (cho cả từ tiếng
+Anh, giữ cán cân Việt/Anh).
+
+### Đo (27/09/2026)
+
+Cùng tập kiểm thử với vnbigram.bin (`bigram-heldout.txt`, 12.027 vị trí, đường giả
+σ 0.25, người dùng mới). Tham số chọn trên tập dev (11.915 vị trí), rồi đo MỘT lần trên
+tập kiểm thử:
+
+| Mô hình ngữ cảnh | Kích thước | top-1 | top-3 |
+|---|---|---|---|
+| Không (unigram) | — | 70,4 % | 86,5 % |
+| Bigram PMI (vnbigram.bin) | 1,2 MB | 85,6 % | 94,8 % |
+| Bigram PMI chỉnh lại λ/trần (dev tốt nhất) | 1,2 MB | ≈ +0,1 điểm trên dev | — |
+| Trigram PMI lùi về bigram (không cắt tỉa) | — | 88,1 % | 95,7 % |
+| KN bigram (không cắt tỉa) | — | 87,9 % | 96,0 % |
+| KN trigram (không cắt tỉa, float) | ~ 31 MB | 90,1 % | 96,5 % |
+| KN 4-gram (không cắt tỉa) | — | 90,0 % | 96,5 % |
+| **KN trigram cắt tỉa + lượng tử (vnlm.bin)** | **2,6 MB** | **89,2 %** | **96,0 %** |
+
+Bảng trên đo với decoder giai đoạn 2. Sau khi decoder có tầng 2 (σ thích nghi, độ dài,
+chấm lại top-16 — commit 7cf48ae): bigram 86,1 % / 95,1 % → **trigram 89,4 % / 96,2 %**
+(chỉnh lại β/λ trên dev chỉ +0,1 điểm ⇒ giữ tham số).
+
+4-gram không hơn trigram (dữ liệu hội thoại quá ít). Độ trễ: JVM 0,2 ms/vuốt (decode +
+LM), simulator Debug 1,91 vs 1,85 ms/vuốt (bigram) — LM gần như không tốn thêm. Test hồi
+quy: `SyllableLMTests` (iOS + Android) — top-1 ≥ 87,7 %, top-3 ≥ 95 %, hơn bigram ≥ 2,5
+điểm, bật tiếng Anh không tụt quá 1 điểm, câu trộn Việt–Anh không kém bigram.
+
 ## enlexicon.bin — từ điển tiếng Anh cho gõ vuốt (giai đoạn 3)
 
 - File: `iOS/Keyboard/Resources/enlexicon.bin`, `android/app/src/main/assets/enlexicon.bin`

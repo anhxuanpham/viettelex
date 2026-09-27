@@ -72,7 +72,7 @@ class SyllableBigramTests {
     private fun swipe(d: SwipeDecoder, prev: String?, word: String, sim: SwipeSim? = null): String? {
         val p = (sim ?: SwipeSim(1)).path(SwipeSuggest.fold(word), layout,
             sigma = if (sim == null) 0.0 else 0.25, jitter = if (sim == null) 0.0 else 0.04)
-        val ctx = SwipeSuggest.context(null, prev, null)
+        val ctx = SwipeSuggest.context(null, prev, null, lm = null)   // chỉ bigram (trigram: SyllableLMTests)
         return SwipeSuggest.choose(d.decode(p, SwipeSuggest.TOP_K, ctx.folded), ctx.word)?.word
     }
 
@@ -117,7 +117,7 @@ class SyllableBigramTests {
             // english ⇒ như IME khi bật "Vuốt từ tiếng Anh" (giai đoạn 3): prior theo từ trước
             val prior = if (english) SwipeLangContext.prior(SwipeLangContext.classify(chain[i - 1]),
                 SwipeLangContext.classify(chain.getOrNull(i - 2))) else null
-            val ctx = SwipeSuggest.context(null, if (useBigram) chain[i - 1] else null, null, prior)
+            val ctx = SwipeSuggest.context(null, if (useBigram) chain[i - 1] else null, null, prior, lm = null)
             val cands = d.decode(p, SwipeSuggest.TOP_K, ctx.folded, ctx.english, ctx.englishWord)
             val c = SwipeSuggest.choose(cands, ctx.word) ?: continue
             n++

@@ -74,7 +74,7 @@ final class SyllableBigramTests: XCTestCase {
             ("môi", "trường"), ("ở", "trong"), ("làm", "cho"), ("một", "nửa")]
         for (prev, w) in pairs {
             var sim = SwipeSim(seed: 1)
-            XCTAssertEqual(s.resolve(path(w, &sim, clean: true), contextWords: [], prev: prev, case: .lower)?.word,
+            XCTAssertEqual(s.resolve(path(w, &sim, clean: true), contextWords: [], prev: prev, lm: nil, case: .lower)?.word,
                            w, "\(prev) + vuốt \(SwipeTyping.fold(w))")
         }
     }
@@ -84,7 +84,7 @@ final class SyllableBigramTests: XCTestCase {
         let s = make()
         var sim = SwipeSim(seed: 1)
         XCTAssertEqual(s.resolve(path("co", &sim, clean: true), contextWords: ["cô"],
-                                 count: { $0 == "cô" ? 6 : 0 }, prev: "không", case: .lower)?.word, "cô")
+                                 count: { $0 == "cô" ? 6 : 0 }, prev: "không", lm: nil, case: .lower)?.word, "cô")
     }
 
     // MARK: đo độ chính xác trên câu giữ lại
@@ -112,7 +112,7 @@ final class SyllableBigramTests: XCTestCase {
                     prev1: SwipeLangContext.classify(chain[i - 1]),
                     prev2: SwipeLangContext.classify(i >= 2 ? chain[i - 2] : nil)) : nil
                 guard let r = s.resolve(p, contextWords: [], prev: useBigram ? chain[i - 1] : nil,
-                                        english: prior, case: .lower) else { continue }
+                                        lm: nil, english: prior, case: .lower) else { continue }
                 n += 1
                 if r.word == w { t1 += 1 }
                 if r.word == w || r.alternatives.prefix(2).contains(w) { t3 += 1 }

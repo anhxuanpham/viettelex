@@ -17,3 +17,7 @@ build/
 
 # Agent / local tooling
 .claude/
+
+# Python bytecode (Scripts/)
+__pycache__/
+*.pyc
