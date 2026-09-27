@@ -10,7 +10,11 @@ package com.viettelex.keyboard
  * thắng từ đang hiện ≥ [MARGIN] ⇒ thay. Chỉ từ Việt (LM là của âm tiết Việt), chỉ từ vuốt
  * liền trước, một lần. Caller lo fail-safe màn hình (đuôi phải khớp đúng từ cũ).
  *
- * Chi phí: ≤ [MAX_CANDIDATES] lần tra LM O(log n), chỉ sau một cú vuốt — không ở đường phím.
+ * Từ kế cũng có thể GÕ BẰNG PHÍM ([Typed]/[reviseTyped]): chấm lại lúc từ gõ được chốt
+ * (dấu cách/dấu câu), ngữ cảnh phải = từ đã chốt (chắc chắn) với trọng số/lề riêng.
+ *
+ * Chi phí: ≤ [MAX_CANDIDATES] lần tra LM O(log n), chỉ sau một cú vuốt hoặc ở ranh giới từ
+ * NGAY SAU từ vuốt — không ở đường phím chữ.
  */
 object SwipeRevise {
     /** Chỉnh trên tập dev (SwipeReviseTests.sweep) — docs/DATA-SOURCES.md "Sửa lại từ vuốt trước". */
@@ -18,6 +22,12 @@ object SwipeRevise {
     const val RIGHT_CAP = 1.0f
     const val RIGHT_FLOOR = -1.0f
     const val MARGIN = 0.1f
+    /**
+     * Từ kế GÕ BẰNG PHÍM (chắc chắn, không phải từ vuốt đoán) ⇒ tin ngữ cảnh phải hơn, lề cao
+     * hơn để giữ sửa sai thấp. Chỉnh riêng trên dev (SwipeReviseTests.sweepTyped).
+     */
+    const val TYPED_RIGHT_WEIGHT = 0.15f
+    const val TYPED_MARGIN = 0.3f
     const val POOL_FORMS = 3
     const val POOL_WORDS = 4
     const val MAX_CANDIDATES = 8
@@ -85,5 +95,38 @@ object SwipeRevise {
         }
         if (cur.isNaN() || best == null || best == current) return null
         return if (bestScore - cur >= margin) best else null
+    }
+
+    /**
+     * Từ vuốt Việt vừa được chốt bằng dấu cách (Android) / phím chữ hay dấu cách (iOS), chờ từ
+     * gõ kế tiếp. [prev] = từ trước nó (ngữ cảnh trái của trigram phải).
+     */
+    class Typed(val word: String, val scored: List<SwipeWord>, val case: SwipeSuggest.Case, val prev: String?)
+
+    /** Kết quả [reviseTyped]: thay đuôi [tail] (đang trên màn hình) bằng [replacement]. */
+    class TypedEdit(val old: String, val new: String, val typed: String, val boundary: String) {
+        /** Đuôi đang trên màn hình trước khi sửa. */
+        val tail: String get() = "$old $typed$boundary"
+        /** Đuôi sau khi sửa. */
+        val replacement: String get() = "$new $typed$boundary"
+    }
+
+    /**
+     * Từ gõ [typed] (dạng cuối đã chốt) vừa được ranh giới [boundary] chốt ngay sau từ vuốt
+     * [p]: chấm lại từ vuốt. Chỉ khi chữ trước con trỏ [before] kết thúc ĐÚNG bằng
+     * "từ vuốt + ␠ + từ gõ + ranh giới" và trước đó không dính chữ/số — lệch/không đọc được ⇒ null.
+     */
+    fun reviseTyped(p: Typed, typed: String, boundary: String, before: String?,
+                    lm: SyllableLM? = SyllableLM.shared, margin: Float = TYPED_MARGIN,
+                    weight: Float = TYPED_RIGHT_WEIGHT): TypedEdit? {
+        if (typed.isEmpty() || boundary.isEmpty() || before == null) return null
+        if (Character.isLetterOrDigit(boundary.codePointAt(0))) return null
+        val tail = p.word + " " + typed + boundary
+        if (!before.endsWith(tail)) return null
+        val head = before.length - tail.length
+        if (head > 0 && Character.isLetterOrDigit(before.codePointBefore(head))) return null
+        val new = revise(p.scored, p.word.lowercase(), p.prev, typed.lowercase(), lm, margin, weight) ?: return null
+        val cased = SwipeSuggest.applyCase(new, p.case)
+        return if (cased == p.word) null else TypedEdit(p.word, cased, typed, boundary)
     }
 }

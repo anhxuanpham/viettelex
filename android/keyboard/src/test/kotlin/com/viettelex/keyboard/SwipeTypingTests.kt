@@ -330,6 +330,81 @@ class SwipeTypingTests {
         assertFalse(p.text, p.text.contains("cố"))     // đuôi lệch ⇒ không đụng
     }
 
+    // ---- sửa lại từ vuốt khi từ kế GÕ PHÍM (SwipeRevise.reviseTyped) ----
+
+    @Test fun typedNextWordRevisesPreviousAndOffersUndo() {
+        val s = session(); val p = MockProxy()
+        s.swipeR(p, "co")
+        s.type(p, " gawngs")
+        assertEquals("có gắng", p.text)               // chưa chốt từ gõ ⇒ chưa đụng
+        val coLearned = s.langModel.count("có")
+        s.type(p, " ")
+        assertEquals("cố gắng ", p.text)               // chốt "gắng" ⇒ sửa "cố", từ gõ + dấu cách y nguyên
+        val coiLearned = s.langModel.count("cố")
+        assertTrue(coiLearned > 0)
+        assertTrue(s.langModel.count("có") < coLearned) // rút lượt học từ cũ
+        val set = s.suggestionsNow(p)!!
+        assertEquals("↩\uFE0E có", set.actionLabel)
+        assertEquals(SuggestionSet.UNDO_REVISE_TOKEN, set.action)
+        s.acceptSuggestion(SuggestionSet.UNDO_REVISE_TOKEN, p)
+        assertEquals("có gắng ", p.text)
+        assertTrue(s.langModel.count("cố") < coiLearned)
+        assertTrue(s.langModel.count("có") >= coLearned)
+        assertTrue(s.langModel.count("gắng") > 0)
+        assertNull(s.suggestionsNow(p)!!.action)       // hoàn tác một lần
+        s.type(p, "laf")
+        assertEquals("có gắng là", p.text)
+    }
+
+    @Test fun typedRevisionPunctuationCaseAndBackspaceInWord() {
+        run {                                           // dấu câu chốt từ gõ; chữ hoa giữ
+            val s = session(); val p = MockProxy()
+            s.swipeR(p, "co", SwipeSuggest.Case.FIRST)
+            s.type(p, " gawngs,")
+            assertEquals("Cố gắng,", p.text)
+        }
+        run {                                           // ⌫ trong từ gõ vẫn được
+            val s = session(); val p = MockProxy()
+            s.swipeR(p, "co")
+            s.type(p, " gawngsk")
+            s.handle(Key.Backspace, p)
+            s.type(p, " ")
+            assertEquals("cố gắng ", p.text)
+        }
+        run {                                           // chip sống tới phím kế
+            val s = session(); val p = MockProxy()
+            s.swipeR(p, "co")
+            s.type(p, " gawngs ")
+            s.type(p, "l")
+            assertNull(s.suggestionsNow(p)?.action?.takeIf { it == SuggestionSet.UNDO_REVISE_TOKEN })
+        }
+    }
+
+    @Test fun typedRevisionGuards() {
+        fun check(msg: String, expected: String, body: (KeyboardSession, MockProxy) -> Unit) {
+            val s = session(); val p = MockProxy()
+            s.swipeR(p, "co")
+            body(s, p)
+            assertEquals(msg, expected, p.text)
+        }
+        check("phím dấu sửa từ vuốt", "cò gắng ") { s, p -> s.type(p, "f gawngs ") }
+        check("đã chọn phương án", "") { s, p ->
+            val alt = s.swipeAlternatives!!.first { it != "cố" }
+            s.acceptSuggestion(alt, p); s.type(p, " gawngs ")
+            assertEquals("$alt gắng ", p.text); p.sb.setLength(0)
+        }
+        check("con trỏ dời", "có gắng ") { s, p -> s.type(p, " "); s.externalSelectionChange(); s.type(p, "gawngs ") }
+        check("⌫ ngoài từ gõ", "có gắng ") { s, p -> s.type(p, " a"); s.handle(Key.Backspace, p); s.handle(Key.Backspace, p); s.type(p, " gawngs ") }
+        check("chỉ từ gõ NGAY SAU", "có thể gắng ") { s, p -> s.type(p, " theer gawngs ") }
+        check("dấu câu ngay sau từ vuốt", "có, gắng ") { s, p -> s.type(p, ", gawngs ") }
+        check("host sửa chữ sau lưng", "xcó gắng ") { s, p -> s.type(p, " gawngs"); p.sb.insert(0, 'x'); s.type(p, " ") }
+        // tắt gõ vuốt ⇒ không chờ gì
+        val s = session(); val p = MockProxy()
+        s.swipeR(p, "co"); s.setSwipeTyping(false)
+        s.type(p, " gawngs ")
+        assertEquals("có gắng ", p.text)
+    }
+
     @Test fun swipeAfterSwipeCommitsAndLearnsFirst() {
         val s = session(); val p = MockProxy()
         s.swipe(p, "viet")

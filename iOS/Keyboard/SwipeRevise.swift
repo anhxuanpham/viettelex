@@ -6,7 +6,10 @@
 // bằng điểm cũ (hình học + tần suất + ngữ cảnh trái, `scored`) + trigram phải s(w2 | w0, c)
 // (vnlm.bin) ·rightWeight kẹp [rightFloor, rightCap]; ứng viên khác thắng từ đang hiện
 // ≥ margin ⇒ thay. Chỉ từ Việt, chỉ từ vuốt liền trước, một lần. Caller lo fail-safe màn
-// hình (đuôi phải khớp đúng từ cũ). Chi phí: ≤ maxCandidates lần tra LM, chỉ sau một cú vuốt.
+// hình (đuôi phải khớp đúng từ cũ). Từ kế cũng có thể GÕ BẰNG PHÍM (Typed/reviseTyped): chấm
+// lại lúc từ gõ được chốt (dấu cách/dấu câu), ngữ cảnh phải = từ đã chốt (chắc chắn), trọng
+// số/lề riêng. Chi phí: ≤ maxCandidates lần tra LM, chỉ sau một cú vuốt hoặc ở ranh giới từ
+// NGAY SAU từ vuốt — không ở đường phím chữ.
 import Foundation
 
 enum SwipeRevise {
@@ -15,6 +18,10 @@ enum SwipeRevise {
     static let rightCap: Float = 1.0
     static let rightFloor: Float = -1.0
     static let margin: Float = 0.1
+    /// Từ kế GÕ BẰNG PHÍM (chắc chắn, không phải từ vuốt đoán) ⇒ tin ngữ cảnh phải hơn, lề cao
+    /// hơn để giữ sửa sai thấp. Chỉnh riêng trên dev (SwipeReviseTests.kt sweepTyped).
+    static let typedRightWeight: Float = 0.15
+    static let typedMargin: Float = 0.3
     static let poolForms = 3
     static let poolWords = 4
     static let maxCandidates = 8
@@ -78,5 +85,49 @@ enum SwipeRevise {
         }
         guard let cur, let best, best != current, bestScore - cur >= margin else { return nil }
         return best
+    }
+
+    /// Từ vuốt Việt còn nguyên vừa được phím chữ (dấu cách treo) / dấu cách chốt, chờ từ gõ kế
+    /// tiếp. `prev` = từ trước nó (ngữ cảnh trái của trigram phải).
+    struct Typed: Equatable {
+        let word: String
+        let scored: [SwipeWord]
+        let sc: SwipeCase
+        let prev: String?
+    }
+
+    /// Kết quả reviseTyped: đuôi `tail` (đang trên màn hình) → `replacement`.
+    struct TypedEdit: Equatable {
+        let old: String
+        let new: String
+        let typed: String
+        let boundary: String
+        var tail: String { old + " " + typed + boundary }
+        var replacement: String { new + " " + typed + boundary }
+    }
+
+    /// Từ gõ `typed` (dạng cuối đã chốt) vừa được ranh giới `boundary` chốt ngay sau từ vuốt
+    /// `p`: chấm lại từ vuốt. Chỉ khi chữ trước con trỏ `before` kết thúc ĐÚNG bằng
+    /// "từ vuốt + ␠ + từ gõ + ranh giới" và trước đó không dính chữ/số — lệch/không đọc được ⇒ nil.
+    static func reviseTyped(_ p: Typed, typed: String, boundary: String, before: String?,
+                            lm: SyllableLM? = SyllableLM.shared, margin: Float = typedMargin,
+                            weight: Float = typedRightWeight) -> TypedEdit? {
+        guard !typed.isEmpty, let b0 = boundary.first, !b0.isLetter, !b0.isNumber, let before else { return nil }
+        let e0 = TypedEdit(old: p.word, new: p.word, typed: typed, boundary: boundary)
+        guard before.hasSuffix(e0.tail) else { return nil }
+        if let c = before.dropLast(e0.tail.count).last, c.isLetter || c.isNumber { return nil }
+        guard let new = revise(p.scored, current: p.word.lowercased(), prev: p.prev, next: typed.lowercased(),
+                               lm: lm, margin: margin, weight: weight) else { return nil }
+        let cased = p.sc.apply(new)
+        return cased == p.word ? nil : TypedEdit(old: p.word, new: cased, typed: typed, boundary: boundary)
+    }
+
+    /// Áp `e` lên màn hình: đọc lại đuôi, lệch ⇒ không đụng (false).
+    static func apply(_ e: TypedEdit, undo: Bool = false, proxy: TextProxyLike) -> Bool {
+        let (from, to) = undo ? (e.replacement, e.tail) : (e.tail, e.replacement)
+        guard proxy.contextBeforeInput?.hasSuffix(from) == true else { return false }
+        for _ in 0..<from.count { proxy.deleteBackward() }
+        proxy.insertText(to)
+        return true
     }
 }

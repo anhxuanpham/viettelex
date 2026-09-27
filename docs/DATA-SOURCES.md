@@ -146,6 +146,16 @@ là từ đã giải mã, không phải đáp án, nên thấp hơn bảng trên
 (+4,6 điểm, 204 sửa đúng / 12 sửa sai); iOS qua EngineBridge thật 78,0 % → **83,0 %** (+5,0).
 Chi phí: vài lần bung dấu + tra LM sau nhấc tay (JVM không đo được khác biệt, ~0,1 ms/vuốt).
 
+**Từ kế gõ bằng phím.** Từ vuốt Việt còn nguyên được dấu cách (iOS: cả phím chữ — dấu cách
+treo) chốt ⇒ chờ; ranh giới (dấu cách/dấu câu/xuống dòng) chốt từ gõ NGAY SAU thì chấm lại
+từ vuốt với ngữ cảnh phải = từ gõ đã chốt (chắc chắn). Chỉ thay khi đuôi màn hình đúng
+"từ vuốt ␠ từ gõ ranh giới" (không dính chữ phía trước), học lại cả hai từ, chip "↩︎ từ cũ"
+tới phím kế. Hằng số riêng chỉnh trên dev (`SwipeReviseTests.sweepTyped`, vuốt/gõ xen kẽ):
+0.15/0.3 — gần mức tăng tối đa (+8,5 so với đỉnh +8,9 ở 0.15/0.2) mà sửa sai chỉ 7 so với 13;
+0.1/0.1 của ca vuốt cho +8,4 / 11 sửa sai. Tập kiểm thử (từ vuốt có từ gõ ngay sau, n = 3 994):
+JVM 85,7 % → **94,2 %** (+8,4 điểm, 341 sửa đúng / 15 sửa sai = 3,9 % số lần sửa, 0,38 % số
+từ); iOS 85,3 % → **93,4 %** (+8,1; 328 / 15).
+
 ### Nét vuốt thật — Luyện vuốt
 
 App (Cài đặt → Gõ vuốt → Luyện vuốt) thu nét vuốt thật trên bàn phím mẫu cùng hình học,
