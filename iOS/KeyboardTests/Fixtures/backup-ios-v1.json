@@ -34,6 +34,8 @@
     "freeMarking" : true,
     "hapticFeedback" : true,
     "liveSpellCheck" : true,
+    "longPressNumbers" : true,
+    "longPressSymbols" : false,
     "modernTone" : true,
     "numberChips" : true,
     "numberRow" : true,

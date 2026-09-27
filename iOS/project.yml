@@ -153,6 +153,7 @@ targets:
       - Keyboard/SwipeGesture.swift
       - Keyboard/SwipeTyping.swift
       - Keyboard/SpaceFlick.swift
+      - Keyboard/KeyAlternates.swift
       - Keyboard/SwipeRevise.swift
       - App/Practice/SwipePractice.swift
       - App/Backup/BackupFormat.swift

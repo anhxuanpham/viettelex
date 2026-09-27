@@ -5,8 +5,11 @@ package com.viettelex.keyboard
 sealed class Key {
     /** Phím chữ, đã theo shift. */
     data class Letter(val ch: Char) : Key()
-    /** Số / ký hiệu / dấu câu (boundary + ngắt câu). */
-    data class Text(val text: String) : Key()
+    /**
+     * Số / ký hiệu / dấu câu (boundary + ngắt câu). [replacesLetter]: ký tự phụ của cú giữ
+     * phím chữ ([KeyAlternates]) — huỷ đúng phím chữ vừa chèn lúc chạm trước khi chèn.
+     */
+    data class Text(val text: String, val replacesLetter: Boolean = false) : Key()
     object Space : Key()
     /** Space thứ 2 trong < 0.35 s (IME đo nhịp). */
     object DoubleSpacePeriod : Key()
@@ -307,8 +310,15 @@ class KeyboardSession(
     /** IME bật/tắt gõ vuốt cho ô hiện tại (sau [startInput]). Tắt ⇒ bridge thôi ghi checkpoint. */
     fun setSwipeTyping(on: Boolean) {
         swipeTypingActive = on
-        bridge.trackLetterUndo = on
+        bridge.trackLetterUndo = on || letterAlternates
         if (!on) clearSwipe()
+    }
+
+    /** Giữ phím chữ ra ký tự phụ đang bật ([KeyAlternates]) — cần checkpoint huỷ phím chữ. */
+    private var letterAlternates = false
+    fun setLetterAlternates(on: Boolean) {
+        letterAlternates = on
+        bridge.trackLetterUndo = swipeTypingActive || on
     }
 
     private fun clearSwipe() {
@@ -381,6 +391,9 @@ class KeyboardSession(
 
     fun handle(key: Key, proxy: TextProxy): KeyOutcome {
         val t0 = if (TouchLog.enabled) System.nanoTime() else 0L
+        // Giữ phím ra ký tự phụ: gỡ phím chữ bằng checkpoint (không ⌫ — phím dấu Telex đã đổi
+        // từ); không được (ô đổi / thao tác xen) thì ⌫ như iOS.
+        if (key is Key.Text && key.replacesLetter && !undoLastLetter(proxy)) bridge.backspace(proxy)
         // ⌫ NGAY SAU khi thêm dấu = hoàn tác (một lần); phím khác bỏ lời mời hoàn tác.
         if (key == Key.Backspace && tonesUndo != null && !bridge.isComposing && openSwipeWord() == null) {
             undoAddTones(proxy)

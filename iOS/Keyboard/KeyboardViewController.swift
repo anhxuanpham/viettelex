@@ -166,6 +166,7 @@ final class KeyboardViewController: UIInputViewController {
             flickEnabled: spaceFlickSetting)
         if language == .en { bridge.setEnglish(true, proxy: Proxy(p: textDocumentProxy)); warmUpEnglish() }
         keyboard.configureSpaceFlick(enabled: spaceFlickSetting, language: language)
+        keyboard.configureKeyAlternates(numbers: settings.longPressNumbers, symbols: settings.longPressSymbols)
         warmUpData()
         swipeSuggest = nil
         recentEnglish = []
@@ -1379,8 +1380,11 @@ extension KeyboardViewController {
                                      traits: fieldTraits,
                                      voiceOver: UIAccessibility.isVoiceOverRunning)
         keyboard.swipeEnabled = on
-        // Checkpoint huỷ phím chữ chỉ có người dùng khi gõ vuốt / iPad vuốt xuống.
+        keyboard.altAccessibility = UIAccessibility.isVoiceOverRunning
+        // Checkpoint huỷ phím chữ chỉ có người dùng khi gõ vuốt / iPad vuốt xuống / giữ phím
+        // ra ký tự phụ.
         bridge.letterUndoEnabled = on || UIDevice.current.userInterfaceIdiom == .pad
+            || keyboard.altHoldActive
         if on, swipe == nil { swipe = SwipeTyping() }
         if on { pushSwipeLayout(prepare: true) }
         if on, swipeEnglishSetting { swipe?.preloadEnglish() }

@@ -844,6 +844,11 @@ struct TinhNangSections: View {
     private var rowHeightAdjust = 0
     @AppStorage("numberRow", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var numberRow = false
+    /// Giữ phím chữ ra ký tự phụ (KeyAlternates) — số mặc định BẬT, ký hiệu TẮT.
+    @AppStorage("longPressNumbers", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var longPressNumbers = true
+    @AppStorage("longPressSymbols", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var longPressSymbols = false
     /// "off" | "left" | "right" — bàn phím đọc lúc hiện (OneHand.resolve).
     @AppStorage("oneHandMode", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var oneHandMode = "off"
@@ -933,6 +938,13 @@ struct TinhNangSections: View {
                 }
             }
             settingToggle("Hàng phím số", "Thêm hàng 1 2 3 … 0 phía trên hàng chữ — gõ số không cần chuyển sang bàn phím 123. Bàn phím cao thêm khoảng ¾ hàng.", isOn: $numberRow)
+            // iPad có ký tự phụ vuốt xuống riêng ⇒ chỉ iPhone.
+            if UIDevice.current.userInterfaceIdiom == .phone {
+                if !numberRow {
+                    settingToggle("Giữ phím hàng trên để ra số", "Giữ q w e … p một chút để gõ 1 2 3 … 0 — số nhỏ ở góc phím. Chỉ dùng khi tắt Hàng phím số.", isOn: $longPressNumbers)
+                }
+                settingToggle("Giữ phím hàng 2, 3 để ra ký tự đặc biệt", "Giữ a … l, z … m để gõ @ # ₫ _ & - + ( ) * \" ' : ; ! ? — ký hiệu nhỏ ở góc phím.", isOn: $longPressSymbols)
+            }
             if UIDevice.current.userInterfaceIdiom == .phone {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Chế độ một tay")

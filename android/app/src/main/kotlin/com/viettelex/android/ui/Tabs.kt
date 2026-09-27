@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.viettelex.android.BuildConfig
 import com.viettelex.android.R
+import com.viettelex.keyboard.KeyAlternates
 import com.viettelex.keyboard.Keys
 import com.viettelex.keyboard.TemplateItem
 import com.viettelex.keyboard.Templates
@@ -353,8 +354,18 @@ fun TinhNangTab() {
             IosStepper(adj, -10..10) { adj = it }
         }
         RowDivider()
+        val numberRow by rememberBoolPref(Keys.NUMBER_ROW, Prefs.D.numberRow)
         BoolToggle(Keys.NUMBER_ROW, Prefs.D.numberRow, "Hàng phím số",
             "Thêm hàng 1 2 3 … 0 phía trên hàng chữ — gõ số không cần chuyển sang bàn phím ?123. Bàn phím cao thêm khoảng ¾ hàng.")
+        RowDivider()
+        // Hàng số bật ⇒ giữ q…p ra số vô nghĩa (KeyAlternates.numbersSettingVisible).
+        if (KeyAlternates.numbersSettingVisible(numberRow)) {
+            BoolToggle(Keys.LONG_PRESS_NUMBERS, Prefs.D.longPressNumbers, "Giữ phím hàng trên để ra số",
+                "Giữ q w e … p một chút để gõ 1 2 3 … 0 — số nhỏ ở góc phím. Chỉ dùng khi tắt Hàng phím số.")
+            RowDivider()
+        }
+        BoolToggle(Keys.LONG_PRESS_SYMBOLS, Prefs.D.longPressSymbols, "Giữ phím hàng 2, 3 để ra ký tự đặc biệt",
+            "Giữ a … l, z … m để gõ @ # ₫ _ & - + ( ) * \" ' : ; ! ? — ký hiệu nhỏ ở góc phím.")
         RowDivider()
         OneHandRow()
     }

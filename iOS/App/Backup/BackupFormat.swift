@@ -54,6 +54,8 @@ enum BackupSettings {
         Spec(key: "pasteButton", kind: .bool(true)),     // chỉ iOS dùng
         Spec(key: "smartTouch", kind: .bool(true)),
         Spec(key: "spaceSwipeLanguage", kind: .bool(false)),
+        Spec(key: "longPressNumbers", kind: .bool(true)),
+        Spec(key: "longPressSymbols", kind: .bool(false)),
     ]
     static let byKey: [String: Spec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
 }

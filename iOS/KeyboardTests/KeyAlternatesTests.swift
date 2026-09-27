@@ -1,0 +1,169 @@
+// KeyAlternatesTests — giữ phím chữ ra số / ký hiệu (issue #98). Bảng theo fixture chung
+// Fixtures/key-alternates.txt (android KeyAlternatesTests.kt đọc cùng file).
+import XCTest
+import UIKit
+
+final class KeyAlternatesTests: XCTestCase {
+    private func fixture() throws -> [(group: String, key: Character, alt: String)] {
+        let url = try XCTUnwrap(Bundle(for: KeyAlternatesTests.self)
+            .url(forResource: "key-alternates", withExtension: "txt"))
+        return try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
+            .filter { !$0.hasPrefix("#") && !$0.isEmpty }
+            .map { l in
+                let c = l.split(separator: "\t").map(String.init)
+                return (c[0], Character(c[1]), c[2])
+            }
+    }
+
+    func testTablesMatchSharedFixture() throws {
+        let f = try fixture()
+        var digits: [Character: String] = [:], symbols: [Character: String] = [:]
+        for r in f { if r.group == "numbers" { digits[r.key] = r.alt } else { symbols[r.key] = r.alt } }
+        XCTAssertEqual(digits, KeyAlternates.digits)
+        XCTAssertEqual(symbols, KeyAlternates.symbols)
+        XCTAssertEqual(Set(digits.keys), Set("qwertyuiop"))
+        XCTAssertEqual(Set(symbols.keys), Set("asdfghjklzxcvbnm"))
+    }
+
+    func testNoDuplicateAndNoLetters() {
+        let all = Array(KeyAlternates.digits.values) + Array(KeyAlternates.symbols.values)
+        XCTAssertEqual(Set(all).count, all.count, "không trùng ký tự phụ")
+        for a in all { XCTAssertFalse(a.first!.isLetter, a) }
+        XCTAssertEqual(KeyAlternates.symbols["d"], "₫")   // Telex đã có dd → đ
+    }
+
+    func testMapGating() {
+        XCTAssertEqual(KeyAlternates.map(numbers: true, symbols: false, numberRow: false), KeyAlternates.digits)
+        XCTAssertTrue(KeyAlternates.map(numbers: true, symbols: false, numberRow: true).isEmpty,
+                      "hàng số bật ⇒ giữ q ra số vô nghĩa")
+        XCTAssertEqual(KeyAlternates.map(numbers: true, symbols: true, numberRow: true), KeyAlternates.symbols)
+        XCTAssertEqual(KeyAlternates.map(numbers: true, symbols: true, numberRow: false).count, 26)
+        XCTAssertTrue(KeyAlternates.map(numbers: false, symbols: false, numberRow: false).isEmpty)
+        XCTAssertTrue(KeyAlternates.map(numbers: true, symbols: true, numberRow: false, isPad: true).isEmpty)
+        XCTAssertTrue(KeyAlternates.map(numbers: true, symbols: true, numberRow: false, accessibility: true).isEmpty)
+        XCTAssertTrue(KeyAlternates.numbersSettingVisible(numberRow: false))
+        XCTAssertFalse(KeyAlternates.numbersSettingVisible(numberRow: true))
+    }
+
+    func testHoldStateMachine() {
+        var h = KeyAlternates.Hold(alt: "3", start: .zero)
+        XCTAssertFalse(h.move(to: CGPoint(x: 6, y: 6)))       // trong slop
+        XCTAssertNil(h.commit)                                  // chưa đủ giờ = chạm thường
+        XCTAssertTrue(h.fire())
+        XCTAssertEqual(h.commit, "3")
+        XCTAssertFalse(h.move(to: CGPoint(x: 80, y: 0)))       // đã bắn: trôi không hủy
+        h.cancel()
+        XCTAssertEqual(h.commit, "3")
+
+        var d = KeyAlternates.Hold(alt: "@", start: .zero)
+        XCTAssertTrue(d.move(to: CGPoint(x: KeyAlternates.slop + 1, y: 0)))
+        XCTAssertFalse(d.fire(), "trôi trước khi đủ giờ ⇒ không bao giờ thành ký tự phụ")
+        XCTAssertNil(d.commit)
+
+        var c = KeyAlternates.Hold(alt: "@", start: .zero)
+        c.cancel()                                              // ngón khác / thành vuốt
+        XCTAssertFalse(c.fire())
+    }
+
+    func testThresholdBetweenTrackpadAndOtherHolds() {
+        XCTAssertGreaterThan(KeyAlternates.holdDelay, 0.3)
+        XCTAssertLessThan(KeyAlternates.holdDelay, 0.45)
+    }
+
+    /// Luồng controller cho .replaceLastLetter: huỷ đúng phím chữ (checkpoint, không ⌫) rồi
+    /// chốt từ + chèn ký tự phụ như gõ hàng số.
+    func testRollbackKeepsTelexComposition() {
+        let p = MockProxy(), b = EngineBridge(settings: KeyboardSettings())
+        for ch in "tie" { b.letter(ch, proxy: p) }
+        b.letter("e", proxy: p)                                 // chạm e: "tiê"
+        XCTAssertEqual(p.text, "tiê")
+        XCTAssertTrue(b.undoLastLetter(proxy: p))
+        b.boundary("3", proxy: p)
+        XCTAssertEqual(p.text, "tie3")
+        b.letter("a", proxy: p)                                 // từ mới sau ký tự phụ
+        XCTAssertEqual(p.text, "tie3a")
+
+        let p2 = MockProxy(), b2 = EngineBridge(settings: KeyboardSettings())
+        for ch in "tieng" { b2.letter(ch, proxy: p2) }
+        b2.letter("s", proxy: p2)                               // phím dấu: "tiéng"
+        XCTAssertTrue(b2.undoLastLetter(proxy: p2))
+        b2.boundary("#", proxy: p2)
+        XCTAssertEqual(p2.text, "tieng#")
+    }
+
+    // MARK: KeyboardView (iPhone)
+
+    @MainActor private func makeKeyboard(numbers: Bool, symbols: Bool, numberRow: Bool = false,
+                                         log: @escaping (String) -> Void) -> (KeyboardView, UIView) {
+        let kb = KeyboardView(needsGlobe: false, inputController: nil) { k in
+            switch k {
+            case .letter(let c): log("L\(c.lowercased())")   // shift đầu ô bật sẵn
+            case .replaceLastLetter(let s): log("R\(s)")
+            case .text(let s): log("T\(s)")
+            default: log("?")
+            }
+        }
+        let host = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 320))
+        host.addSubview(kb)
+        kb.frame = host.bounds
+        kb.numberRowEnabled = numberRow
+        kb.configureKeyAlternates(numbers: numbers, symbols: symbols)
+        kb.layoutIfNeeded()
+        return (kb, host)
+    }
+
+    @MainActor func testHoldReplacesLetterWithAlternate() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "iPad dùng vuốt xuống")
+        var out: [String] = []
+        let (kb, host) = makeKeyboard(numbers: true, symbols: true) { out.append($0) }
+        XCTAssertEqual(kb.debugAltHint("e"), "3")
+        XCTAssertEqual(kb.debugAltHint("a"), "@")
+        XCTAssertTrue(kb.debugHold("e"))
+        XCTAssertEqual(out.suffix(2), ["Le", "R3"])
+        out = []
+        kb.debugHold("e", fire: false)                          // nhả trước khi đủ giờ
+        XCTAssertEqual(out, ["Le"])
+        out = []
+        kb.debugHold("e", drift: 30)                            // trôi ⇒ không phải giữ
+        XCTAssertEqual(out, ["Le"])
+        out = []
+        kb.debugHold("m")
+        XCTAssertEqual(out, ["Lm", "R?"])
+        withExtendedLifetime(host) {}
+    }
+
+    /// Đã bắn mà ngón khác chạm: ký tự phụ chốt TRƯỚC phím mới (checkpoint đúng phím).
+    @MainActor func testSecondTouchAfterFireCommitsAlternateFirst() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad)
+        var out: [String] = []
+        let (kb, host) = makeKeyboard(numbers: true, symbols: false) { out.append($0) }
+        kb.debugHold("q", secondTouch: "a")
+        XCTAssertEqual(out, ["Lq", "R1", "La"])
+        withExtendedLifetime(host) {}
+    }
+
+    @MainActor func testOffMeansNoHintsNoTimer() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad)
+        var out: [String] = []
+        let (kb, host) = makeKeyboard(numbers: false, symbols: false) { out.append($0) }
+        XCTAssertNil(kb.debugAltHint("q"))
+        XCTAssertFalse(kb.debugHold("q"), "tắt ⇒ không hẹn giờ")
+        XCTAssertEqual(out, ["Lq"])
+        XCTAssertFalse(kb.altHoldActive)
+        // Hàng số bật ⇒ công tắc số không còn tác dụng; ký hiệu vẫn chạy.
+        let (kb2, host2) = makeKeyboard(numbers: true, symbols: true, numberRow: true) { _ in }
+        XCTAssertNil(kb2.debugAltHint("q"))
+        XCTAssertEqual(kb2.debugAltHint("s"), "#")
+        withExtendedLifetime((host, host2)) {}
+    }
+
+    @MainActor func testVoiceOverDisablesAlternates() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad)
+        let (kb, host) = makeKeyboard(numbers: true, symbols: true) { _ in }
+        kb.altAccessibility = true
+        kb.layoutIfNeeded()
+        XCTAssertNil(kb.debugAltHint("q"))
+        XCTAssertFalse(kb.altHoldActive)
+        withExtendedLifetime(host) {}
+    }
+}
