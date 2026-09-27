@@ -108,6 +108,10 @@ class KeyboardView(
     private val d = theme.density
     private val radius = theme.dp(KeyLayout.KEY_RADIUS)
     private val facePaint = theme.fill(theme.keyFill)
+    /** Viền 1dp (theme tương phản cao / kính) — stroke thường, không offscreen. */
+    private val borderPaint = theme.keyBorder?.let { c ->
+        Paint(Paint.ANTI_ALIAS_FLAG).apply { color = c; style = Paint.Style.STROKE; strokeWidth = theme.dp(1f) }
+    }
     // Gboard: chữ 22 sp regular, nhãn chức năng 14 sp medium (font hệ thống sans-serif)
     private val letterPaint = theme.text(22f)
     private val controlPaint = theme.text(14f, medium = true)
@@ -424,6 +428,10 @@ class KeyboardView(
         facePaint.color = face
         val r = if (k.kind == KeyKind.RETURN) minOf(k.width, k.height) / 2 else radius
         c.drawRoundRect(k.left, k.top, k.right, k.bottom, r, r, facePaint)
+        borderPaint?.let { bp ->
+            val h = bp.strokeWidth / 2
+            c.drawRoundRect(k.left + h, k.top + h, k.right - h, k.bottom - h, r, r, bp)
+        }
 
         val contentAlpha = if (trackpad) 51 else 255   // 0.2
         val cx = k.centerX; val cy = k.centerY

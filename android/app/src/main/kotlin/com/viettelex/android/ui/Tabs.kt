@@ -213,6 +213,8 @@ fun TinhNangTab() {
     // Trang con "Bảng gõ tắt" (như NavigationLink iOS) — ⟵ hệ thống quay lại.
     var showShortcuts by rememberSaveable { mutableStateOf(false) }
     if (showShortcuts) { ShortcutsPage { showShortcuts = false }; return }
+    var showTheme by rememberSaveable { mutableStateOf(false) }
+    if (showTheme) { ThemePage { showTheme = false }; return }
     VTSection(header = "Chính tả") {
         BoolToggle(Keys.AUTO_RESTORE, Prefs.D.autoRestore, "Tự khôi phục từ tiếng Anh", "Từ không phải tiếng Việt tự trả về như đã gõ (google, github…).")
         RowDivider()
@@ -247,6 +249,8 @@ fun TinhNangTab() {
         }
     }
     VTSection(header = "Giao diện", footer = APPLY_NOTE) {
+        ThemeRow { showTheme = true }
+        RowDivider()
         BoolToggle(Keys.SHOW_SPACE_LOGO, Prefs.D.showSpaceLogo, "Hiện logo Vᴛ", "Logo mờ ở góc phải phím space.")
         RowDivider()
         BoolToggle(Keys.HAPTIC_FEEDBACK, Prefs.D.hapticFeedback, "Rung phím", "Rung nhẹ mỗi lần chạm phím.")

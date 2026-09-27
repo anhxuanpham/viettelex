@@ -15,7 +15,7 @@ import kotlin.math.roundToInt
 @SuppressLint("ViewConstructor")
 class ImeRootView(
     context: Context,
-    theme: ImeTheme,
+    private val theme: ImeTheme,
     val keyboard: KeyboardView,
     val strip: StripView,
     val balloon: BalloonView,
@@ -25,8 +25,23 @@ class ImeRootView(
 
     private var navInset = 0
 
+    /** Ảnh nền (null = không dùng) — vẽ trong onDraw: bitmap center-crop + lớp phủ phẳng. */
+    private val wallpaperFile: java.io.File? =
+        if (theme.palette.wallpaper) java.io.File(context.filesDir, com.viettelex.keyboard.Keys.WALLPAPER_FILE) else null
+    private var wallpaper: android.graphics.Bitmap? = null
+    private val wallMatrix = android.graphics.Matrix()
+    private val wallPaint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+    private val dimColor = theme.withAlpha(theme.palette.wallpaperOverlay, theme.settings.dim / 100f)
+
     init {
-        setBackgroundColor(theme.bg)
+        val bottom = theme.palette.bgBottom
+        when {
+            wallpaperFile != null -> { setBackgroundColor(theme.bg); setWillNotDraw(false) }
+            // Kính giả lập: gradient dọc (GradientDrawable — vẽ phẳng, không blur).
+            bottom != null -> background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(theme.bg, bottom))
+            else -> setBackgroundColor(theme.bg)
+        }
         isMotionEventSplittingEnabled = true
         addView(keyboard)
         addView(strip)
@@ -35,6 +50,27 @@ class ImeRootView(
     }
 
     private fun stripPx() = strip.stripPx().roundToInt()
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        val f = wallpaperFile ?: return
+        val b = WallpaperBitmap.load(f, theme.settings.version, w, h)
+        wallpaper = b
+        if (b != null) {
+            // center-crop
+            val s = maxOf(w.toFloat() / b.width, h.toFloat() / b.height)
+            wallMatrix.setScale(s, s)
+            wallMatrix.postTranslate((w - b.width * s) / 2f, (h - b.height * s) / 2f)
+        }
+        invalidate()
+    }
+
+    override fun onDraw(canvas: android.graphics.Canvas) {
+        super.onDraw(canvas)
+        val b = wallpaper ?: return
+        canvas.drawBitmap(b, wallMatrix, wallPaint)
+        canvas.drawColor(dimColor)
+    }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)

@@ -853,6 +853,11 @@ struct TinhNangSections: View {
         } header: { Text("Gợi ý") }
 
         Section {
+            NavigationLink {
+                ThemeSettingsView()
+            } label: {
+                Label("Theme & ảnh nền", systemImage: "paintpalette")
+            }
             settingToggle("Hiện logo Vᴛ", "Logo mờ ở góc phải phím space.", isOn: $showSpaceLogo)
             settingToggle("Rung phím", "Rung nhẹ mỗi lần chạm phím.", isOn: $hapticFeedback)
             if hapticFeedback {
