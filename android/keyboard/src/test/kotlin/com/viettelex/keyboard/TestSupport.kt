@@ -35,7 +35,9 @@ class MockProxy(var isSecureField: Boolean = false) : TextProxy {
         repeat(count) { if (sb.isNotEmpty()) sb.setLength(sb.offsetByCodePoints(sb.length, -1)) }
     }
     override fun deleteBackward() = deleteCodePoints(1)
-    override fun contextBeforeInput(): String = text
+    /** Số lần đọc chữ trước con trỏ (≈ IPC getTextBeforeCursor trên máy thật). */
+    var contextReads = 0
+    override fun contextBeforeInput(): String { contextReads++; return text }
     override fun clearAll() { sb.setLength(0) }
     override fun confirmTail(expected: String): Boolean = text.endsWith(expected)
     /** Sửa lại từ đã chốt (IcProxy: ô COMMIT thường). */

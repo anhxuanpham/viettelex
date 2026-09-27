@@ -19,6 +19,10 @@ data class KeyboardSettings(
      */
     var vniMode: Boolean = false,
     var showSuggestions: Boolean = true,
+    /** Chip "Thêm dấu" tự hiện khi chữ trước con trỏ không dấu — mặc định TẮT (hiệu năng thắng). */
+    var addTonesChip: Boolean = false,
+    /** Chip số trên thanh gợi ý — mặc định BẬT (chỉ đọc context ngay sau chữ số/phép tính). */
+    var numberChips: Boolean = true,
     /** Đi theo showSuggestions (không có toggle riêng). */
     var learnWords: Boolean = true,
     var filterSensitive: Boolean = true,
@@ -79,6 +83,8 @@ data class KeyboardSettings(
             s.vniMode = b(Keys.VNI_MODE, s.vniMode)
             s.showSuggestions = b(Keys.SHOW_SUGGESTIONS, s.showSuggestions)
             s.filterSensitive = b(Keys.FILTER_SENSITIVE, s.filterSensitive)
+            s.addTonesChip = b(Keys.ADD_TONES_CHIP, s.addTonesChip)
+            s.numberChips = b(Keys.NUMBER_CHIPS, s.numberChips)
             s.hapticFeedback = b(Keys.HAPTIC_FEEDBACK, s.hapticFeedback)
             s.autoFixAdjacent = b(Keys.AUTO_FIX_ADJACENT, s.autoFixAdjacent)
             s.contextualEnglish = b(Keys.CONTEXTUAL_ENGLISH, s.contextualEnglish)

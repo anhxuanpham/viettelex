@@ -266,6 +266,12 @@ fun TinhNangTab() {
         RowDivider()
         BoolToggle(Keys.FILTER_SENSITIVE, Prefs.D.filterSensitive, "Lọc từ nhạy cảm khỏi gợi ý", "Không chủ động gợi ý từ tục — gõ tay và học vẫn bình thường.")
         RowDivider()
+        BoolToggle(Keys.ADD_TONES_CHIP, Prefs.D.addTonesChip, "Chip “Thêm dấu”",
+            "Gõ xong một câu không dấu, thanh gợi ý tự mời thêm dấu cả câu (hom nay troi dep → hôm nay trời đẹp). Tắt mặc định để gõ nhẹ nhất: khi tắt bàn phím không phân tích câu ở mỗi dấu cách.")
+        RowDivider()
+        BoolToggle(Keys.NUMBER_CHIPS, Prefs.D.numberChips, "Chip số",
+            "Sau khi gõ số: đọc số thành chữ, định dạng tiền, tính nhanh phép tính (12*3 → 36).")
+        RowDivider()
         BoolToggle(Keys.TEMPLATES_ENABLED, Prefs.D.templatesEnabled, "Mẫu câu", "Nút ☰ trên bàn phím chèn nhanh câu soạn sẵn — quản lý ở tab Mẫu Câu.")
         RowDivider()
         var showDict by remember { mutableStateOf(false) }
