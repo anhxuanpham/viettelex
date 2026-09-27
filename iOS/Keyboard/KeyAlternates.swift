@@ -3,8 +3,14 @@
 // android/keyboard/src/main/kotlin/com/viettelex/keyboard/KeyAlternates.kt — sửa ở đây
 // thì sửa y hệt bên kia (bảng khớp fixture chung Fixtures/key-alternates.txt).
 //
-// Bảng ký hiệu theo Gboard tiếng Anh (a@ s# … m?), riêng d → ₫ (Gboard Việt để "đ" —
-// Telex đã có dd; "$" vẫn ở bàn 123). Không trùng ký tự nào giữa các phím.
+// Bảng ký hiệu gốc Gboard tiếng Anh (a@ s# … m?), đổi 3 phím cho tiếng Việt: d → $,
+// c → %, b → / (tiếng Việt ít dùng ' và ;, hay dùng % và / — ngày tháng, link; ₫ vẫn ở
+// bàn ký hiệu). Không trùng ký tự nào giữa các phím.
+//
+// Giữ phím "," hàng đáy (iPhone, bàn chữ) ra "." như Gboard — bật khi có ÍT NHẤT một
+// công tắc giữ phím đang có hiệu lực (số khi hàng số tắt, hoặc ký hiệu), tức `map` không
+// rỗng. "." chốt từ đang gõ y như ",". (Android: "," đã có giữ lâu = gõ giọng nói thì giữ
+// nguyên, không ra ".".)
 import CoreGraphics
 import Foundation
 
@@ -14,8 +20,8 @@ enum KeyAlternates {
         "y": "6", "u": "7", "i": "8", "o": "9", "p": "0",
     ]
     static let symbols: [Character: String] = [
-        "a": "@", "s": "#", "d": "₫", "f": "_", "g": "&", "h": "-", "j": "+", "k": "(", "l": ")",
-        "z": "*", "x": "\"", "c": "'", "v": ":", "b": ";", "n": "!", "m": "?",
+        "a": "@", "s": "#", "d": "$", "f": "_", "g": "&", "h": "-", "j": "+", "k": "(", "l": ")",
+        "z": "*", "x": "\"", "c": "%", "v": ":", "b": "/", "n": "!", "m": "?",
     ]
 
     /// Giữ bao lâu thì thành ký tự phụ — ngắn hơn giữ ⌫/emoji (0,45–0,5 s), dài hơn
@@ -34,6 +40,20 @@ enum KeyAlternates {
         if numbers, !numberRow { m.merge(digits) { a, _ in a } }
         if sym { m.merge(symbols) { a, _ in a } }
         return m
+    }
+
+    /// Ký tự phụ của phím "," hàng đáy.
+    static let commaAlt = "."
+    /// Giữ "," ra "." khi bảng ký tự phụ đang dùng không rỗng (mọi gating của `map`).
+    static func commaHold(alternates: [Character: String]) -> Bool { !alternates.isEmpty }
+    /// Giữ "," đủ giờ: đổi phím đang chờ chốt thành "." — vẫn chốt lúc nhấc / khi ngón khác
+    /// chạm (cùng đường với ","). false nếu "," đã chốt rồi (ngón khác chạm trước khi đủ giờ).
+    static func holdComma(_ commits: KeyCommitQueue, id: ObjectIdentifier,
+                          fire: @escaping (String) -> Void) -> Bool {
+        guard commits.isArmed(id) else { return false }
+        commits.disarm(id)
+        commits.arm(id) { fire(commaAlt) }
+        return true
     }
 
     /// Công tắc số chỉ có nghĩa (và chỉ hiện trong app) khi hàng phím số TẮT.

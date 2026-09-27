@@ -310,8 +310,8 @@ fun TinhNangTab() {
             BoolToggle(Keys.SWIPE_ENGLISH, Prefs.D.swipeEnglish, "Vuốt từ tiếng Anh",
                 "Vuốt ra cả từ tiếng Anh xen trong câu: check, mail, file, meeting… Khi một nét vuốt vừa là từ Việt vừa là từ Anh (the/thế, can/cần), bàn phím ưu tiên tiếng Việt — trừ khi đang gõ tiếng Anh — và luôn để phương án kia trên thanh gợi ý.")
             RowDivider()
-            BoolToggle(Keys.SWIPE_FUTO, Prefs.D.swipeFuto, "Mô hình nơ-ron gõ vuốt",
-                "Thêm mạng nơ-ron nhận dạng nét vuốt (chạy hoàn toàn trên máy) để chấm cùng bộ giải mã hiện có. Tốn thêm khoảng 3 MB bộ nhớ khi bàn phím mở.")
+            BoolToggle(Keys.SWIPE_FUTO, Prefs.D.swipeFuto, "Mô hình neural gõ vuốt",
+                "Thêm mạng neural nhận dạng nét vuốt (chạy hoàn toàn trên máy) để chấm cùng bộ giải mã hiện có. Tốn thêm khoảng 3 MB bộ nhớ khi bàn phím mở.")
             RowDivider()
             var showPractice by remember { mutableStateOf(false) }
             VTRow(onClick = { showPractice = true }) {
@@ -367,7 +367,7 @@ fun TinhNangTab() {
             RowDivider()
         }
         BoolToggle(Keys.LONG_PRESS_SYMBOLS, Prefs.D.longPressSymbols, "Giữ phím hàng 2, 3 để ra ký tự đặc biệt",
-            "Giữ a … l, z … m để gõ @ # ₫ _ & - + ( ) * \" ' : ; ! ? — ký hiệu nhỏ ở góc phím.")
+            "Giữ a … l, z … m để gõ @ # \$ _ & - + ( ) * \" % : / ! ? — ký hiệu nhỏ ở góc phím. Giữ , để ra . khi bật một trong các công tắc giữ phím (nếu , chưa dùng để gõ giọng nói).")
         RowDivider()
         OneHandRow()
     }

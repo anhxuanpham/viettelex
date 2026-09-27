@@ -190,7 +190,7 @@ private struct PracticeKeyboard: View {
         GeometryReader { geo in
             let w = geo.size.width
             let keys = PracticeKeyboardGeometry.keys(width: w, rowHeight: rowHeight)
-            let layout = PracticeKeyboardGeometry.layout(width: w, rowHeight: rowHeight)
+            if let layout = PracticeKeyboardGeometry.layout(width: w, rowHeight: rowHeight) {
             ZStack(alignment: .topLeading) {
                 ForEach(keys, id: \.0) { k in
                     RoundedRectangle(cornerRadius: 5)
@@ -215,6 +215,7 @@ private struct PracticeKeyboard: View {
                     if let p = path, p.length >= layout.keyWidth { onSwipe(p, layout) }
                     path = nil; t0 = nil
                 })
+            }
         }
         .frame(height: PracticeKeyboardGeometry.height(rowHeight: rowHeight) + 8)
         .background(scheme == .dark ? Color(white: 0.17) : Color(red: 0.82, green: 0.83, blue: 0.85))

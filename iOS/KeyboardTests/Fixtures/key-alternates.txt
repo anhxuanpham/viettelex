@@ -12,7 +12,7 @@ numbers	o	9
 numbers	p	0
 symbols	a	@
 symbols	s	#
-symbols	d	₫
+symbols	d	$
 symbols	f	_
 symbols	g	&
 symbols	h	-
@@ -21,8 +21,8 @@ symbols	k	(
 symbols	l	)
 symbols	z	*
 symbols	x	"
-symbols	c	'
+symbols	c	%
 symbols	v	:
-symbols	b	;
+symbols	b	/
 symbols	n	!
 symbols	m	?

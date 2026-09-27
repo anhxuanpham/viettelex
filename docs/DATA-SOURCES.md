@@ -207,7 +207,7 @@ chỉ khi người dùng bật lưu; kho nằm trên máy (không sao lưu, khô
 `iOS/Keyboard/Resources/futoswipe.bin` = `android/app/src/main/assets/futoswipe.bin` (1,27 MB,
 sha256 `59e41b22…3f089`), kèm `futoswipe-LICENSE.md` (thông báo sửa đổi + nguyên văn giấy phép)
 ở cùng thư mục — cả hai được đóng gói vào app. Chỉ đọc khi bật công tắc **Thử nghiệm → Gõ vuốt →
-Mô hình nơ-ron gõ vuốt** (Keys.SWIPE_FUTO / KeyboardSettings.swipeFuto, mặc định TẮT).
+Mô hình neural gõ vuốt** (Keys.SWIPE_FUTO / KeyboardSettings.swipeFuto, mặc định TẮT).
 **Powered by FUTO Swipe.**
 
 ### Nguồn
@@ -236,7 +236,7 @@ với điều kiện:
   Swipe" ở mục **Giới thiệu** (iOS + Android) và trong mô tả công tắc. Luôn hiện, kể cả khi công
   tắc tắt (model vẫn nằm trong app).
 - Tên/nhãn hiệu: *"… solely as required by the attribution notice … You may not use the name …
-  to suggest a relationship"* ⇒ công tắc đặt tên trung tính ("Mô hình nơ-ron gõ vuốt"), "FUTO
+  to suggest a relationship"* ⇒ công tắc đặt tên trung tính ("Mô hình neural gõ vuốt"), "FUTO
   Swipe" chỉ xuất hiện trong câu ghi công; ghi rõ không liên kết/không được FUTO bảo trợ.
 - Derivative Model: *"If you distribute a Derivative Model, you must ensure that anyone who receives
   it also receives a copy of these terms … prominent notice … that the model is derived from FUTO

@@ -26,7 +26,14 @@ final class SwipePracticeTests: XCTestCase {
         XCTAssertEqual(SwipePractice.english.count, 120)
     }
 
-    func testGeometryMatchesKeyboardFormulas() {
+    /// GeometryReader đo lần đầu bề rộng 0 → trước đây SwipeLayout precondition crash (Phil 27/09).
+    func testZeroWidthLayoutIsNilNotCrash() {
+        XCTAssertNil(PracticeKeyboardGeometry.layout(width: 0))
+        XCTAssertNil(PracticeKeyboardGeometry.layout(width: -1))
+        XCTAssertNotNil(PracticeKeyboardGeometry.layout(width: 393))
+    }
+
+    func testGeometryMatchesKeyboardFormulas() throws {
         let w: CGFloat = 402
         let keys = Dictionary(uniqueKeysWithValues: PracticeKeyboardGeometry.keys(width: w).map { ($0.0, $0.1) })
         XCTAssertEqual(keys.count, 26)
@@ -39,7 +46,7 @@ final class SwipePracticeTests: XCTestCase {
         XCTAssertEqual(keys["z"]!.width, keys["q"]!.width, accuracy: 1e-9)
         XCTAssertEqual(keys["a"]!.midY - keys["q"]!.midY, 54, accuracy: 1e-9)
         XCTAssertEqual(keys["q"]!.height, 44, accuracy: 1e-9)
-        let l = PracticeKeyboardGeometry.layout(width: w)
+        let l = try XCTUnwrap(PracticeKeyboardGeometry.layout(width: w))
         XCTAssertEqual(l.keyWidth, Float(p), accuracy: 1e-5)
         // nét sạch trên bàn phím mẫu giải mã đúng
         let d = SwipeDecoder(); d.setLayout(l)

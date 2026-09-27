@@ -29,7 +29,54 @@ final class KeyAlternatesTests: XCTestCase {
         let all = Array(KeyAlternates.digits.values) + Array(KeyAlternates.symbols.values)
         XCTAssertEqual(Set(all).count, all.count, "không trùng ký tự phụ")
         for a in all { XCTAssertFalse(a.first!.isLetter, a) }
-        XCTAssertEqual(KeyAlternates.symbols["d"], "₫")   // Telex đã có dd → đ
+        // Bản Việt: ' ; ít dùng → % / (ngày tháng, link); $ thay ₫ (₫ ở bàn ký hiệu).
+        XCTAssertEqual(KeyAlternates.symbols["d"], "$")
+        XCTAssertEqual(KeyAlternates.symbols["c"], "%")
+        XCTAssertEqual(KeyAlternates.symbols["b"], "/")
+    }
+
+    /// Giữ "," ra "." khi có ít nhất một công tắc giữ phím đang có hiệu lực.
+    func testCommaHoldGating() {
+        func on(_ n: Bool, _ s: Bool, row: Bool = false, pad: Bool = false, ax: Bool = false) -> Bool {
+            KeyAlternates.commaHold(alternates: KeyAlternates.map(numbers: n, symbols: s, numberRow: row,
+                                                                  isPad: pad, accessibility: ax))
+        }
+        XCTAssertTrue(on(true, false))
+        XCTAssertTrue(on(false, true))
+        XCTAssertTrue(on(true, true))
+        XCTAssertFalse(on(false, false))
+        XCTAssertFalse(on(true, false, row: true), "công tắc số không hiệu lực khi hàng số bật")
+        XCTAssertTrue(on(true, true, row: true))
+        XCTAssertFalse(on(true, true, pad: true), "iPad không đổi")
+        XCTAssertFalse(on(true, true, ax: true))
+        XCTAssertEqual(KeyAlternates.commaAlt, ".")
+    }
+
+    func testHoldCommaSwapsPendingCommit() {
+        let q = KeyCommitQueue(), id = ObjectIdentifier(q)
+        var out = ""
+        q.arm(id) { out += "," }
+        XCTAssertTrue(KeyAlternates.holdComma(q, id: id) { out += $0 })
+        q.release(id)
+        XCTAssertEqual(out, ".")
+        out = ""
+        q.arm(id) { out += "," }
+        q.flush()                                               // ngón khác chạm trước khi đủ giờ
+        XCTAssertFalse(KeyAlternates.holdComma(q, id: id) { out += $0 })
+        q.release(id)
+        XCTAssertEqual(out, ",", "đã chốt phẩy thì hết giờ không đổi gì")
+    }
+
+    /// "." giữ từ "," chốt từ đang gõ y như "," (cùng đường .text → boundary).
+    func testCommaHoldPeriodCommitsComposition() {
+        for punct in [",", "."] {
+            let p = MockProxy(), b = EngineBridge(settings: KeyboardSettings())
+            for ch in "tieengs" { b.letter(ch, proxy: p) }
+            XCTAssertTrue(b.isComposing)
+            b.boundary(punct, proxy: p)
+            XCTAssertFalse(b.isComposing)
+            XCTAssertEqual(p.text, "tiếng" + punct)
+        }
     }
 
     func testMapGating() {
@@ -157,12 +204,51 @@ final class KeyAlternatesTests: XCTestCase {
         withExtendedLifetime((host, host2)) {}
     }
 
+    @MainActor func testCommaHoldTypesPeriod() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "iPad không đổi")
+        var out: [String] = []
+        let (kb, host) = makeKeyboard(numbers: true, symbols: false) { out.append($0) }
+        XCTAssertEqual(kb.debugCommaHint, ".")
+        XCTAssertTrue(kb.debugCommaHold())
+        XCTAssertEqual(out, ["T."])
+        out = []
+        kb.debugCommaHold(fire: false)                          // nhả trước khi đủ giờ
+        XCTAssertEqual(out, ["T,"])
+        out = []
+        kb.debugCommaHold(secondTouch: "a")                     // đã bắn: "." chốt TRƯỚC phím mới
+        XCTAssertEqual(out, ["T.", "La"])
+        out = []
+        kb.debugCommaHold(secondTouch: "a", secondBeforeFire: true)   // ngón khác chạm trước khi đủ giờ
+        XCTAssertEqual(out, ["T,", "La"])
+        withExtendedLifetime(host) {}
+    }
+
+    @MainActor func testCommaHoldOffIsPlainComma() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad)
+        var out: [String] = []
+        let (kb, host) = makeKeyboard(numbers: false, symbols: false) { out.append($0) }
+        XCTAssertNil(kb.debugCommaHint)
+        XCTAssertFalse(kb.debugCommaHold(), "tắt ⇒ không hẹn giờ")
+        XCTAssertEqual(out, ["T,"])
+        out = []
+        // Chỉ công tắc số mà hàng số bật ⇒ không có hiệu lực ⇒ "," thường.
+        let (kb2, host2) = makeKeyboard(numbers: true, symbols: false, numberRow: true) { out.append($0) }
+        XCTAssertNil(kb2.debugCommaHint)
+        XCTAssertFalse(kb2.debugCommaHold())
+        XCTAssertEqual(out, ["T,"])
+        // Chỉ ký hiệu ⇒ bật.
+        let (kb3, host3) = makeKeyboard(numbers: false, symbols: true) { _ in }
+        XCTAssertEqual(kb3.debugCommaHint, ".")
+        withExtendedLifetime((host, host2, host3)) {}
+    }
+
     @MainActor func testVoiceOverDisablesAlternates() throws {
         try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad)
         let (kb, host) = makeKeyboard(numbers: true, symbols: true) { _ in }
         kb.altAccessibility = true
         kb.layoutIfNeeded()
         XCTAssertNil(kb.debugAltHint("q"))
+        XCTAssertNil(kb.debugCommaHint)
         XCTAssertFalse(kb.altHoldActive)
         withExtendedLifetime(host) {}
     }

@@ -36,7 +36,61 @@ class KeyAlternatesTests {
         val all = KeyAlternates.digits.values + KeyAlternates.symbols.values
         assertEquals("không trùng ký tự phụ", all.size, all.toSet().size)
         for (a in all) assertFalse(a, a[0].isLetter())
-        assertEquals("₫", KeyAlternates.symbols['d'])        // Telex đã có dd → đ
+        // Bản Việt: ' ; ít dùng → % / (ngày tháng, link); $ thay ₫ (₫ ở bàn ký hiệu).
+        assertEquals("\$", KeyAlternates.symbols['d'])
+        assertEquals("%", KeyAlternates.symbols['c'])
+        assertEquals("/", KeyAlternates.symbols['b'])
+    }
+
+    /** Giữ "," ra "." khi có ít nhất một công tắc giữ phím có hiệu lực — trừ khi "," là phím giọng nói. */
+    @Test fun commaHoldGating() {
+        fun on(n: Boolean, s: Boolean, row: Boolean = false, ax: Boolean = false, voice: Boolean = false) =
+            KeyAlternates.commaHold(KeyAlternates.map(n, s, numberRow = row, accessibility = ax), voice)
+        assertTrue(on(true, false))
+        assertTrue(on(false, true))
+        assertTrue(on(true, true))
+        assertFalse(on(false, false))
+        assertFalse("công tắc số không hiệu lực khi hàng số bật", on(true, false, row = true))
+        assertTrue(on(true, true, row = true))
+        assertFalse(on(true, true, ax = true))
+        assertFalse("giữ \",\" đã là gõ giọng nói ⇒ giữ nguyên", on(true, true, voice = true))
+        assertEquals(".", KeyAlternates.COMMA_ALT)
+    }
+
+    @Test fun holdCommaSwapsPendingCommit() {
+        val q = KeyCommitQueue(); val key = Any()
+        val out = StringBuilder()
+        val fire: (String) -> () -> Unit = { s -> { out.append(s) } }
+        q.arm(key, fire(","))
+        assertTrue(KeyAlternates.holdComma(q, key, fire))
+        q.release(key)
+        assertEquals(".", out.toString())
+
+        out.clear()
+        q.arm(key, fire(","))
+        assertTrue(KeyAlternates.holdComma(q, key, fire))
+        q.flush()                                             // đã bắn, ngón khác chạm ⇒ "." chốt trước
+        out.append('a')
+        q.release(key)
+        assertEquals(".a", out.toString())
+
+        out.clear()
+        q.arm(key, fire(","))
+        q.flush()                                             // ngón khác chạm trước khi đủ giờ
+        assertFalse(KeyAlternates.holdComma(q, key, fire))
+        q.release(key)
+        assertEquals(",", out.toString())
+    }
+
+    /** "." giữ từ "," chốt từ đang gõ y như "," (cùng Key.Text). */
+    @Test fun commaHoldPeriodCommitsComposition() {
+        for (punct in listOf(",", ".")) {
+            val s = session(alternates = false); val p = MockProxy()
+            s.type(p, "tieengs")
+            s.handle(Key.Text(punct), p)
+            s.type(p, "a")
+            assertEquals("tiếng${punct}a", p.text)
+        }
     }
 
     @Test fun mapGating() {
