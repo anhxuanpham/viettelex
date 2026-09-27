@@ -181,6 +181,35 @@ final class OneHandTests: XCTestCase {
         XCTAssertLessThanOrEqual(f.maxX, span(.left).width + 0.5)
     }
 
+    /// Tổ hợp tích hợp: hàng số (VNI tự bật) + một tay + tìm emoji + bảng sửa có hàng công cụ.
+    /// Chữ thu hẹp 5 hàng → tìm emoji đầy bề ngang (ô tìm + 5 hàng) → bảng sửa thu hẹp →
+    /// về chữ vẫn thu hẹp đúng (planeCache + ràng buộc chéo hàng còn).
+    @MainActor func testNumberRowOneHandEmojiSearchEditPanel() throws {
+        guard !isPad else { return }
+        let (kb, _) = makeKeyboard(.right, numberRow: true)
+        kb.textToolsEnabled = true
+        try assertNarrowed(kb, .right)
+        XCTAssertEqual(kb.debugRowFrames().count, 5)
+        _ = kb.debugEmojiSearch([])
+        kb.setNeedsLayout(); kb.layoutIfNeeded()
+        XCTAssertEqual(kb.debugRowFrames().count, 6)                 // ô tìm + hàng số + 4 hàng chữ
+        for r in kb.debugRowFrames() { XCTAssertEqual(r.width, w, accuracy: 0.5) }
+        let rows = kb.debugRowFrames()
+        XCTAssertEqual(rows[0].height, rows[2].height, accuracy: 0.5)  // ô tìm cao bằng hàng chữ
+        XCTAssertTrue(kb.debugRailFrames().isEmpty)
+        kb.toggleEditPanel()
+        kb.setNeedsLayout(); kb.layoutIfNeeded()
+        let panel = try XCTUnwrap(kb.debugEditPanel)
+        XCTAssertEqual(panel.debugTools, TextTool.allCases)
+        let f = kb.convert(panel.bounds, from: panel)
+        XCTAssertEqual(f.width, span(.right).width, accuracy: 0.5)
+        XCTAssertEqual(kb.debugRailFrames().count, 2)
+        kb.toggleEditPanel()
+        kb.setNeedsLayout(); kb.layoutIfNeeded()
+        XCTAssertEqual(kb.debugRowFrames().count, 5)
+        try assertNarrowed(kb, .right)
+    }
+
     /// Về từ planeCache (123 / mẫu câu đầy bề ngang) vẫn thu hẹp đúng, ràng buộc chéo hàng còn.
     @MainActor func testSurvivesPlaneCacheAndTemplates() throws {
         guard !isPad else { return }

@@ -163,7 +163,8 @@ final class TouchTargetTests: XCTestCase {
     }
 
     /// Độ trễ lúc chạm (forRaw + choose, chạm vùng biên ngẫu nhiên).
-    func testLatency() {
+    func testLatency() throws {
+        try SlowTests.require()
         var rng = RNG(s: 9)
         let raws = ["", "t", "th", "ng", "nguo", "tie", "kh", "dduow", "mo", "vie"]
         let pts = (0..<1024).map { _ -> CGPoint in

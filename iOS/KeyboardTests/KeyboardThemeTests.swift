@@ -279,7 +279,8 @@ final class KeyboardThemeTests: XCTestCase {
     }
 
     /// RAM: giải ảnh nền cỡ bàn phím iPhone 3x — đo phys_footprint tăng thêm.
-    func testKeyboardDecodeMemoryFootprint() {
+    func testKeyboardDecodeMemoryFootprint() throws {
+        try SlowTests.require()
         let data = Wallpaper.prepare(original: makeJPEG(width: 4032, height: 3024), blur: 0)!
         let px = Wallpaper.displayMaxPixel(viewSize: CGSize(width: 430, height: 300), scale: 3,
                                            imageAspect: 4.0 / 3)

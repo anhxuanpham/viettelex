@@ -635,7 +635,7 @@ class KeyboardSession(
         val number = refreshNumberChip(proxy)
         val paste = pasteOffer(proxy)
         // Chip tách STK/SĐT/OTP = Clipboard nâng cao (Plus; paywall tắt ⇒ mở cho mọi người).
-        val chips = if (paste && PlusGate.isUnlocked(PlusFeature.ADVANCED_CLIPBOARD)) clipChips() else emptyList()
+        val chips = if (paste && !incognito && PlusGate.isUnlocked(PlusFeature.ADVANCED_CLIPBOARD)) clipChips() else emptyList()
         // "Hoàn tác" thêm dấu (vừa bấm) thắng thẻ Dán; "Thêm dấu" nhường thẻ Dán (StripView/SuggestionSlots).
         if (tonesUndo != null) return SuggestionPlan.Ready(SuggestionSet(literal = literal, nextWords = next,
             number = number, actionLabel = UNDO_TONES_LABEL, action = SuggestionSet.UNDO_TONES_TOKEN))

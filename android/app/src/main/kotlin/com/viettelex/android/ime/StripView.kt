@@ -11,7 +11,10 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
 import com.viettelex.android.R
+import com.viettelex.keyboard.BarChip
+import com.viettelex.keyboard.BarLayout
 import com.viettelex.keyboard.SuggestionSet
+import com.viettelex.keyboard.SuggestionSlots
 import kotlin.math.abs
 
 /**
@@ -95,6 +98,8 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
     // --- vuốt ⌫: xem trước đoạn sẽ xoá / ô Khôi phục (đè nội dung bar tới khi gỡ) ---
     private var swipePreview: String? = null
     private var restoreOffer = false
+    /** Hoàn tác thêm dấu (SuggestionSlots tầng 1) — vẽ cùng kiểu pill ô Khôi phục. */
+    private var actionPill: BarChip? = null
     private val restoreDefault = "↩\uFE0E " + context.getString(R.string.ime_restore)
     private var restoreText = restoreDefault
     private val chipText = TextPaint(theme.text(14f, medium = true))
@@ -153,7 +158,7 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
 
     private fun clearContent() {
         for (i in 0..2) { slotText[i] = null; slotPayload[i] = null; emojiText[i] = null }
-        emojiCount = 0; paste = false; chipCount = 0
+        emojiCount = 0; paste = false; chipCount = 0; actionPill = null
         lastSet = null
     }
 
@@ -199,57 +204,32 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
         val disp = arrayOfNulls<String>(3)
         clearContent()
         lastSet = set
-        if (set.action != null && set.actionLabel != null) {
-            // Chip hành động (Thêm dấu / Hoàn tác) ở slot trái, gợi ý tốt nhất vẫn ở giữa.
-            disp[0] = set.actionLabel; slotPayload[0] = set.action
-            for (i in 0 until minOf(2, set.nextWords.size)) {
-                disp[i + 1] = set.nextWords[i]; slotPayload[i + 1] = set.nextWords[i]
-            }
-        } else if (set.nextWords.isNotEmpty()) {
-            // Gboard: gợi ý tốt nhất ở GIỮA (slot 1), rồi trái, rồi phải.
-            val order = intArrayOf(1, 0, 2)
-            for (i in 0 until minOf(3, set.nextWords.size)) {
-                disp[order[i]] = set.nextWords[i]; slotPayload[order[i]] = set.nextWords[i]
-            }
-        } else {
-            // Không ngoặc kép kiểu iOS: Gboard hiện nguyên chữ đã gõ ở slot trái.
-            set.literal?.let { disp[0] = it; slotPayload[0] = it }
-            set.word?.let { disp[1] = it; slotPayload[1] = it }
-            if (set.emojis.isEmpty()) set.word2?.let { disp[2] = it; slotPayload[2] = it }
-        }
-        // Chip số chiếm ĐÚNG 1 slot (giữa): literal giữ slot trái, nội dung slot giữa dời sang phải.
-        set.number?.let { n ->
-            val movable = set.nextWords.isNotEmpty() || set.emojis.isEmpty()
-            disp[2] = if (movable) disp[1] else null
-            slotPayload[2] = if (movable) slotPayload[1] else null
-            disp[1] = n; slotPayload[1] = SuggestionSet.NUMBER_TOKEN
-        }
-        val emojis = if (set.nextWords.isEmpty()) set.emojis.take(3) else emptyList()
-        emojiCount = emojis.size
-        for (i in emojis.indices) emojiText[i] = emojis[i]
-        paste = set.paste
-
         // Trái: ô mẫu câu + icon con trỏ (bảng sửa); phải: 📋 / 🕶 (extraW) + ⌄.
         val barL = theme.dp(KeyLayout.STRIP_ZONE_W + STRIP_TOOL_W)
         val barR = width - theme.dp(KeyLayout.STRIP_ZONE_W) - extraW()
-        if (set.clipChips.isNotEmpty()) {
-            // Chip tách số thay thẻ Dán: [Dán OTP 482913][Dán] — chia đều bar, nền pill.
-            for (i in 0..2) { slotText[i] = null; slotPayload[i] = null }
-            emojiCount = 0
-            val labels = ArrayList<Pair<String, String>>(3)
-            for (c in set.clipChips.take(3)) labels += c.label to (SuggestionSet.CLIP_CHIP_PREFIX + c.value)
-            if (labels.size < 3 && set.paste) labels += pasteTitleText to SuggestionSet.PASTE_TOKEN
-            paste = false
-            chipCount = labels.size
-            val each = (barR - barL) / chipCount
-            val pad = theme.dp(10f)
-            for (i in 0 until chipCount) {
-                slotL[i] = barL + i * each; slotR[i] = slotL[i] + each
-                slotPayload[i] = labels[i].second
-                slotText[i] = TextUtils.ellipsize(labels[i].first, chipText, each - 2 * pad - theme.dp(4f),
-                    TextUtils.TruncateAt.END).toString()
+        // Thứ tự ưu tiên slot (hoàn tác > clipboard > Thêm dấu > chip số > chữ): SuggestionSlots.
+        // Gboard: từ kế tiếp tốt nhất ở GIỮA; không ngoặc kép quanh nguyên văn.
+        when (val l = SuggestionSlots.arrange(set, undoAsPill = true, bestInMiddle = true, pasteLabel = pasteTitleText)) {
+            is BarLayout.Pill -> { actionPill = l.chip; return }
+            BarLayout.PasteCard -> { paste = true; return }
+            is BarLayout.Chips -> {
+                // Chip tách số thay thẻ Dán: [Dán OTP 482913][Dán] — chia đều bar, nền pill.
+                chipCount = l.chips.size
+                val each = (barR - barL) / chipCount
+                val pad = theme.dp(10f)
+                for (i in 0 until chipCount) {
+                    slotL[i] = barL + i * each; slotR[i] = slotL[i] + each
+                    slotPayload[i] = l.chips[i].payload
+                    slotText[i] = TextUtils.ellipsize(l.chips[i].label, chipText, each - 2 * pad - theme.dp(4f),
+                        TextUtils.TruncateAt.END).toString()
+                }
+                return
             }
-            return
+            is BarLayout.Slots -> {
+                for (i in 0..2) l.slots[i]?.let { disp[i] = it.label; slotPayload[i] = it.payload }
+                emojiCount = l.emojis.size
+                for (i in l.emojis.indices) emojiText[i] = l.emojis[i]
+            }
         }
 
         // Gboard: 3 ô bằng nhau, không vạch ngăn; emoji chia đều ô thứ 3.
@@ -348,6 +328,7 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
         val alpha = (255 * o).toInt()
         swipePreview?.let { drawChip(c, "⌫ " + it.replace('\n', ' '), alpha, TextUtils.TruncateAt.START); return }
         if (restoreOffer) { drawChip(c, restoreText, alpha, TextUtils.TruncateAt.END); return }
+        actionPill?.let { drawChip(c, it.label, alpha, TextUtils.TruncateAt.END); return }
         if (paste) { drawPaste(c, alpha); return }
         val barCy = cyOpen
         val hh = theme.dp(14f); val inset = theme.dp(2f)
@@ -413,7 +394,7 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
         val t = TextUtils.ellipsize(text, chipText, maxW, trunc).toString()
         val w = chipText.measureText(t) + 2 * padH
         val l = (width - w) / 2
-        chipPaint.alpha = if (pressed == T_RESTORE) (alpha * 0.8f).toInt() else alpha
+        chipPaint.alpha = if (pressed == T_RESTORE || pressed == T_PILL) (alpha * 0.8f).toInt() else alpha
         c.drawRoundRect(l, cy - h / 2, l + w, cy + h / 2, h / 2, h / 2, chipPaint)
         chipPaint.alpha = 255
         chipText.color = theme.ink; chipText.alpha = alpha
@@ -443,7 +424,7 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
             MotionEvent.ACTION_DOWN -> {
                 target = findTarget(e.x, e.y)
                 downX = e.x; downY = e.y
-                if (target == T_SLOT || target == T_EMOJI || target == T_PASTE || target == T_RESTORE || target == T_EDIT) {
+                if (target == T_SLOT || target == T_EMOJI || target == T_PASTE || target == T_RESTORE || target == T_PILL || target == T_EDIT) {
                     pressed = target; pressedIndex = targetIndex; invalidate()
                 }
                 longFired = false
@@ -484,6 +465,7 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
         if (x >= w - zone - extraW()) return T_NONE
         if (swipePreview != null) return T_NONE
         if (restoreOffer) return T_RESTORE
+        if (actionPill != null) return T_PILL
         if (paste) return T_PASTE
         for (i in 0 until emojiCount) if (x >= emojiL[i] && x < emojiR[i]) { targetIndex = i; return T_EMOJI }
         val n = if (chipCount > 0) chipCount else 3
@@ -499,6 +481,7 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
             T_CLIP -> { feedback.click(Feedback.MODIFIER, this); listener?.onToggleClipboard() }
             T_PASTE -> { feedback.click(Feedback.MODIFIER, this); listener?.onSuggestion(SuggestionSet.PASTE_TOKEN) }
             T_RESTORE -> { feedback.click(Feedback.MODIFIER, this); listener?.onRestoreDeleted() }
+            T_PILL -> actionPill?.let { feedback.click(Feedback.MODIFIER, this); listener?.onSuggestion(it.payload) }
             T_SLOT -> slotPayload[targetIndex]?.let { feedback.click(Feedback.MODIFIER, this); listener?.onSuggestion(it) }
             T_EMOJI -> emojiText[targetIndex]?.let { feedback.click(Feedback.MODIFIER, this); listener?.onSuggestion(it) }
         }
@@ -527,6 +510,7 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
         private const val T_RESTORE = 6
         private const val T_EDIT = 7
         private const val T_CLIP = 8
+        private const val T_PILL = 9
         /** Bề ngang ô icon con trỏ (sau ô mẫu câu), dp. */
         const val STRIP_TOOL_W = 44f
         private const val LONG_MS = 450L

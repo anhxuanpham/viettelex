@@ -139,4 +139,21 @@ class OneHandTest {
         near(keys.first { it.label == "q" }.left, KeyLayout.ROW_MARGIN_H * d)
         near(keys.first { it.label == "p" }.right, W - KeyLayout.ROW_MARGIN_H * d)
     }
+
+    /** Tổ hợp: hàng số (VNI tự bật) + một tay — tìm emoji đầy bề ngang (hàng số dưới ô tìm),
+     *  bảng sửa có hàng công cụ thu hẹp trong vùng hẹp; router trúng đúng phím. */
+    @Test fun numberRowOneHandEmojiSearchAndEditTools() {
+        val h = KeyLayout.keyAreaDp(false, false, 0, true)
+        val search = KeyLayout.build(LayoutConfig(Plane.EMOJI_SEARCH, W, h, d, numberRow = true, oneHand = OneHandSide.LEFT))
+        val head = KeyLayout.searchHeaderPx(h)
+        val digits = search.filter { it.kind == KeyKind.CHAR }
+        assertEquals(10, digits.size)
+        assertTrue(search.all { it.top >= head - 0.01f && it.bottom <= h + 0.01f })
+        near(digits.last().right, W - KeyLayout.ROW_MARGIN_H * d)
+        near(digits.first().centerX, search.first { it.label == "q" }.centerX)
+        val edit = KeyLayout.build(LayoutConfig(Plane.EDIT, W, h, d, numberRow = true, oneHand = OneHandSide.LEFT, editTools = true))
+        assertTrue(edit.all { it.right <= W * OneHand.RATIO + 0.01f })
+        assertTrue(edit.any { EditPanel.toolOf(it.insert) != null })
+        for (k in edit) assertSame(k, KeyLayout.hit(edit, Plane.EDIT, k.centerX, k.centerY, 4f, d))
+    }
 }

@@ -166,6 +166,7 @@ class SwipeEnglishTests {
     )
 
     @Test fun measureEnglishAndVietnamese() {
+        SlowTests.assume()
         val d = decoder()
         val en = englishCorpus()
         val vn = vnCorpus()
@@ -220,6 +221,7 @@ class SwipeEnglishTests {
     }
 
     @Test fun benchmarkWithEnglish() {
+        SlowTests.assume()
         val d = decoder()
         d.prepare()
         val t0 = System.nanoTime(); SwipeEnglish.lexicon; val load = (System.nanoTime() - t0) / 1e6

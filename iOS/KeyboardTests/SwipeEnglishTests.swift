@@ -98,7 +98,8 @@ final class SwipeEnglishTests: XCTestCase {
         XCTAssertEqual(SwipeDecoder.arbitrate([vi, vi2, en], topK: 2, margin: 0.5), [vi, vi2, en])
     }
 
-    func testMeasureEnglishAndVietnamese() {
+    func testMeasureEnglishAndVietnamese() throws {
+        try SlowTests.require()
         let d = decoder()
         let en = englishCorpus(), vn = vnCorpus()
         let (e1d, e3d) = accuracy(d, en, lang: .en, prior: SwipeLangContext.defaultPrior)
@@ -116,7 +117,8 @@ final class SwipeEnglishTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(e3d, 0.80)
     }
 
-    func testBenchmarkWithEnglish() {
+    func testBenchmarkWithEnglish() throws {
+        try SlowTests.require()
         let d = decoder()
         d.prepare()
         let t0 = CFAbsoluteTimeGetCurrent(); _ = SwipeEnglish.lexicon

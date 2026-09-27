@@ -291,6 +291,7 @@ class SwipeDecoderTests {
     }
 
     @Test fun benchmark() {
+        SlowTests.assume()
         val d = decoder()
         val t0 = System.nanoTime(); d.prepare(); val build = (System.nanoTime() - t0) / 1e6
         val sim = SwipeSim(11)

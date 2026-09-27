@@ -506,7 +506,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         logGeometryIfChanged()
         if pasteCard.superview != nil, !pasteCard.isHidden {   // xoay màn hình
             let w = Self.stripZoneWidth, e = Self.editZoneWidth
-            pasteCard.frame = CGRect(x: w + e, y: Self.barTopPad, width: max(bounds.width - 2 * w - e, 0),
+            let clipW = clipboardButtonVisible ? Self.clipZoneWidth : 0   // chừa nút 📋
+            pasteCard.frame = CGRect(x: w + e, y: Self.barTopPad, width: max(bounds.width - 2 * w - e - clipW, 0),
                                      height: Self.openStrip - Self.barTopPad)
         }
     }
@@ -699,42 +700,28 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         guard suggestionsEnabled, !barCollapsed else { return }
         buildSuggestionPoolIfNeeded()
 
-        // gom nội dung 3 slot chính: nextWords HOẶC literal/word/word2
+        // Thứ tự ưu tiên slot (hoàn tác > clipboard > Thêm dấu > chip số > chữ): SuggestionSlots.
         var texts: [(display: String, insert: String)?] = [nil, nil, nil]
-        if !set.nextWords.isEmpty {
-            for (i, w) in set.nextWords.prefix(3).enumerated() { texts[i] = (w, w) }
-        } else {
-            if let l = set.literal { texts[0] = ("\u{201C}\(l)\u{201D}", l) }
-            if let w = set.word { texts[1] = (w, w) }
-            if set.emojis.isEmpty, let w2 = set.word2 { texts[2] = (w2, w2) }
-        }
-        // Chip số chiếm ĐÚNG 1 slot (giữa): literal giữ slot 0; từ bị đẩy sang slot 2.
-        if let n = set.number {
-            if set.nextWords.isEmpty {
-                texts[2] = set.emojis.isEmpty ? texts[1] : nil
-            } else {
-                texts[2] = texts[1]
-            }
-            texts[1] = (n, Self.numberToken)
-        }
-        if let r = set.restoreLabel {
-            texts = [(r, set.restorePayload ?? Self.restoreToken), texts[0], texts[1]]
-        } else if let a = set.actionLabel, let p = set.actionPayload,
-                  p == Self.undoTonesToken || (set.clipChips.isEmpty && !set.paste) {
-            texts = [(a, p), texts[0], texts[1]]
-        } else if !set.clipChips.isEmpty {
-            texts = [nil, nil, nil]
-            for (i, c) in set.clipChips.prefix(3).enumerated() { texts[i] = c }
+        var emojis: [String] = []
+        var pasteCardOn = false
+        switch SuggestionSlots.arrange(set) {
+        case .slots(let s, let e):
+            texts = s.map { $0.map { ($0.label, $0.payload) } }
+            emojis = e
+        case .chips(let c):
+            for (i, x) in c.prefix(3).enumerated() { texts[i] = (x.label, x.payload) }
+        case .pasteCard:
+            pasteCardOn = true
+        case .pill(let u):
+            texts[0] = (u.label, u.payload)
         }
         // Nội dung không đổi (nextWords thường ổn định giữa các phím) → bỏ qua
         // toàn bộ ghi UI: setTitle trên bar fillProportionally kéo theo một
         // lượt đo text/Auto Layout mỗi keystroke.
-        var sig = (dark ? "D" : "L") + themeSettings.theme.rawValue
+        let sig = (dark ? "D" : "L") + themeSettings.theme.rawValue
             + texts.map { $0.map { $0.display + "\u{1}" + $0.insert } ?? "\u{2}" }.joined(separator: "\u{3}")
-            + "\u{4}" + (set.nextWords.isEmpty ? set.emojis.prefix(3).joined() : "")
-            + (set.paste ? (set.pasteIsImage ? "\u{5}pasteImg" : "\u{5}paste") : "")
-        let chipSig: String = set.clipChips.isEmpty ? "" : "\u{6}chips"
-        sig += chipSig
+            + "\u{4}" + emojis.joined()
+            + (pasteCardOn ? (set.pasteIsImage ? "\u{5}pasteImg" : "\u{5}paste") : "")
         if sig == lastSuggestionSig { return }
         lastSuggestionSig = sig
 
@@ -758,7 +745,6 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             }
         }
         // slot emoji (chỉ ở chế độ đang gõ, khi có emoji)
-        let emojis = set.nextWords.isEmpty ? Array(set.emojis.prefix(3)) : []
         for (i, b) in emojiButtons.enumerated() {
             if i < emojis.count {
                 b.setTitle(emojis[i], for: .normal)
@@ -775,8 +761,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         slotDividers[0].isHidden = !(vis0 && (vis1 || vis2))
         slotDividers[1].isHidden = !(vis1 && vis2)
         // Nút Dán kiểu iOS 27: MỘT ô rộng giữa bar, 2 dòng, thay cả 3 slot.
-        setPasteCard(visible: set.paste && set.restoreLabel == nil && set.clipChips.isEmpty,
-                     image: set.pasteIsImage, ink: ink)
+        setPasteCard(visible: pasteCardOn, image: set.pasteIsImage, ink: ink)
     }
 
     // MARK: Clipboard (lịch sử + chip + chỉ báo ẩn danh)
@@ -933,7 +918,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                                                  : "Dán nội dung vừa copy"
             if pasteCard.superview == nil { addSubview(pasteCard) }
             let w = Self.stripZoneWidth, e = Self.editZoneWidth
-            pasteCard.frame = CGRect(x: w + e, y: Self.barTopPad, width: max(bounds.width - 2 * w - e, 0),
+            let clipW = clipboardButtonVisible ? Self.clipZoneWidth : 0   // chừa nút 📋
+            pasteCard.frame = CGRect(x: w + e, y: Self.barTopPad, width: max(bounds.width - 2 * w - e - clipW, 0),
                                      height: Self.openStrip - Self.barTopPad)
             (pasteCard.viewWithTag(91) as? UILabel)?.textColor = ink
             (pasteCard.viewWithTag(92) as? UILabel)?.textColor = ink.withAlphaComponent(0.55)

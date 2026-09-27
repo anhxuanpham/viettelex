@@ -65,6 +65,7 @@ class SuggestBigramTests {
     }
 
     @Test fun heldoutNewUser() {
+        SlowTests.assume()
         val before = measure(false)
         val t0 = System.nanoTime()
         val after = measure(true)
@@ -83,6 +84,7 @@ class SuggestBigramTests {
 
     /** Người dùng đã gõ lâu (học dần từng từ): bigram không làm tụt, cá nhân vẫn dẫn. */
     @Test fun heldoutLearningUserNotHurt() {
+        SlowTests.assume()
         val before = measure(false, learn = true)
         val after = measure(true, learn = true)
         println("GỢI Ý CHẠM heldout học dần trước: ${before.fmt()} | sau: ${after.fmt()}")
@@ -145,6 +147,7 @@ class SuggestBigramTests {
 
     /** Độ trễ phần bigram thêm vào (chạy nền cho inline; từ kế tiếp trên main nhưng ~µs). */
     @Test fun latency() {
+        SlowTests.assume()
         val chains = heldout()
         val pairs = chains.flatMap { c -> (1 until c.size).map { c[it - 1] to SwipeSuggest.fold(c[it]) } }
         val pools = pairs.map { VNSuggest.matches(it.second, 24, it.second) }

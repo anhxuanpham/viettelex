@@ -143,6 +143,7 @@ class SyllableLMTests {
     }
 
     @Test fun heldoutAccuracy() {
+        SlowTests.assume()
         val bigram = measure(false)
         val tri = measure(true)
         println("LM heldout bigram: ${bigram.fmt()} | trigram: ${tri.fmt()}")
@@ -153,6 +154,7 @@ class SyllableLMTests {
 
     /** Bật cả vuốt tiếng Anh: ứng viên Anh không làm tụt trigram quá 1 điểm. */
     @Test fun heldoutAccuracyWithEnglish() {
+        SlowTests.assume()
         val vi = measure(true)
         val both = measure(true, english = true)
         println("LM+EN heldout: chỉ Việt ${vi.fmt()} | bật tiếng Anh ${both.fmt()}")

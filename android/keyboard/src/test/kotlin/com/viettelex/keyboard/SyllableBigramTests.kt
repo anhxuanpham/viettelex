@@ -128,6 +128,7 @@ class SyllableBigramTests {
     }
 
     @Test fun heldoutAccuracy() {
+        SlowTests.assume()
         val before = measure(false)
         val t0 = System.nanoTime()
         val after = measure(true)
@@ -142,6 +143,7 @@ class SyllableBigramTests {
 
     /** Giai đoạn 2 + 3 cùng bật: thêm ứng viên tiếng Anh không làm tụt bigram quá 1 điểm. */
     @Test fun heldoutAccuracyWithEnglish() {
+        SlowTests.assume()
         val vi = measure(true)
         val both = measure(true, english = true)
         println("BIGRAM+EN heldout: chỉ Việt ${vi.fmt()} | bật tiếng Anh ${both.fmt()}")

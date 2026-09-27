@@ -24,7 +24,8 @@ datastore (token chứa `@`/`.` không phải "từ").
 
 Chip số chạy song song cả hai trạng thái có chữ (xem tầng 8): khi token trước con
 trỏ là số/số tiền/biểu thức "…=", **một** chip chiếm slot GIỮA — literal vẫn ở slot
-đầu, nội dung slot giữa dời sang slot 3.
+đầu, nội dung slot giữa dời sang slot 3. Các chip khác (hoàn tác, clipboard, "Thêm
+dấu") tranh slot theo **Thứ tự ưu tiên slot** bên dưới.
 
 Hành vi bấm nhận: **nguyên văn** = giữ như đã gõ; **từ** = thay từ đang gõ +
 space, đồng thời **học với weight 2**; **emoji** = thay từ bằng emoji (hành vi
@@ -83,6 +84,10 @@ QuickType). Tự tắt ở field từ chối gợi ý (`isSecureTextEntry`,
   `log(staticFreq+1) + 2.5·log(personalCount+1) + 4·[có trong nextWords ngữ cảnh] + 1.5·[chỉ-còn-thiếu-dấu] + bigram`
   (bigram = tầng 7). Logic thuần ở `SuggestRank.rankInline` (SuggestionSupport); hoà điểm giữ
   thứ tự pool (tần suất tĩnh) để iOS ≡ Android.
+- **Từ điển cá nhân** (`manual`): từ người dùng tự thêm trong app (≤24 ký tự) — gợi ngay,
+  không cần đạt ngưỡng count, vào pool hoàn thiện với freq trần; sao lưu/đồng bộ cùng backup.
+- **Ẩn danh** (thủ công trong app, hoặc ô không-học): không học từ, không lưu clipboard,
+  không chip clipboard.
 
 ### 3. `SeedData` — mồi ban đầu
 
@@ -174,6 +179,45 @@ trước khi xoá — lệch thì bỏ, không xoá mù).
 - **Chi phí**: chỉ đọc `documentContextBeforeInput` khi token hiện tại hoặc ngay
   trước có chữ số/phép tính (đếm dấu cách kể từ chữ số cuối ≤1).
 
+### 9. `ClipDetect` — chip tách số từ clipboard (Clipboard nâng cao, Plus)
+
+Vừa copy (thẻ Dán đang mời) và nội dung chứa số: `ClipDetect.detect` (Swift ≡ Kotlin) tách
+tối đa 1 chip mỗi loại theo thứ tự OTP → SĐT → STK ("Dán OTP 482913"). Bar hiện **tối đa 2
+chip + ô "Dán"** nguyên văn, thay thẻ Dán; chạm = chèn giá trị, không space, không học. Tắt
+khi ẩn danh, ô bảo mật, clipboard "concealed"/nhạy cảm; khoá sau PlusGate `.advancedClipboard`.
+
+### 10. `AddTones` — thêm dấu cả câu (Plus)
+
+Chưa gõ dở, chữ trước con trỏ là câu không dấu có thể thêm dấu ⇒ chip **"Thêm dấu"** ở slot
+đầu (Viterbi trên lưới âm tiết: vnlexicon + vnbigram + đếm cá nhân — `AddTones.swift`, fixture
+chung `add-tones.txt`). Chỉ thay khi bấm, fail-safe (đuôi context phải đúng bản gốc). Sau khi
+thay: chip **"↩︎ Hoàn tác"** (và ⌫ ngay sau) trả bản gốc, đoạn vừa hoàn tác không mời lại.
+
+### 11. Ô hoàn tác một lượt — vuốt ⌫, công cụ văn bản
+
+- **"↩︎ Khôi phục"**: sau vuốt ⌫ xoá theo từ (`WordDelete`), chèn lại đoạn vừa xoá.
+- **"↩︎ Hoàn tác"** công cụ văn bản (`TextTools`, Plus): sau khi đổi HOA/thường/Hoa Từ/Hoa câu/
+  Xoá dấu (từ lưới mẫu câu hoặc hàng công cụ cuối bảng sửa văn bản), trả lại văn bản cũ.
+- Cả hai (và "Hoàn tác" thêm dấu) sống tới phím kế tiếp; hành động mới xoá lời mời cũ.
+
+## Thứ tự ưu tiên slot
+
+Mọi loại chip cùng tranh 3 slot. Hàm THUẦN `SuggestionSlots.arrange` (Swift) ≡
+`SuggestionSlots.arrange` (Kotlin, `android/keyboard/.../SuggestionSlots.kt`) quyết định, cùng
+bảng ca kiểm `SuggestionSlotsTests` hai nền tảng. Từ cao xuống thấp:
+
+| # | Loại | Chỗ hiện | Ghi chú |
+|---|---|---|---|
+| 0 | Xem trước vuốt ⌫ | pill giữa bar (Android) | tạm thời khi đang kéo, đè tất cả |
+| 1 | Hoàn tác một lượt: Khôi phục (vuốt ⌫) › Hoàn tác công cụ văn bản › Hoàn tác thêm dấu | iOS: slot đầu, gợi ý dời phải; Android: pill giữa bar (kiểu Gboard) | thắng clipboard/thẻ Dán |
+| 2 | Clipboard vừa copy: ≤2 chip STK/SĐT/OTP + ô "Dán" › thẻ Dán | thay cả bar | chỉ khi chưa gõ dở, sau khoảng trắng |
+| 3 | "Thêm dấu" | slot đầu | nhường clipboard |
+| 4 | Chip số | luôn slot GIỮA | nội dung slot giữa dời sang slot 3; slot 3 là vùng emoji thì rơi |
+| 5 | Chữ: nguyên văn / ứng viên (chip gõ tắt = ứng viên chính) / emoji; hoặc từ kế tiếp (bigram, email/TLD, biến thể gõ vuốt) | 3 slot | iOS từ kế tiếp trái→phải; Android tốt nhất ở giữa |
+
+Ví dụ: `[Thêm dấu][1.200.000 ₫][và]`; vừa copy tin OTP: `[Dán OTP 482913][Dán]` (chip số, "Thêm
+dấu" ẩn); sau vuốt ⌫ trong lúc có chip số: iOS `[↩︎ Khôi phục][chip số][từ]`.
+
 ## Settings (App Group `group.com.viettelex`)
 
 | Key | Mặc định | Ý nghĩa |
@@ -205,6 +249,10 @@ trước khi xoá — lệch thì bỏ, không xoá mù).
 | `ios/Keyboard/SyllableBigram.swift` | Bảng bigram âm tiết tĩnh (mmap, dùng chung gõ vuốt) |
 | `ios/Keyboard/SuggestionSupport.swift` | `SuggestRank` (xếp hạng inline + lấp từ kế tiếp), `SuggestionFill` |
 | `ios/Keyboard/NumberChips.swift` | Chip số: đọc chữ / định dạng tiền / máy tính (thuần) |
+| `ios/Keyboard/ClipDetect.swift`, `ClipboardFeature.swift` | Chip tách số clipboard, lịch sử, ẩn danh |
+| `ios/Keyboard/AddTones.swift` | Thêm dấu cả câu (Viterbi, thuần) |
+| `ios/Keyboard/TextTools.swift` | Công cụ văn bản + hoàn tác (thuần) |
+| `ios/Keyboard/SuggestionSlots.swift` | Thứ tự ưu tiên slot (thuần) |
 | `ios/Keyboard/KeyboardViewController.swift` | Điều phối: context, học, build SuggestionSet |
 | `ios/Keyboard/KeyboardView.swift` | UI thanh gợi ý (SuggestionSet → slots) |
 
@@ -215,6 +263,9 @@ ngưỡng học từ lạ, seed contract (max weight ≤50), filter tiers, displ
 trước/sau làm ngưỡng hồi quy, cá nhân thắng, độ trễ, RAM bẩn.
 `ios/KeyboardTests/NumberChipsTests.swift` + android `NumberChipsTests.kt` — cùng
 fixture `number-chips.txt` (đọc số, viết tắt k/tr/tỷ, biểu thức, chip theo context).
+`ios/KeyboardTests/SuggestionSlotsTests.swift` + android `SuggestionSlotsTests.kt` — cùng bảng
+ca thứ tự ưu tiên slot (+ một ca render thật trên KeyboardView).
+Test đo đạc nặng (heldout, độ trễ, RAM) nằm trong bộ chậm — xem `iOS/README.md` mục Test.
 
 ## Đường nâng cấp đã vạch (chưa làm)
 

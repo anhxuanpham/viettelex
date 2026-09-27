@@ -246,6 +246,7 @@ final class PlusStoreKitConfigTests: XCTestCase {
     /// StoreKitTest thật: nạp sản phẩm từ file cấu hình. Bundle test không có
     /// app host → một số môi trường không nạp được; khi đó bỏ qua (không fail).
     func testStoreKitTestSessionLoadsProducts() async throws {
+        try SlowTests.require()
         let url = try XCTUnwrap(configURL)
         let session = try SKTestSession(contentsOf: url)
         session.disableDialogs = true

@@ -6,4 +6,8 @@ kotlin {
 java { targetCompatibility = JavaVersion.VERSION_17; sourceCompatibility = JavaVersion.VERSION_17 }
 dependencies { implementation(project(":telexcore")) }
 dependencies { testImplementation(kotlin("test")); testImplementation("junit:junit:4.13.2") }
-tasks.test { useJUnit() }
+tasks.test {
+    useJUnit()
+    // Bộ test chậm (SlowTests.kt): VT_SLOW_TESTS=1 bật; là input để đổi giá trị thì chạy lại.
+    inputs.property("vtSlowTests", System.getenv("VT_SLOW_TESTS") ?: "")
+}

@@ -135,6 +135,7 @@ final class SyllableLMTests: XCTestCase {
     }
 
     func testHeldoutAccuracy() throws {
+        try SlowTests.require()
         // 1/3 số chuỗi: Debug simulator chậm hơn JVM (bản Kotlin đo đủ)
         let chains = try heldout().enumerated().filter { $0.offset % 3 == 0 }.map(\.element)
         let bigram = measure(chains, useLM: false)
@@ -149,6 +150,7 @@ final class SyllableLMTests: XCTestCase {
     }
 
     func testHeldoutAccuracyWithEnglish() throws {
+        try SlowTests.require()
         let chains = try heldout().enumerated().filter { $0.offset % 9 == 0 }.map(\.element)
         let vi = measure(chains, useLM: true)
         let both = measure(chains, useLM: true, english: true)

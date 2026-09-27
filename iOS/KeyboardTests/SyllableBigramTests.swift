@@ -123,6 +123,7 @@ final class SyllableBigramTests: XCTestCase {
 
     /// Giai đoạn 2 + 3 cùng bật: ứng viên tiếng Anh không làm tụt bigram quá 1 điểm.
     func testHeldoutAccuracyWithEnglish() throws {
+        try SlowTests.require()
         // 1/9 số chuỗi: decode có tiếng Anh ở Debug chậm (bản Kotlin đo đủ)
         let chains = try heldout().enumerated().filter { $0.offset % 9 == 0 }.map(\.element)
         let vi = measure(chains, useBigram: true)
@@ -134,6 +135,7 @@ final class SyllableBigramTests: XCTestCase {
     }
 
     func testHeldoutAccuracy() throws {
+        try SlowTests.require()
         // 1/3 số chuỗi: Debug simulator ~3× chậm hơn JVM (bản Kotlin đo đủ)
         let chains = try heldout().enumerated().filter { $0.offset % 3 == 0 }.map(\.element)
         let before = measure(chains, useBigram: false)

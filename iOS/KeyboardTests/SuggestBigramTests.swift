@@ -71,6 +71,7 @@ final class SuggestBigramTests: XCTestCase {
     }
 
     func testHeldoutNewUser() throws {
+        try SlowTests.require()
         let chains = try heldout()
         let before = measure(chains, useBigram: false)
         let t0 = CFAbsoluteTimeGetCurrent()
@@ -89,6 +90,7 @@ final class SuggestBigramTests: XCTestCase {
 
     /// Người dùng đã gõ lâu (học dần từng từ): bigram không làm tụt, cá nhân vẫn dẫn.
     func testHeldoutLearningUserNotHurt() throws {
+        try SlowTests.require()
         let chains = try heldout().enumerated().filter { $0.offset % 6 == 0 }.map(\.element)   // Debug chậm (Kotlin đo đủ)
         let before = measure(chains, useBigram: false, learn: true)
         let after = measure(chains, useBigram: true, learn: true)
@@ -144,6 +146,7 @@ final class SuggestBigramTests: XCTestCase {
 
     /// Độ trễ phần bigram thêm vào (inline chạy nền; từ kế tiếp trên main) + RAM bẩn của bảng.
     func testLatencyAndDirtyMemory() throws {
+        try SlowTests.require()
         let chains = try heldout()
         let pairs = chains.flatMap { c in (1..<c.count).map { (c[$0 - 1], SwipeTyping.fold(c[$0])) } }
         let pools = pairs.map { VNSuggest.matches($0.1, poolLimit: 24, excluding: $0.1) }

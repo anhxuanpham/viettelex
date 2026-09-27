@@ -295,7 +295,8 @@ final class SwipeDecoderTests: XCTestCase {
         XCTAssertTrue(SwipeDecoder().decode(p).isEmpty)
     }
 
-    func testBenchmark() {
+    func testBenchmark() throws {
+        try SlowTests.require()
         let d = decoder()
         _ = SwipeLexicon.forms
         let t0 = CFAbsoluteTimeGetCurrent(); d.prepare()

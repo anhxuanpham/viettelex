@@ -123,6 +123,7 @@ targets:
       - Keyboard/TouchGeometry.swift
       - Keyboard/TouchLog.swift
       - Keyboard/SuggestionSupport.swift
+      - Keyboard/SuggestionSlots.swift
       - Keyboard/NumberChips.swift
       - Keyboard/VNSuggest.swift
       - Keyboard/VNLexicon2.swift
@@ -193,3 +194,29 @@ schemes:
     test:
       targets:
         - VietTelexKeyboardTests
+  # Bộ test CHẬM (KeyboardTests/SlowTests.swift): heldout, độ trễ, RAM, StoreKit session —
+  # bộ mặc định bỏ qua (XCTSkip) vì làm runner bị kill khi máy tải cao.
+  # Chạy: xcodebuild -scheme VietTelexKeyboardSlowTests -destination '…' test
+  VietTelexKeyboardSlowTests:
+    build:
+      targets:
+        VietTelexKeyboardTests: [test]
+    test:
+      environmentVariables:
+        VT_SLOW_TESTS: "1"
+      targets:
+        - name: VietTelexKeyboardTests
+          selectedTests:
+            - SwipeEnglishTests/testMeasureEnglishAndVietnamese
+            - SwipeEnglishTests/testBenchmarkWithEnglish
+            - SyllableLMTests/testHeldoutAccuracy
+            - SyllableLMTests/testHeldoutAccuracyWithEnglish
+            - SyllableBigramTests/testHeldoutAccuracy
+            - SyllableBigramTests/testHeldoutAccuracyWithEnglish
+            - SuggestBigramTests/testHeldoutNewUser
+            - SuggestBigramTests/testHeldoutLearningUserNotHurt
+            - SuggestBigramTests/testLatencyAndDirtyMemory
+            - SwipeDecoderTests/testBenchmark
+            - TouchTargetTests/testLatency
+            - KeyboardThemeTests/testKeyboardDecodeMemoryFootprint
+            - PlusTests/testStoreKitTestSessionLoadsProducts

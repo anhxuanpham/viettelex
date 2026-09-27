@@ -80,6 +80,7 @@ class TouchSimTests {
 
     /** Độ trễ lúc touchDown (forRaw + choose, chạm vùng biên) và cỡ trie. */
     @Test fun latencyAndSize() {
+        SlowTests.assume()
         val t0 = System.nanoTime()
         val p = TelexKeyPrior.fromLexicon()
         val buildMs = (System.nanoTime() - t0) / 1e6

@@ -968,11 +968,8 @@ final class KeyboardViewController: UIInputViewController {
         if composed.isEmpty, pasteOffer() {
             set.paste = true; set.pasteIsImage = pasteIsImage
             let chips = clip.chips(currentChange: pasteSeenChange, usedChange: pasteUsedChange)
-            if !chips.isEmpty {
-                // Chip tách số + ô "Dán" nguyên văn ở cuối (nếu còn chỗ).
-                set.clipChips = chips.prefix(2).map { ($0.label, KeyboardView.clipTokenPrefix + $0.value) }
-                set.clipChips.append(("Dán", KeyboardView.pasteToken))
-            }
+            // Chip tách số (≤2) + ô "Dán" nguyên văn ở cuối: SuggestionSlots.arrange.
+            set.clipChips = chips.map { ($0.label, KeyboardView.clipTokenPrefix + $0.value) }
         }
         // Thêm dấu: "Hoàn tác" (vừa bấm) thắng thẻ Dán; "Thêm dấu" nhường thẻ Dán
         // (thứ tự slot: SuggestionSlots.arrange).
