@@ -367,7 +367,7 @@ fun TinhNangTab() {
             RowDivider()
         }
         BoolToggle(Keys.LONG_PRESS_SYMBOLS, Prefs.D.longPressSymbols, "Giữ phím hàng 2, 3 để ra ký tự đặc biệt",
-            "Giữ a … l, z … m để gõ @ # ₫ _ & - + ( ) * \" ' : ; ! ? — ký hiệu nhỏ ở góc phím.")
+            "Giữ a … l, z … m để gõ @ # \$ _ & - + ( ) * \" % : / ! ? — ký hiệu nhỏ ở góc phím. Giữ , để ra . khi bật một trong các công tắc giữ phím (nếu , chưa dùng để gõ giọng nói).")
         RowDivider()
         OneHandRow()
     }

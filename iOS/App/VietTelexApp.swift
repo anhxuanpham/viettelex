@@ -947,7 +947,7 @@ struct TinhNangSections: View {
                 if !numberRow {
                     settingToggle("Giữ phím hàng trên để ra số", "Giữ q w e … p một chút để gõ 1 2 3 … 0 — số nhỏ ở góc phím. Chỉ dùng khi tắt Hàng phím số.", isOn: $longPressNumbers)
                 }
-                settingToggle("Giữ phím hàng 2, 3 để ra ký tự đặc biệt", "Giữ a … l, z … m để gõ @ # ₫ _ & - + ( ) * \" ' : ; ! ? — ký hiệu nhỏ ở góc phím.", isOn: $longPressSymbols)
+                settingToggle("Giữ phím hàng 2, 3 để ra ký tự đặc biệt", "Giữ a … l, z … m để gõ @ # $ _ & - + ( ) * \" % : / ! ? — ký hiệu nhỏ ở góc phím. Giữ , để ra . khi bật một trong các công tắc giữ phím.", isOn: $longPressSymbols)
             }
             if UIDevice.current.userInterfaceIdiom == .phone {
                 VStack(alignment: .leading, spacing: 6) {

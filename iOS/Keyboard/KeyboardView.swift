@@ -1414,6 +1414,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         builtNumberRow = numberRowEnabled
         builtAlts = activeAlts
         dropAltHold()                            // phím cũ sắp bị gỡ
+        commaTimer?.cancel(); commaTimer = nil; commaFired = false
         letterKeys.removeAll()
         shiftKeys = []
         crossRowConstraints = []
@@ -2093,6 +2094,11 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             b.pressedBackground = specialFill
             if p.title == ".com" { b.titleLabel?.font = .systemFont(ofSize: 17) }
             armCommit(b) { [weak self] in self?.tapped(.text(p.insert)) }
+            // Bàn chữ iPhone: giữ "," ra "." (KeyAlternates.commaHold — bảng ký tự phụ không
+            // rỗng; iPad/VoiceOver đã rỗng sẵn).
+            if p.title == ",", planeKey == "123", KeyAlternates.commaHold(alternates: activeAlts) {
+                armCommaHold(b)
+            }
             views.append(b)
             punctKeys.append((b, p.mult))
         }
@@ -3169,6 +3175,53 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         altHold = nil
     }
 
+    /// Phím "," có giữ ra ".": nhãn nhỏ góc trên-phải như phím chữ; chạm hẹn giờ `holdDelay`,
+    /// hết giờ mà "," còn chờ chốt ⇒ đổi thành "." (KeyAlternates.holdComma) + balloon + rung.
+    /// Chốt lúc nhấc / khi ngón khác chạm như "," ⇒ từ đang gõ được chốt y hệt.
+    private func armCommaHold(_ b: KeyButton) {
+        let l = UILabel()
+        l.text = KeyAlternates.commaAlt
+        l.font = .systemFont(ofSize: 10, weight: .medium)
+        l.textColor = ink.withAlphaComponent(0.45)
+        l.translatesAutoresizingMaskIntoConstraints = false
+        l.isUserInteractionEnabled = false
+        l.isAccessibilityElement = false
+        b.addSubview(l)
+        NSLayoutConstraint.activate([
+            l.trailingAnchor.constraint(equalTo: b.trailingAnchor, constant: -3),
+            l.topAnchor.constraint(equalTo: b.topAnchor, constant: 2),
+        ])
+        b.addAction(UIAction { [weak self, weak b] _ in
+            guard let self, let b else { return }
+            self.commaTimer?.cancel()
+            let w = DispatchWorkItem { [weak self, weak b] in
+                guard let self, let b else { return }
+                self.fireCommaHold(b)
+            }
+            self.commaTimer = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + KeyAlternates.holdDelay, execute: w)
+        }, for: .touchDown)
+        b.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            self.commaTimer?.cancel(); self.commaTimer = nil
+            if self.commaFired { self.commaFired = false; self.hideBalloon() }
+        }, for: [.touchUpInside, .touchUpOutside, .touchCancel])
+    }
+
+    private func fireCommaHold(_ b: KeyButton) {
+        commaTimer = nil
+        let fired = KeyAlternates.holdComma(commits, id: ObjectIdentifier(b)) { [weak self] alt in
+            self?.hideBalloon()
+            self?.tapped(.text(alt))
+        }
+        guard fired else { return }
+        commaFired = true
+        Self.flickFeedback()
+        showBalloon(over: b, text: KeyAlternates.commaAlt, force: true)
+    }
+    private var commaTimer: DispatchWorkItem?
+    private var commaFired = false
+
     private func commitAlt(_ alt: String) {
         hideBalloon()
         if shiftBeforeLastLetter == .on, shift == .off { shift = .on; applyShiftAppearance() }
@@ -3539,6 +3592,39 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         routeUp(id, at: CGPoint(x: c.x + drift, y: c.y), time: 2, cancelled: false)
         withExtendedLifetime(token) {}
         return armed
+    }
+    /// Test hook giữ phím "," hàng đáy: chạm, (tuỳ) hết giờ giữ, (tuỳ) ngón khác chạm phím chữ
+    /// `secondTouch`, rồi nhấc — đường action thật của nút. Trả có hẹn giờ không.
+    @discardableResult
+    func debugCommaHold(fire: Bool = true, secondTouch: String? = nil, secondBeforeFire: Bool = false) -> Bool {
+        guard let b = debugCommaButton else { return false }
+        b.sendActions(for: .touchDown)
+        let armed = commaTimer != nil
+        func second() {
+            guard let s2 = secondTouch, let f2 = debugLetterFrame(s2) else { return }
+            let t2 = NSObject(), id2 = ObjectIdentifier(t2)
+            routeDown(id2, at: CGPoint(x: f2.midX, y: f2.midY), time: 1.1, batch: 1)
+            routeUp(id2, at: CGPoint(x: f2.midX, y: f2.midY), time: 1.2, cancelled: false)
+            withExtendedLifetime(t2) {}
+        }
+        if secondBeforeFire { second() }
+        if fire, armed { commaTimer?.cancel(); fireCommaHold(b) }   // như timer bắn
+        if !secondBeforeFire { second() }
+        b.sendActions(for: .touchUpInside)
+        return armed
+    }
+    private var debugCommaButton: KeyButton? {
+        func find(_ v: UIView) -> KeyButton? {
+            if let b = v as? KeyButton, b.currentTitle == "," { return b }
+            for s in v.subviews { if let b = find(s) { return b } }
+            return nil
+        }
+        return find(rowsContainer)
+    }
+    /// Nhãn "." nhỏ trên phím "," (nil = không có nhãn).
+    var debugCommaHint: String? {
+        guard let b = debugCommaButton else { return nil }
+        return b.subviews.compactMap { ($0 as? UILabel) }.first { $0 !== b.titleLabel }?.text
     }
     /// Nhãn ký tự phụ đang vẽ trên phím chữ `s` (nil = không có nhãn).
     func debugAltHint(_ s: String) -> String? {
