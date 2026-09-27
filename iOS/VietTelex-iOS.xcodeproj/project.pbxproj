@@ -98,6 +98,7 @@
 		68638B723D1A630DC68B3727 /* SuggestBigramTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF6388E96DDD2233A554472A /* SuggestBigramTests.swift */; };
 		6883E23E2D9C7A63C862B4AC /* KeyCommitQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F1F925F053BA5BF36C118C /* KeyCommitQueue.swift */; };
 		69793AB17BAB31D9B59FBDDD /* UserLangModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F316CA910C58A9377DC754A0 /* UserLangModel.swift */; };
+		6D6F9E75269F8D8410CB106F /* HostRewriteCompositionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27D10BA36AFF204B214098B2 /* HostRewriteCompositionTests.swift */; };
 		6E288C02E8191203ECFB80E3 /* TouchTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E700B266A47DAAAD5A72343 /* TouchTarget.swift */; };
 		6F940AB27CEBC63AD4FD7F12 /* SuggestionSlots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E2A0AFF771A8FB37173583D /* SuggestionSlots.swift */; };
 		709378BF50A391137F4F48C6 /* KeyboardTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81B2DDC0E24D11BD96525161 /* KeyboardTheme.swift */; };
@@ -245,6 +246,7 @@
 		22BDEAB6EAD0F1EA689B388A /* CompositionSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionSync.swift; sourceTree = "<group>"; };
 		23D9F4828FBAE93DCCEB2271 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		24A08F7D2F73879EBEC99BEB /* sample-shortcuts.yml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = "sample-shortcuts.yml"; sourceTree = "<group>"; };
+		27D10BA36AFF204B214098B2 /* HostRewriteCompositionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostRewriteCompositionTests.swift; sourceTree = "<group>"; };
 		283B18B560C805EFBE10D839 /* backup-too-new.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "backup-too-new.json"; sourceTree = "<group>"; };
 		2A7C16DB3F7238439276C90B /* ClipboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardTests.swift; sourceTree = "<group>"; };
 		2B96A58C6EE35D288C488202 /* number-chips.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "number-chips.txt"; sourceTree = "<group>"; };
@@ -467,6 +469,7 @@
 				E5AE58D76A8127D641A2AF62 /* EngineBridgeTests.swift */,
 				D93CDC9D2CEA8A91A576B183 /* FeatureRegressionTests.swift */,
 				4B68AFA53C7C54443DAB2DA2 /* FieldPolicyTests.swift */,
+				27D10BA36AFF204B214098B2 /* HostRewriteCompositionTests.swift */,
 				A087DB1153D19136851D711B /* KeyboardThemeTests.swift */,
 				5D0B60123ABBD5FE60D9234A /* KeyCommitQueueTests.swift */,
 				A3125082F1A2E31162FC7045 /* KeyLayoutTests.swift */,
@@ -874,6 +877,7 @@
 				F1691715B050F1B3A42B4C84 /* FeatureRegressionTests.swift in Sources */,
 				64BE6CE8C0FDE071DE06E625 /* FieldPolicy.swift in Sources */,
 				09A81E2FCFEC3C9A20CE84AD /* FieldPolicyTests.swift in Sources */,
+				6D6F9E75269F8D8410CB106F /* HostRewriteCompositionTests.swift in Sources */,
 				AAEAE3FC59DE30D707662F4F /* KeyCommitQueue.swift in Sources */,
 				D97E377C61E596A589464160 /* KeyCommitQueueTests.swift in Sources */,
 				EE9A7DE6325ECD8F87150CD3 /* KeyLayout.swift in Sources */,
