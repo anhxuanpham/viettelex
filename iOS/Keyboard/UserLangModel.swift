@@ -229,6 +229,9 @@ final class UserLangModel {
     /// Key trong uni đã lowercase sẵn — chỉ alloc lowercased khi lookup thô miss.
     func count(of word: String) -> Int { uni[word] ?? uni[word.lowercased()] ?? 0 }
 
+    /// Số lần cặp (prev → word) đã gặp (bigram cá nhân + seed) — AddTones chấm lưới âm tiết.
+    func bigramCount(_ prev: String, _ word: String) -> Int { bi[prev.lowercased()]?[word] ?? 0 }
+
     /// Seed ban đầu — chỉ khi datastore trống (lần đầu / sau reset).
     /// @autoclosure: literal seed (~1400 entries) KHÔNG được build khi store
     /// đã có dữ liệu; đang chờ load thì giữ closure lại, quyết sau swap-in.

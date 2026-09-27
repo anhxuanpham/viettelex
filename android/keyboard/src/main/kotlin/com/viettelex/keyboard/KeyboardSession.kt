@@ -105,13 +105,16 @@ data class SuggestionSet(
     val number: String? = null,
     /** Chip tách số (OTP/SĐT/STK) từ nội dung vừa copy — thay thẻ Dán. */
     val clipChips: List<ClipChip> = emptyList(),
+    /** Chip hành động ở slot trái khi chưa gõ ("Thêm dấu" / "↩︎ Hoàn tác") — payload [action]. */
+    val actionLabel: String? = null,
+    val action: String? = null,
 ) {
     val isEmpty: Boolean get() = literal == null && word == null && word2 == null && emojis.isEmpty() &&
         nextWords.isEmpty() && number == null
     /** So để bỏ vẽ lại khi không đổi. */
     fun signature(): String = listOf(literal, word, word2, emojis.joinToString("\u0002"),
         nextWords.joinToString("\u0002"), paste.toString(), number,
-        clipChips.joinToString("\u0002") { it.label + "\u0003" + it.value }).joinToString("\u0001")
+        clipChips.joinToString("\u0002") { it.label + "\u0003" + it.value }, action, actionLabel).joinToString("\u0001")
 
     companion object {
         /** Payload chạm thẻ Dán → truyền vào acceptSuggestion. */
@@ -121,6 +124,9 @@ data class SuggestionSet(
         const val NUMBER_TOKEN = "\uE000number"
         /** Payload chip tách số clipboard: tiền tố + giá trị cần dán (không space, không học). */
         const val CLIP_CHIP_PREFIX = "\uE000clip:"
+        /** Chip "Thêm dấu" / "Hoàn tác" (ký tự Private Use — không thể là từ thật). */
+        const val ADD_TONES_TOKEN = "\uE000addTones"
+        const val UNDO_TONES_TOKEN = "\uE000undoTones"
     }
 }
 
@@ -195,6 +201,12 @@ class KeyboardSession(
     private class LastCommit(val word: String, val prev1: String?, val prev2: String?, val learned: UserLangModel.Learned?)
     private var lastCommit: LastCommit? = null
     private var ctxCache: Set<String> = emptySet()
+    /** Thêm dấu vừa áp (chip "Hoàn tác" / ⌫ ngay sau) — sống tới phím kế. */
+    private var tonesUndo: AddTones.Plan? = null
+    /** Đoạn vừa hoàn tác — không mời lại đúng đoạn đó. */
+    private var tonesDismissed: String? = null
+    private var tonesCacheBefore: String? = null
+    private var tonesCachePlan: AddTones.Plan? = null
 
     /** Gõ vuốt bật cho ô hiện tại (IME quyết: setting + loại ô + TalkBack). */
     var swipeTypingActive = false
@@ -241,6 +253,7 @@ class KeyboardSession(
         lastCommit = null
         clearSwipe()
         setSwipeTyping(false)
+        tonesUndo = null; tonesDismissed = null; tonesCacheBefore = null
     }
 
     /** IME bật/tắt gõ vuốt cho ô hiện tại (sau [startInput]). Tắt ⇒ bridge thôi ghi checkpoint. */
@@ -273,6 +286,7 @@ class KeyboardSession(
         clearUndo()
         lastCommit = null
         clearSwipe()
+        tonesUndo = null
     }
 
     /**
@@ -316,6 +330,13 @@ class KeyboardSession(
 
     fun handle(key: Key, proxy: TextProxy): KeyOutcome {
         val t0 = if (TouchLog.enabled) System.nanoTime() else 0L
+        // ⌫ NGAY SAU khi thêm dấu = hoàn tác (một lần); phím khác bỏ lời mời hoàn tác.
+        if (key == Key.Backspace && tonesUndo != null && !bridge.isComposing && openSwipeWord() == null) {
+            undoAddTones(proxy)
+            generation++
+            return KeyOutcome(true, generation)
+        }
+        tonesUndo = null
         val swiped = openSwipeWord()
         val literal = if (swipeLiteral) swiped else null
         clearSwipe()
@@ -465,6 +486,7 @@ class KeyboardSession(
      * (phím dấu Telex sửa được, ⌫ đầu xoá cả từ, thanh gợi ý hiện biến thể).
      */
     fun commitSwipe(choice: SwipeChoice, proxy: TextProxy): KeyOutcome {
+        tonesUndo = null
         val lit = if (swipeLiteral) swipeWord else null
         clearUndo(); clearSwipe()
         if (lit != null) {
@@ -506,6 +528,7 @@ class KeyboardSession(
 
     /** Giữ ⌫ > 3 s: xoá theo TỪ (khoảng trắng đuôi rồi tới đầu từ). */
     fun deleteWordBackward(proxy: TextProxy) {
+        tonesUndo = null
         bridge.reset(); lastWord = null; lastWord2 = null; clearUndo()
         val before = proxy.contextBeforeInput() ?: ""
         if (before.isEmpty()) return
@@ -524,6 +547,7 @@ class KeyboardSession(
      * reset engine, KHÔNG học. IME gọi updateAutoShift + refresh bar sau đó.
      */
     fun insertTemplate(text: String, proxy: TextProxy) {
+        tonesUndo = null
         val n = Cp.count(bridge.composedWord)
         if (n > 0 && proxy.confirmTail(bridge.composedWord)) proxy.deleteCodePoints(n)
         proxy.insertText(text)
@@ -612,8 +636,13 @@ class KeyboardSession(
         val paste = pasteOffer(proxy)
         // Chip tách STK/SĐT/OTP = Clipboard nâng cao (Plus; paywall tắt ⇒ mở cho mọi người).
         val chips = if (paste && PlusGate.isUnlocked(PlusFeature.ADVANCED_CLIPBOARD)) clipChips() else emptyList()
+        // "Hoàn tác" thêm dấu (vừa bấm) thắng thẻ Dán; "Thêm dấu" nhường thẻ Dán (StripView/SuggestionSlots).
+        if (tonesUndo != null) return SuggestionPlan.Ready(SuggestionSet(literal = literal, nextWords = next,
+            number = number, actionLabel = UNDO_TONES_LABEL, action = SuggestionSet.UNDO_TONES_TOKEN))
+        val offer = literal == null && addTonesPlan(proxy) != null
         return SuggestionPlan.Ready(SuggestionSet(literal = literal, nextWords = next, paste = paste,
-            number = number, clipChips = chips))
+            number = number, clipChips = chips,
+            actionLabel = if (offer) ADD_TONES_LABEL else null, action = if (offer) SuggestionSet.ADD_TONES_TOKEN else null))
     }
 
     /** Chip số cho token trước con trỏ (đọc chữ / định dạng tiền / máy tính nhanh). */
@@ -758,6 +787,9 @@ class KeyboardSession(
             pasteUsedChange = clipboard?.changeCount ?: -1; pasteCached = false
             return
         }
+        if (item == SuggestionSet.ADD_TONES_TOKEN) { applyAddTones(proxy); return }
+        if (item == SuggestionSet.UNDO_TONES_TOKEN) { undoAddTones(proxy); return }
+        tonesUndo = null
         if (item.startsWith(SuggestionSet.CLIP_CHIP_PREFIX)) {
             proxy.insertText(item.substring(SuggestionSet.CLIP_CHIP_PREFIX.length))
             pasteUsedChange = clipboard?.changeCount ?: -1
@@ -834,7 +866,50 @@ class KeyboardSession(
         numberSpaces = 0          // kết quả mới cũng là số → chip kế trong chuỗi (tiền → chữ)
     }
 
+    // MARK: thêm dấu cho câu không dấu (chỉ khi người dùng bấm chip — AddTones.kt)
+
+    private fun tonesPersonal() = AddTones.Personal(langModel::count, langModel::bigramCount)
+
+    /** Kế hoạch thêm dấu cho chữ trước con trỏ (cache theo văn bản); null = không mời. */
+    private fun addTonesPlan(proxy: TextProxy): AddTones.Plan? {
+        if (!PlusGate.isUnlocked(PlusFeature.SENTENCE_DIACRITICS)) return null
+        if (bridge.isComposing || !proxy.canReEdit || proxy.hasSelection) return null
+        val before = proxy.contextBeforeInput()
+        if (before.isNullOrEmpty()) return null
+        if (before != tonesCacheBefore) {
+            tonesCacheBefore = before
+            tonesCachePlan = AddTones.plan(before, tonesPersonal())?.takeIf { it.original != tonesDismissed }
+        }
+        return tonesCachePlan
+    }
+
+    /** Chạm "Thêm dấu": thay đuôi không dấu bằng bản có dấu (fail-safe confirmTail, không xoá mù). */
+    fun applyAddTones(proxy: TextProxy) {
+        tonesCacheBefore = null
+        val plan = addTonesPlan(proxy) ?: return
+        tonesCacheBefore = null
+        if (!proxy.confirmTail(plan.original)) return
+        proxy.deleteCodePoints(Cp.count(plan.original))
+        proxy.insertText(plan.replacement)
+        bridge.reset(); lastWord = null; lastWord2 = null; clearUndo(); lastCommit = null
+        tonesUndo = plan
+    }
+
+    /** "Hoàn tác" / ⌫ ngay sau: trả lại bản gốc nếu chữ trước con trỏ vẫn là bản vừa thay. */
+    fun undoAddTones(proxy: TextProxy) {
+        val u = tonesUndo ?: return
+        tonesUndo = null
+        tonesCacheBefore = null
+        if (!proxy.canReEdit || !proxy.confirmTail(u.replacement)) return
+        proxy.deleteCodePoints(Cp.count(u.replacement))
+        proxy.insertText(u.original)
+        tonesDismissed = u.original
+        bridge.reset(); lastWord = null; lastWord2 = null; clearUndo(); lastCommit = null
+    }
+
     companion object {
+        const val ADD_TONES_LABEL = "Thêm dấu"
+        const val UNDO_TONES_LABEL = "↩\uFE0E Hoàn tác"
         val EMAIL_SUFFIXES = listOf("gmail.com", "yahoo.com", "outlook.com")
         val DOMAIN_TLDS = listOf("com", "vn", "net")
 

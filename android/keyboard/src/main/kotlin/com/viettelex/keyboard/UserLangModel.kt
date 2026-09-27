@@ -321,6 +321,9 @@ class UserLangModel(
     /** Điểm cá nhân của một từ. */
     fun count(of: String): Int = uni[of] ?: uni[of.lowercase()] ?: 0
 
+    /** Số lần cặp (prev → word) đã gặp (bigram cá nhân + seed) — AddTones chấm lưới âm tiết. */
+    fun bigramCount(prev: String, word: String): Int = bi[prev.lowercase()]?.get(word) ?: 0
+
     /**
      * Seed khi store trống. [seed] chỉ được gọi khi thật sự seed; đang chờ load thì
      * giữ lại quyết sau swap-in.

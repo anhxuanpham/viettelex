@@ -526,6 +526,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         var number: String? = nil       // chip số (NumberChips) — luôn ở slot GIỮA, payload numberToken
         /// Chip tách số từ nội dung vừa copy ("Dán STK 0123…") — thay thẻ Dán.
         var clipChips: [(display: String, insert: String)] = []
+        var actionLabel: String? = nil  // chip hành động slot đầu ("Thêm dấu" / "Hoàn tác")…
+        var actionPayload: String? = nil // …và payload (addTonesToken / undoTonesToken)
         var isEmpty: Bool {
             literal == nil && word == nil && word2 == nil && emojis.isEmpty && nextWords.isEmpty
                 && number == nil
@@ -689,6 +691,9 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     static let numberToken = "\u{E000}number"
     /// Payload ô "↩︎ Hoàn tác" sau khi áp công cụ văn bản.
     static let toolUndoToken = "\u{E000}toolUndo"
+    /// Payload chip "Thêm dấu" / "Hoàn tác" (AddTones — chỉ khi người dùng bấm).
+    static let addTonesToken = "\u{E000}addTones"
+    static let undoTonesToken = "\u{E000}undoTones"
 
     func showSuggestions(_ set: SuggestionSet) {
         guard suggestionsEnabled, !barCollapsed else { return }
@@ -714,6 +719,9 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         }
         if let r = set.restoreLabel {
             texts = [(r, set.restorePayload ?? Self.restoreToken), texts[0], texts[1]]
+        } else if let a = set.actionLabel, let p = set.actionPayload,
+                  p == Self.undoTonesToken || (set.clipChips.isEmpty && !set.paste) {
+            texts = [(a, p), texts[0], texts[1]]
         } else if !set.clipChips.isEmpty {
             texts = [nil, nil, nil]
             for (i, c) in set.clipChips.prefix(3).enumerated() { texts[i] = c }

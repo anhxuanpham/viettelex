@@ -1,0 +1,51 @@
+# add-tones v1 — parity Swift ⇔ Kotlin cho AddTones.restore (chỉ dữ liệu tĩnh, không cá nhân).
+# Mỗi dòng: đầu vào<TAB>kết quả. Sinh bởi android AddTonesTests.sharedFixture (ADDTONES_GEN=1);
+# cả hai bản phải cho ĐÚNG kết quả này.
+toi di hoc hom nay	tôi đi học hôm nay
+khong co gi	không có gì
+cam on ban rat nhieu	cám ơn bạn rất nhiều
+Toi di hoc, hom nay troi dep!	Tôi đi học, hôm nay trời đẹp!
+TOI DI HOC	TÔI ĐI HỌC
+  (toi)  di  hoc...  	  (tôi)  đi  học...  
+toi mua iPhone 15 o shopee.vn	tôi mua iPhone 15 ở shopee.vn
+gui mail cho abc@gmail.com nhe	gửi mail cho abc@gmail.com nhé
+h2o 123 toi	h2o 123 tôi
+xem movie tren netflix	xem movie trên netflix
+toi thich the weekend	tôi thích the weekend
+anh yeu em	anh yêu em
+em an com chua	em ăn cơm chưa
+chuc mung sinh nhat	chúc mừng sinh nhật
+toi khong biet y cua ban la gi	tôi không biết ý của bạn là gì
+cai nay rat la hap dan	cái này rất là hấp dẫn
+ngay mai minh di choi nhe	ngày mai mình đi chơi nhé
+hom qua troi mua to qua	hôm qua trời mưa to quá
+ban co the giup toi duoc khong	bạn có thể giúp tôi được không
+me oi con doi bung	mẹ ơi con đói bụng
+bao gio thi xong viec	bao giờ thì xong việc
+nguoi viet nam rat hieu khach	người việt nam rất hiếu khách
+chung ta se gap lai sau	chúng ta sẽ gặp lại sau
+dien thoai cua toi bi hong roi	điện thoại của tôi bị hỏng rồi
+toi dang lam viec o ha noi	tôi đang làm việc ở hà nội
+Ha Noi mua thu dep lam	Hà Nội mùa thu đẹp lắm
+ong ay la bac si	ông ấy là bác sĩ
+co ay hat rat hay	cô ấy hát rất hay
+xin loi toi den muon	xin lỗi tôi đến muộn
+tui minh di an pho di	tụi mình đi ăn phố đi
+mot hai ba bon nam sau bay tam chin muoi	một hai ba bốn năm sáu bảy tám chín muồi
+nuoc Viet Nam doc lap tu do hanh phuc	nước Việt Nam độc lập từ đó hạnh phúc
+con meo dang ngu tren ghe	con mèo đang ngủ trên ghế
+toi can mua mot cai ao moi	tôi cần mua một cái áo mới
+dat nuoc ta dang phat trien	đất nước ta đang phát triển
+hoc sinh phai chiu kho hoc bai	học sinh phải chịu khó học bài
+anh ay noi tieng Anh rat gioi	anh ấy nói tiếng Anh rất giỏi
+cho toi mot ly ca phe sua da	cho tôi một ly cà phê sữa đã
+may gio roi ban	mấy giờ rồi bạn
+thoi tiet hom nay the nao	thời tiết hôm nay thế nào
+toi nghi la duoc	tôi nghĩ là được
+bien Nha Trang rat dep	biến Nhà Trắng rất đẹp
+dung lo, moi viec se on thoi	đừng lo, mọi việc sẽ ổn thôi
+di dau vay?	đi đâu vậy?
+ok de toi xem	ok để tôi xem
+lam on gui cho toi file pdf	làm ơn gửi cho tôi file pdf
+tao ghet mon toan	tao ghét môn toán
+ca nha deu khoe	cả nhà đều khỏe

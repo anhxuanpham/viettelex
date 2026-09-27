@@ -31,7 +31,10 @@
 		18958FBC0035D3C3F7E34DF6 /* BackupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCB85821624ECE46B9C12A4A /* BackupTests.swift */; };
 		18EB5C9002EAD3991F709FD5 /* UserLangModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F316CA910C58A9377DC754A0 /* UserLangModel.swift */; };
 		19A0B9BFBF4CF5C3FEE6785B /* SensitiveWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF9F4445707DBA22FE5219CD /* SensitiveWords.swift */; };
+		1BDEABFA14745D76DB06262B /* AddTones.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11876FBB4C611F4A86CBCBB2 /* AddTones.swift */; };
 		1D3501D761DFD4F1BED9ED72 /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 853A101B912DF1524B01E1A2 /* KeyboardViewController.swift */; };
+		1D815BBDFF3A950828D4A0B5 /* AddTones.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11876FBB4C611F4A86CBCBB2 /* AddTones.swift */; };
+		1E175ED9F1FE58CFBD01BD44 /* AddTonesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D6434BF385E0EB2AC3B5010 /* AddTonesTests.swift */; };
 		1E3BA256F62480AA94474E72 /* TextToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E5388BE246A2014C812518 /* TextToolsTests.swift */; };
 		1FE0301F7BA4765FA3C922D5 /* UserLangModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F316CA910C58A9377DC754A0 /* UserLangModel.swift */; };
 		1FF871030AE86A2D91C9B81E /* ShortcutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121671DAC21692CEBCF9B296 /* ShortcutTests.swift */; };
@@ -173,6 +176,7 @@
 		F1691715B050F1B3A42B4C84 /* FeatureRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D93CDC9D2CEA8A91A576B183 /* FeatureRegressionTests.swift */; };
 		F280DF8330021685A18751B8 /* backup-ios-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = F98CF75D5CF9E5845F830381 /* backup-ios-v1.json */; };
 		F7052B6B70B13A763F8F0111 /* TextEditingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 696C94938F3F3535561B0288 /* TextEditingTests.swift */; };
+		FC72A7CB20D1E77AAF211C4C /* add-tones.txt in Resources */ = {isa = PBXBuildFile; fileRef = D4F06F2D8BF071889A8590BF /* add-tones.txt */; };
 		FE2B9309D2217292E28A9A44 /* VNLexicon2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E29815B4F2B0747B961A561 /* VNLexicon2.swift */; };
 /* End PBXBuildFile section */
 
@@ -214,6 +218,7 @@
 		0D77A862B4CBC51471E43C21 /* KeyLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyLayout.swift; sourceTree = "<group>"; };
 		0EBD4D68E1E032F0E0FBB27B /* emoji.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = emoji.bin; sourceTree = "<group>"; };
 		104D515FA297531BCEF3AA25 /* EmojiDataTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiDataTests.swift; sourceTree = "<group>"; };
+		11876FBB4C611F4A86CBCBB2 /* AddTones.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTones.swift; sourceTree = "<group>"; };
 		121671DAC21692CEBCF9B296 /* ShortcutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutTests.swift; sourceTree = "<group>"; };
 		142CFBEA43046FC96EBF437F /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 		161158B158034E15B97338F4 /* VietTelex.storekit */ = {isa = PBXFileReference; path = VietTelex.storekit; sourceTree = "<group>"; };
@@ -228,6 +233,7 @@
 		283B18B560C805EFBE10D839 /* backup-too-new.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "backup-too-new.json"; sourceTree = "<group>"; };
 		2A7C16DB3F7238439276C90B /* ClipboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardTests.swift; sourceTree = "<group>"; };
 		2B96A58C6EE35D288C488202 /* number-chips.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "number-chips.txt"; sourceTree = "<group>"; };
+		2D6434BF385E0EB2AC3B5010 /* AddTonesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTonesTests.swift; sourceTree = "<group>"; };
 		31AD519DC648CF654359B2C8 /* ICloudSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudSync.swift; sourceTree = "<group>"; };
 		359BC071F163E8255C943DA7 /* TouchGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchGeometry.swift; sourceTree = "<group>"; };
 		38966B5E3DF4C19B07287B0C /* swipe-paths-en.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "swipe-paths-en.txt"; sourceTree = "<group>"; };
@@ -294,6 +300,7 @@
 		CCEDEE554C73498F36146A9D /* VietTelexApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = VietTelexApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0E5388BE246A2014C812518 /* TextToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextToolsTests.swift; sourceTree = "<group>"; };
 		D488C3ADF837AC9FCDD9EC1D /* PlusGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlusGate.swift; sourceTree = "<group>"; };
+		D4F06F2D8BF071889A8590BF /* add-tones.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "add-tones.txt"; sourceTree = "<group>"; };
 		D705942B9BA084047E7A7EF1 /* EmojiPlane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPlane.swift; sourceTree = "<group>"; };
 		D93CDC9D2CEA8A91A576B183 /* FeatureRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureRegressionTests.swift; sourceTree = "<group>"; };
 		DB8B0DA94C5E17697D6DE9E7 /* AdjacentKeyFixerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdjacentKeyFixerTests.swift; sourceTree = "<group>"; };
@@ -366,6 +373,7 @@
 		1CF891C409E9F5C6BC92268A /* Fixtures */ = {
 			isa = PBXGroup;
 			children = (
+				D4F06F2D8BF071889A8590BF /* add-tones.txt */,
 				1AFEC1150BE618B085350A60 /* backup-android-v1.json */,
 				BDBDF5E631CCFAEF1C938796 /* backup-future-v2.json */,
 				F98CF75D5CF9E5845F830381 /* backup-ios-v1.json */,
@@ -423,6 +431,7 @@
 		9F75E32DB55D92888E77DE61 /* KeyboardTests */ = {
 			isa = PBXGroup;
 			children = (
+				2D6434BF385E0EB2AC3B5010 /* AddTonesTests.swift */,
 				DB8B0DA94C5E17697D6DE9E7 /* AdjacentKeyFixerTests.swift */,
 				214BE1EF9FDB2118D4F50109 /* AppearancePolicyTests.swift */,
 				FCB85821624ECE46B9C12A4A /* BackupTests.swift */,
@@ -488,6 +497,7 @@
 		D31F988D110CA9E478B35C27 /* Keyboard */ = {
 			isa = PBXGroup;
 			children = (
+				11876FBB4C611F4A86CBCBB2 /* AddTones.swift */,
 				08A25C830B85508BCD22F38A /* AdjacentKeyFixer.swift */,
 				62E14AD387BE2B1A54881E15 /* AppearancePolicy.swift */,
 				3CD9AC3759F73AB2A6C0BC1B /* ClipboardFeature.swift */,
@@ -683,6 +693,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				644451BA58FBD5F6C99AD6E4 /* VietTelex.storekit in Resources */,
+				FC72A7CB20D1E77AAF211C4C /* add-tones.txt in Resources */,
 				2C7D04D371A9C6785EDA3641 /* backup-android-v1.json in Resources */,
 				DBC370A7174CDADB99FC0E6D /* backup-future-v2.json in Resources */,
 				F280DF8330021685A18751B8 /* backup-ios-v1.json in Resources */,
@@ -716,6 +727,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1BDEABFA14745D76DB06262B /* AddTones.swift in Sources */,
 				37029C6BAEE8201C5C7CA64F /* AdjacentKeyFixer.swift in Sources */,
 				7A17145A9CA2831379306335 /* AppearancePolicy.swift in Sources */,
 				2EB255281257BD33FED7B2D8 /* ClipDetect.swift in Sources */,
@@ -792,6 +804,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1D815BBDFF3A950828D4A0B5 /* AddTones.swift in Sources */,
+				1E175ED9F1FE58CFBD01BD44 /* AddTonesTests.swift in Sources */,
 				5B52F74F525D2FE790784DEB /* AdjacentKeyFixer.swift in Sources */,
 				C9C973EB878B8C06CDF7393A /* AdjacentKeyFixerTests.swift in Sources */,
 				E16D46978F3A25EF2D8990ED /* AppearancePolicy.swift in Sources */,

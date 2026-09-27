@@ -34,6 +34,11 @@ final class KeyboardViewController: UIInputViewController {
     /// Lịch sử clipboard + chip tách số + ẩn danh (ClipboardFeature.swift).
     private let clip = ClipboardFeature()
     private var clipPanel: ClipboardPanel?
+    /// Thêm dấu (AddTones): kế hoạch vừa áp — chip "Hoàn tác" / ⌫ ngay sau (tới phím kế);
+    /// đoạn vừa hoàn tác (không mời lại); cache kế hoạch theo văn bản trước con trỏ.
+    private var addTonesUndo: AddTones.Plan?
+    private var addTonesDismissed: String?
+    private var addTonesCache: (before: String, plan: AddTones.Plan?)?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -61,7 +66,7 @@ final class KeyboardViewController: UIInputViewController {
         langModel.onReady = { [weak self] in self?.updateSuggestions() }
         // Map bảng bigram âm tiết (dùng chung gõ vuốt + thanh gợi ý) ở NỀN: lần chạm đầu
         // hash vnlexicon (~150KB) để kiểm khớp — đừng để rơi vào main ở gợi ý từ kế tiếp.
-        Self.suggestQueue.async { _ = SyllableBigram.shared }
+        Self.suggestQueue.async { _ = SyllableBigram.shared; _ = SwipeLexicon.forms }
         keyboard.onDeleteWord = { [weak self] in self?.deleteWordBackward() }
         wireWordSwipe()
         wireSwipeTyping()
@@ -125,6 +130,7 @@ final class KeyboardViewController: UIInputViewController {
         if !swipeSetting { swipe = nil }              // tắt ⇒ bỏ template (RAM)
         swipeSuggest = nil
         recentEnglish = []
+        addTonesUndo = nil; addTonesDismissed = nil; addTonesCache = nil
         // Trait ô (layout, return key, passthrough, bar) — force: mỗi lần hiện áp lại
         // appearance/mẫu câu dù trait y hệt (batchConfigure tự dedupe rebuild).
         refreshFieldTraits(force: true)
@@ -145,6 +151,8 @@ final class KeyboardViewController: UIInputViewController {
             else if item.hasPrefix(KeyboardView.clipTokenPrefix) {
                 self.insertClip(String(item.dropFirst(KeyboardView.clipTokenPrefix.count)), chip: true)
             }
+            else if item == KeyboardView.addTonesToken { self.applyAddTones() }
+            else if item == KeyboardView.undoTonesToken { self.undoAddTones() }
             else if self.acceptSwipeAlternative(item) { return }
             else { self.acceptSuggestion(item) }
         }
@@ -411,6 +419,12 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func handle(_ key: KeyboardView.Key) {
+        // ⌫ NGAY SAU khi thêm dấu = hoàn tác (một lần); phím khác bỏ lời mời hoàn tác.
+        if case .backspace = key, addTonesUndo != nil, !bridge.isComposing, swipeSuggest == nil {
+            undoAddTones()
+            return
+        }
+        addTonesUndo = nil
         let proxy = Proxy(p: textDocumentProxy)
         // textWillChange tới mà textDidChange chưa kịp → đối chiếu ngay trước phím.
         if externalChangePending { syncComposition("key") }
@@ -726,6 +740,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func rawInsert(_ s: String) {
+        addTonesUndo = nil
         applyingEdit = true
         defer { applyingEdit = false }
         // Lệch (con trỏ đã dời) → không xoá gì, chỉ chèn mẫu tại con trỏ.
@@ -941,6 +956,16 @@ final class KeyboardViewController: UIInputViewController {
                 set.clipChips.append(("Dán", KeyboardView.pasteToken))
             }
         }
+        // Thêm dấu: "Hoàn tác" (vừa bấm) thắng thẻ Dán; "Thêm dấu" nhường thẻ Dán
+        // (thứ tự slot: SuggestionSlots.arrange).
+        if composed.isEmpty, set.literal == nil {
+            if addTonesUndo != nil {
+                set.actionLabel = "\u{21A9}\u{FE0E} Hoàn tác"; set.actionPayload = KeyboardView.undoTonesToken
+                set.paste = false; set.clipChips = []
+            } else if addTonesPlan() != nil {
+                set.actionLabel = "Thêm dấu"; set.actionPayload = KeyboardView.addTonesToken
+            }
+        }
         keyboard.showSuggestions(set)
     }
 
@@ -1063,6 +1088,7 @@ final class KeyboardViewController: UIInputViewController {
         applyingEdit = true
         defer { applyingEdit = false }
         learnSettledSwipe()
+        addTonesUndo = nil
         if item == KeyboardView.pasteImageToken {       // chỉ hướng dẫn → ẩn thẻ
             pasteUsedChange = UIPasteboard.general.changeCount
             pasteCached = false
@@ -1396,6 +1422,7 @@ extension KeyboardViewController {
     fileprivate func commitWordSwipe(_ words: Int) {
         guard let snap = wordSwipeSnapshot else { return }
         wordSwipeSnapshot = nil
+        addTonesUndo = nil
         applyingEdit = true
         defer { applyingEdit = false }
         let current = textDocumentProxy.documentContextBeforeInput
@@ -1473,6 +1500,62 @@ extension KeyboardViewController {
         bridge.reset()
         lastWord = nil; lastWord2 = nil
         KeyboardView.clickModifier()
+        updateAutoShift(); updateSuggestions()
+    }
+}
+
+// MARK: thêm dấu cho câu không dấu — chỉ khi người dùng bấm chip (logic thuần: AddTones.swift)
+extension KeyboardViewController {
+    /// Kế hoạch thêm dấu cho chữ trước con trỏ (cache theo văn bản); nil = không mời.
+    /// documentContextBeforeInput là bản host đẩy sẵn — đọc rẻ (xem pasteOffer).
+    fileprivate func addTonesPlan() -> AddTones.Plan? {
+        guard PlusGate.isUnlocked(.sentenceDiacritics), bridge.composedWord.isEmpty,
+              let before = textDocumentProxy.documentContextBeforeInput, !before.isEmpty else { return nil }
+        if let c = addTonesCache, c.before == before { return c.plan }
+        let lm = langModel
+        let personal = AddTones.Personal(count: { lm.count(of: $0) }, pair: { lm.bigramCount($0, $1) })
+        var plan = AddTones.plan(before, personal: personal)
+        if plan?.original == addTonesDismissed { plan = nil }
+        addTonesCache = (before, plan)
+        return plan
+    }
+
+    /// Chạm "Thêm dấu": thay đuôi không dấu bằng bản có dấu — fail-safe CompositionSync
+    /// (chữ trước con trỏ phải đúng là bản gốc), không xoá mù.
+    fileprivate func applyAddTones() {
+        addTonesCache = nil
+        guard let plan = addTonesPlan() else { updateSuggestions(); return }
+        addTonesCache = nil
+        applyingEdit = true
+        defer { applyingEdit = false }
+        guard canDeleteBefore(plan.original, what: "add-tones") else { updateSuggestions(); return }
+        for _ in 0..<plan.original.count { textDocumentProxy.deleteBackward() }
+        textDocumentProxy.insertText(plan.replacement)
+        bridge.reset()
+        lastWord = nil; lastWord2 = nil
+        restoreUndo = nil; undoOfferActive = false
+        addTonesUndo = plan
+        KeyboardView.clickModifier()
+        updateAutoShift(); updateSuggestions()
+    }
+
+    /// "Hoàn tác" / ⌫ ngay sau: trả bản gốc nếu chữ trước con trỏ vẫn là bản vừa thay.
+    fileprivate func undoAddTones() {
+        guard let u = addTonesUndo else { return }
+        addTonesUndo = nil
+        addTonesCache = nil
+        applyingEdit = true
+        defer { applyingEdit = false }
+        // Luôn đối chiếu (kể cả đuôi 1 ký tự): lệch / không đọc được ⇒ bỏ, không xoá mù.
+        if textDocumentProxy.documentContextBeforeInput?.hasSuffix(u.replacement) == true {
+            for _ in 0..<u.replacement.count { textDocumentProxy.deleteBackward() }
+            textDocumentProxy.insertText(u.original)
+            addTonesDismissed = u.original
+            bridge.reset()
+            lastWord = nil; lastWord2 = nil
+            restoreUndo = nil; undoOfferActive = false
+            KeyboardView.clickModifier()
+        }
         updateAutoShift(); updateSuggestions()
     }
 }
