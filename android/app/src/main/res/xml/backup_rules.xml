@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto Backup cho Android 8–11 (API 26–30). Chỉ sao lưu SharedPreferences "viettelex"
+  (cài đặt + mẫu câu + gõ tắt). KHÔNG sao lưu: userlm.bin (từ đã học — riêng tư),
+  touchlog.txt (log gỡ lỗi). Clipboard không bao giờ được lưu xuống đĩa.
+  Android 12+ dùng data_extraction_rules.xml. Kiểm tra: BackupRulesTest.
+-->
+<full-backup-content>
+    <include domain="sharedpref" path="viettelex.xml" />
+</full-backup-content>
