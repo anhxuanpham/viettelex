@@ -133,6 +133,7 @@ targets:
       - Keyboard/Wallpaper.swift
       - Keyboard/KeyCommitQueue.swift
       - Keyboard/AdjacentKeyFixer.swift
+      - Keyboard/AutoCorrect.swift
       - Keyboard/TouchGeometry.swift
       - Keyboard/KeyGeometry.swift
       - Keyboard/TouchLog.swift

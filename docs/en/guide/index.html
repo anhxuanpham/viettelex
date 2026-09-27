@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VietTelex User Guide — tips, gestures, hidden features</title>
-<meta name="description" content="How to use the VietTelex keyboard on iPhone, iPad, Android and macOS: fix tones after typing, swipe ⌫ to delete words, hold space to move the cursor, swipe typing, text shortcuts, snippets, clipboard, emoji, one-handed mode…">
+<meta name="description" content="How to use VietTelex on iPhone, iPad, Android, macOS, Windows and Linux: fix tones after typing, swipe ⌫ to delete words, hold space to move the cursor, swipe typing, text shortcuts, snippets, clipboard, emoji, one-handed mode…">
 <link rel="canonical" href="https://viettelex.com/en/guide/">
 <link rel="alternate" hreflang="vi" href="https://viettelex.com/hdsd/">
 <link rel="alternate" hreflang="en" href="https://viettelex.com/en/guide/">
@@ -12,7 +12,7 @@
 <link rel="icon" href="../../assets/VietTelex-logo.png">
 <meta property="og:type" content="article">
 <meta property="og:title" content="VietTelex User Guide">
-<meta property="og:description" content="Every feature and hidden gesture of the VietTelex keyboard on iPhone, Android and macOS.">
+<meta property="og:description" content="Every feature and hidden gesture of VietTelex on iPhone, Android, macOS, Windows and Linux.">
 <meta property="og:image" content="https://viettelex.com/assets/VietTelex-logo.png">
 <meta property="og:url" content="https://viettelex.com/en/guide/">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -92,7 +92,58 @@
   footer { text-align: center; padding: 36px 16px 48px; color: var(--ink-soft); font-size: .85rem; }
   footer a { color: var(--ink-soft); }
   :focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+  .t-win { background: #e3eef9; color: #1f5a8f; }
+  .t-lin { background: #e2f1ef; color: #1e6a63; }
+  .card pre { font-family: var(--mono); font-size: .78rem; line-height: 1.5; background: #f3f1ea; color: var(--ink); border-radius: 8px; padding: 10px 12px; margin-top: 8px; overflow-x: auto; }
+
+  /* Chọn nền tảng */
+  .ospick { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 22px auto 0; max-width: 42em; }
+  .ospick button { font: inherit; font-size: .9rem; font-weight: 600; min-height: 40px; padding: 7px 16px; border-radius: 999px; border: 1px solid rgba(255,255,255,.28); background: rgba(0,0,0,.2); color: #e7ebf4; cursor: pointer; }
+  .ospick button:hover { border-color: var(--gold); color: #fff; }
+  .ospick button[aria-pressed="true"] { background: var(--gold); border-color: var(--gold); color: var(--navy); }
+  .osnote { margin-top: 10px; font-size: .82rem; color: #aab4cc; min-height: 1.3em; }
+  html:not([data-pick]) .ospick, html:not([data-pick]) .osnote { display: none; }
+
+  /* Số mục tự đánh lại theo các mục đang hiện */
+  body { counter-reset: sec; }
+  h2.n::before { counter-increment: sec; content: counter(sec) ". "; }
+
+  /* Lọc theo nền tảng; không JS = hiện tất cả kèm tag */
+  html[data-pick="ios"] [data-os]:not([data-os~="ios"]),
+  html[data-pick="android"] [data-os]:not([data-os~="android"]),
+  html[data-pick="macos"] [data-os]:not([data-os~="macos"]),
+  html[data-pick="windows"] [data-os]:not([data-os~="windows"]),
+  html[data-pick="linux"] [data-os]:not([data-os~="linux"]) { display: none !important; }
+  html[data-pick]:not([data-pick="all"]) .tag.p,
+  html[data-pick]:not([data-pick="all"]) .leg-p { display: none; }
 </style>
+<script>
+/* Nền tảng: ?os= > lựa chọn đã lưu > tự nhận diện. Không JS: hiện mọi thứ kèm tag. */
+window.vtxDetectOS = function (ua, plat, touch) {
+  ua = ua || ''; plat = plat || '';
+  var both = plat + ' ' + ua;
+  if (/Android/i.test(both)) return 'android';
+  if (/iPhone|iPad|iPod/.test(both)) return 'ios';
+  if (/Mac/.test(both) && touch > 1) return 'ios';          // iPadOS báo là Mac
+  if (/CrOS|Chrome OS/i.test(both)) return 'android';        // Chromebook chạy app Android
+  if (/Mac/.test(both)) return 'macos';
+  if (/Win/.test(both)) return 'windows';
+  if (/Linux|X11|BSD/i.test(both)) return 'linux';
+  return 'all';
+};
+(function () {
+  var OS = ['ios', 'android', 'macos', 'windows', 'linux', 'all'];
+  var ALIAS = { mac: 'macos', osx: 'macos', win: 'windows', ipados: 'ios', iphone: 'ios', ipad: 'ios' };
+  function norm(v) { v = String(v || '').toLowerCase(); v = ALIAS[v] || v; return OS.indexOf(v) >= 0 ? v : null; }
+  var m = /[?&]os=([^&#]*)/.exec(location.search), url = null, saved = null;
+  try { url = m && norm(decodeURIComponent(m[1])); } catch (e) {}
+  try { saved = norm(localStorage.getItem('vtx-guide-os')); } catch (e) {}
+  var n = navigator, os = url || saved || window.vtxDetectOS(n.userAgent,
+    (n.userAgentData && n.userAgentData.platform) || n.platform, n.maxTouchPoints || 0);
+  window.vtxOS = { os: os, how: url ? 'url' : saved ? 'saved' : 'auto' };
+  document.documentElement.setAttribute('data-pick', os);
+})();
+</script>
 </head>
 <body>
 
@@ -100,7 +151,16 @@
   <nav class="langswitch"><a href="../../hdsd/" hreflang="vi" lang="vi">Tiếng Việt</a></nav>
   <a class="home" href="../">← VietTelex</a>
   <h1>User <span class="accent">guide</span></h1>
-  <p class="sub">Every feature of the VietTelex keyboard — including the “hidden” gestures that have no button — on iPhone/iPad, Android and macOS. Setting names below are shown as they appear in the (Vietnamese) app.</p>
+  <p class="sub">Every feature of VietTelex — including the “hidden” gestures that have no button — on iPhone/iPad, Android, macOS, Windows and Linux. Setting names below are shown as they appear in the (Vietnamese) app.</p>
+  <div class="ospick" id="ospick" role="group" aria-label="Choose your platform">
+    <button type="button" data-set="ios" aria-pressed="false">iPhone/iPad</button>
+    <button type="button" data-set="android" aria-pressed="false">Android</button>
+    <button type="button" data-set="macos" aria-pressed="false">macOS</button>
+    <button type="button" data-set="windows" aria-pressed="false">Windows</button>
+    <button type="button" data-set="linux" aria-pressed="false">Linux</button>
+    <button type="button" data-set="all" aria-pressed="false">All</button>
+  </div>
+  <p class="osnote" id="osnote" aria-live="polite" data-auto="Picked for your device: %s. Choose another platform above." data-one="Showing the guide for %s." data-all="Showing the guide for every platform."></p>
 </header>
 
 <section>
@@ -108,7 +168,7 @@
     <div class="toc">
       <b>Contents</b>
       <ol>
-        <li><a href="#setup">Enable the keyboard</a></li>
+        <li><a href="#setup">Install &amp; enable</a></li>
         <li><a href="#typing">Telex / VNI options</a></li>
         <li><a href="#fix-tones">Fix tones after typing</a></li>
         <li><a href="#gestures">Hidden gestures</a></li>
@@ -122,14 +182,18 @@
         <li><a href="#android">Android only</a></li>
         <li><a href="#backup">Backup &amp; sync</a></li>
         <li><a href="#macos">On macOS</a></li>
-        <li><a href="#access">Full Access &amp; Plus</a></li>
+        <li><a href="#windows">On Windows</a></li>
+        <li><a href="#linux">On Linux</a></li>
+        <li><a href="#access">Permissions, privacy &amp; Plus</a></li>
       </ol>
       <div class="legend">
-        <span><span class="tag t-ios">iOS</span> iPhone/iPad</span>
-        <span><span class="tag t-and">Android</span></span>
-        <span><span class="tag t-mac">macOS</span></span>
-        <span><span class="tag t-exp">Experimental</span> in the Thử nghiệm section</span>
-        <span><span class="tag t-plus">Plus</span> Plus pack — currently free for everyone</span>
+        <span class="leg-p"><span class="tag t-ios">iOS</span> iPhone/iPad</span>
+        <span class="leg-p"><span class="tag t-and">Android</span></span>
+        <span class="leg-p"><span class="tag t-mac">macOS</span></span>
+        <span class="leg-p"><span class="tag t-win">Windows</span></span>
+        <span class="leg-p"><span class="tag t-lin">Linux</span></span>
+        <span data-os="ios android macos"><span class="tag t-exp">Experimental</span> in the Thử nghiệm section</span>
+        <span data-os="ios android"><span class="tag t-plus">Plus</span> Plus pack — currently free for everyone</span>
       </div>
     </div>
   </div>
@@ -137,34 +201,76 @@
 
 <section id="setup">
   <div class="wrap">
-    <h2>1. Enable the keyboard</h2>
-    <div class="card">
-      <h3><span class="tag t-ios">iOS</span></h3>
-      <p>Settings → General → Keyboard → Keyboards → <b>Add New Keyboard…</b> → Vietnamese (VietTelex). While typing, tap 🌐 to switch to VietTelex. Try it right away in the app's <b>Thử gõ</b> box: <code>vieejt</code> → <code>việt</code>.</p>
+    <h2 class="n">Install &amp; enable</h2>
+    <div class="card" data-os="ios">
+      <h3>iPhone / iPad</h3>
+      <p>Get VietTelex on the <a href="https://apps.apple.com/app/id6794425455" rel="noopener">App Store</a>, then go to Settings → General → Keyboard → Keyboards → <b>Add New Keyboard…</b> → Vietnamese (VietTelex). While typing, tap 🌐 to switch to VietTelex. Try it right away in the app's <b>Thử gõ</b> box: <code>vieejt</code> → <code>việt</code>.</p>
     </div>
-    <div class="card">
-      <h3><span class="tag t-and">Android</span></h3>
+    <div class="card" data-os="android">
+      <h3>Android</h3>
       <p>Settings → System → Languages &amp; input → On-screen keyboard → Manage → enable VietTelex, then select it (the app has a <b>Chọn VietTelex</b> button). The “may collect all the text you type” warning is Android's generic notice for every third-party keyboard — VietTelex runs entirely on-device.</p>
     </div>
-    <p class="lead" style="margin-top:10px">Most settings take effect the <b>next time the keyboard opens</b>.</p>
+    <p class="lead" style="margin-top:10px" data-os="ios android">Most settings take effect the <b>next time the keyboard opens</b>.</p>
+    <div class="card" data-os="macos">
+      <h3>macOS</h3>
+      <ul>
+        <li>Install <b>one</b> way: download <a href="https://github.com/ptrinh/viettelex/releases/latest" rel="noopener">VietTelex-x.y.z.pkg</a> (signed &amp; notarized) and double-click it, or run <code>brew install --cask ptrinh/viettelex/viettelex</code>. Don't install through both channels.</li>
+        <li>The installer opens System Settings → Keyboard: <b>Input Sources → Edit… → ＋ → Vietnamese → ViệtTelex → Add</b>.</li>
+        <li>To type in <b>Terminal, iTerm, Chrome/Edge/Brave</b>: grant <b>Accessibility</b> (Privacy &amp; Security → Accessibility → tick VietTelex); a one-time restart may be needed.</li>
+        <li>Switch Vietnamese/English with 🌐 or <kbd>⌃</kbd><kbd>Space</kbd> like any macOS input source (macOS remembers it per app). VietTelex settings: the Vᴛ menu bar icon → <b>Cài đặt…</b> (Settings…).</li>
+      </ul>
+    </div>
+    <div class="card" data-os="windows">
+      <h3>Windows</h3>
+      <ul>
+        <li>Download the <code>.msi</code> from <a href="https://github.com/ptrinh/viettelex/releases?q=windows&amp;expanded=true" rel="noopener">GitHub Releases (Windows builds)</a>: <code>…-x64.msi</code> for Intel/AMD PCs, <code>…-arm64.msi</code> for ARM (Snapdragon). Requires Windows 10 1903 or later. The installer is code-signed.</li>
+        <li>Run it — no restart needed. When it finishes, the VietTelex <b>Settings</b> window opens; later, open it from <b>VietTelex</b> in the Start menu.</li>
+        <li>VietTelex is a system Vietnamese keyboard: pick it with <kbd>Win</kbd><kbd>Space</kbd>. Not in the list? Open VietTelex once from the Start menu, or add it under Settings → Time &amp; language → Language → Vietnamese → Keyboards.</li>
+        <li>Upgrading: install the new MSI over the old one, or use <b>Check for updates</b> in the app.</li>
+      </ul>
+    </div>
+    <div class="card" data-os="linux">
+      <h3>Linux (Ubuntu 22.04 / 24.04, amd64 + arm64)</h3>
+      <p>VietTelex is an input method for <b>Fcitx5</b> (recommended) or <b>IBus</b> (the Ubuntu/GNOME default). Install from the APT repository (updates arrive via <code>apt upgrade</code>):</p>
+      <pre>sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://ptrinh.github.io/viettelex-apt/viettelex-archive-keyring.gpg \
+  | sudo tee /etc/apt/keyrings/viettelex.gpg &gt;/dev/null
+sudo tee /etc/apt/sources.list.d/viettelex.sources &gt;/dev/null &lt;&lt;EOF
+Types: deb
+URIs: https://ptrinh.github.io/viettelex-apt/
+Suites: $(. /etc/os-release &amp;&amp; echo "$VERSION_CODENAME")
+Components: main
+Signed-By: /etc/apt/keyrings/viettelex.gpg
+EOF
+sudo apt update
+sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
+      <ul>
+        <li>Or download the <code>.deb</code> files from <a href="https://github.com/ptrinh/viettelex/releases" rel="noopener">GitHub Releases</a> (<code>~jammy1</code> = 22.04, <code>~noble1</code> = 24.04) and run <code>sudo apt install ./libviettelex-core_*.deb ./viettelex-fcitx5_*.deb ./viettelex-settings_*_all.deb</code> — this route does not auto-update.</li>
+        <li>Then open <b>VietTelex</b> from the app menu (or <code>viettelex-settings --onboarding</code>) and follow the setup guide. <b>Fcitx5</b>: <code>im-config -n fcitx5</code>, log in again (first time only), then click <b>Thêm</b> (Add). <b>IBus (GNOME)</b>: <code>ibus restart</code>, then Settings → Keyboard → Input Sources → + → Vietnamese → VietTelex (or click <b>Thêm</b> in the guide).</li>
+        <li>Switch Vietnamese/English: <kbd>Ctrl</kbd><kbd>Space</kbd>. Changes in the settings app apply immediately — no input-method restart.</li>
+      </ul>
+    </div>
   </div>
 </section>
 
 <section id="typing">
   <div class="wrap">
-    <h2>2. Telex / VNI options</h2>
-    <p class="lead">The app's <b>Kiểu Gõ</b> tab. Telex and VNI are mutually exclusive.</p>
+    <h2 class="n">Telex / VNI options</h2>
+    <p class="lead"><span data-os="ios android">The app's <b>Kiểu Gõ</b> tab.</span> <span data-os="macos"><span class="tag t-mac p">macOS</span> Settings… → <b>Tùy chỉnh</b> tab.</span> <span data-os="windows"><span class="tag t-win p">Windows</span> Settings → <b>Kiểu gõ</b> (Typing) and <b>Chính tả</b> (Spelling) tabs.</span> <span data-os="linux"><span class="tag t-lin p">Linux</span> VietTelex app → <b>Kiểu gõ</b> and <b>Tuỳ chỉnh</b> tabs.</span> Telex and VNI are mutually exclusive.</p>
     <div class="card">
       <ul>
-        <li><b>VNI</b> — tones as digits while inside a word: 1 acute, 2 grave, 3 hook, 4 tilde, 5 dot, 6 circumflex (â ê ô), 7 horn (ơ ư), 8 breve (ă), 9 đ, 0 remove: <code>tie6ng1 vie6t5</code> → tiếng việt. Outside a word, digits stay digits. Picking VNI turns on the <b>number row</b>.</li>
+        <li><b>VNI</b> — tones as digits while inside a word: 1 acute, 2 grave, 3 hook, 4 tilde, 5 dot, 6 circumflex (â ê ô), 7 horn (ơ ư), 8 breve (ă), 9 đ, 0 remove: <code>tie6ng1 vie6t5</code> → tiếng việt. Outside a word, digits stay digits.<span data-os="ios android"> Picking VNI turns on the <b>number row</b>.</span></li>
         <li><b>Simple Telex</b> (Telex đơn giản) — a lone <code>w</code> stays w instead of ư.</li>
         <li><b>Free tone placement</b> (Bỏ dấu tự do) — tone keys can go anywhere in the word.</li>
         <li><b>Quick Telex</b> — doubled initial consonants: <code>cc</code> → ch, <code>nn</code> → ng, <code>tt</code> → th…</li>
         <li><b>New-style tones</b> (Bỏ dấu kiểu mới) — hoà, thuý instead of hòa, thúy.</li>
-        <li><b>Auto-capitalise sentences</b> (Tự động viết hoa đầu câu; iPhone/iPad, Android; on by default) — shift turns on at the start of a field, after . ! ? and on a new line. On iPhone the system Auto-Capitalisation switch in Settings → Keyboards doesn't apply to third-party keyboards — turn it off here.</li>
+        <li data-os="macos windows linux"><b>Bracket vowels: [ types ơ, ] types ư</b> (off by default) — the UniKey habit: <code>th[</code> → thơ. Leave it off if you write code. <span class="tag t-mac p">macOS</span> <span class="tag t-win p">Windows</span> <span class="tag t-lin p">Linux</span></li>
+        <li data-os="ios android"><b>Auto-capitalise sentences</b> (Tự động viết hoa đầu câu; on by default) — shift turns on at the start of a field, after . ! ? and on a new line.<span data-os="ios"> On iPhone the system Auto-Capitalisation switch in Settings → Keyboards doesn't apply to third-party keyboards — turn it off here.</span> <span class="tag t-ios p">iOS</span> <span class="tag t-and p">Android</span></li>
         <li><b>Context-aware</b> (Quyết định theo ngữ cảnh) — after an English word, an ambiguous next word stays English: “he is”, not “he í”.</li>
+        <li data-os="macos windows linux"><b>Words that are both English and Vietnamese</b> (last/lát, list/lít, his/hí): Vietnamese wins by default — double the tone key to keep English (<code>lisst</code> → list). <span class="tag t-mac p">macOS</span> <span class="tag t-win p">Windows</span> <span class="tag t-lin p">Linux</span></li>
         <li><b>Auto-restore English</b> — non-Vietnamese words go back to what you typed (google, github…). <b>Live spell check</b> stops adding tones as soon as a word can't be Vietnamese.</li>
         <li><b>Teencode spelling</b> (off by default) — accepts wá, zui zẻ, kó, bíe, thík, gòy, ừk.</li>
+        <li data-os="macos"><b>Keyboard layout</b> — type Telex on Colemak, Dvorak…; left on “follow”, it uses the layout of the input source you switched from. <span class="tag t-mac p">macOS</span></li>
       </ul>
     </div>
   </div>
@@ -172,54 +278,55 @@
 
 <section id="fix-tones">
   <div class="wrap">
-    <h2>3. Fix tones after typing</h2>
-    <p class="lead">Forgot a diacritic? No need to retype the word. Toggle: <b>Tính Năng → Chính tả → Sửa dấu từ đã gõ</b> (on by default). <span class="tag t-ios">iOS</span> <span class="tag t-and">Android</span> <span class="tag t-mac">macOS</span></p>
+    <h2 class="n">Fix tones after typing</h2>
+    <p class="lead">Forgot a diacritic? No need to retype the word. <span data-os="ios android">Toggle: <b>Tính Năng → Chính tả → Sửa dấu từ đã gõ</b> (on by default).</span> <span data-os="macos"><span class="tag t-mac p">macOS</span> always on.</span> <span data-os="windows"><span class="tag t-win p">Windows</span> Chính tả tab → <b>Gõ thêm dấu cho từ trước con trỏ</b>.</span> <span data-os="linux"><span class="tag t-lin p">Linux</span> Tuỳ chỉnh tab → <b>Gõ thêm dấu cho từ ngay trước con trỏ</b>.</span></p>
     <div class="card">
       <ul>
-        <li><b>Delete the space to reopen the word:</b> <code>tháy</code> ␣ <kbd>⌫</kbd> <code>a</code> → <b>thấy</b>.</li>
+        <li data-os="ios android macos windows"><b>Delete the space to reopen the word:</b> <code>tháy</code> ␣ <kbd>⌫</kbd> <code>a</code> → <b>thấy</b>.</li>
         <li><b>Put the cursor right after a word and type a tone key</b> <code>s f r x j</code>: <code>viêt</code> + <code>j</code> → <b>việt</b>; <code>chao</code> + <code>f</code> → <b>chào</b> (VNI: digits 1–5, 0).</li>
+        <li data-os="linux"><span class="tag t-lin p">Linux</span> Only in apps that let the input method edit text around the cursor (many GTK/Qt apps); not in terminals, browsers and other apps.</li>
       </ul>
     </div>
   </div>
 </section>
 
-<section id="gestures">
+<section id="gestures" data-os="ios android">
   <div class="wrap">
-    <h2>4. Hidden gestures</h2>
+    <h2 class="n">Hidden gestures</h2>
     <p class="lead">None of these has a button — try them now.</p>
     <div class="tablewrap">
       <table>
         <tr><th>Gesture</th><th>What it does</th></tr>
-        <tr><td>Hold space, then drag</td><td>Turns the keyboard into a <b>trackpad</b>: drag sideways one character at a time, up/down one line at a time; drag faster to move further. Releasing does not insert a space. <span class="tag t-ios">iOS</span> <span class="tag t-and">Android</span></td></tr>
-        <tr><td>Swipe left on <kbd>⌫</kbd></td><td><b>Delete by word</b>: the further you drag, the more words; a label on the key previews the count (“⌫ 2 từ” / “−2”); drag back to cancel. Deletion happens when you lift. Right after, the suggestion bar offers <b>Khôi phục</b> (restore) — gone once you press another key. <span class="tag t-ios">iOS</span> <span class="tag t-and">Android</span></td></tr>
-        <tr><td>Hold <kbd>⌫</kbd></td><td>Repeats and speeds up; after ~3 seconds switches to deleting whole words. <span class="tag t-ios">iOS</span> <span class="tag t-and">Android</span></td></tr>
-        <tr><td>Double-tap space</td><td>Types <b>“. ”</b> (period + space) after a letter or digit. <span class="tag t-ios">iOS</span> <span class="tag t-and">Android</span></td></tr>
-        <tr><td>Double-tap <kbd>⇧</kbd></td><td>Caps Lock. Sentence starts are capitalised automatically. <span class="tag t-ios">iOS</span> <span class="tag t-and">Android</span></td></tr>
+        <tr><td>Hold space, then drag</td><td>Turns the keyboard into a <b>trackpad</b>: drag sideways one character at a time, up/down one line at a time; drag faster to move further. Releasing does not insert a space. <span class="tag t-ios p">iOS</span> <span class="tag t-and p">Android</span></td></tr>
+        <tr><td>Swipe left on <kbd>⌫</kbd></td><td><b>Delete by word</b>: the further you drag, the more words; a label on the key previews the count (“⌫ 2 từ” / “−2”); drag back to cancel. Deletion happens when you lift. Right after, the suggestion bar offers <b>Khôi phục</b> (restore) — gone once you press another key. <span class="tag t-ios p">iOS</span> <span class="tag t-and p">Android</span></td></tr>
+        <tr><td>Hold <kbd>⌫</kbd></td><td>Repeats and speeds up; after ~3 seconds switches to deleting whole words. <span class="tag t-ios p">iOS</span> <span class="tag t-and p">Android</span></td></tr>
+        <tr><td>Double-tap space</td><td>Types <b>“. ”</b> (period + space) after a letter or digit. <span class="tag t-ios p">iOS</span> <span class="tag t-and p">Android</span></td></tr>
+        <tr><td>Double-tap <kbd>⇧</kbd></td><td>Caps Lock. Sentence starts are capitalised automatically. <span class="tag t-ios p">iOS</span> <span class="tag t-and p">Android</span></td></tr>
         <tr><td><kbd>⌫</kbd> right after an auto-restore / shortcut expansion</td><td>Gives back exactly what you typed (undo the shortcut), or offers the toned form on the suggestion bar for a one-tap swap.</td></tr>
-        <tr><td>Long-press ☰ on the suggestion bar</td><td>Toggle <b>one-handed mode</b> (iPhone only). <span class="tag t-ios">iOS</span></td></tr>
-        <tr><td>Long-press the cursor icon on the suggestion bar</td><td>Toggle one-handed mode (phones only). A normal tap opens the text-editing panel. <span class="tag t-and">Android</span></td></tr>
-        <tr><td>Hold q w e … p</td><td>Types the digits <b>1 2 3 … 0</b> (small hint at the key’s top-right). Hold ~0.4 s, the key preview shows the digit, lift to insert; the letter from the touch is taken back, so the word being typed keeps its tones. On by default, only while the <b>number row</b> is off (Tính năng → Giao diện → “Giữ phím hàng trên để ra số”). Off while VoiceOver/TalkBack is running. <span class="tag t-ios">iPhone</span> <span class="tag t-and">Android</span></td></tr>
-        <tr><td>Hold a … l, z … m</td><td>Types the small symbol at the key’s corner: a <b>@</b> · s <b>#</b> · d <b>₫</b> · f <b>_</b> · g <b>&amp;</b> · h <b>-</b> · j <b>+</b> · k <b>(</b> · l <b>)</b> · z <b>*</b> · x <b>"</b> · c <b>'</b> · v <b>:</b> · b <b>;</b> · n <b>!</b> · m <b>?</b>. Off by default — enable in Tính năng → Giao diện → “Giữ phím hàng 2, 3 để ra ký tự đặc biệt”. <span class="tag t-ios">iPhone</span> <span class="tag t-and">Android</span></td></tr>
-        <tr><td>Swipe down on a letter key (iPad)</td><td>Types the grey secondary character shown above the key, like the stock iPad keyboard. <span class="tag t-ios">iPad</span></td></tr>
-        <tr><td>Long-press <kbd>,</kbd></td><td>Switches to the system voice keyboard (e.g. Google voice typing) — only if one is installed; a faint 🎤 marks the key. <span class="tag t-and">Android</span></td></tr>
-        <tr><td>Long-press 😊</td><td>Opens the keyboard picker to switch keyboards. <span class="tag t-and">Android</span></td></tr>
-        <tr><td>Long-press <kbd>Enter</kbd></td><td>Inserts a real line break in multi-line fields where the app turns Enter into “Send”. <span class="tag t-and">Android</span></td></tr>
+        <tr data-os="ios"><td>Long-press ☰ on the suggestion bar</td><td>Toggle <b>one-handed mode</b> (iPhone only). <span class="tag t-ios p">iOS</span></td></tr>
+        <tr data-os="android"><td>Long-press the cursor icon on the suggestion bar</td><td>Toggle one-handed mode (phones only). A normal tap opens the text-editing panel. <span class="tag t-and p">Android</span></td></tr>
+        <tr><td>Hold q w e … p</td><td>Types the digits <b>1 2 3 … 0</b> (small hint at the key’s top-right). Hold ~0.4 s, the key preview shows the digit, lift to insert; the letter from the touch is taken back, so the word being typed keeps its tones. On by default, only while the <b>number row</b> is off (Tính năng → Giao diện → “Giữ phím hàng trên để ra số”). Off while VoiceOver/TalkBack is running. <span class="tag t-ios" data-os="ios">iPhone</span> <span class="tag t-and p">Android</span></td></tr>
+        <tr><td>Hold a … l, z … m</td><td>Types the small symbol at the key’s corner: a <b>@</b> · s <b>#</b> · d <b>$</b> · f <b>_</b> · g <b>&amp;</b> · h <b>-</b> · j <b>+</b> · k <b>(</b> · l <b>)</b> · z <b>*</b> · x <b>"</b> · c <b>%</b> · v <b>:</b> · b <b>/</b> · n <b>!</b> · m <b>?</b>. Off by default — enable in Tính năng → Giao diện → “Giữ phím hàng 2, 3 để ra ký tự đặc biệt”. <span class="tag t-ios" data-os="ios">iPhone</span> <span class="tag t-and p">Android</span></td></tr>
+        <tr><td>Long-press <kbd>,</kbd></td><td>Types a period <b>.</b> — when either of the two “hold key” options above is on. <span data-os="android">On Android, if a voice keyboard is installed (a faint 🎤 marks the key), long-pressing <kbd>,</kbd> switches to the system voice input (e.g. Google voice typing) instead.</span> <span class="tag t-ios" data-os="ios">iPhone</span> <span class="tag t-and p">Android</span></td></tr>
+        <tr data-os="ios"><td>Swipe down on a letter key (iPad)</td><td>Types the grey secondary character shown above the key, like the stock iPad keyboard. <span class="tag t-ios" data-os="ios">iPad</span></td></tr>
+        <tr data-os="android"><td>Long-press 😊</td><td>Opens the keyboard picker to switch keyboards. <span class="tag t-and p">Android</span></td></tr>
+        <tr data-os="android"><td>Long-press <kbd>Enter</kbd></td><td>Inserts a real line break in multi-line fields where the app turns Enter into “Send”. <span class="tag t-and p">Android</span></td></tr>
       </table>
     </div>
   </div>
 </section>
 
-<section id="swipe">
+<section id="swipe" data-os="ios android">
   <div class="wrap">
-    <h2>5. Swipe typing <span class="tag t-exp">Experimental</span></h2>
-    <p class="lead">Enable in <b>Tính Năng → Thử nghiệm → Gõ vuốt</b>. <span class="tag t-ios">iPhone</span> <span class="tag t-and">Android</span></p>
+    <h2 class="n">Swipe typing <span class="tag t-exp">Experimental</span></h2>
+    <p class="lead">Enable in <b>Tính Năng → Thử nghiệm → Gõ vuốt</b>. <span class="tag t-ios" data-os="ios">iPhone</span> <span class="tag t-and p">Android</span></p>
     <div class="card">
       <ul>
         <li>Glide over the <b>unaccented</b> letters of a syllable and lift: v→i→e→t gives <b>“việt”</b>.</li>
         <li>Type a tone key (<code>s f r x j</code>) right after to change the tone; <kbd>⌫</kbd> right after deletes the whole swiped word; the suggestion bar lists alternatives.</li>
         <li><b>Swipe English words</b> (on by default with swipe typing): check, mail, file, meeting… When a path is both Vietnamese and English (the/thế, can/cần), Vietnamese wins unless you're typing English, and the other option stays on the bar.</li>
-        <li><b>Neural swipe model</b> (optional, off by default): adds the <b>FUTO Swipe</b> neural network, running fully on-device, to score alongside the built-in decoder — about 3 MB extra memory while the keyboard is open.</li>
-        <li>Disabled with VoiceOver/TalkBack and in password, email and URL fields. On iOS it's iPhone-only (not iPad).</li>
+        <li><b>Neural swipe model</b> (Mô hình neural gõ vuốt; optional, off by default): adds the <b>FUTO Swipe</b> neural network, running fully on-device, to score alongside the built-in decoder — about 3 MB extra memory while the keyboard is open.</li>
+        <li>Disabled with VoiceOver/TalkBack and in password, email and URL fields.<span data-os="ios"> On iOS it's iPhone-only (not iPad).</span></li>
       </ul>
     </div>
   </div>
@@ -227,25 +334,27 @@
 
 <section id="shortcuts">
   <div class="wrap">
-    <h2>6. Text shortcuts</h2>
-    <p class="lead"><b>Tính Năng → Gõ tắt</b>. <span class="tag t-ios">iOS</span> <span class="tag t-and">Android</span> <span class="tag t-mac">macOS</span></p>
+    <h2 class="n">Text shortcuts</h2>
+    <p class="lead"><span data-os="ios android"><b>Tính Năng → Gõ tắt</b>.</span> <span data-os="macos"><span class="tag t-mac p">macOS</span> Settings… → <b>Gõ tắt</b> tab.</span> <span data-os="windows"><span class="tag t-win p">Windows</span> Settings → <b>Gõ tắt</b> (Shortcuts) tab.</span> <span data-os="linux"><span class="tag t-lin p">Linux</span> <b>Gõ tắt</b> tab (switch <b>Bật gõ tắt</b>).</span></p>
     <div class="card">
       <ul>
-        <li>Type the abbreviation, then space, Enter or punctuation: <code>ko</code> → không.</li>
-        <li><b>Case follows your typing</b> (when the key is stored lowercase): <code>ko</code> → không, <code>Ko</code> → Không, <code>KO</code> → KHÔNG.</li>
-        <li>Keys with symbols or digits (<code>-&gt;</code>, <code>k2</code>) expand on space.</li>
-        <li><kbd>⌫</kbd> right after an expansion restores what you typed.</li>
-        <li>No expansion right after a digit or <code>/ # @</code> (5h, /h3), or in password, email and URL fields.</li>
-        <li>The table starts empty; <b>Thêm bộ gợi ý</b> adds: ko, dc, đc, vs, mn, trc, cty, bsi, stk, -&gt; (→).</li>
-        <li>Import/export YAML <code>key: expansion</code> — shared between Mac, iPhone and Android.</li>
+        <li data-os="ios android macos">Type the abbreviation, then space, Enter or punctuation: <code>ko</code> → không.</li>
+        <li data-os="windows linux">Type the abbreviation, then space: <code>ko</code> → không.</li>
+        <li data-os="ios android macos"><b>Case follows your typing</b> (when the key is stored lowercase): <code>ko</code> → không, <code>Ko</code> → Không, <code>KO</code> → KHÔNG.</li>
+        <li data-os="ios android macos">Keys with symbols or digits (<code>-&gt;</code>, <code>k2</code>) expand on space.</li>
+        <li data-os="ios android macos"><kbd>⌫</kbd> right after an expansion restores what you typed.</li>
+        <li data-os="macos"><kbd>⌥</kbd><kbd>↩</kbd> adds a line break inside an expansion. <span class="tag t-mac p">macOS</span></li>
+        <li data-os="ios android macos windows">No expansion right after a digit or <code>/ # @</code> (5h, /h3)<span data-os="ios android macos">, or in password, email and URL fields</span>.</li>
+        <li data-os="ios android">The table starts empty; <b>Thêm bộ gợi ý</b> adds: ko, dc, đc, vs, mn, trc, cty, bsi, stk, -&gt; (→).</li>
+        <li>Import/export YAML <code>key: expansion</code> — the same format on Mac, iPhone, Android, Windows and Linux.<span data-os="macos windows linux"> Import also accepts JSON and plain <code>key:value</code> text.</span></li>
       </ul>
     </div>
   </div>
 </section>
 
-<section id="suggestions">
+<section id="suggestions" data-os="ios android">
   <div class="wrap">
-    <h2>7. Suggestion bar &amp; chips</h2>
+    <h2 class="n">Suggestion bar &amp; chips</h2>
     <p class="lead">VietTelex <b>never rewrites your words</b> — suggestions apply only when you tap them. Settings: <b>Tính Năng → Gợi ý</b>. The <b>⌄</b> button on the right collapses the bar.</p>
     <div class="card">
       <ul>
@@ -253,46 +362,46 @@
         <li><b>Mistap suggestions</b> (Kiểu Gõ tab): <code>nbjeeuf</code> → nhiều, <code>ohims</code> → phím — shown on the bar, tap to replace.</li>
         <li><b>Emoji suggestions</b> matching the current word (yêu → ❤️).</li>
         <li><b>Number chips</b>: after typing a number — spell it out in words, format as money, quick maths (<code>2+3</code> → 5, <code>12*3</code> → 36).</li>
-        <li><b>Paste button</b>: right after you copy something, the bar shows a Paste card. <span class="tag t-ios">iOS</span> needs Full Access; to stop iOS asking every time: Settings → VietTelex → Paste from Other Apps → Allow.</li>
+        <li><b>Paste button</b>: right after you copy something, the bar shows a Paste card.<span data-os="ios"> <span class="tag t-ios p">iOS</span> needs Full Access; to stop iOS asking every time: Settings → VietTelex → Paste from Other Apps → Allow.</span></li>
         <li><b>“Thêm dấu” chip</b> <span class="tag t-plus">Plus</span> (off by default): after a sentence typed without tones, one tap adds them all — <code>hom nay troi dep</code> → hôm nay trời đẹp.</li>
       </ul>
     </div>
   </div>
 </section>
 
-<section id="snippets">
+<section id="snippets" data-os="ios android">
   <div class="wrap">
-    <h2>8. Snippets &amp; text tools</h2>
-    <p class="lead">Toggle in <b>Tính Năng → Gợi ý → Mẫu câu</b>; manage in the <b>Mẫu Câu</b> tab. <span class="tag t-ios">iOS</span> <span class="tag t-and">Android</span></p>
+    <h2 class="n">Snippets &amp; text tools</h2>
+    <p class="lead">Toggle in <b>Tính Năng → Gợi ý → Mẫu câu</b>; manage in the <b>Mẫu Câu</b> tab.</p>
     <div class="card">
       <ul>
         <li>Tap <b>☰</b> on the suggestion bar for a grid of saved phrases; tap one to insert it. A short label (emoji) keeps the grid compact.</li>
         <li>While the snippet grid is open, the 😊 key becomes a <b>trash can</b> that clears the whole field.</li>
-        <li><b>Live snippets</b>: content starting with <code>https://</code> is fetched <b>when you tap it</b> and the result is inserted (max 1000 bytes) — e.g. “🌐 IP” inserts your current IP address. iOS needs Full Access; without network the URL itself is inserted.</li>
-        <li>Import/export YAML <code>- "👋 | Chào buổi sáng"</code>; importing merges. <span class="tag t-and">Android</span> can also add a snippet by sharing text from another app to VietTelex. <span class="tag t-ios">iOS</span> the ⚙️ tile at the end of the grid opens the Mẫu Câu tab.</li>
+        <li><b>Live snippets</b>: content starting with <code>https://</code> is fetched <b>when you tap it</b> and the result is inserted (max 1000 bytes) — e.g. “🌐 IP” inserts your current IP address.<span data-os="ios"> iOS needs Full Access.</span> Without network the URL itself is inserted.</li>
+        <li>Import/export YAML <code>- "👋 | Chào buổi sáng"</code>; importing merges.<span data-os="android"> <span class="tag t-and p">Android</span> can also add a snippet by sharing text from another app to VietTelex.</span><span data-os="ios"> <span class="tag t-ios p">iOS</span> the ⚙️ tile at the end of the grid opens the Mẫu Câu tab.</span></li>
         <li><b>Text tools</b> <span class="tag t-plus">Plus</span>: the <b>Aa</b> chip at the top of the snippet grid — UPPERCASE, lowercase, Title Case, Sentence case, remove tones; applied to the selection or the sentence before the cursor.</li>
       </ul>
     </div>
   </div>
 </section>
 
-<section id="clipboard">
+<section id="clipboard" data-os="ios android">
   <div class="wrap">
-    <h2>9. Clipboard &amp; incognito</h2>
-    <p class="lead"><b>Tính Năng → Riêng tư</b>. <span class="tag t-ios">iOS</span> <span class="tag t-and">Android</span></p>
+    <h2 class="n">Clipboard &amp; incognito</h2>
+    <p class="lead"><b>Tính Năng → Riêng tư</b>.</p>
     <div class="card">
       <ul>
-        <li><b>Clipboard history</b> (off by default): the 📋 button on the bar opens up to 20 recent copies — tap to paste, pin to keep. Unpinned items expire after 1 hour (password/OTP-like: 2 minutes). Password fields and content marked sensitive are skipped. iOS needs Full Access.</li>
+        <li><b>Clipboard history</b> (off by default): the 📋 button on the bar opens up to 20 recent copies — tap to paste, pin to keep. Unpinned items expire after 1 hour (password/OTP-like: 2 minutes). Password fields and content marked sensitive are skipped.<span data-os="ios"> iOS needs Full Access.</span></li>
         <li><b>Number-split chips</b> <span class="tag t-plus">Plus</span>: when the copied text contains a bank account / phone number / OTP, a “Dán STK…” chip pastes just the number. Unlimited pins are also Plus.</li>
-        <li><b>Incognito mode</b>: no word learning, no clipboard saving; a crossed-eye icon (iOS) / 🕶 (Android) shows on the keyboard. Android turns it on automatically in private-browser fields.</li>
+        <li><b>Incognito mode</b>: no word learning, no clipboard saving; <span data-os="ios">a crossed-eye icon<span class="leg-p"> (iOS)</span></span><span class="leg-p"> / </span><span data-os="android">🕶<span class="leg-p"> (Android)</span></span> shows on the keyboard.<span data-os="android"> Android turns it on automatically in private-browser fields.</span></li>
       </ul>
     </div>
   </div>
 </section>
 
-<section id="emoji">
+<section id="emoji" data-os="ios android">
   <div class="wrap">
-    <h2>10. Emoji &amp; kaomoji</h2>
+    <h2 class="n">Emoji &amp; kaomoji</h2>
     <div class="card">
       <ul>
         <li>The 😊 key opens a full emoji keyboard with a <b>Recents</b> 🕐 group.</li>
@@ -303,26 +412,27 @@
   </div>
 </section>
 
-<section id="look">
+<section id="look" data-os="ios android">
   <div class="wrap">
-    <h2>11. Appearance &amp; one-handed</h2>
+    <h2 class="n">Appearance &amp; one-handed</h2>
     <p class="lead"><b>Tính Năng → Giao diện</b>.</p>
     <div class="card">
       <ul>
         <li><b>Themes &amp; wallpaper</b>: System, OLED dark and High contrast are always free; other themes (Hồng đào, Bạc hà, Trời xanh, Oải hương, Kính…) and a custom background image (overlay dimming, blur) are <span class="tag t-plus">Plus</span>. Images are compressed on-device.</li>
         <li><b>Number row</b> 1…0 above the letters; <b>row height</b> ±10.</li>
-        <li><b>Hold top row for digits</b> (shown while the number row is off) and <b>hold rows 2–3 for symbols</b> — see <a href="#gestures">section 4</a>.</li>
-        <li><b>Key preview</b> pop-ups, <b>haptics</b> (iOS needs Full Access), faint <b>Vᴛ logo</b> on the space bar.</li>
-        <li><b>One-handed mode</b> (phones): Off / Left / Right — shrinks the keyboard to one side; buttons in the empty strip switch sides or exit. Quick toggle via the gesture in <a href="#gestures">section 4</a>.</li>
+        <li><b>Hold top row for digits</b> (shown while the number row is off) and <b>hold rows 2–3 for symbols</b> — see <a href="#gestures">Hidden gestures</a>.</li>
+        <li><b>Key preview</b> pop-ups, <b>haptics</b><span data-os="ios"> (iOS needs Full Access)</span>, faint <b>Vᴛ logo</b> on the space bar.</li>
+        <li><b>One-handed mode</b> (phones): Off / Left / Right — shrinks the keyboard to one side; buttons in the empty strip switch sides or exit. Quick toggle via the gesture in <a href="#gestures">Hidden gestures</a>.</li>
         <li><b>Smart key selection</b> <span class="tag t-exp">Experimental</span> (on by default): a tap right on the edge between two keys picks the one that fits the word; a tap in the middle of a key always gives that key, and typed text is never auto-corrected.</li>
+        <li><b>Auto-correct typos</b> <span class="tag t-exp">Experimental</span> (off by default): when you press space, if the word you just typed isn't a valid word and a tap clearly leaned onto the neighbouring key, it is replaced with the common word (<code>tpoi</code> → <code>tôi</code>). Only confident fixes; English words, words you use often and password/email/web fields are left alone. Press <b>⌫ right after</b> (or tap the <b>↩︎ original</b> chip on the suggestion bar) to get your original word back — that word won't be corrected again.</li>
       </ul>
     </div>
   </div>
 </section>
 
-<section id="android">
+<section id="android" data-os="android">
   <div class="wrap">
-    <h2>12. Android only <span class="tag t-and">Android</span></h2>
+    <h2 class="n">Android only <span class="tag t-and p">Android</span></h2>
     <div class="card">
       <ul>
         <li><b>Text-editing panel</b>: tap the cursor icon on the suggestion bar — arrows, line start/end, select / select word / select all, copy / cut / paste, undo / redo; the last row holds the text tools <span class="tag t-plus">Plus</span>.</li>
@@ -333,29 +443,122 @@
   </div>
 </section>
 
-<section id="backup">
+<section id="backup" data-os="ios android macos">
   <div class="wrap">
-    <h2>13. Backup &amp; sync</h2>
-    <p class="lead"><b>Giới Thiệu tab → Sao lưu &amp; đồng bộ</b>.</p>
+    <h2 class="n">Backup &amp; sync</h2>
+    <p class="lead" data-os="ios android"><b>Giới Thiệu tab → Sao lưu &amp; đồng bộ</b>.</p>
     <div class="card">
       <ul>
-        <li><b>Export / import a backup file</b>: settings, shortcuts, snippets (and learned words if “Kèm từ đã học” is on) — one file that opens on iPhone, iPad and Android. Import: settings follow the file, shortcuts and snippets are merged.</li>
-        <li><b>iCloud sync</b> <span class="tag t-ios">iOS</span> <span class="tag t-plus">Plus</span>: settings, shortcuts and learned words follow you to other devices on the same Apple ID. <span class="tag t-mac">macOS</span> syncs Telex options and the shortcut table with iPhone/iPad.</li>
-        <li><span class="tag t-and">Android</span> also backs settings up to Google (system backup) when you enable it.</li>
+        <li data-os="ios android"><b>Export / import a backup file</b>: settings, shortcuts, snippets (and learned words if “Kèm từ đã học” is on) — one file that opens on iPhone, iPad and Android. Import: settings follow the file, shortcuts and snippets are merged.</li>
+        <li data-os="ios"><b>iCloud sync</b> <span class="tag t-ios p">iOS</span> <span class="tag t-plus">Plus</span>: settings, shortcuts and learned words follow you to other devices on the same Apple ID.</li>
+        <li data-os="macos"><b>iCloud sync</b> <span class="tag t-mac p">macOS</span>: Settings… → Tùy chỉnh → <b>Đồng bộ cài đặt gõ và gõ tắt với iPhone/iPad</b> (sync typing settings and shortcuts; needs iCloud sign-in).</li>
+        <li data-os="android"><span class="tag t-and p">Android</span> also backs settings up to Google (system backup) when you enable it.</li>
       </ul>
     </div>
   </div>
 </section>
 
-<section id="macos">
+<section id="macos" data-os="macos">
   <div class="wrap">
-    <h2>14. On macOS <span class="tag t-mac">macOS</span></h2>
+    <h2 class="n">On macOS <span class="tag t-mac p">macOS</span></h2>
     <div class="card">
+      <h3>The Vᴛ menu bar menu</h3>
       <ul>
-        <li>Fix tones after typing, text shortcuts (<kbd>⌥</kbd><kbd>↩</kbd> for a line break in an expansion), VNI, teencode — same as on mobile.</li>
-        <li><b>Text tools</b>: select text in any app, then pick from the VietTelex menu — add tones to the selection (<code>toi di hoc</code> → tôi đi học), UPPERCASE, lowercase, Title Case, Sentence case, remove tones. An <b>add-tones hotkey</b> works in any app (needs Accessibility).</li>
-        <li><b>Switch hotkey</b>: press and release modifier keys alone to toggle VietTelex.</li>
-        <li>An app types wrong? See <a href="../../typing-modes">Typing modes in VietTelex</a> (Vietnamese).</li>
+        <li><b>Cơ chế gõ: …</b> (typing mode) of the current app — click to open the Typing modes table and copy debug info for a bug report.</li>
+        <li><b>Text tools</b> (enable in Tùy chỉnh → “Hiện công cụ văn bản trong menu VietTelex”): select text in any app, then pick — <b>add tones to the selection</b> (<code>toi di hoc</code> → tôi đi học), UPPERCASE, lowercase, Title Case, Sentence case, remove tones.</li>
+        <li><b>Cài đặt…</b> opens VietTelex settings; <b>Cài đặt hệ thống…</b> opens Keyboard → Input Sources.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Hotkeys</h3>
+      <ul>
+        <li><b>Switch Vietnamese/English</b>: macOS's 🌐 or <kbd>⌃</kbd><kbd>Space</kbd>; the <b>Cài đặt hotkey…</b> button opens Keyboard Shortcuts → Input Sources to change it.</li>
+        <li><b>Switch hotkey</b> <span class="tag t-exp">Experimental</span> (Thử nghiệm tab): press and release <kbd>⌃</kbd><kbd>⇧</kbd>, <kbd>⌥</kbd><kbd>⇧</kbd> or <kbd>⌘</kbd><kbd>⇧</kbd> alone to toggle between VietTelex and your previous input source — modifier-only combos macOS can't assign. Ignored if you type a key or click while holding them. Needs Accessibility.</li>
+        <li><b>Add-tones hotkey</b> (off by default): <kbd>⌃</kbd><kbd>⌥</kbd><kbd>T</kbd>, <kbd>⌃</kbd><kbd>⇧</kbd><kbd>T</kbd> or <kbd>⌥</kbd><kbd>⌘</kbd><kbd>T</kbd> — adds tones to the selected text in any app, even while another input source is active. Needs Accessibility (copies the selection, then pastes the result; your clipboard is restored).</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>An app types wrong? The typing modes table</h3>
+      <ul>
+        <li><b>Bảng cơ chế gõ</b> tab: VietTelex learns how to type in each app; you can pin a mode by hand — <b>Tap</b> (real keystrokes, no underline, needs Accessibility), <b>Marked text</b> (always renders correctly but underlines while typing), <b>Gõ trực tiếp</b> (in-place), <b>Passthrough</b> (IME off in that app)… A button clears the learned data (manual pins are kept). YAML import/export.</li>
+        <li>Per-app details: <a href="../../typing-modes">Typing modes in VietTelex</a> (Vietnamese).</li>
+        <li><b>Keep VietTelex when macOS auto-switches the input source</b> <span class="tag t-exp">Experimental</span>: some apps (Word comments…) make macOS fall back to the default input source in every new field; this switches back to VietTelex — only when the change wasn't yours.</li>
+        <li><b>Ẩn tính năng nâng cao</b> (hide advanced features) hides the Typing modes and Experimental tabs if you don't need them.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Other</h3>
+      <ul>
+        <li><b>Menu bar icon</b> (Thử nghiệm tab): Vᴛ, ★ or 🇻🇳 — takes effect after a Mac restart.</li>
+        <li><b>Updates</b>: the Check for updates button, or “check weekly and notify me”.</li>
+        <li><b>Debug log</b> (Thử nghiệm tab) records events only, never the text you type; copy it and paste into a bug report.</li>
+        <li><b>Gỡ cài đặt VietTelex…</b> (uninstall) in the Giới thiệu tab removes the app, settings and shortcuts. Installed with Homebrew: <code>brew uninstall --cask viettelex</code>.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="windows" data-os="windows">
+  <div class="wrap">
+    <h2 class="n">On Windows <span class="tag t-win p">Windows</span></h2>
+    <div class="card">
+      <h3>Switching Vietnamese/English</h3>
+      <ul>
+        <li>Kiểu gõ tab → <b>Phím chuyển Việt/Anh</b> (switch hotkey): <kbd>Ctrl</kbd><kbd>Shift</kbd> (UniKey style, default — press and release), <kbd>Alt</kbd><kbd>Z</kbd>, <kbd>Win</kbd><kbd>Space</kbd> (switches the Windows input method, VietTelex ↔ ENG) or Off.</li>
+        <li>With <kbd>Ctrl</kbd><kbd>Shift</kbd> / <kbd>Alt</kbd><kbd>Z</kbd>, VietTelex <b>remembers Vietnamese/English per app</b>.</li>
+        <li>With <kbd>Win</kbd><kbd>Space</kbd>, per-app memory depends on Windows' own option “Let me use a different input method for each app window” — VietTelex settings show its state and offer a button to turn it on.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>No underline, types everywhere</h3>
+      <ul>
+        <li>By default VietTelex edits text in place — the word being typed is not underlined.</li>
+        <li>Terminals (Command Prompt, PowerShell, Windows Terminal, PuTTY…) and Qt/Java/Adobe apps (Telegram, JetBrains…) are typed <b>directly, UniKey style</b>, while VietTelex is running.</li>
+        <li>Password, PIN, number, phone and email fields get the raw keys, no tones.</li>
+        <li><b>Ứng dụng</b> (Apps) tab — change only when an app types wrong: enter the executable (e.g. <code>notepad.exe</code>) and pick Mặc định (default, in-place), Composition, Trực tiếp (direct, no underline, UniKey style), Dự phòng (fallback keyboard hook) or Luôn tiếng Anh (always English). “Dự phòng” needs VietTelex running.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Icons, updates, other</h3>
+      <ul>
+        <li><b>Keyboard icon</b> (taskbar and the <kbd>Win</kbd><kbd>Space</kbd> list): Vᴛ, Star, Vietnam flag, Logo or “VI” text — changing it needs administrator rights.</li>
+        <li><b>Notification-area (tray) icon</b> (off by default): shows the current app's Vietnamese/English state (dimmed = English).</li>
+        <li><b>Language</b> of the settings window and tray menu: Tiếng Việt or English.</li>
+        <li><b>Updates</b>: click Check now, or turn on the automatic check (once a day). A downloaded installer is only run if it's validly signed.</li>
+        <li><b>Debug log</b>: records events to <code>%LOCALAPPDATA%\VietTelex\debug.log</code>, never what you type.</li>
+        <li><b>Uninstall…</b> in VietTelex settings, or Windows Settings → Apps.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="linux" data-os="linux">
+  <div class="wrap">
+    <h2 class="n">On Linux <span class="tag t-lin p">Linux</span></h2>
+    <div class="card">
+      <h3>Switching Vietnamese/English</h3>
+      <ul>
+        <li>Default <kbd>Ctrl</kbd><kbd>Space</kbd>; change it in the Tuỳ chỉnh tab → <b>Phím chuyển Việt/Anh</b> (needs at least one of Ctrl/Alt/Shift/Super; <kbd>Super</kbd><kbd>Space</kbd> is reserved by GNOME; Backspace = no hotkey).</li>
+        <li><b>Remember Vietnamese/English per app</b> and <b>new apps start in Vietnamese</b> (both on by default); <b>Quên tất cả</b> forgets the remembered states. Ubuntu 22.04 with IBus doesn't report which app is typing, so the state is shared by all apps (except on GNOME Wayland).</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>How the word being typed is shown</h3>
+      <ul>
+        <li><b>Cách hiện từ đang gõ</b>: <b>preedit</b> (default, works in every app) or <b>surrounding</b> (edit in place), which falls back to preedit in apps that don't support it.</li>
+        <li><b>Underline the word being typed</b> is off by default. Chrome/Electron and Wayland apps on GNOME always draw their own underline — it can't be turned off.</li>
+        <li><b>Terminals: type directly, fix tones with Backspace</b> (on by default) in GTK3/Qt terminals; other terminals use preedit.</li>
+        <li><b>Bảng cơ chế gõ</b> tab: force a mode per app — Auto, preedit, surrounding, direct (Backspace) or Vietnamese off. YAML import/export.</li>
+        <li>Remote desktop, virtual machine and Wine apps have Vietnamese off by default (type on the remote side); add the app to the table to type Vietnamese there.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Compatibility &amp; other</h3>
+      <ul>
+        <li>The <b>Tương thích</b> (compatibility) tab lists only the issues that apply to your machine, each with a copy-the-fix button — e.g. Chrome/Electron on Wayland need <code>--enable-wayland-ime</code>. Full list: <a href="https://github.com/ptrinh/viettelex/tree/main/linux" rel="noopener">linux/README</a>.</li>
+        <li>A <code>sudo</code> password prompt in a terminal can't be detected — switch to English before typing the password.</li>
+        <li>Settings live in <code>~/.config/viettelex/config.toml</code> and <code>shortcuts.yml</code>.</li>
+        <li><b>Updates</b>: <code>sudo apt upgrade</code> (APT repository), or the Check for updates button in the Giới thiệu tab.</li>
       </ul>
     </div>
   </div>
@@ -364,11 +567,15 @@
 <section id="access">
   <div class="wrap">
     <div class="note">
-      <h2>15. Full Access &amp; Plus</h2>
+      <h2 class="n">Permissions, privacy &amp; Plus</h2>
       <ul>
-        <li><b>iOS</b>: the keyboard is fully usable <b>without</b> Full Access. It's only needed for haptics, live snippets (https://), the Paste button, clipboard history and saving learned words. VietTelex never collects or sends what you type.</li>
-        <li><b>Android</b>: network access is used only for live snippets you create.</li>
-        <li><b>VietTelex Plus</b> (one-time purchase): premium themes &amp; wallpaper, whole-sentence tones, advanced clipboard, iCloud sync, text tools, a thank-you badge. All typing features are free forever; right now every Plus feature is unlocked for everyone.</li>
+        <li data-os="ios"><b>iOS</b>: the keyboard is fully usable <b>without</b> Full Access. It's only needed for haptics, live snippets (https://), the Paste button, clipboard history and saving learned words. VietTelex never collects or sends what you type.</li>
+        <li data-os="android"><b>Android</b>: network access is used only for live snippets you create. VietTelex never collects or sends what you type.</li>
+        <li data-os="macos"><b>macOS</b>: <b>Accessibility</b> is needed for typing in Terminal/Chrome (Tap mode), the switch hotkey and the add-tones hotkey. No data collection.</li>
+        <li data-os="windows"><b>Windows</b>: no data collection; network is used only when you click Check for updates or turn on the automatic check.</li>
+        <li data-os="linux"><b>Linux</b>: no data collection; network is used only when you click Check for updates.</li>
+        <li data-os="ios android"><b>VietTelex Plus</b> (one-time purchase): premium themes &amp; wallpaper, whole-sentence tones, advanced clipboard, iCloud sync, text tools, a thank-you badge. All typing features are free forever; right now every Plus feature is unlocked for everyone.</li>
+        <li data-os="macos windows linux">The desktop versions are free and open source (MIT).</li>
       </ul>
       <p style="margin-top:12px">Found a bug or have an idea? <a href="https://github.com/ptrinh/viettelex/issues">Report it on GitHub</a> · New to Telex? <a href="../../learn/">Learn Telex</a>.</p>
     </div>
@@ -382,5 +589,42 @@
   <a href="https://github.com/ptrinh/viettelex/issues">Report a bug</a>
   <div style="margin-top:8px;">© 2026 VietTelex</div>
 </footer>
+<script>
+(function () {
+  var st = window.vtxOS, bar = document.getElementById('ospick'), note = document.getElementById('osnote');
+  if (!st || !bar) return;
+  var root = document.documentElement, btns = bar.querySelectorAll('button[data-set]');
+  function label(os) {
+    for (var i = 0; i < btns.length; i++) if (btns[i].getAttribute('data-set') === os) return btns[i].textContent;
+    return os;
+  }
+  function apply(os) {
+    root.setAttribute('data-pick', os);
+    for (var i = 0; i < btns.length; i++)
+      btns[i].setAttribute('aria-pressed', btns[i].getAttribute('data-set') === os ? 'true' : 'false');
+    // Mục lục chỉ liệt kê mục đang hiện.
+    var links = document.querySelectorAll('.toc li > a[href^="#"]');
+    for (var j = 0; j < links.length; j++) {
+      var t = document.getElementById(links[j].getAttribute('href').slice(1));
+      links[j].parentNode.hidden = !t || getComputedStyle(t).display === 'none';
+    }
+    var tpl = note.getAttribute(st.how === 'auto' && os !== 'all' ? 'data-auto' : os === 'all' ? 'data-all' : 'data-one');
+    note.textContent = tpl.replace('%s', label(os));
+  }
+  bar.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('button[data-set]') : null;
+    if (!b) return;
+    var os = b.getAttribute('data-set');
+    st.how = 'pick';
+    apply(os);
+    try { localStorage.setItem('vtx-guide-os', os); } catch (err) {}
+    try { history.replaceState(null, '', location.pathname + (os === 'all' ? '' : '?os=' + os) + location.hash); } catch (err) {}
+  });
+  apply(st.os);
+  // Link #mục trỏ tới phần đang ẩn (vd #macos trên iPhone) → hiện tất cả.
+  var h = location.hash && document.getElementById(location.hash.slice(1));
+  if (h && getComputedStyle(h).display === 'none') { apply('all'); h.scrollIntoView(); }
+})();
+</script>
 </body>
 </html>

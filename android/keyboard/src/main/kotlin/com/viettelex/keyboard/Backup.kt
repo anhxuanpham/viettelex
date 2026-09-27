@@ -52,6 +52,7 @@ object BackupSettings {
         Spec(Keys.ADD_TONES_CHIP, SettingKind.Bool(false)),
         Spec(Keys.NUMBER_CHIPS, SettingKind.Bool(true)),
         Spec(Keys.SMART_TOUCH, SettingKind.Bool(true)),
+        Spec(Keys.AUTO_CORRECT, SettingKind.Bool(false)),
         Spec(Keys.AUTO_CAPITALIZE, SettingKind.Bool(true)),
         Spec(Keys.SPACE_SWIPE_LANGUAGE, SettingKind.Bool(false)),
         Spec(Keys.LONG_PRESS_NUMBERS, SettingKind.Bool(true)),

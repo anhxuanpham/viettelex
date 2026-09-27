@@ -302,6 +302,9 @@ fun TinhNangTab() {
         BoolToggle(Keys.SMART_TOUCH, Prefs.D.smartTouch, "Chọn phím thông minh",
             "Chạm lệch sát mép giữa hai phím thì bàn phím chọn phím hợp với chữ đang gõ (như iPhone) — bớt gõ trượt sang phím bên cạnh. Chạm giữa phím luôn ra đúng phím đó; chữ đã gõ không bao giờ bị tự sửa.")
         RowDivider()
+        BoolToggle(Keys.AUTO_CORRECT, Prefs.D.autoCorrect, "Tự sửa từ gõ sai",
+            "Sửa khi gõ dấu cách nếu chữ vừa gõ không phải từ hợp lệ (chạm trượt sang phím kề: tpoi → tôi). Chỉ sửa khi chắc chắn; không đụng từ tiếng Anh, từ bạn hay dùng, ô mật khẩu/email/web. ⌫ ngay sau đó để trả lại chữ gốc — từ đó sẽ không bị sửa nữa.")
+        RowDivider()
         BoolToggle(Keys.SWIPE_TYPING, Prefs.D.swipeTyping, "Gõ vuốt",
             "Lướt ngón qua các chữ KHÔNG DẤU của một âm tiết rồi nhấc tay: viet → việt. Thanh gợi ý hiện các dấu khác; gõ phím dấu Telex ngay sau đó để đổi dấu, ⌫ xoá cả từ vừa vuốt. Tự tắt khi bật TalkBack và ở ô mật khẩu, email, địa chỉ web.")
         val swipeOn by rememberBoolPref(Keys.SWIPE_TYPING, Prefs.D.swipeTyping)
@@ -565,7 +568,7 @@ fun GioiThieuTab(plus: com.viettelex.android.plus.PlusController, onOpenPlus: ()
     }
     PlusEntryRow(plus, onOpenPlus)
     VTSection(header = "Tài nguyên") {
-        LinkRow(Glyph.Info, "Hướng dẫn sử dụng") { openUrl(ctx, "https://viettelex.com/hdsd") }
+        LinkRow(Glyph.Info, "Hướng dẫn sử dụng") { openUrl(ctx, "https://viettelex.com/hdsd/?os=android") }
         RowDivider(52.dp)
         LinkRow(Glyph.Globe, "Website") { openUrl(ctx, "https://ptrinh.github.io/viettelex/") }
         RowDivider(52.dp)

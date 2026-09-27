@@ -20,7 +20,7 @@ final class BackupTests: XCTestCase {
         }
         s["hapticFeedback"] = .bool(true); s["modernTone"] = .bool(true); s["numberRow"] = .bool(true)
         s["reEditWords"] = .bool(false); s["showSpaceLogo"] = .bool(false); s["swipeTyping"] = .bool(true)
-        s["rowHeightAdjust"] = .int(-3); s["autoCapitalize"] = .bool(false)
+        s["rowHeightAdjust"] = .int(-3); s["autoCorrect"] = .bool(true); s["autoCapitalize"] = .bool(false)
         s["keyboardTransparency"] = .int(40); s["keyLabelTransparency"] = .int(20)
         return BackupPayload(
             createdAt: iso.date(from: "2026-09-27T08:00:00Z"), platform: "ios", settings: s,
@@ -131,6 +131,18 @@ final class BackupTests: XCTestCase {
         let (t, _) = makeStore()
         _ = t.apply(try BackupCodec.decode(BackupCodec.encode(snap)))
         for k in ["emojiSuggest", "pasteButton", "smartTouch", "autoCapitalize"] { XCTAssertEqual(t.defaults.object(forKey: k) as? Bool, false, k) }
+    }
+
+    /// Tự sửa từ gõ sai (Thử nghiệm, mặc định TẮT) đi theo sao lưu.
+    func testSnapshotIncludesAutoCorrect() throws {
+        let (s, _) = makeStore()
+        XCTAssertEqual(s.snapshot(includeLearned: false).settings?["autoCorrect"], .bool(false))
+        s.defaults.set(true, forKey: "autoCorrect")
+        let snap = s.snapshot(includeLearned: false)
+        XCTAssertEqual(snap.settings?["autoCorrect"], .bool(true))
+        let (t, _) = makeStore()
+        _ = t.apply(try BackupCodec.decode(BackupCodec.encode(snap)))
+        XCTAssertEqual(t.defaults.object(forKey: "autoCorrect") as? Bool, true)
     }
 
     func testImportAndroidFileIntoIOSStore() throws {

@@ -32,6 +32,10 @@ object Keys {
     const val SWIPE_PRACTICE_SAVE = "swipePracticeSave"
     /** Chọn phím theo ngữ cảnh lúc chạm (thử nghiệm, mặc định BẬT) — TouchTarget. */
     const val SMART_TOUCH = "smartTouch"
+    /** Tự sửa từ gõ sai ở dấu cách (thử nghiệm, mặc định TẮT) — AutoCorrect. */
+    const val AUTO_CORRECT = "autoCorrect"
+    /** Từ từng hoàn tác tự sửa (chuỗi nhiều dòng) — trạng thái bàn phím, KHÔNG sao lưu. */
+    const val AUTO_CORRECT_REJECTED = "autoCorrectRejected"
     /** Vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh — mặc định TẮT (tắt ⇒ luôn Tiếng Việt). */
     const val SPACE_SWIPE_LANGUAGE = "spaceSwipeLanguage"
     /** Ngôn ngữ đang gõ ("vi" | "en") — trạng thái bàn phím, KHÔNG sao lưu. */

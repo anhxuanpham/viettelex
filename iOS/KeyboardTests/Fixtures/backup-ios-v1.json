@@ -27,6 +27,7 @@
   "settings" : {
     "addTonesChip" : false,
     "autoCapitalize" : false,
+    "autoCorrect" : true,
     "autoFixAdjacent" : true,
     "autoRestore" : true,
     "contextualEnglish" : true,

@@ -824,6 +824,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     static let undoTonesToken = "\u{E000}undoTones"
     /// Payload chip "↩︎ từ cũ": hoàn tác lần vuốt vừa sửa lại từ vuốt trước (SwipeRevise).
     static let undoReviseToken = "\u{E000}undoRevise"
+    /// Payload chip "↩︎ chữ gốc": trả lại chữ đã gõ của lần tự sửa vừa rồi (AutoCorrect).
+    static let undoAutoCorrectToken = "\u{E000}undoAutoCorrect"
 
     func showSuggestions(_ set: SuggestionSet) {
         guard suggestionsEnabled, !barCollapsed else { return }
@@ -3103,6 +3105,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// gõ) lúc chạm, nil = không biết / tắt. nil (mặc định) ⇒ router gần-nhất như cũ.
     var letterPrior: (() -> ((Character) -> Float?)?)?
 
+    /// Tự sửa (thử nghiệm): điểm chạm của phím chữ sắp chèn — lệch so với tâm phím, theo cỡ
+    /// phím. Gọi NGAY TRƯỚC khi phím đó tới controller. nil (tắt) ⇒ không tính gì.
+    var onLetterTouch: ((Float, Float) -> Void)?
+
     /// Vùng biên giữa 2 phím ⇒ TouchTarget.choose; lõi phím ⇒ giữ ngay (0 alloc).
     private func smartPick(_ hit: UIButton, at p: CGPoint,
                            prior lp: () -> ((Character) -> Float?)?) -> UIButton {
@@ -3142,6 +3148,12 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         if Self.isPad { routedStart[id] = raw }
         let since = lastLetterDownTime.map { time - $0 }
         lastLetterDownTime = time
+        if let report = onLetterTouch, plane == .letters {          // tự sửa: lệch so với tâm phím
+            let r = convert(b.bounds, from: b)
+            if r.width > 0, r.height > 0 {
+                report(Float((p.x - r.midX) / r.width), Float((p.y - r.midY) / r.height))
+            }
+        }
         b.sendActions(for: .touchDown)
         if swipeEnabled, plane == .letters, routedTouches.count == 1, let kw = letterKeyPitch() {
             startClassifying(id, at: p, time: time, key: convert(b.bounds, from: b),
