@@ -53,7 +53,6 @@ object Templates {
         return out to notice
     }
 
-    /** Thêm mới từ tab Mẫu Câu: trim, chặn rỗng + trùng text. null = không thêm. */
     /** Sửa dòng [index]; null nếu câu rỗng, trùng dòng khác, hoặc index sai. */
     fun edit(current: List<TemplateItem>, index: Int, label: String, text: String): List<TemplateItem>? {
         val t = text.trim()
@@ -63,11 +62,36 @@ object Templates {
         return current.toMutableList().also { it[index] = TemplateItem(l, t) }
     }
 
-    fun add(current: List<TemplateItem>, label: String, text: String): List<TemplateItem>? {
+    /** Thêm mới: null = không thêm (lý do: [tryAdd]). */
+    fun add(current: List<TemplateItem>, label: String, text: String): List<TemplateItem>? =
+        (tryAdd(current, label, text) as? AddResult.Added)?.list
+
+    /** Kết quả thêm mẫu câu — không bao giờ "im lặng": mọi nhánh không thêm có lý do. */
+    sealed class AddResult {
+        data class Added(val list: List<TemplateItem>) : AddResult()
+        object EmptyText : AddResult()
+        /** Trùng câu ở dòng [index] (0-based). */
+        data class Duplicate(val index: Int) : AddResult()
+    }
+
+    /**
+     * Thêm mới từ tab Mẫu Câu: trim câu (giữ xuống dòng bên trong), label bỏ khoảng trắng/
+     * xuống dòng hai đầu. Label/câu nhận MỌI ký tự (emoji, "→", "&", "|"…) — chỉ chặn câu
+     * rỗng và câu trùng (so sau trim). Lỗi iOS 27/09/2026: "Ig😊" + câu có "→" bấm ⊕ im lặng.
+     */
+    fun tryAdd(current: List<TemplateItem>, label: String, text: String): AddResult {
         val t = text.trim()
-        val l = label.trim(' ', '\t')
-        if (t.isEmpty() || current.any { it.text == t }) return null
-        return current + TemplateItem(l, t)
+        if (t.isEmpty()) return AddResult.EmptyText
+        val dup = current.indexOfFirst { it.text.trim() == t }
+        if (dup >= 0) return AddResult.Duplicate(dup)
+        return AddResult.Added(current + TemplateItem(label.trim(), t))
+    }
+
+    /** Câu báo cho người dùng khi không thêm được (null = đã thêm). */
+    fun addNotice(r: AddResult): String? = when (r) {
+        is AddResult.Added -> null
+        AddResult.EmptyText -> "Chưa có nội dung mẫu câu — nhập câu vào ô bên phải rồi bấm ⊕."
+        is AddResult.Duplicate -> "Mẫu câu này đã có (dòng ${r.index + 1}) — không thêm lại."
     }
 
     /** Mẫu động: fetch lúc chạm. */

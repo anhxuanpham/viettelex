@@ -319,7 +319,7 @@ final class KeyboardViewController: UIInputViewController {
         // Thay đổi từ NGOÀI edit của mình (tap chỗ khác, đổi ô, host tự gán lại
         // text…). Edit của mình không gọi lại hàm này trong lúc handle() chạy.
         TouchLog.host("textWillChange", applyingEdit: applyingEdit, composing: bridge.isComposing)
-        if !applyingEdit { externalChangePending = true }
+        if !applyingEdit, !trackpadActive { externalChangePending = true }
     }
 
     // Selection/con trỏ vừa đổi từ NGOÀI (select-all rồi gõ đè, tap chỗ khác,
@@ -328,7 +328,7 @@ final class KeyboardViewController: UIInputViewController {
     // hoa chữ đầu. Không tính ở textWillChange vì lúc đó context THÁO DỞ.
     override func textDidChange(_ textInput: UITextInput?) {
         TouchLog.host("textDidChange", applyingEdit: applyingEdit, composing: bridge.isComposing)
-        if !applyingEdit {
+        if !applyingEdit, !trackpadActive {
             if externalChangePending { syncComposition("textDidChange") }
             refreshFieldTraits()
             updateAutoShift()
@@ -337,16 +337,16 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     override func selectionWillChange(_ textInput: UITextInput?) {
-        if !applyingEdit { externalChangePending = true }
+        if !applyingEdit, !trackpadActive { externalChangePending = true }
     }
 
     override func selectionDidChange(_ textInput: UITextInput?) {
         TouchLog.host("selectionDidChange", applyingEdit: applyingEdit, composing: bridge.isComposing)
-        if !applyingEdit {
+        if !applyingEdit, !trackpadActive {
             if externalChangePending { syncComposition("selectionDidChange") }
             refreshFieldTraits()
         }
-        keyboard?.refreshEditPanel()     // Sao chép / Cắt sáng khi người dùng vừa chọn chữ
+        if !trackpadActive { keyboard?.refreshEditPanel() }     // Sao chép / Cắt sáng khi người dùng vừa chọn chữ
     }
 
     // MARK: chế độ một tay + bảng sửa văn bản
@@ -445,7 +445,7 @@ final class KeyboardViewController: UIInputViewController {
         addTonesUndo = nil
         let proxy = Proxy(p: textDocumentProxy)
         // textWillChange tới mà textDidChange chưa kịp → đối chiếu ngay trước phím.
-        if externalChangePending { syncComposition("key") }
+        if externalChangePending, !trackpadActive { syncComposition("key") }
         if textToolUndo != nil {               // ⌫ ngay sau công cụ văn bản = hoàn tác
             if case .backspace = key { undoTextTool(); return }
             textToolUndo = nil
@@ -597,6 +597,8 @@ final class KeyboardViewController: UIInputViewController {
         }
         suggestionGen += 1
         let gen = suggestionGen
+        // Trackpad đang kéo: auto-shift + gợi ý tính một lần lúc nhả tay (trackpadChanged).
+        if trackpadActive { return }
         // Auto-shift TỨC THÌ (ảnh hưởng chữ hoa của phím kế tiếp — không debounce
         // được, kẻo gõ nhanh sau ". " không kịp viết hoa).
         if needsAutoShift {
@@ -621,6 +623,8 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private var suggestionGen = 0
+    /// Đang giữ phím cách di con trỏ (KeyboardView.onTrackpad) — xem trackpadChanged.
+    private var trackpadActive = false
     /// Số lượt updateSuggestions — kết quả nền chỉ áp nếu là lượt mới nhất.
     private var suggestReq = 0
     private static let suggestQueue = DispatchQueue(label: "com.viettelex.suggest",
@@ -1450,6 +1454,19 @@ extension KeyboardViewController {
             return WordDelete.availableWords(context: ctx)
         }
         keyboard.onWordSwipeEnd = { [weak self] n in self?.commitWordSwipe(n) }
+        keyboard.onTrackpad = { [weak self] on in self?.trackpadChanged(on) }
+    }
+
+    /// Đang giữ phím cách di con trỏ: mỗi bước chỉ còn bridge.reset + adjustTextPosition.
+    /// Auto-shift / gợi ý / đồng bộ composition (đọc context) / đọc lại trait ô do
+    /// selectionDidChange của host — tất cả hoãn tới lúc nhả tay, chạy MỘT lần.
+    fileprivate func trackpadChanged(_ on: Bool) {
+        trackpadActive = on
+        guard !on else { return }
+        externalChangePending = false      // đổi selection trong lúc kéo là của mình
+        updateAutoShift()
+        updateSuggestions()
+        keyboard?.refreshEditPanel()
     }
 
     fileprivate func commitWordSwipe(_ words: Int) {

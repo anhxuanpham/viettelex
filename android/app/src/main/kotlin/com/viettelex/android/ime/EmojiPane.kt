@@ -3,7 +3,6 @@ package com.viettelex.android.ime
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.text.TextPaint
-import android.text.TextUtils
 import android.view.VelocityTracker
 import android.view.ViewConfiguration
 import android.widget.OverScroller
@@ -13,19 +12,19 @@ import kotlin.math.ceil
 
 /**
  * Plane emoji (port iOS EmojiPlane, spec §10.1) vẽ thẳng trên Canvas của
- * [KeyboardView] — không RecyclerView/ViewGroup. Lưới cuộn NGANG column-major 5 hàng
- * liên tục qua category, tiêu đề section xám trên cột đầu, hàng dưới
- * [ABC][🔍][9 icon category][^‿^][⌫]. Chỉ vẽ cột đang thấy. 🔍 → plane EMOJI_SEARCH
- * (KeyboardView); ^‿^ → tab kaomoji / ký tự đặc biệt (cuộn dọc, chạm chèn nguyên văn).
+ * [KeyboardView] — không RecyclerView/ViewGroup. Trên cùng: THANH TÌM EMOJI luôn hiện
+ * (ô bo tròn 🔍 "Tìm emoji" như iOS 27 / Gboard — chạm = plane EMOJI_SEARCH). Lưới cuộn
+ * NGANG column-major liên tục qua category, KHÔNG tiêu đề nhóm; ô ≥ 44 dp, glyph ~ iOS
+ * gốc ([EmojiGridLayout]). Hàng dưới [ABC][🔍][9 icon category][^‿^][⌫]. Chỉ vẽ cột
+ * đang thấy. ^‿^ → tab kaomoji / ký tự đặc biệt (cuộn dọc, chạm chèn nguyên văn).
  */
 class EmojiPane(
     private val host: KeyboardView,
     private val theme: ImeTheme,
     private val feedback: Feedback,
 ) {
-    private class Section(val name: String, val emoji: List<String>, val title: String) {
-        var headerX = 0f; var itemsX = 0f; var cols = 0; var endX = 0f
-        var titleShown = title
+    private class Section(val name: String, val emoji: List<String>) {
+        var itemsX = 0f; var cols = 0; var endX = 0f
     }
 
     private val d = theme.density
@@ -33,7 +32,11 @@ class EmojiPane(
     private var width = 0f
     private var height = 0f
     private var collTop = 0f; private var collH = 0f
-    private var item = 0f
+    /** Ô lưới (px) + số hàng — [EmojiGridLayout]; gridTop = dưới thanh tìm. */
+    private var cellW = 0f; private var cellH = 0f; private var rows = 5
+    private var gridTop = 0f
+    /** Thanh tìm emoji trên cùng (ẩn ở tab kaomoji). */
+    private var barH = 0f
     private var contentW = 0f
     private var scrollX = 0f
     private val scroller = OverScroller(host.context)
@@ -43,7 +46,9 @@ class EmojiPane(
 
     private val emojiPaint = theme.text(30f)
     private var emojiOff = 0f
-    private var headerBase = 0f
+    private val fieldPaint = theme.fill(theme.keyFill)
+    private val hintPaint = theme.text(16f, color = theme.withAlpha(theme.ink, 0.5f), align = Paint.Align.LEFT)
+    private val hintOff = theme.centerOffset(hintPaint)
     private val headerPaint = TextPaint(theme.text(11f, color = theme.withAlpha(theme.ink, 0.5f), bold = true,
         align = Paint.Align.LEFT))
     private val abcPaint = theme.text(15f, medium = true)
@@ -96,8 +101,8 @@ class EmojiPane(
     fun open(recents: List<String>) {
         dismissPopup()
         val list = ArrayList<Section>(10)
-        if (recents.isNotEmpty()) list += Section(EmojiData.RECENTS, recents, EmojiData.displayName(EmojiData.RECENTS))
-        for (c in EmojiData.categories) list += Section(c.name, c.emoji, EmojiData.displayName(c.name))
+        if (recents.isNotEmpty()) list += Section(EmojiData.RECENTS, recents)
+        for (c in EmojiData.categories) list += Section(c.name, c.emoji)
         sections = list
         scrollX = 0f
         scroller.forceFinished(true)
@@ -114,10 +119,13 @@ class EmojiPane(
         rowBottom = h - theme.dp(2f)
         rowTop = rowBottom - theme.dp(32f)
         collH = rowTop - theme.dp(2f) - collTop
-        item = maxOf((collH - HEADER_BAND * d - 4 * 4 * d) / 5f, 10 * d)
-        emojiPaint.textSize = minOf(theme.sp(30f), item * 0.82f)
+        // Cùng cao hàng ô tìm của plane EMOJI_SEARCH ⇒ chạm vào không nhảy vị trí.
+        barH = KeyLayout.searchHeaderPx(h)
+        gridTop = barH + theme.dp(2f)
+        val m = EmojiGridLayout.metrics(w / d, maxOf(rowTop - theme.dp(2f) - gridTop, 0f) / d)
+        rows = m.rows; cellW = m.cellW * d; cellH = m.cellH * d
+        emojiPaint.textSize = minOf(theme.sp(EmojiGridLayout.MAX_GLYPH), m.glyph * d)
         emojiOff = theme.centerOffset(emojiPaint)
-        headerBase = collTop - headerPaint.fontMetrics.ascent
         val abcW = 44 * d; val side = 8 * d; val gap = 2 * d
         iconsLeft = side + abcW + gap
         iconW = (w - 2 * side - 2 * abcW - 2 * gap) / SLOTS
@@ -154,19 +162,13 @@ class EmojiPane(
 
     private fun relayoutSections() {
         if (width == 0f) return
+        // Ô đều nhau, section nối tiếp (mỗi section bắt đầu cột mới), không tiêu đề.
         var x = 0f
         for (s in sections) {
-            s.headerX = x
-            x += 8 * d                     // header strip
-            x += 6 * d                     // section inset trái
             s.itemsX = x
-            s.cols = maxOf(ceil(s.emoji.size / 5.0).toInt(), 1)
-            x += s.cols * item + (s.cols - 1) * 8 * d
+            s.cols = maxOf(ceil(s.emoji.size / rows.toDouble()).toInt(), 1)
+            x += s.cols * cellW
             s.endX = x
-            x += 6 * d
-            val maxW = s.cols * item + (s.cols - 1) * 8 * d
-            // Tiêu đề không tràn sang section kế (bug iOS 2026-07-25) — ellipsize 1 lần.
-            s.titleShown = TextUtils.ellipsize(s.title, headerPaint, maxW, TextUtils.TruncateAt.END).toString()
         }
         contentW = x
         scrollX = scrollX.coerceIn(0f, maxScroll())
@@ -179,26 +181,23 @@ class EmojiPane(
     fun draw(c: Canvas) {
         if (kaomoji) { drawKaomoji(c); drawCategoryRow(c); return }
         val w = width
+        drawSearchBar(c)
         c.save()
-        c.clipRect(0f, 0f, w, rowTop - theme.dp(1f))
-        val colStep = item + 8 * d
-        val rowStep = item + 4 * d
-        val gridTop = collTop + HEADER_BAND * d
+        c.clipRect(0f, gridTop - theme.dp(2f), w, rowTop - theme.dp(1f))
         val secs = sections
+        val n = rows
         for (si in secs.indices) {
             val s = secs[si]
-            if (s.endX + 6 * d < scrollX || s.headerX > scrollX + w) continue
-            c.drawText(s.titleShown, s.headerX + 2 * d - scrollX, headerBase, headerPaint)
-            val firstCol = maxOf(0, ((scrollX - s.itemsX) / colStep).toInt())
-            var col = firstCol
+            if (s.endX < scrollX || s.itemsX > scrollX + w) continue
+            var col = maxOf(0, ((scrollX - s.itemsX) / cellW).toInt())
             while (col < s.cols) {
-                val x0 = s.itemsX + col * colStep - scrollX
+                val x0 = s.itemsX + col * cellW - scrollX
                 if (x0 > w) break
-                val cx = x0 + item / 2
-                for (r in 0 until 5) {
-                    val idx = col * 5 + r
+                val cx = x0 + cellW / 2
+                for (r in 0 until n) {
+                    val idx = col * n + r
                     if (idx >= s.emoji.size) break
-                    c.drawText(s.emoji[idx], cx, gridTop + r * rowStep + item / 2 + emojiOff, emojiPaint)
+                    c.drawText(s.emoji[idx], cx, gridTop + r * cellH + cellH / 2 + emojiOff, emojiPaint)
                 }
                 col++
             }
@@ -206,6 +205,18 @@ class EmojiPane(
         c.restore()
         drawCategoryRow(c)
         popup?.let { drawPopup(c, it) }
+    }
+
+    /** Ô tìm bo tròn kiểu iOS 27 / Gboard: 🔍 + "Tìm emoji" (chạm = plane tìm). */
+    private fun drawSearchBar(c: Canvas) {
+        val l = 8 * d; val r = width - 8 * d
+        val t = 5 * d; val b = barH - 3 * d
+        val rad = (b - t) / 2
+        val cy = (t + b) / 2
+        c.drawRoundRect(l, t, r, b, rad, rad, fieldPaint)
+        iconPaint.color = theme.withAlpha(theme.ink, 0.5f)
+        ImeIcons.draw(c, ImeIcons.SEARCH, l + 18 * d, cy, 16 * d, iconPaint)
+        c.drawText(EmojiSearchBar.HINT, l + 34 * d, cy + hintOff, hintPaint)
     }
 
     private fun drawKaomoji(c: Canvas) {
@@ -277,7 +288,7 @@ class EmojiPane(
         val s = sectionIndex(icon) ?: return
         if (sections[s].emoji.isEmpty()) return
         pendingIcon = icon
-        val target = (sections[s].itemsX - 6 * d).coerceIn(0f, maxScroll())
+        val target = sections[s].itemsX.coerceIn(0f, maxScroll())
         scroller.forceFinished(true)
         scroller.startScroll(scrollX.toInt(), 0, (target - scrollX).toInt(), 0, 300)
         highlighted = icon
@@ -333,6 +344,9 @@ class EmojiPane(
                 else -> iconPtr = pid
             }
             return
+        }
+        if (!kaomoji && y < barH) {   // thanh tìm emoji
+            feedback.click(Feedback.MODIFIER, host); host.paneSearch(); return
         }
         if (gridPtr >= 0) return    // một ngón cuộn/tap lưới
         gridPtr = pid
@@ -441,7 +455,7 @@ class EmojiPane(
             // Lần dùng đầu trong phiên: section 🕐 xuất hiện ngay.
             val keep = scrollX
             val list = ArrayList<Section>(sections.size + 1)
-            list += Section(EmojiData.RECENTS, listOf(e), EmojiData.displayName(EmojiData.RECENTS))
+            list += Section(EmojiData.RECENTS, listOf(e))
             list.addAll(sections)
             sections = list
             relayoutSections()
@@ -466,18 +480,14 @@ class EmojiPane(
     }
 
     private fun emojiAt(x: Float, y: Float): String? {
-        val gridTop = collTop + HEADER_BAND * d
-        val rowStep = item + 4 * d
-        val colStep = item + 8 * d
         if (y < gridTop - 2 * d) return null
-        val r = ((y - gridTop) / rowStep).toInt()
-        if (r !in 0..4) return null
+        val r = ((y - gridTop) / cellH).toInt().coerceAtMost(rows - 1)
+        if (r < 0) return null
         val cx = x + scrollX
         for (s in sections) {
-            if (cx < s.itemsX - 4 * d || cx > s.endX + 4 * d) continue
-            val col = ((cx - s.itemsX + 4 * d) / colStep).toInt().coerceIn(0, s.cols - 1)
-            val idx = col * 5 + r
-            return s.emoji.getOrNull(idx)
+            if (cx < s.itemsX || cx >= s.endX) continue
+            val col = ((cx - s.itemsX) / cellW).toInt().coerceIn(0, s.cols - 1)
+            return s.emoji.getOrNull(col * rows + r)
         }
         return null
     }
@@ -488,17 +498,14 @@ class EmojiPane(
         val variants = EmojiData.toneVariants(e) ?: return
         feedback.click(Feedback.MODIFIER, host)
         // ô chứa điểm chạm
-        val gridTop = collTop + HEADER_BAND * d
-        val rowStep = item + 4 * d
-        val colStep = item + 8 * d
-        val r = ((y - gridTop) / rowStep).toInt()
-        val cellTop = gridTop + r * rowStep
+        val r = ((y - gridTop) / cellH).toInt().coerceIn(0, rows - 1)
+        val cellTop = gridTop + r * cellH
         var cellMid = x
         for (s in sections) {
             val cx = x + scrollX
-            if (cx >= s.itemsX - 4 * d && cx <= s.endX + 4 * d) {
-                val col = ((cx - s.itemsX + 4 * d) / colStep).toInt().coerceIn(0, s.cols - 1)
-                cellMid = s.itemsX + col * colStep + item / 2 - scrollX
+            if (cx >= s.itemsX && cx < s.endX) {
+                val col = ((cx - s.itemsX) / cellW).toInt().coerceIn(0, s.cols - 1)
+                cellMid = s.itemsX + col * cellW + cellW / 2 - scrollX
                 break
             }
         }
@@ -526,7 +533,6 @@ class EmojiPane(
     }
 
     companion object {
-        private const val HEADER_BAND = 14f
         /** Hàng dưới giữa ABC và ⌫: 🔍 + 9 category + kaomoji. */
         private const val SLOTS = 11
     }

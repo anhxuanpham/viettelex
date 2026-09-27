@@ -482,7 +482,7 @@ struct MauCauSections: View {
         Section {
             FullAccessNotice(reason: "Mẫu câu động")
         } header: { Text("Mẫu câu động (https://)") } footer: {
-            Text("Mẫu có nội dung bắt đầu bằng https:// sẽ fetch dữ liệu NGAY LÚC BẤM và chèn kết quả (tối đa 1000 bytes) — ví dụ IP❓ chèn địa chỉ IP hiện tại. Chưa cấp Toàn quyền thì bàn phím không có mạng, bấm sẽ chèn chính URL.")
+            Text("Mẫu có nội dung bắt đầu bằng https:// sẽ fetch dữ liệu NGAY LÚC BẤM và chèn kết quả (tối đa 1000 bytes) — ví dụ 🌐 IP chèn địa chỉ IP hiện tại. Chưa cấp Toàn quyền thì bàn phím không có mạng, bấm sẽ chèn chính URL.")
         }
 
         Section {
@@ -848,6 +848,9 @@ struct TinhNangSections: View {
     private var oneHandMode = "off"
     @AppStorage("hapticFeedback", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var hapticFeedback = false
+    /// Ô phóng to chữ khi bấm phím — mặc định BẬT (KeyboardView.keyPreviewKey).
+    @AppStorage("keyPreviewEnabled", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var keyPreview = true
     @AppStorage("reEditWord", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var reEditWord = true
     @AppStorage("swipeTyping", store: UserDefaults(suiteName: "group.com.viettelex"))
@@ -896,6 +899,7 @@ struct TinhNangSections: View {
                 Label("Theme & ảnh nền", systemImage: "paintpalette")
             }
             settingToggle("Hiện logo Vᴛ", "Logo mờ ở góc phải phím space.", isOn: $showSpaceLogo)
+            settingToggle("Phóng to chữ khi bấm", "Ô chữ lớn nổi lên trên phím vừa chạm (như iPhone). Tắt cho gọn và nhẹ máy hơn.", isOn: $keyPreview)
             settingToggle("Rung phím", "Rung nhẹ mỗi lần chạm phím.", isOn: $hapticFeedback)
             if hapticFeedback {
                 FullAccessNotice(reason: "Rung phím")

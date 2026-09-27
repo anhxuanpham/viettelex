@@ -253,6 +253,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
             settings.templatesEnabled, templates,
             th.dp(KeyLayout.keyAreaDp(th.tablet, th.landscape, settings.rowHeightAdjust, settings.numberRow)),
             field.numberSigned, field.numberDecimal, settings.numberRow)
+        kb.keyPreview = settings.keyPreview
         kb.textToolsEnabled = PlusGate.isUnlocked(PlusFeature.TEXT_TOOLS) && !field.isSecure
         st.setPlane(kb.plane)
         // Giữ lâu "," = gõ giọng nói: chỉ khi máy có IME giọng nói (đọc lại khi vào ô mới —
@@ -321,6 +322,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         super.onFinishInputView(finishingInput)
         swipeFieldOk = false
         handler.removeCallbacks(autoShiftRun); handler.removeCallbacks(suggestRun)
+        trackpadMoved = false                  // ô đóng: không auto-shift/gợi ý lúc nhả trackpad
         keyboard?.onHidden()
         closeClipboardPane()
         inputShown = false
@@ -452,6 +454,33 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         if (out.needsAutoShift) { handler.removeCallbacks(autoShiftRun); handler.post(autoShiftRun) }
         handler.removeCallbacks(suggestRun)
         handler.postDelayed(suggestRun, SUGGEST_DELAY_MS)
+    }
+
+    /** Đang kéo trackpad: đã reset session ở bước đầu, auto-shift/gợi ý hoãn tới lúc nhả. */
+    private var trackpadMoved = false
+
+    /**
+     * Bước trackpad (đã gom theo frame ở KeyboardView). Bước đầu: reset session như phím
+     * MoveCursor; các bước sau chỉ dời con trỏ (1 IPC setSelection, không batch/đọc lại/
+     * auto-shift/gợi ý) — [onTrackpadEnd] cập nhật một lần.
+     */
+    override fun onTrackpadMove(delta: Int, vertical: Boolean) {
+        if (!trackpadMoved) {
+            clearSwipeUndo()
+            if (!proxy.begin()) return
+            try { pendingGen = session.handle(Key.MoveCursor(delta, vertical), proxy).generation } finally { proxy.end() }
+            handler.removeCallbacks(autoShiftRun); handler.removeCallbacks(suggestRun)
+            trackpadMoved = true
+        }
+        if (vertical) proxy.moveCursorVertical(delta) else proxy.moveCursor(delta)
+        resetIfEditFailed()
+    }
+
+    override fun onTrackpadEnd() {
+        if (!trackpadMoved) return
+        trackpadMoved = false
+        applyAutoShift()
+        refreshBar()
     }
 
     override fun onDeleteWord() {

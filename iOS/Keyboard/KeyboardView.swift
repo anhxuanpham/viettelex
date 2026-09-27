@@ -173,8 +173,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         rowsTopConstraint = rowsTop
         // Suggestion bar sống trong "khoảng trống 2" — chỉ hiện khi bật.
         suggestionBar.axis = .horizontal
-        suggestionBar.distribution = .fillProportionally
-        suggestionBar.spacing = 6
+        // 3 slot BẰNG NHAU, vạch ngăn ở 1/3 và 2/3 cố định (góp ý user 27/09/2026:
+        // fillProportionally làm slot "lúc rộng lúc hẹp" theo độ dài chữ).
+        suggestionBar.distribution = .fillEqually
+        suggestionBar.spacing = 0
         // KHÔNG margins-relative: fillProportionally + UIViewLayoutMarginsGuide
         // là nguồn cảnh báo "Unexpected referenceItem" của iOS 26 VÀ frame slot
         // tính sai (chevron bấm không ăn). Inset trái/phải đi bằng constraint.
@@ -473,9 +475,12 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // relayout dở dang — dải trống + vạch đè hàng emoji đầu (Telegram, 25/09/2026).
         let strip: CGFloat = suggestionsEnabled ? (barCollapsed ? 14 : Self.openStrip) : 0
         let keyArea = keyAreaHeight()
-        rowsTopConstraint?.constant = strip
+        // Lưới emoji chiếm luôn dải strip (thanh tìm nằm đúng chỗ thanh gợi ý như stock):
+        // chỉ dời vùng hàng phím, tổng chiều cao GIỮ NGUYÊN → host không relayout.
+        let emojiTakesStrip = plane == .emoji
+        rowsTopConstraint?.constant = emojiTakesStrip ? 0 : strip
         heightConstraint?.constant = keyArea + strip
-        rowsHeightConstraint?.constant = keyArea
+        rowsHeightConstraint?.constant = keyArea + (emojiTakesStrip ? strip : 0)
         rowsMaxHeightConstraint?.constant = keyArea + 60
         suggestionBar.isHidden = !visible || barCollapsed
         suggestionBar.alpha = 1
@@ -580,23 +585,50 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         }
         emojiStack.axis = .horizontal
         emojiStack.distribution = .fillEqually
+        emojiStack.translatesAutoresizingMaskIntoConstraints = false
         for _ in 0..<3 {
             let b = makeSlot()
             b.titleLabel?.font = .systemFont(ofSize: 20)   // vừa content box 22pt
             emojiButtons.append(b)
             emojiStack.addArrangedSubview(b)
         }
+        // Mỗi slot là một Ô cố định (arranged, fillEqually); nút + vùng emoji nằm TRONG ô
+        // → ẩn nội dung không làm stack chia lại bề rộng. Vạch ngăn ghim mép ô 1|2, 2|3.
+        var cells: [UIView] = []
         for i in 0..<3 {
+            let cell = UIView()
             let b = makeSlot()
-            slotButtons.append(b)
-            suggestionBar.addArrangedSubview(b)
-            if i < 2 {
-                let d = makeDivider()
-                slotDividers.append(d)
-                suggestionBar.addArrangedSubview(d)
+            b.translatesAutoresizingMaskIntoConstraints = false
+            cell.addSubview(b)
+            NSLayoutConstraint.activate([
+                b.leftAnchor.constraint(equalTo: cell.leftAnchor, constant: 3),
+                b.rightAnchor.constraint(equalTo: cell.rightAnchor, constant: -3),
+                b.topAnchor.constraint(equalTo: cell.topAnchor),
+                b.bottomAnchor.constraint(equalTo: cell.bottomAnchor),
+            ])
+            if i == 2 {
+                cell.addSubview(emojiStack)
+                NSLayoutConstraint.activate([
+                    emojiStack.leftAnchor.constraint(equalTo: cell.leftAnchor),
+                    emojiStack.rightAnchor.constraint(equalTo: cell.rightAnchor),
+                    emojiStack.topAnchor.constraint(equalTo: cell.topAnchor),
+                    emojiStack.bottomAnchor.constraint(equalTo: cell.bottomAnchor),
+                ])
             }
+            slotButtons.append(b)
+            cells.append(cell)
+            suggestionBar.addArrangedSubview(cell)
         }
-        suggestionBar.addArrangedSubview(emojiStack)
+        for i in 0..<2 {
+            let d = makeDivider()
+            suggestionBar.addSubview(d)      // KHÔNG arranged: vị trí cố định theo ô
+            NSLayoutConstraint.activate([
+                d.centerXAnchor.constraint(equalTo: cells[i].rightAnchor),
+                d.topAnchor.constraint(equalTo: suggestionBar.topAnchor),
+                d.bottomAnchor.constraint(equalTo: suggestionBar.bottomAnchor),
+            ])
+            slotDividers.append(d)
+        }
     }
 
     // MARK: mẫu câu nhanh (burger menu, user 2026-07-24)
@@ -735,7 +767,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 b.setTitleColor(ink, for: .normal)
                 let chip = t.insert.hasPrefix(Self.clipTokenPrefix) || (t.insert == Self.pasteToken)
                 b.titleLabel?.font = .systemFont(ofSize: chip ? 14 : 17, weight: .regular)
-                b.titleLabel?.adjustsFontSizeToFitWidth = chip
+                b.titleLabel?.adjustsFontSizeToFitWidth = true   // ô cố định: chữ dài co lại, không nở ô
                 b.titleLabel?.minimumScaleFactor = 0.7
                 b.payload = t.insert
                 b.isHidden = false
@@ -755,11 +787,9 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             }
         }
         emojiStack.isHidden = emojis.isEmpty
-        // divider hiện giữa các slot đang hiển thị
-        let vis0 = !(slotButtons[0].isHidden), vis1 = !(slotButtons[1].isHidden)
-        let vis2 = !(slotButtons[2].isHidden) || !emojiStack.isHidden
-        slotDividers[0].isHidden = !(vis0 && (vis1 || vis2))
-        slotDividers[1].isHidden = !(vis1 && vis2)
+        // Vạch ngăn cố định: hiện khi bar có nội dung (ô trống vẫn giữ chỗ — như stock).
+        let anyVisible = texts.contains { $0 != nil } || !emojis.isEmpty
+        for d in slotDividers { d.isHidden = !anyVisible || pasteCardOn }
         // Nút Dán kiểu iOS 27: MỘT ô rộng giữa bar, 2 dòng, thay cả 3 slot.
         setPasteCard(visible: pasteCardOn, image: set.pasteIsImage, ink: ink)
     }
@@ -902,7 +932,6 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     func hidePasteCard() {
         guard !pasteCard.isHidden else { return }
         pasteCard.isHidden = true
-        suggestionBar.alpha = 1
         lastSuggestionSig = ""
     }
 
@@ -927,7 +956,14 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             bringSubviewToFront(pasteCard)
         }
         pasteCard.isHidden = !visible
-        suggestionBar.alpha = visible ? 0 : 1
+        // Thẻ Dán THAY cả bar: ẩn hẳn nội dung slot (trước đây chỉ alpha=0 cho bar — mọi
+        // chỗ đặt lại alpha=1 như updateSuggestionChrome khi rebuild/đổi plane làm chữ
+        // gợi ý hiện ĐÈ lên thẻ Dán, user 27/09/2026).
+        if visible {
+            for b in slotButtons { b.isHidden = true; b.payload = nil }
+            emojiStack.isHidden = true
+            for d in slotDividers { d.isHidden = true }
+        }
     }
 
     func configureReturnKey(type: UIReturnKeyType) {
@@ -1045,6 +1081,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let adj = UserDefaultsProvider.shared?.object(forKey: "rowHeightAdjust") as? Int ?? 0
         rowHeightAdjust = CGFloat(max(-10, min(10, adj)))
         numberRowEnabled = UserDefaultsProvider.shared?.bool(forKey: Self.numberRowKey) ?? false
+        keyPreviewEnabled = Self.keyPreviewSetting(UserDefaultsProvider.shared)
+        if !keyPreviewEnabled { hideBalloon() }
         // Mẫu câu: danh sách user tự quản trong app + toggle bật/tắt.
         let d = UserDefaultsProvider.shared
         templatesEnabled = d?.object(forKey: "templatesEnabled") == nil
@@ -1942,7 +1980,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             }
         }
         let spacePan = UILongPressGestureRecognizer(target: self, action: #selector(spaceHold(_:)))
-        spacePan.minimumPressDuration = 0.4
+        spacePan.minimumPressDuration = 0.3   // 0.4 → 0.3: vào trackpad nhanh hơn (cảm giác stock)
         // KHÔNG delay/cancel touch của phím khác: recognizer mặc định trì hoãn
         // touchesEnded ~0.15s và cancel touch khi nhận diện — nguồn rớt/khựng
         // phím kề khi gõ nhanh. Chỉ theo dõi touch bắt đầu TRÊN space.
@@ -2316,8 +2354,19 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         }
     }
 
-    private let balloon = BalloonView()
+    /// Ô phóng to chữ khi bấm (Tính năng → Giao diện, App Group "keyPreviewEnabled",
+    /// mặc định BẬT). Tắt ⇒ không tạo BalloonView, không vẽ gì khi bấm (bớt CPU/GPU).
+    static let keyPreviewKey = "keyPreviewEnabled"
+    private(set) var keyPreviewEnabled = true
+    /// Đọc cài đặt (nil/không có key = bật như trước).
+    static func keyPreviewSetting(_ d: UserDefaults?) -> Bool {
+        d?.object(forKey: keyPreviewKey) == nil || d?.bool(forKey: keyPreviewKey) == true
+    }
+    private var balloonMade = false
+    private lazy var balloon: BalloonView = { balloonMade = true; return BalloonView() }()
+    var debugBalloonMade: Bool { balloonMade }
     private func showBalloon(over key: UIView, text: String) {
+        guard keyPreviewEnabled else { return }
         let f = convert(key.bounds, from: key)
         // Strip gợi ý (36 mở / 14 thu gọn) = headroom phía trên hàng phím đầu —
         // cho balloon leo vào đó thay vì kẹp sát -6.
@@ -2325,7 +2374,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         if balloon.superview == nil { addSubview(balloon) }
         balloon.present(keyRect: f, text: text, fill: palette.balloon.ui, ink: ink, topLimit: topLimit)
     }
-    private func hideBalloon() { balloon.isHidden = true }
+    private func hideBalloon() { if balloonMade { balloon.isHidden = true } }
 
     private func textButton(_ s: String) -> UIView {
         let b = baseButton(title: s, special: false)
@@ -2557,19 +2606,71 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let t = CACurrentMediaTime()
         switch g.state {
         case .began:
-            trackpadGesture.begin(x: Double(p.x), y: Double(p.y), t: t)
-            setTrackpadDimmed(true)
             // Trackpad = không gõ: nhả ra KHÔNG có dấu cách (stock), kể cả khi
             // chưa di con trỏ. cancelsTouchesInView=false nên touchUpInside vẫn tới.
             if let v = g.view { commits.disarm(ObjectIdentifier(v)) }
+            trackpadBegan(p, t: t)
         case .changed:
-            if let step = trackpadGesture.move(x: Double(p.x), y: Double(p.y), t: t), step.count != 0 {
-                tapped(step.axis == .horizontal ? .moveCursor(step.count) : .moveLine(step.count))
-            }
+            trackpadMoved(p, t: t)
         case .ended, .cancelled, .failed:
-            setTrackpadDimmed(false)
+            trackpadEnded()
         default: break
         }
+    }
+
+    // Làm mượt (góp ý user 27/09/2026 "di con trỏ lag"): bước KHÔNG gửi ngay mỗi touch
+    // event — gom vào TrackpadCoalescer, CADisplayLink xả ≤1 adjustTextPosition/frame.
+    // Controller được báo bắt đầu/kết thúc để tạm ngưng auto-shift/gợi ý/đọc context
+    // mỗi bước (chỉ tính 1 lần lúc nhả tay).
+    /// true = bắt đầu trackpad, false = nhả tay (sau lệnh dời cuối).
+    var onTrackpad: ((Bool) -> Void)?
+    private var trackpadCoalescer = TrackpadCoalescer()
+    private var trackpadLink: CADisplayLink?
+    private(set) var trackpadActive = false
+
+    private func trackpadBegan(_ p: CGPoint, t: CFTimeInterval) {
+        trackpadGesture.begin(x: Double(p.x), y: Double(p.y), t: t)
+        _ = trackpadCoalescer.drain()
+        trackpadActive = true
+        setTrackpadDimmed(true)            // phản hồi thị giác NGAY, không chờ host
+        onTrackpad?(true)
+    }
+
+    private func trackpadMoved(_ p: CGPoint, t: CFTimeInterval) {
+        guard trackpadActive,
+              let step = trackpadGesture.move(x: Double(p.x), y: Double(p.y), t: t) else { return }
+        trackpadCoalescer.add(step)
+        if trackpadLink == nil, window != nil {
+            let link = CADisplayLink(target: TrackpadLinkTarget(self), selector: #selector(TrackpadLinkTarget.tick))
+            link.add(to: .main, forMode: .common)
+            trackpadLink = link
+        }
+        trackpadLink?.isPaused = false
+    }
+
+    /// Một frame: gửi phần đã gom (thường 1 lệnh); hết việc thì dừng link (không đốt pin).
+    fileprivate func trackpadFrame() {
+        let steps = trackpadCoalescer.drain()
+        if steps.isEmpty { trackpadLink?.isPaused = true; return }
+        for s in steps {
+            tapped(s.axis == .horizontal ? .moveCursor(s.count) : .moveLine(s.count))
+        }
+    }
+
+    private func trackpadEnded() {
+        guard trackpadActive else { return }
+        trackpadFrame()                    // bước cuối chưa xả
+        trackpadLink?.invalidate(); trackpadLink = nil
+        trackpadActive = false
+        setTrackpadDimmed(false)
+        onTrackpad?(false)
+    }
+
+    /// CADisplayLink giữ target mạnh → proxy weak để KeyboardView không bị giữ.
+    private final class TrackpadLinkTarget: NSObject {
+        weak var owner: KeyboardView?
+        init(_ o: KeyboardView) { owner = o }
+        @objc func tick() { owner?.trackpadFrame() }
     }
 
     /// Trackpad mode: mờ keycap + phẳng màu phím như stock — báo hiệu đang
@@ -2996,6 +3097,42 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     func debugSlotPayloads() -> [String?] {
         slotButtons.map { $0.isHidden ? nil : $0.payload }
     }
+    /// Test hook thanh gợi ý: frame (toạ độ KeyboardView) của 3 ô slot + 2 vạch ngăn,
+    /// frame chữ các slot đang HIỆN (hiện thật = không ẩn và bar alpha > 0), thẻ Dán.
+    func debugSuggestionGeometry() -> (cells: [CGRect], dividers: [CGRect],
+                                        visibleTitles: [CGRect], pasteCard: CGRect?) {
+        layoutIfNeeded()
+        let cells = slotButtons.compactMap { $0.superview.map { convert($0.bounds, from: $0) } }
+        let divs = slotDividers.map { convert($0.bounds, from: $0) }
+        let barShown = !suggestionBar.isHidden && suggestionBar.alpha > 0
+        var titles: [CGRect] = []
+        for b in slotButtons + emojiButtons where barShown && !b.isHidden
+            && b.superview?.isHidden == false && !(b.title(for: .normal) ?? "").isEmpty {
+            b.layoutIfNeeded()
+            if let l = b.titleLabel { titles.append(convert(l.bounds, from: l)) }
+        }
+        let card = pasteCard.superview != nil && !pasteCard.isHidden ? pasteCard.frame : nil
+        return (cells, divs, titles, card)
+    }
+    /// Test hook: mô phỏng rebuild (đổi plane / xoay) — đường từng đặt lại alpha bar.
+    func debugRefreshChrome() { updateSuggestionChrome() }
+    /// Test hook trackpad: chạy đúng đường began/moved/frame/ended với thời gian giả;
+    /// `frameEvery` = số touch event giữa 2 frame (120Hz touch / 60Hz màn = 2).
+    /// `coalesce: false` mô phỏng hành vi cũ (mỗi bước gửi ngay).
+    func debugTrackpadDrag(_ pts: [(x: CGFloat, y: CGFloat, t: CFTimeInterval)],
+                           frameEvery: Int = 2, coalesce: Bool = true) {
+        guard let first = pts.first else { return }
+        trackpadBegan(CGPoint(x: first.x, y: first.y), t: first.t)
+        for (i, e) in pts.dropFirst().enumerated() {
+            trackpadMoved(CGPoint(x: e.x, y: e.y), t: e.t)
+            if !coalesce || (i + 1) % max(frameEvery, 1) == 0 { trackpadFrame() }
+        }
+        trackpadEnded()
+    }
+    var debugTrackpadDimmed: Bool { trackpadDimmed }
+    func debugSetKeyPreview(_ on: Bool) { keyPreviewEnabled = on }
+    func debugShowEmojiPlane() { plane = .emoji; rebuild() }
+    var debugBalloonVisible: Bool { balloonMade && !balloon.isHidden && balloon.superview != nil }
     /// Test hook: một touch chữ chạm tại `p0`, kéo qua `points` (cách nhau `dt` giây),
     /// nhấc tay ở điểm cuối — đi đúng đường router (routeDown → swipeMoved → routeUp).
     /// Trả true nếu touch thành vuốt.

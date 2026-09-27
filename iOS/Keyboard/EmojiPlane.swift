@@ -3,9 +3,32 @@
 // cuộn NGANG column-major liên tục theo category, hàng dưới
 // [ABC][icon 9 category][⌫] với category đang xem được highlight tròn.
 // Recents (🕐) lưu App Group, tối đa 30. (Search bar đã bỏ — user 2026-07-24.)
-// 27/09/2026: hàng dưới thêm 🔍 (tìm emoji bằng tiếng Việt — KeyboardView dựng ô tìm
-// + phím chữ) và tab kaomoji / ký tự đặc biệt (^‿^) ở cuối dãy category.
+// 27/09/2026: tab kaomoji / ký tự đặc biệt (^‿^) ở cuối dãy category.
+// 27/09/2026 (góp ý user: emoji bé, sát nhau): bỏ tiêu đề nhóm nhỏ trên lưới; THANH TÌM
+// luôn hiện trên cùng như iOS 26/27 gốc (chạm → KeyboardView dựng ô tìm + phím chữ);
+// ô emoji ≥ 40pt, glyph ~32pt như stock — hình học ở EmojiGridMetrics (thuần, có test).
 import UIKit
+
+/// Hình học lưới emoji (thuần): chọn số hàng sao cho ô ≥ `minCell` (40pt — vùng chạm
+/// thoải mái, stock iPhone dọc ~44pt), tối đa 5 hàng như stock; ô vuông, KHÔNG khe
+/// giữa ô (khoảng trắng quanh glyph chính là khoảng cách — stock cũng vậy). Glyph
+/// ~72% ô, trần 34pt (stock ~32pt trên iPhone 6.1").
+struct EmojiGridMetrics: Equatable {
+    let rows: Int
+    let cell: CGFloat
+    let fontSize: CGFloat
+
+    static let minCell: CGFloat = 40, maxRows = 5, minRows = 2
+    static let searchRow: CGFloat = 40, categoryRow: CGFloat = 34
+
+    static func compute(gridHeight h: CGFloat) -> EmojiGridMetrics {
+        let fit = Int((max(h, 0) / minCell).rounded(.down))
+        let rows = min(max(fit, minRows), maxRows)
+        let cell = max((h / CGFloat(rows) * 2).rounded(.down) / 2, 1)   // nửa pt: khỏi rớt hàng
+        return EmojiGridMetrics(rows: rows, cell: cell,
+                                fontSize: min((cell * 0.72).rounded(), 34))
+    }
+}
 
 final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
 
@@ -30,14 +53,8 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         "clock", "face.smiling", "hare", "fork.knife", "soccerball",
         "car.fill", "lightbulb", "heart", "flag",
     ]
-    // Tiêu đề section nhỏ màu xám phía trên cột đầu của category (như stock).
-    private static let headerBand: CGFloat = 14
-    private static let displayNames: [String: String] = [
-        "recents": "THƯỜNG DÙNG", "smileys": "MẶT CƯỜI & NGƯỜI",
-        "animals": "ĐỘNG VẬT & THIÊN NHIÊN", "food": "ĐỒ ĂN & ĐỒ UỐNG",
-        "activity": "HOẠT ĐỘNG", "travel": "DU LỊCH & ĐỊA ĐIỂM",
-        "objects": "ĐỒ VẬT", "symbols": "BIỂU TƯỢNG", "flags": "CỜ",
-    ]
+    /// Thanh tìm luôn hiện trên cùng (chạm → onSearch).
+    private(set) var searchField: UIControl!
 
     /// Chỗ phím emoji vừa bấm (toạ độ KeyboardView; plane cùng mép trái + đáy):
     /// minX, maxX, top = khoảng từ đáy lên đỉnh phím. ABC đặt ĐÚNG cột đó —
@@ -61,6 +78,7 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         self.dark = dark
         isMultipleTouchEnabled = true
         reloadSections()
+        buildSearchField()
         buildCollection()
         buildCategoryRow()
     }
@@ -95,13 +113,57 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
 
     // MARK: UI
 
+    /// Ô tìm dạng viên thuốc như stock iOS 26/27 ("Tìm emoji" + kính lúp). Không
+    /// phải ô nhập thật (extension không có bàn phím cho chính nó): chạm là sang chế
+    /// độ tìm (EmojiSearchBar + phím chữ VietTelex).
+    private func buildSearchField() {
+        let ink: UIColor = dark ? .white : .black
+        let f = UIControl()
+        // ≈ tertiarySystemFill (118,118,128) — nền ô tìm stock trên bàn phím.
+        f.backgroundColor = UIColor(red: 118 / 255, green: 118 / 255, blue: 128 / 255,
+                                    alpha: dark ? 0.24 : 0.12)
+        f.layer.cornerRadius = 16
+        f.accessibilityLabel = "Tìm emoji"
+        f.accessibilityTraits = .searchField
+        f.translatesAutoresizingMaskIntoConstraints = false
+        let icon = UIImageView(image: UIImage(systemName: "magnifyingglass",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium)))
+        icon.tintColor = ink.withAlphaComponent(0.5)
+        let label = UILabel()
+        label.text = "Tìm emoji"
+        label.font = .systemFont(ofSize: 17)
+        label.textColor = ink.withAlphaComponent(0.5)
+        for v in [icon, label] as [UIView] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            v.isUserInteractionEnabled = false
+            f.addSubview(v)
+        }
+        f.addAction(UIAction { [weak self] _ in
+            KeyboardView.clickModifier()
+            self?.onSearch?()
+        }, for: .touchUpInside)
+        addSubview(f)
+        searchField = f
+        NSLayoutConstraint.activate([
+            f.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            f.leftAnchor.constraint(equalTo: leftAnchor, constant: 8),
+            f.rightAnchor.constraint(equalTo: rightAnchor, constant: -8),
+            f.heightAnchor.constraint(equalToConstant: EmojiGridMetrics.searchRow - 8),
+            icon.leftAnchor.constraint(equalTo: f.leftAnchor, constant: 10),
+            icon.centerYAnchor.constraint(equalTo: f.centerYAnchor),
+            label.leftAnchor.constraint(equalTo: icon.rightAnchor, constant: 6),
+            label.centerYAnchor.constraint(equalTo: f.centerYAnchor),
+        ])
+    }
+
+    private var metrics = EmojiGridMetrics.compute(gridHeight: 0)
+
     private func buildCollection() {
         let layout = UICollectionViewFlowLayout()
         layout.scrollDirection = .horizontal        // column-major như stock
-        layout.minimumLineSpacing = 8
-        layout.minimumInteritemSpacing = 4
-        // dải trống phía trên nhường chỗ cho tiêu đề section
-        layout.sectionInset = UIEdgeInsets(top: Self.headerBand, left: 6, bottom: 0, right: 6)
+        layout.minimumLineSpacing = 0               // khe = khoảng trắng quanh glyph
+        layout.minimumInteritemSpacing = 0
+        layout.sectionInset = UIEdgeInsets(top: 0, left: 4, bottom: 0, right: 4)
         collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collection.backgroundColor = .clear
         collection.disableKeyboardEdgeEffects()
@@ -109,9 +171,6 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         collection.dataSource = self
         collection.delegate = self
         collection.register(EmojiCell.self, forCellWithReuseIdentifier: "e")
-        collection.register(HeaderView.self,
-                            forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
-                            withReuseIdentifier: "h")
         collection.translatesAutoresizingMaskIntoConstraints = false
         collection.isMultipleTouchEnabled = true
         // Long-press emoji có skin tone → popup 6 biến thể (cancelsTouchesInView
@@ -121,7 +180,7 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         collection.addGestureRecognizer(hold)
         addSubview(collection)
         NSLayoutConstraint.activate([
-            collection.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            collection.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 2),
             collection.leftAnchor.constraint(equalTo: leftAnchor),
             collection.rightAnchor.constraint(equalTo: rightAnchor),
         ])
@@ -162,16 +221,6 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         let iconsStack = UIStackView()
         iconsStack.axis = .horizontal
         iconsStack.distribution = .fillEqually
-        let search = UIButton(type: .custom)
-        search.setImage(UIImage(systemName: "magnifyingglass",
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium)), for: .normal)
-        search.tintColor = ink.withAlphaComponent(0.55)
-        search.accessibilityLabel = "Tìm emoji"
-        search.addAction(UIAction { [weak self] _ in
-            KeyboardView.clickModifier()
-            self?.onSearch?()
-        }, for: .touchUpInside)
-        iconsStack.addArrangedSubview(search)
         for (i, name) in Self.categoryIcons.enumerated() {
             let b = UIButton(type: .custom)
             b.setImage(UIImage(systemName: name,
@@ -214,7 +263,7 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
             row.leftAnchor.constraint(equalTo: leftAnchor),
             row.rightAnchor.constraint(equalTo: rightAnchor),
             row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2),
-            row.heightAnchor.constraint(equalToConstant: 32),
+            row.heightAnchor.constraint(equalToConstant: EmojiGridMetrics.categoryRow - 2),
         ])
         highlightCategory(sectionOnScreen())
     }
@@ -403,10 +452,13 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
     private var lastLayoutWidth: CGFloat = 0
     override func layoutSubviews() {
         super.layoutSubviews()
-        if bounds.width != lastLayoutWidth {
+        let m = EmojiGridMetrics.compute(gridHeight: collection.bounds.height)
+        if bounds.width != lastLayoutWidth || m != metrics {
             lastLayoutWidth = bounds.width
+            metrics = m
             dismissTonePopup()
             collection.collectionViewLayout.invalidateLayout()
+            for case let c as EmojiCell in collection.visibleCells { c.setFont(m.fontSize) }
         }
         if let abc = abcButton as? ABCButton, let slot = abcSlot {
             // Nhìn: cột phím emoji cũ, cao bằng hàng category (32, cách đáy 2).
@@ -430,37 +482,14 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "e", for: indexPath) as! EmojiCell
         cell.label.text = sections[indexPath.section].emoji[indexPath.item]
+        cell.setFont(metrics.fontSize)
         return cell
     }
 
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout,
                         sizeForItemAt indexPath: IndexPath) -> CGSize {
-        // 5 hàng như stock; trừ dải tiêu đề section phía trên
-        let rows: CGFloat = 5
-        let h = (collectionView.bounds.height - Self.headerBand - (rows - 1) * 4) / rows
-        return CGSize(width: max(h, 10), height: max(h, 10))
-    }
-
-    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout,
-                        referenceSizeForHeaderInSection section: Int) -> CGSize {
-        // strip dọc mảnh; label không clip nên nổi ngang qua dải headerBand
-        CGSize(width: 8, height: 0)
-    }
-
-    func collectionView(_ collectionView: UICollectionView, viewForSupplementaryElementOfKind kind: String,
-                        at indexPath: IndexPath) -> UICollectionReusableView {
-        let v = collectionView.dequeueReusableSupplementaryView(
-            ofKind: kind, withReuseIdentifier: "h", for: indexPath) as! HeaderView
-        let name = sections[indexPath.section].name
-        v.label.text = Self.displayNames[name] ?? name.uppercased()
-        v.label.textColor = (dark ? UIColor.white : .black).withAlphaComponent(0.5)
-        // Giới hạn label trong đúng bề rộng section để KHÔNG tràn đè header
-        // section kế (bug section hẹp như "Thường dùng", user 2026-07-25).
-        let rows: CGFloat = 5
-        let cols = max(ceil(CGFloat(sections[indexPath.section].emoji.count) / rows), 1)
-        let itemW = (collectionView.bounds.height - Self.headerBand - (rows - 1) * 4) / rows
-        v.maxWidth = cols * itemW + (cols - 1) * 8   // cột × rộng + line-spacing
-        return v
+        let c = metrics.cell
+        return CGSize(width: c, height: c)
     }
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
@@ -546,7 +575,7 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         let label = UILabel()
         override init(frame: CGRect) {
             super.init(frame: frame)
-            label.font = .systemFont(ofSize: 30)
+            label.font = .systemFont(ofSize: 32)
             label.textAlignment = .center
             label.adjustsFontSizeToFitWidth = true
             label.translatesAutoresizingMaskIntoConstraints = false
@@ -559,28 +588,8 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
             ])
         }
         required init?(coder: NSCoder) { fatalError() }
-    }
-
-    private final class HeaderView: UICollectionReusableView {
-        let label = UILabel()
-        private var maxW: NSLayoutConstraint!
-        /// Bề rộng tối đa của label = bề rộng section (đặt mỗi lần dequeue) —
-        /// label vẫn tràn khỏi strip 8pt nhưng KHÔNG tràn sang section kế.
-        var maxWidth: CGFloat = 0 { didSet { maxW.constant = max(maxWidth, 8) } }
-        override init(frame: CGRect) {
-            super.init(frame: frame)
-            clipsToBounds = false          // label rộng hơn strip 8pt — cố ý
-            label.font = .systemFont(ofSize: 11, weight: .semibold)
-            label.lineBreakMode = .byTruncatingTail
-            label.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(label)
-            maxW = label.widthAnchor.constraint(lessThanOrEqualToConstant: 8)
-            NSLayoutConstraint.activate([
-                label.leftAnchor.constraint(equalTo: leftAnchor, constant: 2),
-                label.topAnchor.constraint(equalTo: topAnchor),
-                maxW,
-            ])
+        func setFont(_ size: CGFloat) {
+            if label.font.pointSize != size { label.font = .systemFont(ofSize: size) }
         }
-        required init?(coder: NSCoder) { fatalError() }
     }
 }

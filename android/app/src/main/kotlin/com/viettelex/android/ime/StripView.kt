@@ -235,8 +235,8 @@ class StripView(context: Context, private val theme: ImeTheme, private val feedb
         // Gboard: 3 ô bằng nhau, không vạch ngăn; emoji chia đều ô thứ 3.
         val third = (barR - barL) / 3f
         val pad = theme.dp(4f)
+        StripGeometry.thirds(barL, barR, slotL, slotR)
         for (i in 0..2) {
-            slotL[i] = barL + i * third; slotR[i] = slotL[i] + third
             val t = disp[i] ?: continue
             val p = if (i == 1) wordCenterPaint else wordPaint
             slotText[i] = TextUtils.ellipsize(t, p, third - 2 * pad, TextUtils.TruncateAt.MIDDLE).toString()
