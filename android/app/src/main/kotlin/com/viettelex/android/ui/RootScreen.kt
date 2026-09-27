@@ -38,6 +38,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.BackHandler
+import com.viettelex.android.plus.PlusController
 import com.viettelex.keyboard.Keys
 
 @Composable
@@ -46,11 +48,15 @@ fun RootScreen(
     openMauCau: Int,
     onOpenImeSettings: () -> Unit,
     onPickIme: () -> Unit,
+    plus: PlusController,
 ) {
     val c = LocalVT.current
     val density = LocalDensity.current
     val focus = LocalFocusManager.current
     var tab by rememberSaveable { mutableStateOf(AppTab.KieuGo) }
+    // Màn VietTelex Plus (mở từ tab Giới Thiệu) — thay nội dung tab, ◁ để quay lại.
+    var showPlus by rememberSaveable { mutableStateOf(false) }
+    BackHandler(showPlus) { showPlus = false }
     var templatesEnabled by rememberBoolPref(Keys.TEMPLATES_ENABLED, Prefs.D.templatesEnabled)
     val tabs = if (templatesEnabled) AppTab.entries else AppTab.entries.filter { it != AppTab.MauCau }
 
@@ -58,7 +64,7 @@ fun RootScreen(
     LaunchedEffect(templatesEnabled) { if (!templatesEnabled && tab == AppTab.MauCau) tab = AppTab.TinhNang }
 
     // Mỗi tab một vị trí cuộn riêng; bar thu gọn khi cuộn xuống > 40dp.
-    val scroll = remember(tab) { ScrollState(0) }
+    val scroll = remember(tab, showPlus) { ScrollState(0) }
     var barCollapsed by remember { mutableStateOf(false) }
     LaunchedEffect(scroll) {
         var last = scroll.value
@@ -81,7 +87,7 @@ fun RootScreen(
         }
     }
     val keyboardShown = WindowInsets.ime.getBottom(density) > 0
-    val title = if (tab == AppTab.KieuGo) "VietTelex" else tab.title
+    val title = if (showPlus) "VietTelex Plus" else if (tab == AppTab.KieuGo) "VietTelex" else tab.title
     val titlePx = with(density) { 52.dp.toPx() }
 
     Box(Modifier.fillMaxSize().background(c.groupedBg).imePadding()) {
@@ -94,11 +100,12 @@ fun RootScreen(
         ) {
             Text(title, style = VTType.largeTitle, color = c.label,
                 modifier = Modifier.padding(start = 20.dp, top = 8.dp, bottom = 10.dp))
-            when (tab) {
+            if (showPlus) PlusScreen(plus) { showPlus = false }
+            else when (tab) {
                 AppTab.KieuGo -> KieuGoTab(ime, onOpenImeSettings, onPickIme)
                 AppTab.TinhNang -> TinhNangTab()
                 AppTab.MauCau -> MauCauTab()
-                AppTab.GioiThieu -> GioiThieuTab()
+                AppTab.GioiThieu -> GioiThieuTab(plus) { showPlus = true }
             }
             // Chừa lối cuộn cho bar nổi (contentMargins 72).
             Spacer(Modifier.navigationBarsPadding().height(72.dp))
@@ -117,7 +124,7 @@ fun RootScreen(
 
         if (!keyboardShown) {
             Box(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 8.dp)) {
-                FloatingTabBar(tab, tabs, barCollapsed) { tab = it }
+                FloatingTabBar(tab, tabs, barCollapsed) { tab = it; showPlus = false }
             }
         }
     }

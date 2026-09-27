@@ -129,6 +129,11 @@ struct RootView: View {
             if phase == .active {
                 keyboardEnabled = isKeyboardEnabled()
                 pasteReady = Self.readPasteReady()
+                // Plus: đọc entitlement đã verify → cờ App Group cho bàn phím.
+                Task { await PlusShared.model.refreshEntitlements() }
+                ICloudSync.shared.start()          // tắt ⇒ không làm gì
+            } else if phase == .background {
+                ICloudSync.shared.syncNow()        // đẩy thay đổi vừa sửa lên iCloud
             }
         }
         .onChange(of: templatesEnabled) { on in
@@ -164,6 +169,7 @@ struct RootView: View {
     }
 
     @ViewBuilder private var gioiThieuTab: some View {
+        SaoLuuSection()
         DebugSection()
         // Logo + tên app trên đầu tab (user 2026-07-24), như About của macOS.
         Section {
@@ -186,6 +192,7 @@ struct RootView: View {
             .padding(.vertical, 8)
             .listRowBackground(Color.clear)
         }
+        Section { PlusEntryRow() }
         Section {
             Link(destination: URL(string: "https://ptrinh.github.io/viettelex/")!) {
                 Label("Website", systemImage: "globe")
@@ -353,7 +360,7 @@ struct TemplateItem: Equatable, Identifiable {
 struct MauCauSections: View {
     private static let store = UserDefaults(suiteName: "group.com.viettelex")
     /// Mặc định từ ios-mau-cau.yml bundle theo build — cùng file với keyboard.
-    private static let defaults: [TemplateItem] = {
+    static let bundledDefaults: [TemplateItem] = {
         guard let url = Bundle.main.url(forResource: "ios-mau-cau", withExtension: "yml"),
               let text = try? String(contentsOf: url, encoding: .utf8)
         else { return [TemplateItem(label: "👋", text: "Chào buổi sáng")] }
@@ -362,7 +369,7 @@ struct MauCauSections: View {
 
     static func load() -> [TemplateItem] {
         guard let raw = store?.array(forKey: "userTemplates") as? [[String: String]] else {
-            return defaults
+            return bundledDefaults
         }
         return raw.compactMap { e in
             guard let t = e["text"], !t.isEmpty else { return nil }
@@ -751,7 +758,7 @@ struct FullAccessNotice: View {
 }
 
 /// Toggle kèm chú giải nhỏ bên dưới tiêu đề — dùng chung cho 2 tab settings.
-private func settingToggle(_ title: String, _ caption: String, isOn: Binding<Bool>) -> some View {
+func settingToggle(_ title: String, _ caption: String, isOn: Binding<Bool>) -> some View {
     Toggle(isOn: isOn) {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
@@ -830,6 +837,8 @@ struct TinhNangSections: View {
             settingToggle("Kiểm tra chính tả khi gõ", "Ngừng bỏ dấu ngay khi từ không thể là tiếng Việt.", isOn: $liveSpellCheck)
             settingToggle("Sửa dấu từ đã gõ", "Xoá dấu cách ngay sau một từ để gõ tiếp dấu cho từ đó (tháy ␣ ⌫ a → thấy); hoặc đặt con trỏ ngay sau từ rồi gõ phím dấu s f r x j: viêt + j → việt.", isOn: $reEditWord)
         } header: { Text("Chính tả") }
+
+        ShortcutsSection()
 
         Section {
             // Thanh gợi ý bật = tự học từ hay dùng (learnWords đi theo, không

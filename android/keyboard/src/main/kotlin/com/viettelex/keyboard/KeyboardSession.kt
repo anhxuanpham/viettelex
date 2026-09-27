@@ -49,6 +49,8 @@ data class FieldTraits(
     val noLearning: Boolean = false,
     /** EditorInfo.packageName — tra bảng [WriteMode]. */
     val packageName: String? = null,
+    /** Ô URL (TYPE_TEXT_VARIATION_URI — omnibox tự hoàn tất): không gõ tắt. */
+    val urlField: Boolean = false,
 ) {
     /** Cách ghi chữ vào ô theo app (bảng [WriteMode.forPackage]). */
     val writeMode: WriteMode get() = WriteMode.forPackage(packageName)
@@ -99,16 +101,21 @@ data class SuggestionSet(
     /** Thẻ Dán thay cả bar. */
     val paste: Boolean = false,
     val pasteIsImage: Boolean = false,
+    /** Chip số (NumberChips) — luôn ở slot GIỮA; chạm gửi [NUMBER_TOKEN]. */
+    val number: String? = null,
 ) {
-    val isEmpty: Boolean get() = literal == null && word == null && word2 == null && emojis.isEmpty() && nextWords.isEmpty()
+    val isEmpty: Boolean get() = literal == null && word == null && word2 == null && emojis.isEmpty() &&
+        nextWords.isEmpty() && number == null
     /** So để bỏ vẽ lại khi không đổi. */
     fun signature(): String = listOf(literal, word, word2, emojis.joinToString("\u0002"),
-        nextWords.joinToString("\u0002"), paste.toString()).joinToString("\u0001")
+        nextWords.joinToString("\u0002"), paste.toString(), number).joinToString("\u0001")
 
     companion object {
         /** Payload chạm thẻ Dán → truyền vào acceptSuggestion. */
         const val PASTE_TOKEN = "paste"
         const val PASTE_IMAGE_TOKEN = "pasteImage"
+        /** Payload chạm chip số (session giữ NumberChip: đuôi cần thay + chữ chèn). */
+        const val NUMBER_TOKEN = "\uE000number"
     }
 }
 
@@ -125,6 +132,7 @@ class SuggestJob internal constructor(
     val composed: String, val raw: String, internal val predicted: String, private val wantFix: Boolean,
     /** Âm tiết liền trước (bigram tĩnh). */
     private val prev: String? = null,
+    internal val number: String? = null,
 ) {
     class Result(val pool: List<VNSuggest.Match>, val fix: String?, val pmi: FloatArray? = null)
     fun compute(): Result {
@@ -166,6 +174,10 @@ class KeyboardSession(
     /** Bar thu gọn — pipeline gợi ý ngừng. IME set theo chevron. */
     var barCollapsed = false
     private var lastKeyWasEmailTrigger = false
+    /** Số dấu cách kể từ chữ số/phép tính cuối (≤1 → đáng đọc context tìm chip số). */
+    private var numberSpaces = 99
+    /** Chip số đang hiện — payload [SuggestionSet.NUMBER_TOKEN]. */
+    private var numberChip: NumberChip? = null
     private var restoreUndoRaw: String? = null
     private var restoreUndoComposed: String? = null
     private var undoOfferActive = false
@@ -204,6 +216,7 @@ class KeyboardSession(
         TouchLog.session("android")
         bridge = EngineBridge(settings)
         bridge.passthrough = field.passthrough
+        bridge.shortcutsAllowed = !field.urlField
         traits = field
         lastKeyWasEmailTrigger = false
         clearUndo()
@@ -301,19 +314,22 @@ class KeyboardSession(
         if (literal != null && (key is Key.Letter || key is Key.Text || key == Key.Space ||
                 key == Key.DoubleSpacePeriod || key == Key.Newline || key == Key.LineBreak)) {
             settleLiteral(literal)
-            if (key is Key.Letter) bridge.boundary(" ", proxy)
+            if (key is Key.Letter) bridge.boundary(" ", proxy, expand = false)
         }
+        // Từ vuốt không bao giờ là chữ tắt.
+        val expand = swiped == null
         when (key) {
             is Key.Letter -> { bridge.letter(key.ch, proxy); clearUndo() }
             is Key.Text -> {
-                commitAndLearn(bridge.boundary(key.text, proxy))
+                commitAndLearn(bridge.boundary(key.text, proxy, expand = expand))
                 lastWord = null; lastWord2 = null
                 clearUndo()
             }
             Key.Space -> {
                 val composedBefore = bridge.composedWord
-                val committed = bridge.boundary(" ", proxy)
-                if (composedBefore.isNotEmpty() && committed != composedBefore) {
+                val committed = bridge.boundary(" ", proxy, expand = expand)
+                // (Gõ tắt vừa bung thì không: ⌫ kế tiếp tự trả lại chữ tắt trong bridge.)
+                if (composedBefore.isNotEmpty() && committed != composedBefore && !bridge.expandedAtLastBoundary) {
                     restoreUndoRaw = committed; restoreUndoComposed = composedBefore
                 } else { restoreUndoRaw = null; restoreUndoComposed = null }
                 undoOfferActive = false
@@ -329,7 +345,7 @@ class KeyboardSession(
                     proxy.insertText(". ")
                     lastWord = null; lastWord2 = null
                 } else {
-                    commitAndLearn(bridge.boundary(" ", proxy))
+                    commitAndLearn(bridge.boundary(" ", proxy, expand = expand))
                 }
                 // Space đôi có thể đã thành ". ": ⌫ sau đó không được mở lại từ.
                 bridge.forgetLastCommit()
@@ -339,7 +355,7 @@ class KeyboardSession(
                 bridge.reset(); lastWord = null; lastWord2 = null; clearUndo()
             }
             Key.Newline, Key.LineBreak -> {
-                commitAndLearn(bridge.boundary("\n", proxy, lineBreak = key == Key.LineBreak))
+                commitAndLearn(bridge.boundary("\n", proxy, lineBreak = key == Key.LineBreak, expand = expand))
                 // Enter có thể là "gửi"/performEditorAction: ⌫ sau đó không mở lại từ cũ.
                 bridge.forgetLastCommit()
                 lastWord = null; lastWord2 = null; clearUndo()
@@ -359,6 +375,14 @@ class KeyboardSession(
                 if (bridge.backspace(proxy)) onReopened()
                 else if (!bridge.isComposing) { lastWord = null; lastWord2 = null }
             }
+        }
+        // Chip số: chỉ đọc context khi token này / token ngay trước có chữ số/phép tính.
+        numberSpaces = when (key) {
+            is Key.Text -> if (key.text.firstOrNull()?.let { it.isDigit() || it in "=+-*/×÷:%().," } == true) 0 else 99
+            Key.Space, Key.DoubleSpacePeriod -> numberSpaces + 1
+            Key.Backspace -> 0
+            is Key.Letter -> numberSpaces
+            else -> 99
         }
         lastInsertWasSpace = key == Key.Space || key == Key.DoubleSpacePeriod
         lastKeyWasEmailTrigger = key is Key.Text && (key.text == "@" || key.text == ".")
@@ -429,11 +453,12 @@ class KeyboardSession(
         if (lit != null) {
             // từ tiếng Anh vuốt trước còn mở: chốt nó + dấu cách
             settleLiteral(lit)
-            bridge.boundary(" ", proxy)
+            bridge.boundary(" ", proxy, expand = false)
         } else if (bridge.isComposing) {
-            commitAndLearn(bridge.boundary(" ", proxy))
+            // dấu cách tự chèn trước từ vuốt: không phải ranh giới người dùng gõ → không gõ tắt
+            commitAndLearn(bridge.boundary(" ", proxy, expand = false))
         } else if (SwipeSuggest.needsLeadingSpace(proxy.contextBeforeInput())) {
-            bridge.boundary(" ", proxy)
+            bridge.boundary(" ", proxy, expand = false)
         }
         proxy.insertText(choice.word)
         if (choice.english) {
@@ -505,6 +530,13 @@ class KeyboardSession(
     private fun commitAndLearn(word: String, accepted: Boolean = false) {
         lastCommit = null
         if (word.isEmpty()) return
+        // Nội dung gõ tắt nhiều từ ("mọi người"): học lần lượt từng từ (bigram trong cụm).
+        val parts = ShortcutFile.words(word)
+        if (parts.size != 1 || parts[0] != word) {
+            for (p in parts) commitAndLearn(p, accepted)
+            if (parts.isEmpty()) { lastWord = null; lastWord2 = null }
+            return
+        }
         val learned = if (learnEnabled) langModel.record(word, lastWord, lastWord2, if (accepted) 2 else 1) else null
         lastCommit = LastCommit(word, lastWord, lastWord2, learned)
         if (UserLangModel.learnable(word)) { lastWord2 = lastWord; lastWord = word }
@@ -525,6 +557,7 @@ class KeyboardSession(
     /** Gọi sau debounce 30 ms (hoặc khi hiện bàn phím / selection đổi / bật bar). */
     fun requestSuggestions(proxy: TextProxy): SuggestionPlan {
         suggestReq++
+        numberChip = null
         if (!suggestionsActive || barCollapsed) return SuggestionPlan.Ready(null)
         swipeAlternatives?.let { return SuggestionPlan.Ready(SuggestionSet(nextWords = it)) }
         val composed = bridge.composedWord
@@ -544,7 +577,7 @@ class KeyboardSession(
         if (composed.isNotEmpty()) {
             val b = bridge
             return SuggestionPlan.Background(SuggestJob(suggestReq, generation, b, composed,
-                b.rawWord, b.predictedCommit, b.autoFixAdjacent, lastWord))
+                b.rawWord, b.predictedCommit, b.autoFixAdjacent, lastWord, refreshNumberChip(proxy)))
         }
         val prev = lastWord
         val next: List<String> = if (prev != null) {
@@ -558,8 +591,18 @@ class KeyboardSession(
                 .take(3).map { caseForContext(DisplayCase.apply(it)) }
             padWords(top, 3)
         }
+        val number = refreshNumberChip(proxy)
         val paste = pasteOffer(proxy)
-        return SuggestionPlan.Ready(SuggestionSet(literal = literal, nextWords = next, paste = paste))
+        return SuggestionPlan.Ready(SuggestionSet(literal = literal, nextWords = next, paste = paste, number = number))
+    }
+
+    /** Chip số cho token trước con trỏ (đọc chữ / định dạng tiền / máy tính nhanh). */
+    private fun refreshNumberChip(proxy: TextProxy): String? {
+        numberChip = null
+        if (numberSpaces > 1) return null
+        val before = proxy.contextBeforeInput() ?: return null
+        numberChip = NumberChips.chip(before)
+        return numberChip?.display
     }
 
     /** Áp kết quả nền; null nếu đã lỗi thời (phím mới / lượt mới / từ khác / bar tắt). */
@@ -567,6 +610,7 @@ class KeyboardSession(
         if (job.req != suggestReq || job.gen != generation || bridge !== job.bridge ||
             job.bridge.composedWord != job.composed || !suggestionsActive || barCollapsed) return null
         return composingSuggestions(job.composed, job.raw, job.predicted, result.pool, result.fix, result.pmi)
+            .copy(number = job.number)
     }
 
     /** Đồng bộ (test / debug): tính luôn trên thread gọi. */
@@ -605,6 +649,10 @@ class KeyboardSession(
             word = words.firstOrNull()
             word2 = if (words.size > 1) words.last() else null
         }
+        // Đang gõ đúng một chữ tắt: slot chính hiện nội dung sẽ bung (chạm = bung ngay).
+        // Nội dung nhiều dòng không lên bar (gõ ranh giới vẫn bung).
+        val preview = bridge.shortcutPreview
+        if (preview != null && !preview.contains('\n') && word != preview) { word2 = word ?: word2; word = preview }
         return SuggestionSet(literal = literal, word = word, word2 = word2, emojis = emojis)
     }
 
@@ -659,6 +707,7 @@ class KeyboardSession(
             bridge.reset(); lastWord = null; lastWord2 = null
             return
         }
+        if (item == SuggestionSet.NUMBER_TOKEN) { acceptNumberChip(proxy); return }
         val sw = openSwipeWord()
         if (sw != null && item in swipeAlts) {
             // Chạm biến thể của từ vừa vuốt: thay từ, vẫn là composition mở (chưa học — học khi chốt).
@@ -701,6 +750,21 @@ class KeyboardSession(
         proxy.insertText(if (isWord) "$item " else item)
         bridge.reset()
         if (isWord) commitAndLearn(item, accepted = true) else { lastWord = null; lastWord2 = null }
+    }
+
+    /** Chạm chip số: thay đúng đuôi đã tính (kiểm lại đuôi trước khi xoá — lệch thì bỏ). */
+    private fun acceptNumberChip(proxy: TextProxy) {
+        val c = numberChip ?: return
+        numberChip = null
+        if (c.replace.isNotEmpty()) {
+            if (!proxy.confirmTail(c.replace)) { TouchLog.write("failsafe: number chip tail mismatch → skip"); return }
+            proxy.deleteCodePoints(Cp.count(c.replace))
+        }
+        proxy.insertText(c.insert)
+        bridge.reset()
+        lastWord = null; lastWord2 = null
+        clearUndo(); clearSwipe()
+        numberSpaces = 0          // kết quả mới cũng là số → chip kế trong chuỗi (tiền → chữ)
     }
 
     companion object {

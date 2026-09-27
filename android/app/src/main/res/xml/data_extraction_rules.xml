@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ (API 31+).
+  - cloud-backup (Google Drive): chỉ SharedPreferences "viettelex" — cài đặt, mẫu câu,
+    gõ tắt. Từ đã học (userlm.bin) KHÔNG lên mây.
+  - device-transfer (chuyển máy trực tiếp bằng cáp/Wi-Fi, không qua mây): thêm từ đã học.
+  touchlog.txt (log gỡ lỗi) không bao giờ đi theo. Clipboard không lưu xuống đĩa.
+  Kiểm tra: BackupRulesTest.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="sharedpref" path="viettelex.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="sharedpref" path="viettelex.xml" />
+        <include domain="file" path="userlm.bin" />
+    </device-transfer>
+</data-extraction-rules>

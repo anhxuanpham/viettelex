@@ -102,6 +102,7 @@ fun KieuGoTab(ime: ImeStatus, onOpenImeSettings: () -> Unit, onPickIme: () -> Un
 fun VTTextField(
     value: String, onChange: (String) -> Unit, placeholder: String,
     minLines: Int = 1, maxLines: Int = 1, center: Boolean = false, modifier: Modifier = Modifier,
+    capitalization: KeyboardCapitalization = KeyboardCapitalization.Sentences,
 ) {
     val c = LocalVT.current
     val style = VTType.body.copy(color = c.label, textAlign = if (center) TextAlign.Center else TextAlign.Start)
@@ -109,7 +110,7 @@ fun VTTextField(
         value, onChange, modifier.fillMaxWidth(),
         textStyle = style, minLines = minLines, maxLines = maxLines, singleLine = maxLines == 1,
         cursorBrush = SolidColor(c.accent),
-        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+        keyboardOptions = KeyboardOptions(capitalization = capitalization),
         decorationBox = { inner ->
             Box {
                 if (value.isEmpty()) Text(placeholder, style = style.copy(color = c.tertiary), modifier = Modifier.fillMaxWidth())
@@ -209,11 +210,15 @@ private fun KieuGoSection() {
 fun TinhNangTab() {
     val c = LocalVT.current
     val ctx = LocalContext.current
+    // Trang con "Bảng gõ tắt" (như NavigationLink iOS) — ⟵ hệ thống quay lại.
+    var showShortcuts by rememberSaveable { mutableStateOf(false) }
+    if (showShortcuts) { ShortcutsPage { showShortcuts = false }; return }
     VTSection(header = "Chính tả") {
         BoolToggle(Keys.AUTO_RESTORE, Prefs.D.autoRestore, "Tự khôi phục từ tiếng Anh", "Từ không phải tiếng Việt tự trả về như đã gõ (google, github…).")
         RowDivider()
         BoolToggle(Keys.LIVE_SPELL_CHECK, Prefs.D.liveSpellCheck, "Kiểm tra chính tả khi gõ", "Ngừng bỏ dấu ngay khi từ không thể là tiếng Việt.")
     }
+    ShortcutsSection { showShortcuts = true }
     VTSection(header = "Gợi ý") {
         BoolToggle(Keys.SHOW_SUGGESTIONS, Prefs.D.showSuggestions, "Thanh gợi ý", "Gợi ý từ + emoji, tự học từ bạn hay dùng (chỉ trên máy).")
         RowDivider()
@@ -391,7 +396,7 @@ fun MauCauTab() {
 }
 
 @Composable
-private fun LinkRow(g: Glyph, title: String, onClick: () -> Unit) {
+internal fun LinkRow(g: Glyph, title: String, onClick: () -> Unit) {
     val c = LocalVT.current
     VTRow(onClick = onClick) {
         GlyphIcon(g, c.accent, 20.dp)
@@ -402,9 +407,10 @@ private fun LinkRow(g: Glyph, title: String, onClick: () -> Unit) {
 // ============================================================== Giới Thiệu
 
 @Composable
-fun GioiThieuTab() {
+fun GioiThieuTab(plus: com.viettelex.android.plus.PlusController, onOpenPlus: () -> Unit) {
     val c = LocalVT.current
     val ctx = LocalContext.current
+    SaoLuuSection()
     DebugSection()
     VTSection(plain = true) {
         Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
@@ -414,6 +420,7 @@ fun GioiThieuTab() {
             Text("Bàn phím Telex tiếng Việt", style = VTType.subheadline, color = c.secondary)
         }
     }
+    PlusEntryRow(plus, onOpenPlus)
     VTSection(header = "Tài nguyên") {
         LinkRow(Glyph.Globe, "Website") { openUrl(ctx, "https://ptrinh.github.io/viettelex/") }
         RowDivider(52.dp)

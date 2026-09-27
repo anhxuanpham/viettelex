@@ -129,6 +129,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         val t0 = SystemClock.elapsedRealtime()
         super.onCreate()
         prefs = VTPrefs.of(this)
+        com.viettelex.android.plus.PlusPrefs.install(this)   // PlusGate đọc cờ Plus từ prefs chung
         KeyboardData.install(AssetBlobs.provider(assets))
         DebugLog.configure(this, prefs.getBoolean(Keys.DEBUG_TOUCH_LOG, false))
         model = UserLangModel(File(filesDir, Keys.USERLM_FILE), mainThread)
@@ -244,7 +245,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
             capSentences = field.capSentences, suggestionsAllowed = field.suggestionsAllowed,
             capWords = field.capWords, capCharacters = field.capCharacters,
             initialCaps = info.initialCapsMode != 0, noLearning = field.noLearning,
-            packageName = info.packageName))
+            packageName = info.packageName, urlField = proxy.uriField))
         hwSetting = settings.hardwareTelex
         fieldReady = true
     }
