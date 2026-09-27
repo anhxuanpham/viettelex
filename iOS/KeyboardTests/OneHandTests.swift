@@ -103,7 +103,8 @@ final class OneHandTests: XCTestCase {
     @MainActor func testOffKeepsFullWidth() throws {
         let (kb, _) = makeKeyboard(.off)
         let q = try XCTUnwrap(kb.debugLetterFrame("q"))
-        XCTAssertEqual(q.minX, KeyGeometry.sideMargin(pad: isPad), accuracy: 0.5)
+        // iPad: hàng 1 bắt đầu bằng Tab nên q không nằm sát lề — chỉ iPhone so lề.
+        if !isPad { XCTAssertEqual(q.minX, KeyGeometry.sideMargin(pad: false), accuracy: 0.5) }
         XCTAssertTrue(kb.debugRailFrames().isEmpty)
     }
 
