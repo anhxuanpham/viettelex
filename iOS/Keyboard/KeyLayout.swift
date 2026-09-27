@@ -43,10 +43,13 @@ enum KeyLayout {
         Key(id: "comma", units: 0.068), Key(id: "plane2", units: 0.102),
         Key(id: "dismiss", units: 0.102),
     ]
+    /// iPhone: đo stock iOS 26/27 (KeyGeometry): 123 / emoji 43.3pt trên 402 (0.108), "."
+    /// bằng phím chữ (0.083), return 0.156 — cũ 0.12/0.12/0.075/0.14 làm phẩy lệch phải
+    /// 12pt, return 7pt so với chỗ ngón quen.
     static let phoneBottom: [Key] = [
-        Key(id: "plane", units: 0.12), Key(id: "globe", units: 0.10),
-        Key(id: "emoji", units: 0.12), Key(id: "space", units: nil),
-        Key(id: "comma", units: 0.075), Key(id: "return", units: 0.14),
+        Key(id: "plane", units: 0.108), Key(id: "globe", units: 0.10),
+        Key(id: "emoji", units: 0.108), Key(id: "space", units: nil),
+        Key(id: "comma", units: 0.083), Key(id: "return", units: 0.156),
     ]
 
     static func units(_ id: String, in row: [Key]) -> CGFloat? {
