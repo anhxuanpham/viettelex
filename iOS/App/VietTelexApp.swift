@@ -221,6 +221,12 @@ struct RootView: View {
                     .multilineTextAlignment(.leading)
             }
             .font(.footnote).foregroundStyle(.secondary)
+            // Ghi công bắt buộc theo FUTO Model Weights License 1.0 (mô hình gõ vuốt thử nghiệm)
+            Link(destination: URL(string: "https://github.com/ptrinh/viettelex/blob/main/docs/DATA-SOURCES.md#futo-swipe")!) {
+                Text("Gõ vuốt (thử nghiệm) powered by FUTO Swipe — mô hình theo FUTO Model Weights License 1.0")
+                    .multilineTextAlignment(.leading)
+            }
+            .font(.footnote).foregroundStyle(.secondary)
             Text("Toàn quyền Truy cập là tuỳ chọn — chỉ cần cho Rung phím và Mẫu câu động (https://); VietTelex không dùng quyền này cho bất kỳ việc gì khác.")
                 .font(.footnote).foregroundStyle(.secondary)
         } header: { Text("Giới thiệu") }
@@ -855,6 +861,9 @@ struct TinhNangSections: View {
     /// Công tắc con (giai đoạn 3) — mặc định BẬT, xem KeyboardSettings.swipeEnglish.
     @AppStorage("swipeEnglish", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var swipeEnglish = true
+    /// Decoder FUTO Swipe (thử nghiệm) — mặc định TẮT, xem KeyboardSettings.swipeFuto.
+    @AppStorage("swipeFuto", store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var swipeFuto = false
     /// Chọn phím theo ngữ cảnh (thử nghiệm) — mặc định BẬT, xem KeyboardSettings.smartTouch.
     @AppStorage("smartTouch", store: UserDefaults(suiteName: "group.com.viettelex"))
     private var smartTouch = true
@@ -936,6 +945,8 @@ struct TinhNangSections: View {
             settingToggle("Gõ vuốt", "Vuốt qua các chữ không dấu rồi nhấc tay: v→i→e→t ra “việt”. Gõ tiếp phím dấu (s f r x j) để đổi dấu, ⌫ ngay sau đó xoá cả từ, thanh gợi ý có các cách viết khác. Chỉ trên iPhone; tắt khi dùng VoiceOver và ở ô email/mật khẩu/URL.", isOn: $swipeTyping)
             if swipeTyping {
                 settingToggle("Vuốt từ tiếng Anh", "Vuốt ra cả từ tiếng Anh xen trong câu: check, mail, file, meeting… Khi một nét vuốt vừa là từ Việt vừa là từ Anh (the/thế, can/cần), bàn phím ưu tiên tiếng Việt — trừ khi đang gõ tiếng Anh — và luôn để phương án kia trên thanh gợi ý.", isOn: $swipeEnglish)
+                // Ghi công bắt buộc theo FUTO Model Weights License 1.0 (docs/DATA-SOURCES.md)
+                settingToggle("Mô hình nơ-ron gõ vuốt", "Thêm mạng nơ-ron nhận dạng nét vuốt (chạy hoàn toàn trên máy) để chấm cùng bộ giải mã hiện có. Tốn thêm khoảng 3 MB bộ nhớ khi bàn phím mở. Powered by FUTO Swipe.", isOn: $swipeFuto)
             }
         } header: { Text("Thử nghiệm") } footer: {
             Text("Tính năng đang thử — áp dụng lần mở bàn phím kế tiếp.")

@@ -53,6 +53,9 @@ struct KeyboardSettings {
     /// tiếng Anh khi hình vuốt thắng rõ / đang trong mạch Anh, từ điển chỉ nạp khi gõ vuốt
     /// bật. Giống Android.
     var swipeEnglish = true
+    /// Giải mã vuốt bằng mô hình FUTO Swipe (thử nghiệm, mặc định TẮT — FutoSwipe.swift):
+    /// tắt ⇒ không tải model. Giống Android Keys.SWIPE_FUTO.
+    var swipeFuto = false
     /// Kiểu gõ VNI (mặc định TẮT = Telex): số 1–9/0 mang dấu KHI ĐANG SOẠN TỪ (hoặc sửa
     /// dấu từ ngay trước con trỏ); ngoài từ vẫn là số. Engine giống macOS (`vniMode`).
     var vniMode = false
@@ -82,6 +85,7 @@ struct KeyboardSettings {
         if d.object(forKey: "reEditWord") != nil { s.reEditWord = d.bool(forKey: "reEditWord") }
         if d.object(forKey: "swipeTyping") != nil { s.swipeTyping = d.bool(forKey: "swipeTyping") }
         if d.object(forKey: "swipeEnglish") != nil { s.swipeEnglish = d.bool(forKey: "swipeEnglish") }
+        if d.object(forKey: "swipeFuto") != nil { s.swipeFuto = d.bool(forKey: "swipeFuto") }
         if d.object(forKey: "vniMode") != nil { s.vniMode = d.bool(forKey: "vniMode") }
         if d.object(forKey: "smartTouch") != nil { s.smartTouch = d.bool(forKey: "smartTouch") }
         if d.object(forKey: ShortcutFile.enabledKey) != nil { s.shortcutsEnabled = d.bool(forKey: ShortcutFile.enabledKey) }

@@ -28,6 +28,7 @@ import com.viettelex.keyboard.EmojiData
 import com.viettelex.keyboard.ClipboardHistory
 import com.viettelex.keyboard.EmojiRecents
 import com.viettelex.keyboard.FieldTraits
+import com.viettelex.keyboard.FutoSwipe
 import com.viettelex.keyboard.Key
 import com.viettelex.keyboard.KeyboardData
 import com.viettelex.keyboard.KeyboardSession
@@ -122,6 +123,9 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     private var swipeDecoder: SwipeDecoder? = null
     private val swipeLock = Any()
     private var swipeSetting = false
+    /** FUTO Swipe (thử nghiệm, mặc định tắt): null = tắt ⇒ không tải model. Khoá swipeLock. */
+    private var futo: FutoSwipe? = null
+    private var futoSetting = false
     private var swipeFieldOk = false
     private var accessibility: AccessibilityManager? = null
     private val touchExplorationListener = AccessibilityManager.TouchExplorationStateChangeListener { updateSwipeTyping() }
@@ -132,6 +136,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         // Bật/tắt gõ vuốt trong app khi bàn phím đang mở (ô Thử gõ).
         else if (key == Keys.SWIPE_TYPING) { swipeSetting = VTPrefs.settings(prefs).swipeTyping; updateSwipeTyping() }
         else if (key == Keys.SWIPE_ENGLISH) session.swipeEnglish = VTPrefs.settings(prefs).swipeEnglish
+        else if (key == Keys.SWIPE_FUTO) { futoSetting = VTPrefs.settings(prefs).swipeFuto; updateSwipeTyping() }
         else if (key == Keys.SMART_TOUCH) { smartTouchSetting = VTPrefs.settings(prefs).smartTouch; warmSmartTouch() }
         else if (key == Keys.HARDWARE_TELEX) hwSetting = VTPrefs.settings(prefs).hardwareTelex
         // Bật/tắt kiểu gõ trong app khi bàn phím đang mở (ô Thử gõ) → áp ngay, không đợi mở lại.
@@ -230,6 +235,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         if (session.recordClip(field.isSecure, onlyIfNew = true)) saveClipHistory()
         closeClipboardPane()
         swipeSetting = settings.swipeTyping
+        futoSetting = settings.swipeFuto
         // Chỉ ô chữ ghi COMMIT thường: không secure/passthrough (URI, email, mật khẩu hiện,
         // filter), không TYPE_NULL, không ô URL, không app phải ghi bằng key event.
         swipeFieldOk = !field.isSecure && !field.passthrough && !field.rawKeys && !proxy.uriField &&
@@ -320,6 +326,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         swipeFieldOk = false
+        synchronized(swipeLock) { futo?.release() }   // FUTO Swipe: nhả ~2.5 MB khi ẩn
         handler.removeCallbacks(autoShiftRun); handler.removeCallbacks(suggestRun)
         keyboard?.onHidden()
         closeClipboardPane()
@@ -489,17 +496,35 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         if (!on) {
             keyboard?.swipeTyping = false
             if (::session.isInitialized) session.setSwipeTyping(false)
-            synchronized(swipeLock) { swipeDecoder = null }
+            synchronized(swipeLock) { swipeDecoder = null; futo = null }
             return
         }
         if (swipeDecoder == null) synchronized(swipeLock) { swipeDecoder = SwipeDecoder() }
+        updateFuto()
         session.setSwipeTyping(true)
         keyboard?.swipeTyping = true      // → onSwipeLayout khi plane chữ đã dựng
     }
 
+    /** Công tắc FUTO Swipe: bật ⇒ tạo + tải model ở nền (nhả lúc ẩn thì tải lại); tắt ⇒ bỏ. */
+    private fun updateFuto() {
+        val f = synchronized(swipeLock) {
+            if (!futoSetting) { futo = null; return }
+            futo ?: FutoSwipe { AssetBlobs.provider(assets)(Keys.ASSET_FUTO) }.also { f ->
+                swipeDecoder?.layout?.let { f.setLayout(it) }
+                futo = f
+            }
+        }
+        worker().post { synchronized(swipeLock) { if (futo === f) f.load() } }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        synchronized(swipeLock) { futo?.release() }   // tải lại lười ở lần hiện sau
+    }
+
     override fun onSwipeLayout(layout: SwipeLayout) {
         val dec = swipeDecoder ?: return
-        synchronized(swipeLock) { dec.setLayout(layout) }
+        synchronized(swipeLock) { dec.setLayout(layout); futo?.setLayout(layout) }
         // Dựng template nền (~320 KB) — một luồng nhờ swipeLock; decode chờ nếu chưa xong.
         worker().post {
             synchronized(swipeLock) { if (swipeDecoder === dec) dec.prepare() }
@@ -526,7 +551,12 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         // ctx.english != null ⇒ thêm ứng viên tiếng Anh (công tắc "Vuốt từ tiếng Anh"); điểm
         // cá nhân của từ tiếng Anh = ctx.englishWord (không có bigram tĩnh — chỉ cho âm tiết Việt).
         val cands = synchronized(swipeLock) {
-            dec.decode(path, SwipeSuggest.TOP_K, ctx.folded, ctx.english, if (ctx.english != null) ctx.englishWord else null)
+            val enCtx = if (ctx.english != null) ctx.englishWord else null
+            // FUTO Swipe (thử nghiệm): null khi tắt / model chưa sẵn ⇒ SHARK2 như cũ
+            futo?.decode(path, SwipeSuggest.TOP_K, ctx.folded, ctx.english, enCtx, dec)
+                ?: dec.decode(path, SwipeSuggest.TOP_K, ctx.folded, ctx.english, enCtx).also {
+                    futo?.let { f -> worker().post { synchronized(swipeLock) { if (futo === f) f.load() } } }
+                }
         }
         val choice = SwipeSuggest.choose(cands, ctx.word, case, ctx.lambdaFreq)
         if (TouchLog.enabled) TouchLog.write(String.format(java.util.Locale.ROOT, "swipe decode %.1fms pts=%d cands=%d",

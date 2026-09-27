@@ -144,6 +144,8 @@ targets:
       - Keyboard/SyllableBigram.swift
       - Keyboard/AddTones.swift
       - Keyboard/SyllableLM.swift
+      - Keyboard/FutoSwipeModel.swift
+      - Keyboard/FutoSwipe.swift
       - Keyboard/TouchTarget.swift
       - Keyboard/Shortcuts.swift
       - Keyboard/TextTools.swift
@@ -166,6 +168,8 @@ targets:
       - path: Keyboard/Resources/vnbigram.bin
         buildPhase: resources
       - path: Keyboard/Resources/vnlm.bin
+        buildPhase: resources
+      - path: Keyboard/Resources/futoswipe.bin
         buildPhase: resources
     settings:
       base:

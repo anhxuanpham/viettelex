@@ -28,6 +28,7 @@ final class KeyboardViewController: UIInputViewController {
     private var swipeSuggest: (current: String, alts: [String], english: Set<String>)?
     /// Công tắc con "Vuốt từ tiếng Anh" (giai đoạn 3).
     private var swipeEnglishSetting = true
+    private var swipeFutoSetting = false
     /// Chọn phím theo ngữ cảnh lúc chạm (thử nghiệm, mặc định BẬT) — TouchTarget.
     private var smartTouchSetting = true
     /// Vài từ tiếng Anh vừa vuốt ra (chữ thường) — ngữ cảnh ngôn ngữ cho cú vuốt kế
@@ -131,6 +132,7 @@ final class KeyboardViewController: UIInputViewController {
         showSuggestionsSetting = settings.showSuggestions
         swipeSetting = settings.swipeTyping
         swipeEnglishSetting = settings.swipeEnglish
+        swipeFutoSetting = settings.swipeFuto
         smartTouchSetting = settings.smartTouch
         if smartTouchSetting { TelexKeyPrior.warmUpInBackground() }
         if !swipeSetting { swipe = nil }              // tắt ⇒ bỏ template (RAM)
@@ -218,6 +220,7 @@ final class KeyboardViewController: UIInputViewController {
         super.viewWillDisappear(animated)
         closeClipboardPanel()
         learnSettledSwipe()
+        swipe?.releaseFuto()  // FUTO Swipe (thử nghiệm): nhả ~2.5 MB khi ẩn
         langModel.saveNow()   // extension có thể bị kill ngay sau disappear
     }
 
@@ -1311,7 +1314,13 @@ extension KeyboardViewController {
         NotificationCenter.default.addObserver(
             self, selector: #selector(voiceOverChanged),
             name: UIAccessibility.voiceOverStatusDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(memoryWarning),
+            name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
     }
+
+    /// Áp lực bộ nhớ: nhả model FUTO Swipe (thử nghiệm) nếu đang giữ.
+    @objc fileprivate func memoryWarning() { swipe?.releaseFuto() }
 
     @objc fileprivate func voiceOverChanged() { updateSwipeEnabled() }
 
@@ -1326,6 +1335,7 @@ extension KeyboardViewController {
         if on, swipe == nil { swipe = SwipeTyping() }
         if on { pushSwipeLayout(prepare: true) }
         if on, swipeEnglishSetting { swipe?.preloadEnglish() }
+        if let swipe, on || swipe.futoActive { swipe.setFuto(enabled: on && swipeFutoSetting) }
     }
 
     /// Tâm phím thật → decoder (đổi layout khi xoay/đổi cỡ; trùng thì no-op).
