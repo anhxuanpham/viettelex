@@ -519,6 +519,7 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
             super.init(frame: .zero)
             showsVerticalScrollIndicator = false
             alwaysBounceVertical = true
+            disableKeyboardEdgeEffects()
             let ink: UIColor = dark ? .white : .black
             let fill = dark ? UIColor(white: 0.32, alpha: 1) : UIColor(white: 1, alpha: 0.9)
             for g in groups {

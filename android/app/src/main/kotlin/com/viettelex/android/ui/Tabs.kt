@@ -309,6 +309,16 @@ fun TinhNangTab() {
             RowDivider()
             BoolToggle(Keys.SWIPE_FUTO, Prefs.D.swipeFuto, "Mô hình nơ-ron gõ vuốt",
                 "Thêm mạng nơ-ron nhận dạng nét vuốt (chạy hoàn toàn trên máy) để chấm cùng bộ giải mã hiện có. Tốn thêm khoảng 3 MB bộ nhớ khi bàn phím mở.")
+            RowDivider()
+            var showPractice by remember { mutableStateOf(false) }
+            VTRow(onClick = { showPractice = true }) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Luyện vuốt", style = VTType.body, color = LocalVT.current.label)
+                    Text("Vuốt thử từng từ trên bàn phím mẫu, xem bàn phím đọc đúng bao nhiêu.", style = VTType.footnote, color = LocalVT.current.secondary)
+                }
+                Text("›", style = VTType.title3, color = LocalVT.current.tertiary)
+            }
+            if (showPractice) SwipePracticeDialog { showPractice = false }
             // Ghi công BẮT BUỘC theo FUTO Model Weights License 1.0 ("visible notice … within
             // the product's settings") — Phil 27/09/2026: chỉ hiện ở đây (dưới công tắc, khi đã
             // bật Gõ vuốt), chữ nhỏ mờ. KHÔNG xoá. Xem docs/DATA-SOURCES.md.
@@ -539,6 +549,8 @@ fun GioiThieuTab(plus: com.viettelex.android.plus.PlusController, onOpenPlus: ()
     }
     PlusEntryRow(plus, onOpenPlus)
     VTSection(header = "Tài nguyên") {
+        LinkRow(Glyph.Info, "Hướng dẫn sử dụng") { openUrl(ctx, "https://viettelex.com/hdsd") }
+        RowDivider(52.dp)
         LinkRow(Glyph.Globe, "Website") { openUrl(ctx, "https://ptrinh.github.io/viettelex/") }
         RowDivider(52.dp)
         LinkRow(Glyph.Cap, "Học gõ Telex") { openUrl(ctx, "https://ptrinh.github.io/viettelex/learn/") }

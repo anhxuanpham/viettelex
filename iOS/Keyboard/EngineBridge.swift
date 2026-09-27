@@ -304,6 +304,8 @@ final class EngineBridge {
 
     /// Từ vuốt đang mở (chưa chốt) — controller hiện thanh biến thể / học weight.
     var isSwipeWordOpen: Bool { swipeOpen != nil }
+    /// Từ vuốt đang mở còn NGUYÊN như lúc chèn (chưa phím dấu nào sửa).
+    var isFreshSwipeWord: Bool { swipeOpen?.fresh == true }
     /// Từ đang mở là từ user chọn trên thanh gợi ý (học weight 2 khi chốt).
     var openWordAccepted: Bool { swipeOpen?.accepted ?? false }
 
@@ -336,7 +338,8 @@ final class EngineBridge {
 
     /// Thay từ vuốt đang mở bằng `word` (biến thể trên thanh gợi ý). false = không còn
     /// mở / màn hình lệch (caller xử lý như gợi ý thường).
-    func replaceSwipeWord(with word: String, literal: Bool = false, proxy: TextProxyLike) -> Bool {
+    func replaceSwipeWord(with word: String, literal: Bool = false, accepted: Bool = true,
+                          proxy: TextProxyLike) -> Bool {
         guard let open = swipeOpen, open.literal != nil || !engine.isEmpty else { return false }
         let composed = open.literal ?? engine.composed
         guard CompositionSync.canDelete(composed.count, expected: composed,
@@ -347,7 +350,21 @@ final class EngineBridge {
         letterUndo = nil
         for _ in 0..<composed.count { proxy.deleteBackward() }
         proxy.insertText(word)
-        openSwipeWord(word, accepted: true, literal: literal)
+        openSwipeWord(word, accepted: accepted, literal: literal)
+        return true
+    }
+
+    /// Chip "↩︎ từ cũ" (SwipeRevise): trả từ đã chốt ngay trước từ vuốt đang mở từ `new` về
+    /// `old`. Đuôi màn hình phải ĐÚNG "new + ␠ + từ đang mở" (đọc được) — lệch ⇒ không đụng.
+    func restoreRevisedWord(old: String, new: String, proxy: TextProxyLike) -> Bool {
+        guard let open = swipeOpen, open.literal != nil || !engine.isEmpty else { return false }
+        let tail = new + " " + (open.literal ?? engine.composed)
+        guard let ctx = proxy.contextBeforeInput, ctx.hasSuffix(tail) else { return false }
+        letterUndo = nil
+        expansionUndo = nil
+        for _ in 0..<tail.count { proxy.deleteBackward() }
+        proxy.insertText(old + String(tail.dropFirst(new.count)))
+        engine.forgetLastCommit()            // ⌫ không mở lại "new" đã rời màn hình
         return true
     }
 

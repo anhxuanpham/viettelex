@@ -63,8 +63,9 @@ object SuggestionSlots {
             set.word?.let { slots[1] = BarChip(it, it) }
             if (emojis.isEmpty()) set.word2?.let { slots[2] = BarChip(it, it) }
         }
-        // 1 (slot) / 3. hoàn tác (iOS) hoặc "Thêm dấu" chiếm slot đầu, chữ dời phải theo thứ tự đọc.
-        val lead = u ?: action?.takeIf { it.payload == SuggestionSet.ADD_TONES_TOKEN }
+        // 1 (slot) / 3. hoàn tác (iOS), "Thêm dấu" hoặc "↩︎ từ cũ" (vuốt vừa sửa từ trước) chiếm
+        // slot đầu, chữ dời phải theo thứ tự đọc.
+        val lead = u ?: action?.takeIf { it.payload == SuggestionSet.ADD_TONES_TOKEN || it.payload == SuggestionSet.UNDO_REVISE_TOKEN }
         if (lead != null) {
             val words = if (set.nextWords.isNotEmpty())
                 set.nextWords.take(3).map { BarChip(it, it) } else slots.filterNotNull()

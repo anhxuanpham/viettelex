@@ -81,4 +81,12 @@ class SuggestionSlotsTests {
         latch.down("x"); latch.cancel()
         assertEquals(null, latch.up())
     }
+
+    /** "↩︎ từ cũ" sau khi vuốt sửa lại từ trước: slot đầu, biến thể vuốt dời phải — không thành pill. */
+    @Test fun reviseUndoLeadsSwipeAlternatives() {
+        val r = SuggestionSet.UNDO_REVISE_TOKEN
+        val s = SuggestionSet(nextWords = listOf("a", "b", "c"), actionLabel = "↩︎ có", action = r)
+        assertEquals("$r|a|b", payloads(s))
+        assertEquals("$r|a|b", payloads(s, pill = true))
+    }
 }
