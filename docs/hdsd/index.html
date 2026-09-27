@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hướng dẫn sử dụng ViệtTelex — mẹo, cử chỉ, tính năng ẩn</title>
+<meta name="description" content="Hướng dẫn sử dụng bàn phím ViệtTelex trên iPhone, iPad, Android và macOS: sửa dấu từ đã gõ, vuốt ⌫ xoá theo từ, giữ phím cách di con trỏ, gõ vuốt, gõ tắt, mẫu câu, clipboard, emoji, chế độ một tay…">
+<link rel="canonical" href="https://viettelex.com/hdsd/">
+<link rel="alternate" hreflang="vi" href="https://viettelex.com/hdsd/">
+<link rel="alternate" hreflang="en" href="https://viettelex.com/en/guide/">
+<link rel="alternate" hreflang="x-default" href="https://viettelex.com/hdsd/">
+<link rel="icon" href="../assets/VietTelex-logo.png">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Hướng dẫn sử dụng ViệtTelex">
+<meta property="og:description" content="Mọi tính năng và cử chỉ ẩn của bàn phím ViệtTelex trên iPhone, Android và macOS.">
+<meta property="og:image" content="https://viettelex.com/assets/VietTelex-logo.png">
+<meta property="og:url" content="https://viettelex.com/hdsd/">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #17233d;
+    --navy-2: #1e2d4e;
+    --red: #a81f1f;
+    --gold: #d4a94a;
+    --paper: #fbfaf7;
+    --ink: #1c2333;
+    --ink-soft: #55607a;
+    --line: #e6e2d8;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+    --sans: "Be Vietnam Pro", -apple-system, "Segoe UI", sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: var(--sans); color: var(--ink); background: var(--paper); line-height: 1.65; }
+  a { color: var(--red); }
+
+  .hero { position: relative; background: linear-gradient(175deg, var(--navy) 0%, var(--navy-2) 100%); color: #f2f0ea; padding: 48px 20px 56px; text-align: center; }
+  .hero a.home { color: #c6ccdb; text-decoration: none; font-size: .85rem; }
+  .hero a.home:hover { color: var(--gold); }
+  .hero h1 { margin-top: 10px; font-size: clamp(1.6rem, 4.5vw, 2.6rem); font-weight: 800; letter-spacing: -0.02em; }
+  .hero h1 .accent { color: var(--gold); }
+  .hero p.sub { margin: 14px auto 0; max-width: 36em; color: #c6ccdb; font-size: 1rem; }
+  .langswitch { position: absolute; top: 16px; right: 16px; }
+  .langswitch a { display: inline-block; padding: 6px 13px; border: 1px solid rgba(255,255,255,.25); border-radius: 999px; color: #e7ebf4; text-decoration: none; font-size: .82rem; font-weight: 500; background: rgba(0,0,0,.2); }
+  .langswitch a:hover { border-color: var(--gold); color: #fff; }
+
+  section { padding: 36px 16px; }
+  section + section { padding-top: 8px; }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  h2 { font-size: clamp(1.3rem, 3vw, 1.65rem); font-weight: 800; margin-bottom: 6px; scroll-margin-top: 16px; }
+  .lead { color: var(--ink-soft); max-width: 44em; margin-bottom: 18px; }
+  code, kbd { font-family: var(--mono); font-size: .85em; background: #f3f1ea; padding: 1px 5px; border-radius: 5px; }
+  kbd { border: 1px solid var(--line); border-bottom-width: 2px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: .85rem; color: var(--ink-soft); margin-top: 12px; }
+  .tag { display: inline-block; font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; border-radius: 999px; padding: 1px 9px; vertical-align: 2px; white-space: nowrap; }
+  .t-ios { background: #eef0f6; color: #45507a; }
+  .t-and { background: #e8f2e5; color: #2e6b2e; }
+  .t-mac { background: #f3ece0; color: #7a5a1e; }
+  .t-exp { background: #efe9f7; color: #5b3d8f; }
+  .t-plus { background: #fbe9e9; color: var(--red); }
+
+  .toc { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 18px 22px; }
+  .toc ol { columns: 2 16em; column-gap: 28px; margin-left: 20px; font-size: .95rem; }
+  .toc li { margin-bottom: 4px; break-inside: avoid; }
+  .toc a { text-decoration: none; color: var(--ink); }
+  .toc a:hover { color: var(--red); }
+
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; margin-bottom: 12px; }
+  .card h3 { font-size: 1.02rem; font-weight: 700; margin-bottom: 4px; }
+  .card p, .card li { font-size: .93rem; color: var(--ink-soft); }
+  .card p + p { margin-top: 6px; }
+  .card ul { margin: 6px 0 0 20px; }
+  .card li { margin-bottom: 4px; }
+  .card b { color: var(--ink); }
+
+  .tablewrap { overflow-x: auto; background: #fff; border: 1px solid var(--line); border-radius: 14px; }
+  table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+  th { text-align: left; font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); padding: 10px 14px; border-bottom: 1px solid var(--line); background: #faf8f3; }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--ink-soft); }
+  td:first-child { color: var(--ink); font-weight: 600; min-width: 9.5em; }
+  tr:last-child td { border-bottom: 0; }
+
+  .note { background: linear-gradient(160deg, var(--navy), var(--navy-2)); color: #e3e7f1; border-radius: 16px; padding: 20px 24px; font-size: .93rem; }
+  .note h2 { color: #fff; }
+  .note a { color: var(--gold); }
+  .note ul { margin: 8px 0 0 20px; }
+  .note li { margin-bottom: 6px; }
+  .note b { color: var(--gold); }
+
+  footer { text-align: center; padding: 36px 16px 48px; color: var(--ink-soft); font-size: .85rem; }
+  footer a { color: var(--ink-soft); }
+  :focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <nav class="langswitch"><a href="../en/guide/" hreflang="en" lang="en">English</a></nav>
+  <a class="home" href="../">← ViệtTelex</a>
+  <h1>Hướng dẫn <span class="accent">sử dụng</span></h1>
+  <p class="sub">Mọi tính năng của bàn phím ViệtTelex — kể cả những cử chỉ “ẩn” không có nút bấm — trên iPhone/iPad, Android và macOS.</p>
+</header>
+
+<section>
+  <div class="wrap">
+    <div class="toc">
+      <b>Mục lục</b>
+      <ol>
+        <li><a href="#bat-dau">Bật bàn phím</a></li>
+        <li><a href="#kieu-go">Kiểu gõ Telex / VNI</a></li>
+        <li><a href="#sua-dau">Sửa dấu từ đã gõ</a></li>
+        <li><a href="#cu-chi">Cử chỉ ẩn trên bàn phím</a></li>
+        <li><a href="#go-vuot">Gõ vuốt</a></li>
+        <li><a href="#go-tat">Gõ tắt</a></li>
+        <li><a href="#goi-y">Thanh gợi ý &amp; chip</a></li>
+        <li><a href="#mau-cau">Mẫu câu &amp; công cụ văn bản</a></li>
+        <li><a href="#clipboard">Clipboard &amp; ẩn danh</a></li>
+        <li><a href="#emoji">Emoji &amp; kaomoji</a></li>
+        <li><a href="#giao-dien">Giao diện &amp; một tay</a></li>
+        <li><a href="#android">Riêng Android</a></li>
+        <li><a href="#sao-luu">Sao lưu &amp; đồng bộ</a></li>
+        <li><a href="#macos">Trên macOS</a></li>
+        <li><a href="#quyen">Toàn quyền truy cập &amp; Plus</a></li>
+      </ol>
+      <div class="legend">
+        <span><span class="tag t-ios">iOS</span> iPhone/iPad</span>
+        <span><span class="tag t-and">Android</span></span>
+        <span><span class="tag t-mac">macOS</span></span>
+        <span><span class="tag t-exp">Thử nghiệm</span> bật trong mục Thử nghiệm</span>
+        <span><span class="tag t-plus">Plus</span> gói Plus — hiện đang mở miễn phí cho mọi người</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="bat-dau">
+  <div class="wrap">
+    <h2>1. Bật bàn phím</h2>
+    <div class="card">
+      <h3><span class="tag t-ios">iOS</span></h3>
+      <p>Cài đặt → Cài đặt chung → Bàn phím → Bàn phím → <b>Thêm bàn phím mới…</b> → Tiếng Việt (VietTelex). Khi gõ, bấm 🌐 để chuyển sang VietTelex. Ô <b>Thử gõ</b> trong app để kiểm tra ngay: <code>vieejt</code> → <code>việt</code>.</p>
+    </div>
+    <div class="card">
+      <h3><span class="tag t-and">Android</span></h3>
+      <p>Cài đặt → Hệ thống → Ngôn ngữ &amp; nhập liệu → Bàn phím trên màn hình → Quản lý → bật VietTelex, rồi chọn VietTelex làm bàn phím (app có nút <b>Chọn VietTelex</b>). Cảnh báo “có thể thu thập mọi văn bản bạn nhập” là cảnh báo chung của Android cho mọi bàn phím bên thứ ba — VietTelex chạy hoàn toàn trên máy.</p>
+    </div>
+    <p class="lead" style="margin-top:10px">Hầu hết cài đặt trong app áp dụng ở <b>lần mở bàn phím kế tiếp</b>.</p>
+  </div>
+</section>
+
+<section id="kieu-go">
+  <div class="wrap">
+    <h2>2. Kiểu gõ Telex / VNI</h2>
+    <p class="lead">Tab <b>Kiểu Gõ</b> trong app. Telex và VNI loại trừ nhau.</p>
+    <div class="card">
+      <ul>
+        <li><b>VNI</b> — dấu bằng số khi đang gõ một từ: 1 sắc, 2 huyền, 3 hỏi, 4 ngã, 5 nặng, 6 mũ (â ê ô), 7 móc (ơ ư), 8 trăng (ă), 9 đ, 0 xoá dấu: <code>tie6ng1 vie6t5</code> → tiếng việt. Ngoài từ, phím số vẫn ra số. Chọn VNI tự bật <b>Hàng phím số</b>.</li>
+        <li><b>Telex đơn giản</b> — <code>w</code> đứng lẻ giữ nguyên là w, không thành ư.</li>
+        <li><b>Bỏ dấu tự do</b> — phím dấu đặt đâu trong từ cũng được.</li>
+        <li><b>Gõ nhanh (Quick Telex)</b> — phụ âm đôi đầu từ: <code>cc</code> → ch, <code>nn</code> → ng, <code>tt</code> → th…</li>
+        <li><b>Bỏ dấu kiểu mới</b> — hoà, thuý thay vì hòa, thúy.</li>
+        <li><b>Quyết định theo ngữ cảnh</b> — sau một từ tiếng Anh, từ nhập nhằng kế tiếp giữ tiếng Anh: “he is” không thành “he í”.</li>
+        <li><b>Tự khôi phục từ tiếng Anh</b> — từ không phải tiếng Việt trả về như đã gõ (google, github…). <b>Kiểm tra chính tả khi gõ</b> ngừng bỏ dấu ngay khi từ không thể là tiếng Việt.</li>
+        <li><b>Chính tả teencode</b> (mặc định tắt) — chấp nhận wá, zui zẻ, kó, bíe, thík, gòy, ừk.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="sua-dau">
+  <div class="wrap">
+    <h2>3. Sửa dấu từ đã gõ</h2>
+    <p class="lead">Quên dấu? Không cần xoá cả từ gõ lại. Bật/tắt ở <b>Tính Năng → Chính tả → Sửa dấu từ đã gõ</b> (mặc định bật). <span class="tag t-ios">iOS</span> <span class="tag t-and">Android</span> <span class="tag t-mac">macOS</span></p>
+    <div class="card">
+      <ul>
+        <li><b>Xoá dấu cách để mở lại từ:</b> <code>tháy</code> ␣ <kbd>⌫</kbd> <code>a</code> → <b>thấy</b>.</li>
+        <li><b>Đặt con trỏ ngay sau một từ rồi gõ phím dấu</b> <code>s f r x j</code>: <code>viêt</code> + <code>j</code> → <b>việt</b>; <code>chao</code> + <code>f</code> → <b>chào</b> (VNI: số 1–5, 0).</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="cu-chi">
+  <div class="wrap">
+    <h2>4. Cử chỉ ẩn trên bàn phím</h2>
+    <p class="lead">Không có nút nào cho những thao tác này — hãy thử ngay.</p>
+    <div class="tablewrap">
+      <table>
+        <tr><th>Cử chỉ</th><th>Tác dụng</th></tr>
+        <tr><td>Giữ phím cách rồi kéo</td><td>Biến bàn phím thành <b>trackpad</b> di con trỏ: kéo ngang từng ký tự, kéo dọc từng dòng; kéo nhanh thì con trỏ đi xa hơn. Nhả tay không chèn dấu cách. <span class="tag t-ios">iOS</span> <span class="tag t-and">Android</span></td></tr>
+        <tr><td>Vuốt sang trái trên <kbd>⌫</kbd></td><td><b>Xoá theo từ</b>: kéo càng xa càng nhiều từ, nhãn trên phím báo trước số từ sẽ xoá (“⌫ 2 từ” / “−2”); kéo ngược về = huỷ. Nhấc tay mới xoá. Ngay sau đó thanh gợi ý có ô <b>Khôi phục</b> để lấy lại (mất khi gõ phím khác). <span class="tag t-ios">iOS</span> <span class="tag t-and">Android</span></td></tr>
+        <tr><td>Giữ <kbd>⌫</kbd></td><td>Xoá lặp, nhanh dần; giữ quá ~3 giây chuyển sang xoá cả từ. <span class="tag t-ios">iOS</span> <span class="tag t-and">Android</span></td></tr>
+        <tr><td>Chạm đúp phím cách</td><td>Ra <b>“. ”</b> (dấu chấm + cách) sau chữ/số. <span class="tag t-ios">iOS</span> <span class="tag t-and">Android</span></td></tr>
+        <tr><td>Chạm đúp <kbd>⇧</kbd></td><td>Khoá chữ hoa (Caps Lock). Đầu câu bàn phím tự bật chữ hoa. <span class="tag t-ios">iOS</span> <span class="tag t-and">Android</span></td></tr>
+        <tr><td><kbd>⌫</kbd> ngay sau khi từ tự khôi phục / gõ tắt vừa bung</td><td>Trả lại chữ bạn đã gõ (hoàn tác gõ tắt) hoặc hiện dạng có dấu trên thanh gợi ý để đổi bằng một chạm.</td></tr>
+        <tr><td>Giữ lâu nút ☰ trên thanh gợi ý</td><td>Bật/tắt <b>chế độ một tay</b> (chỉ iPhone). <span class="tag t-ios">iOS</span></td></tr>
+        <tr><td>Giữ lâu icon con trỏ trên thanh gợi ý</td><td>Bật/tắt chế độ một tay (chỉ điện thoại). Chạm thường = mở bảng sửa văn bản. <span class="tag t-and">Android</span></td></tr>
+        <tr><td>Vuốt xuống trên phím chữ (iPad)</td><td>Gõ ký tự phụ in xám phía trên phím, như bàn phím iPad gốc. <span class="tag t-ios">iPad</span></td></tr>
+        <tr><td>Giữ lâu phím <kbd>,</kbd></td><td>Chuyển sang gõ giọng nói của hệ thống (vd Google voice typing) — chỉ khi máy có bàn phím giọng nói; góc phím có 🎤 mờ. <span class="tag t-and">Android</span></td></tr>
+        <tr><td>Giữ lâu phím 😊</td><td>Mở danh sách bàn phím để đổi sang bàn phím khác. <span class="tag t-and">Android</span></td></tr>
+        <tr><td>Giữ lâu <kbd>Enter</kbd></td><td>Xuống dòng thật trong ô nhiều dòng mà app biến Enter thành “Gửi”. <span class="tag t-and">Android</span></td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="go-vuot">
+  <div class="wrap">
+    <h2>5. Gõ vuốt <span class="tag t-exp">Thử nghiệm</span></h2>
+    <p class="lead">Bật ở <b>Tính Năng → Thử nghiệm → Gõ vuốt</b>. <span class="tag t-ios">iPhone</span> <span class="tag t-and">Android</span></p>
+    <div class="card">
+      <ul>
+        <li>Lướt ngón qua các chữ <b>không dấu</b> của một âm tiết rồi nhấc tay: v→i→e→t ra <b>“việt”</b>.</li>
+        <li>Gõ phím dấu (<code>s f r x j</code>) ngay sau đó để đổi dấu; <kbd>⌫</kbd> ngay sau đó xoá cả từ vừa vuốt; thanh gợi ý có các cách viết khác.</li>
+        <li><b>Vuốt từ tiếng Anh</b> (bật sẵn khi bật gõ vuốt): check, mail, file, meeting… Nét vuốt vừa Việt vừa Anh (the/thế, can/cần) ưu tiên tiếng Việt, phương án kia luôn nằm trên thanh gợi ý.</li>
+        <li><b>Mô hình nơ-ron gõ vuốt</b> (tuỳ chọn, mặc định tắt): thêm mạng nơ-ron <b>FUTO Swipe</b> chạy hoàn toàn trên máy để chấm cùng bộ giải mã sẵn có — tốn thêm khoảng 3 MB bộ nhớ khi bàn phím mở.</li>
+        <li>Tự tắt khi dùng VoiceOver/TalkBack và ở ô mật khẩu, email, địa chỉ web. Trên iOS chỉ có ở iPhone (không có ở iPad).</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="go-tat">
+  <div class="wrap">
+    <h2>6. Gõ tắt</h2>
+    <p class="lead"><b>Tính Năng → Gõ tắt</b>. <span class="tag t-ios">iOS</span> <span class="tag t-and">Android</span> <span class="tag t-mac">macOS</span></p>
+    <div class="card">
+      <ul>
+        <li>Gõ chữ tắt rồi dấu cách, Enter hoặc dấu câu để bung: <code>ko</code> → không.</li>
+        <li><b>Hoa/thường theo cách gõ</b> (khi chữ tắt lưu dạng thường): <code>ko</code> → không, <code>Ko</code> → Không, <code>KO</code> → KHÔNG.</li>
+        <li>Chữ tắt có ký hiệu hoặc số (<code>-&gt;</code>, <code>k2</code>) bung khi gõ dấu cách.</li>
+        <li><kbd>⌫</kbd> ngay sau khi bung = trả lại chữ đã gõ.</li>
+        <li>Không bung khi dính liền sau số hoặc <code>/ # @</code> (5h, /h3), trong ô mật khẩu, email, URL.</li>
+        <li>Bảng mặc định rỗng; nút <b>Thêm bộ gợi ý</b> thêm: ko, dc, đc, vs, mn, trc, cty, bsi, stk, -&gt; (→).</li>
+        <li>Nhập/xuất file YAML <code>chữ tắt: nội dung</code> — dùng chung giữa Mac, iPhone và Android.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="goi-y">
+  <div class="wrap">
+    <h2>7. Thanh gợi ý &amp; chip</h2>
+    <p class="lead">VietTelex <b>không tự sửa chữ của bạn</b> — mọi gợi ý chỉ áp dụng khi bạn chạm. Cài đặt ở <b>Tính Năng → Gợi ý</b>. Nút <b>⌄</b> ở mép phải thu gọn thanh.</p>
+    <div class="card">
+      <ul>
+        <li><b>Gợi ý từ</b> + tự học từ bạn hay dùng (chỉ lưu trên máy). <b>Từ điển cá nhân</b>: xem, tìm, xoá từ đã học, thêm tên riêng/thuật ngữ. <b>Lọc từ nhạy cảm</b> không chủ động gợi ý từ tục.</li>
+        <li><b>Gợi ý sửa lỗi chạm trượt</b> (tab Kiểu Gõ): <code>nbjeeuf</code> → nhiều, <code>ohims</code> → phím — hiện trên thanh, chạm để thay.</li>
+        <li><b>Gợi ý emoji</b> hợp với từ đang gõ (yêu → ❤️).</li>
+        <li><b>Chip số</b>: sau khi gõ số — đọc số thành chữ, định dạng tiền, tính nhanh phép tính (<code>2+3</code> → 5, <code>12*3</code> → 36).</li>
+        <li><b>Nút Dán</b>: vừa copy xong thì thanh gợi ý hiện thẻ Dán. <span class="tag t-ios">iOS</span> cần Toàn quyền truy cập; để iOS khỏi hỏi mỗi lần: Cài đặt → VietTelex → Dán từ ứng dụng khác → Cho phép.</li>
+        <li><b>Chip “Thêm dấu”</b> <span class="tag t-plus">Plus</span> (mặc định tắt): gõ xong một câu không dấu, một chạm thêm dấu cả câu — <code>hom nay troi dep</code> → hôm nay trời đẹp.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="mau-cau">
+  <div class="wrap">
+    <h2>8. Mẫu câu &amp; công cụ văn bản</h2>
+    <p class="lead">Bật/tắt ở <b>Tính Năng → Gợi ý → Mẫu câu</b>; quản lý ở tab <b>Mẫu Câu</b>. <span class="tag t-ios">iOS</span> <span class="tag t-and">Android</span></p>
+    <div class="card">
+      <ul>
+        <li>Chạm <b>☰</b> trên thanh gợi ý để mở lưới câu soạn sẵn, chạm một câu để chèn. Label ngắn (emoji) giúp lưới gọn hơn.</li>
+        <li>Trong lưới mẫu câu, phím 😊 đổi thành <b>thùng rác</b> — xoá sạch nội dung ô đang gõ.</li>
+        <li><b>Mẫu câu động</b>: nội dung bắt đầu bằng <code>https://</code> sẽ tải dữ liệu <b>ngay lúc bấm</b> và chèn kết quả (tối đa 1000 byte) — vd “🌐 IP” chèn địa chỉ IP hiện tại. iOS cần Toàn quyền truy cập; không có mạng thì chèn chính URL.</li>
+        <li>Import/Export YAML <code>- "👋 | Chào buổi sáng"</code>; import là gộp thêm. <span class="tag t-and">Android</span> còn có thể chia sẻ chữ từ app khác vào VietTelex để thêm mẫu câu. <span class="tag t-ios">iOS</span> ô ⚙️ cuối lưới mở thẳng tab Mẫu Câu.</li>
+        <li><b>Công cụ văn bản</b> <span class="tag t-plus">Plus</span>: chip <b>Aa</b> đầu lưới mẫu câu — HOA, thường, Hoa Đầu Từ, Hoa đầu câu, Xoá dấu; áp lên phần đang chọn hoặc câu trước con trỏ.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="clipboard">
+  <div class="wrap">
+    <h2>9. Clipboard &amp; ẩn danh</h2>
+    <p class="lead"><b>Tính Năng → Riêng tư</b>. <span class="tag t-ios">iOS</span> <span class="tag t-and">Android</span></p>
+    <div class="card">
+      <ul>
+        <li><b>Lịch sử clipboard</b> (mặc định tắt): nút 📋 trên thanh gợi ý mở tối đa 20 mục vừa copy — chạm để dán, ghim để giữ lâu. Mục không ghim tự xoá sau 1 giờ (giống mật khẩu/OTP: 2 phút). Bỏ qua ô mật khẩu và nội dung được đánh dấu nhạy cảm. iOS cần Toàn quyền truy cập.</li>
+        <li><b>Chip tách số</b> <span class="tag t-plus">Plus</span>: nội dung vừa copy có số tài khoản / SĐT / mã OTP → chip “Dán STK…” chỉ dán đúng phần số. Ghim không giới hạn cũng thuộc Plus.</li>
+        <li><b>Chế độ ẩn danh</b>: không học từ, không lưu clipboard; biểu tượng mắt gạch chéo (iOS) / 🕶 (Android) hiện trên bàn phím. Android tự bật trong ô nhập của trình duyệt ẩn danh.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="emoji">
+  <div class="wrap">
+    <h2>10. Emoji &amp; kaomoji</h2>
+    <div class="card">
+      <ul>
+        <li>Phím 😊 mở bàn phím emoji đầy đủ, có nhóm <b>Gần đây</b> 🕐.</li>
+        <li><b>Tìm emoji bằng tiếng Việt</b>: chạm thanh tìm trên cùng, gõ không dấu cũng được — <code>cuoi</code> → 😀 “mặt cười”. Chạm kết quả để chèn.</li>
+        <li>Tab <b>kaomoji / ký tự đặc biệt</b> <code>(^‿^)</code> ở cuối dãy nhóm emoji.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="giao-dien">
+  <div class="wrap">
+    <h2>11. Giao diện &amp; một tay</h2>
+    <p class="lead"><b>Tính Năng → Giao diện</b>.</p>
+    <div class="card">
+      <ul>
+        <li><b>Theme &amp; ảnh nền</b>: Hệ thống, Tối OLED, Tương phản cao luôn miễn phí; các theme khác (Hồng đào, Bạc hà, Trời xanh, Oải hương, Kính…) và ảnh nền riêng (chỉnh độ tối lớp phủ, độ mờ) <span class="tag t-plus">Plus</span>. Ảnh được nén ngay trên máy.</li>
+        <li><b>Hàng phím số</b> 1…0 trên hàng chữ; <b>Chiều cao hàng phím</b> ±10.</li>
+        <li><b>Phóng to chữ khi bấm</b>, <b>Rung phím</b> (iOS cần Toàn quyền truy cập), <b>logo Vᴛ</b> mờ trên phím cách.</li>
+        <li><b>Chế độ một tay</b> (điện thoại): Tắt / Trái / Phải — thu hẹp bàn phím về một bên; nút ở dải trống để đổi bên hoặc thoát. Bật nhanh bằng cử chỉ ở <a href="#cu-chi">mục 4</a>.</li>
+        <li><b>Chọn phím thông minh</b> <span class="tag t-exp">Thử nghiệm</span> (mặc định bật): chạm sát mép giữa hai phím thì chọn phím hợp với chữ đang gõ; chạm giữa phím luôn ra đúng phím đó, chữ đã gõ không bao giờ bị tự sửa.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="android">
+  <div class="wrap">
+    <h2>12. Riêng Android <span class="tag t-and">Android</span></h2>
+    <div class="card">
+      <ul>
+        <li><b>Bảng sửa văn bản</b>: chạm icon con trỏ trên thanh gợi ý — mũi tên, đầu/cuối dòng, chọn / chọn từ / chọn hết, sao chép / cắt / dán, hoàn tác / làm lại; cuối bảng có hàng công cụ văn bản <span class="tag t-plus">Plus</span>.</li>
+        <li><b>Telex cho bàn phím cứng</b> (Tính Năng → Bàn phím cứng): gõ Telex/VNI bằng bàn phím Bluetooth/USB, Samsung DeX, Chromebook; phím tắt Ctrl/Alt vẫn tới app.</li>
+        <li>Ô số / số điện thoại / ngày giờ tự mở <b>bàn số</b> riêng.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="sao-luu">
+  <div class="wrap">
+    <h2>13. Sao lưu &amp; đồng bộ</h2>
+    <p class="lead">Tab <b>Giới Thiệu → Sao lưu &amp; đồng bộ</b>.</p>
+    <div class="card">
+      <ul>
+        <li><b>Xuất / Nhập file sao lưu</b>: cài đặt, gõ tắt, mẫu câu (và từ đã học nếu bật “Kèm từ đã học”) — một file mở được trên iPhone, iPad và Android. Nhập: cài đặt theo file, gõ tắt và mẫu câu được gộp thêm.</li>
+        <li><b>Đồng bộ iCloud</b> <span class="tag t-ios">iOS</span> <span class="tag t-plus">Plus</span>: cài đặt, gõ tắt và từ đã học theo bạn sang máy khác cùng Apple ID. <span class="tag t-mac">macOS</span> đồng bộ tuỳ chọn Telex và bảng gõ tắt với iPhone/iPad.</li>
+        <li><span class="tag t-and">Android</span> còn tự sao lưu cài đặt vào Google (Sao lưu của hệ thống) khi bạn bật.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="macos">
+  <div class="wrap">
+    <h2>14. Trên macOS <span class="tag t-mac">macOS</span></h2>
+    <div class="card">
+      <ul>
+        <li>Sửa dấu từ đã gõ, gõ tắt (<kbd>⌥</kbd><kbd>↩</kbd> để xuống dòng trong nội dung), VNI, teencode — như trên điện thoại.</li>
+        <li><b>Công cụ văn bản</b>: bôi đen chữ ở app bất kỳ rồi chọn trong menu VietTelex — Thêm dấu cho vùng chọn (<code>toi di hoc</code> → tôi đi học), HOA, thường, Hoa Đầu Từ, Hoa đầu câu, Xoá dấu. Có <b>phím tắt Thêm dấu</b> dùng ở mọi app (cần quyền Trợ năng).</li>
+        <li><b>Phím tắt chuyển bộ gõ</b>: bấm-nhả riêng các phím bổ trợ để bật/tắt VietTelex.</li>
+        <li>App nào gõ sai? Xem <a href="../typing-modes">Chế độ gõ trong ViệtTelex</a>.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="quyen">
+  <div class="wrap">
+    <div class="note">
+      <h2>15. Toàn quyền truy cập &amp; Plus</h2>
+      <ul>
+        <li><b>iOS</b>: bàn phím dùng đầy đủ khi <b>không</b> cấp Toàn quyền truy cập. Chỉ cần quyền này cho: Rung phím, Mẫu câu động (https://), nút Dán, Lịch sử clipboard và lưu từ đã học. VietTelex không thu thập, không gửi nội dung bạn gõ.</li>
+        <li><b>Android</b>: quyền mạng chỉ dùng cho Mẫu câu động do bạn tạo.</li>
+        <li><b>VietTelex Plus</b> (mua một lần): theme cao cấp &amp; ảnh nền, thêm dấu cả câu, clipboard nâng cao, đồng bộ iCloud, công cụ văn bản, huy hiệu cảm ơn. Toàn bộ phần gõ luôn miễn phí; hiện mọi tính năng Plus đang mở miễn phí cho tất cả.</li>
+      </ul>
+      <p style="margin-top:12px">Gặp lỗi hoặc muốn góp ý? <a href="https://github.com/ptrinh/viettelex/issues">Báo trên GitHub</a> · Mới học gõ? <a href="../learn/">Học gõ Telex</a>.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <a href="../">Trang chủ</a> ·
+  <a href="../en/guide/" hreflang="en" lang="en">English</a> ·
+  <a href="https://github.com/ptrinh/viettelex">GitHub</a> ·
+  <a href="https://github.com/ptrinh/viettelex/issues">Báo lỗi</a>
+  <div style="margin-top:8px;">© 2026 ViệtTelex</div>
+</footer>
+</body>
+</html>
