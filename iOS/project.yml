@@ -251,5 +251,6 @@ schemes:
             - SwipeDecoderTests/testBenchmark
             - TouchTargetTests/testLatency
             - KeyboardBenchTests/testHotPathBench
+            - RamBreakdownTests/testComponentBreakdown
             - KeyboardThemeTests/testKeyboardDecodeMemoryFootprint
             - PlusStoreKitConfigTests/testStoreKitTestSessionLoadsProducts
