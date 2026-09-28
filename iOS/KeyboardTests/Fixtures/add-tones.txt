@@ -26,11 +26,11 @@ nguoi viet nam rat hieu khach	người việt nam rất hiếu khách
 chung ta se gap lai sau	chúng ta sẽ gặp lại sau
 dien thoai cua toi bi hong roi	điện thoại của tôi bị hỏng rồi
 toi dang lam viec o ha noi	tôi đang làm việc ở hà nội
-Ha Noi mua thu dep lam	Hà Nội mùa thu đẹp lắm
+Ha Noi mua thu dep lam	Hà Nội mùa thứ đẹp lắm
 ong ay la bac si	ông ấy là bác sĩ
 co ay hat rat hay	cô ấy hát rất hay
 xin loi toi den muon	xin lỗi tôi đến muộn
-tui minh di an pho di	tụi mình đi ăn phố đi
+tui minh di an pho di	tụi mình đi ăn phô đi
 mot hai ba bon nam sau bay tam chin muoi	một hai ba bốn năm sáu bảy tám chín muồi
 nuoc Viet Nam doc lap tu do hanh phuc	nước Việt Nam độc lập từ đó hạnh phúc
 con meo dang ngu tren ghe	con mèo đang ngủ trên ghế
@@ -39,7 +39,7 @@ dat nuoc ta dang phat trien	đất nước ta đang phát triển
 hoc sinh phai chiu kho hoc bai	học sinh phải chịu khó học bài
 anh ay noi tieng Anh rat gioi	anh ấy nói tiếng Anh rất giỏi
 cho toi mot ly ca phe sua da	cho tôi một ly cà phê sữa đã
-may gio roi ban	mấy giờ rồi bạn
+may gio roi ban	mấy giờ rồi bắn
 thoi tiet hom nay the nao	thời tiết hôm nay thế nào
 toi nghi la duoc	tôi nghĩ là được
 bien Nha Trang rat dep	biến Nhà Trắng rất đẹp

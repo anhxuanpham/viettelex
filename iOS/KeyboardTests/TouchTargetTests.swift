@@ -103,7 +103,7 @@ final class TouchTargetTests: XCTestCase {
         e.freeMarking = true; e.simpleTelex = true; e.liveSpellCheck = true
         e.quickTelex = false; e.modernTone = false; e.teencode = false
         for ch in raw { _ = e.feed(ch) }
-        return SyllableBigram.normalize(e.composed)
+        return SyllableLM.normalize(e.composed)
     }
 
     private func heldout() throws -> [[String]] {
@@ -120,7 +120,7 @@ final class TouchTargetTests: XCTestCase {
         var wrong = 0, words = 0, bad = 0, taps = 0
         for sent in sents {
             for syl in sent {
-                let want = SyllableBigram.normalize(syl)
+                let want = SyllableLM.normalize(syl)
                 let vs = (TelexSpell.variants(syl) ?? []).filter { compose($0.keys) == want }
                 guard !vs.isEmpty else { continue }
                 var r = rng.uniform() * Double(vs.reduce(0) { $0 + $1.share })

@@ -117,41 +117,32 @@ object SwipeSuggest {
      *  - cá nhân: từ kế tiếp hay gặp sau (prev2, prev1) +[NEXT_BONUS]; từ hay gõ
      *    +ln(1+count)·[PERSONAL_WEIGHT] (trần [PERSONAL_CAP]);
      *  - tĩnh: trigram âm tiết (vnlm.bin, [SyllableLM]) sau (prev2, prev) ·[LM_WEIGHT] kẹp
-     *    [[LM_FLOOR], [LM_CAP]]; không có vnlm.bin thì PMI bigram (vnbigram.bin) sau [prev]
-     *    ·[STATIC_WEIGHT], trần [STATIC_CAP] (< NEXT_BONUS ⇒ dữ liệu cá nhân vẫn thắng); đã có
-     *    nextWords thì nhân [STATIC_DAMP].
+     *    [[LM_FLOOR], [LM_CAP]] (< NEXT_BONUS ⇒ dữ liệu cá nhân vẫn thắng); đã có nextWords thì
+     *    nhân [STATIC_DAMP]. Không có vnlm.bin / âm tiết trước lạ ⇒ không có điểm tĩnh.
      * [folded] (cho decoder) = điểm âm tiết tốt nhất của dạng không dấu (tần suất + ngữ cảnh)
      * trừ phần tần suất decoder đã tính ⇒ decode và expand chấm cùng một thước.
      */
     class Context(private val next: Set<String>, private val nextFolded: Set<String>,
                   private val count: (String) -> Int,
-                  prev: String? = null, bigram: SyllableBigram? = null,
+                  prev: String? = null,
                   /** Tham số tiếng Anh cho decoder (giai đoạn 3); null = tắt vuốt tiếng Anh. */
                   val english: SwipeEnglishPrior? = null,
-                  /** Âm tiết trước nữa + mô hình trigram (vnlm.bin); có LM thì thay bigram PMI. */
+                  /** Âm tiết trước nữa + mô hình trigram (vnlm.bin). */
                   prev2: String? = null, lm: SyllableLM? = null) {
-        private val id1 = if (prev == null) -1 else SyllableBigram.idOf(prev)
+        private val id1 = if (prev == null) -1 else SyllableLM.idOf(prev)
         private val lmCtx: SyllableLM.Context? =
             if (lm == null || id1 < 0) null
-            else lm.context(if (prev2 == null) -1 else SyllableBigram.idOf(prev2), id1)
-        private val row: SyllableBigram.Row? =
-            if (lmCtx != null || id1 < 0 || bigram == null) null
-            else bigram.row(id1).takeIf { it.size > 0 }
+            else lm.context(if (prev2 == null) -1 else SyllableLM.idOf(prev2), id1)
         private val damp = if (next.isEmpty()) 1f else STATIC_DAMP
-        private val staticWeight = (if (lmCtx != null) LM_WEIGHT else STATIC_WEIGHT) * damp
+        private val staticWeight = LM_WEIGHT * damp
         /** λ tần suất khi chọn dạng + bung dấu (hạ còn [LM_LAMBDA_FREQ] khi có trigram). */
         val lambdaFreq: Float = if (lmCtx != null) LM_LAMBDA_FREQ else LAMBDA_FREQ
 
         /** Điểm LM tĩnh của âm tiết có dấu [w] (0 nếu không có dữ liệu). */
         fun static(w: String): Float {
-            if (lmCtx != null) {
-                val id = SyllableBigram.idOf(w)
-                return if (id < 0) 0f
-                else maxOf(LM_FLOOR * damp, minOf(LM_CAP * damp, staticWeight * lmCtx.score(id)))
-            }
-            val r = row ?: return 0f
-            val id = SyllableBigram.idOf(w)
-            return if (id < 0) 0f else minOf(STATIC_CAP, staticWeight * r.score(id))
+            val c = lmCtx ?: return 0f
+            val id = SyllableLM.idOf(w)
+            return if (id < 0) 0f else maxOf(LM_FLOOR * damp, minOf(LM_CAP * damp, staticWeight * c.score(id)))
         }
 
         /**
@@ -181,7 +172,7 @@ object SwipeSuggest {
         }
 
         val folded: ((String) -> Float)? =
-            if (nextFolded.isEmpty() && row == null && lmCtx == null) null
+            if (nextFolded.isEmpty() && lmCtx == null) null
             else { f -> foldedScore(f, word, lambdaFreq, clamp = lmCtx == null) }
     }
 
@@ -203,8 +194,6 @@ object SwipeSuggest {
     const val NEXT_BONUS = 1.5f
     const val PERSONAL_WEIGHT = 0.4f
     const val PERSONAL_CAP = 1.5f
-    const val STATIC_WEIGHT = 0.3f
-    const val STATIC_CAP = 1.2f
     const val STATIC_DAMP = 0.5f
     /**
      * Trigram (vnlm.bin, [SyllableLM]): điểm = s·[LM_WEIGHT] kẹp [[LM_FLOOR], [LM_CAP]] (có
@@ -218,11 +207,10 @@ object SwipeSuggest {
 
     fun context(model: UserLangModel?, prev1: String?, prev2: String?,
                 english: SwipeEnglishPrior? = null,
-                bigram: SyllableBigram? = SyllableBigram.shared,
                 lm: SyllableLM? = SyllableLM.shared): Context {
         val next = if (model != null && prev1 != null) model.nextWords(prev1, prev2, 24).map { it.lowercase() }.toSet() else emptySet()
         val count: (String) -> Int = if (model == null) { _ -> 0 } else { w -> model.count(w) }
-        return Context(next, next.mapTo(HashSet()) { fold(it) }, count, prev1, bigram, english, prev2, lm)
+        return Context(next, next.mapTo(HashSet()) { fold(it) }, count, prev1, english, prev2, lm)
     }
 
     /** Chế độ Tiếng Anh (vuốt phím cách): chỉ giữ ứng viên tiếng Anh. Giống iOS SwipeTyping.englishOnly. */

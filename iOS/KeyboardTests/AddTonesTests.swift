@@ -1,6 +1,6 @@
 // AddTonesTests.swift — thêm dấu cho câu không dấu. Song sinh android AddTonesTests.kt.
 // Đo trên câu Tatoeba GIỮ LẠI (bigram-heldout.txt — không nằm trong dữ liệu dựng
-// vnbigram.bin): bỏ dấu → khôi phục → tỉ lệ âm tiết đúng. Parity Kotlin qua add-tones.txt.
+// vnlm.bin): bỏ dấu → khôi phục → tỉ lệ âm tiết đúng. Parity Kotlin qua add-tones.txt.
 import XCTest
 
 final class AddTonesTests: XCTestCase {
@@ -77,11 +77,11 @@ final class AddTonesTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(n, 40)
     }
 
-    private func measure(_ chains: [[String]], bigram: SyllableBigram? = SyllableBigram.shared) -> (n: Int, ok: Int, sOk: Int) {
+    private func measure(_ chains: [[String]], lm: SyllableLM? = SyllableLM.shared) -> (n: Int, ok: Int, sOk: Int) {
         var n = 0, ok = 0, sOk = 0
         for c in chains {
             let folded = c.map { SwipeTyping.fold($0) }.joined(separator: " ")
-            let out = AddTones.restore(folded, bigram: bigram).text.split(separator: " ").map(String.init)
+            let out = AddTones.restore(folded, lm: lm).text.split(separator: " ").map(String.init)
             var all = true
             for i in c.indices { n += 1; if out[i] == c[i] { ok += 1 } else { all = false } }
             if all { sOk += 1 }
@@ -91,12 +91,13 @@ final class AddTonesTests: XCTestCase {
 
     func testHeldoutAccuracy() throws {
         let chains = try heldout()
-        let uni = measure(chains, bigram: nil)
+        let uni = measure(chains, lm: nil)
         let full = measure(chains)
         let ru = Double(uni.ok) / Double(uni.n), rf = Double(full.ok) / Double(full.n)
         print(String(format: "ADDTONES heldout iOS: chỉ unigram %.4f | + bigram %.4f (n=%d) | câu %.3f",
                      ru, rf, full.n, Double(full.sOk) / Double(chains.count)))
-        // cùng ngưỡng với Kotlin (đo 27/09/2026: 0.7635 → 0.9463, câu 0.732)
+        // cùng ngưỡng với Kotlin (đo 27/09/2026: 0.7635 → 0.9463, câu 0.732; 28/09/2026 bigram
+        // vnlm.bin: → 0.9556, câu 0.769)
         XCTAssertGreaterThanOrEqual(rf, 0.94)
         XCTAssertGreaterThanOrEqual(rf - ru, 0.15)
     }

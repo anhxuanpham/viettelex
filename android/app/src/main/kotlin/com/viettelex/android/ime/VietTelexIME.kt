@@ -43,7 +43,6 @@ import com.viettelex.keyboard.SwipeEnglish
 import com.viettelex.keyboard.SwipeLayout
 import com.viettelex.keyboard.SwipePath
 import com.viettelex.keyboard.SwipeSuggest
-import com.viettelex.keyboard.SyllableBigram
 import com.viettelex.keyboard.SyllableLM
 import com.viettelex.keyboard.WriteMode
 import com.viettelex.keyboard.TemplateItem
@@ -659,8 +658,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         worker().post {
             synchronized(swipeLock) { if (swipeDecoder === dec) dec.prepare() }
             if (session.swipeEnglish) SwipeEnglish.lexicon     // nạp từ điển Anh ở nền (lazy, thread-safe)
-            SyllableBigram.shared   // bảng bigram tĩnh dùng chung (thanh gợi ý cũng dùng)
-            SyllableLM.shared       // map mô hình trigram (vnlm.bin)
+            SyllableLM.shared       // map mô hình trigram (vnlm.bin — thanh gợi ý + Thêm dấu cũng dùng)
         }
     }
 

@@ -94,9 +94,9 @@ enum SwipeRevise {
                        lm: SyllableLM? = SyllableLM.shared, margin: Float = margin,
                        weight: Float = jointWeight) -> String? {
         guard let lm, scored.count >= 2, !next.isEmpty else { return nil }
-        let prevId = prev.flatMap { SyllableBigram.id(of: $0) } ?? -1
-        let curCtx = SyllableBigram.id(of: current).flatMap { lm.context(prev2: prevId, prev1: $0) }
-        let nextIds = next.map { SyllableBigram.id(of: $0.word) }
+        let prevId = prev.flatMap { SyllableLM.id(of: $0) } ?? -1
+        let curCtx = SyllableLM.id(of: current).flatMap { lm.context(prev2: prevId, prev1: $0) }
+        let nextIds = next.map { SyllableLM.id(of: $0.word) }
         // điểm từ kế bỏ phần trigram theo từ đang hiện (cộng lại theo từng ứng viên c)
         var base = [Float](repeating: 0, count: next.count)
         for k in next.indices {
@@ -108,7 +108,7 @@ enum SwipeRevise {
         var best: String?
         var bestScore = -Float.infinity
         for w in scored {
-            guard let id = SyllableBigram.id(of: w.word) else { continue }
+            guard let id = SyllableLM.id(of: w.word) else { continue }
             let ctx = lm.context(prev2: prevId, prev1: id)
             var nb = -Float.infinity
             for k in next.indices {
@@ -129,13 +129,13 @@ enum SwipeRevise {
     static func revise(_ scored: [SwipeWord], current: String, prev: String?, next: String,
                        lm: SyllableLM? = SyllableLM.shared, margin: Float = margin,
                        weight: Float = rightWeight) -> String? {
-        guard let lm, scored.count >= 2, let nextId = SyllableBigram.id(of: next) else { return nil }
-        let prevId = prev.flatMap { SyllableBigram.id(of: $0) } ?? -1
+        guard let lm, scored.count >= 2, let nextId = SyllableLM.id(of: next) else { return nil }
+        let prevId = prev.flatMap { SyllableLM.id(of: $0) } ?? -1
         var cur: Float?
         var best: String?
         var bestScore = -Float.infinity
         for w in scored {
-            guard let id = SyllableBigram.id(of: w.word) else { continue }
+            guard let id = SyllableLM.id(of: w.word) else { continue }
             let s = w.score + rightScore(lm, prev: prevId, cand: id, next: nextId, weight: weight)
             if w.word == current { cur = s }
             if s > bestScore { bestScore = s; best = w.word }

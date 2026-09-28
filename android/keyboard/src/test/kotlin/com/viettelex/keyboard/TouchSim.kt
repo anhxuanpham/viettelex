@@ -68,7 +68,7 @@ object TouchSim {
     fun compose(raw: String): String {
         val e = engine()
         for (ch in raw) e.feed(ch)
-        return SyllableBigram.normalize(e.composed)
+        return SyllableLM.normalize(e.composed)
     }
 
     fun heldout(): List<List<String>> {
@@ -80,7 +80,7 @@ object TouchSim {
     private val validCache = HashMap<String, List<Pair<String, Float>>>()
     /** Biến thể gõ Telex HỢP LỆ (engine ra đúng âm tiết). */
     fun validVariants(s: String): List<Pair<String, Float>> = validCache.getOrPut(s) {
-        val want = SyllableBigram.normalize(s)
+        val want = SyllableLM.normalize(s)
         TelexSpell.variants(s).orEmpty().filter { compose(it.first) == want }
     }
 
@@ -263,11 +263,11 @@ object TouchSim {
             val cur = compose(typed)
             val curF = VNSuggest.frequency(cur)
             if (onlyValid && curF == null) return@Suggester null
-            val big = SyllableBigram.shared
-            val prevId = prev?.let { SyllableBigram.idOf(it) } ?: -1
+            val big = SyllableLM.shared
+            val prevId = prev?.let { SyllableLM.idOf(it) } ?: -1
             fun lm(w: String, f: Int): Float {
-                val id = if (prevId >= 0 && big != null) SyllableBigram.idOf(w) else -1
-                val pmi = if (id >= 0) big!!.score(prevId, id) else 0f
+                val id = if (prevId >= 0 && big != null) SyllableLM.idOf(w) else -1
+                val pmi = if (id >= 0) big!!.bigram(prevId).explicit(id).coerceAtLeast(0f) else 0f
                 return lambda * f + pmi
             }
             fun ll(p: KPoint, k: Int): Float {

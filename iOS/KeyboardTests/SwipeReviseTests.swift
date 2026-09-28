@@ -61,7 +61,7 @@ final class SwipeReviseTests: XCTestCase {
 
     func testRightScoreClamped() throws {
         let lm = try XCTUnwrap(SyllableLM.shared)
-        let id = { (s: String) in SyllableBigram.id(of: s) ?? -1 }
+        let id = { (s: String) in SyllableLM.id(of: s) ?? -1 }
         let r = SwipeRevise.rightScore(lm, prev: -1, cand: id("hôm"), next: id("nay"))
         XCTAssertTrue(r > 0 && r <= SwipeRevise.rightCap)
         XCTAssertGreaterThanOrEqual(SwipeRevise.rightScore(lm, prev: -1, cand: id("hôm"), next: id("xịch")),

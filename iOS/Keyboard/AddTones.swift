@@ -8,8 +8,9 @@
 // vnlexicon (SwipeLexicon) → ứng viên = mọi âm tiết có dấu của dạng đó. Điểm (log, nat):
 //   phát xạ = freqW·freq/255 (freq byte = 255·ln(count)/ln(max) ≈ log unigram)
 //             + personalUni·ln(1+count cá nhân)
-//   chuyển  = bigramW·PMI(âm tiết trước → này) (vnbigram.bin; thiếu cặp khi âm tiết trước CÓ
-//             dải ⇒ missing) + personalBi·ln(1+count cặp cá nhân)
+//   chuyển  = bigramW·max(floor, PMI(âm tiết trước → này)) + personalBi·ln(1+count cặp cá nhân);
+//             PMI = bigram Kneser-Ney của vnlm.bin (SyllableLM.bigram — có điểm ÂM, thiếu mục ⇒
+//             lùi γ2); âm tiết trước không có dòng bigram nào ⇒ 0.
 // Chuỗi bị cắt ở dấu câu / token giữ nguyên. GIỮ NGUYÊN: token không phải dạng Việt (tiếng
 // Anh, tên riêng lạ, số, URL, email, chữ lẫn số/ký hiệu, camelCase), token có dấu. Token vừa
 // là dạng Việt vừa là từ Anh (the, can…) giữ nguyên khi kề một từ chắc chắn Anh. Giữ
@@ -20,11 +21,12 @@ import TelexCore
 
 enum AddTones {
     /// Trọng số — GIỮ Y HỆT bản Kotlin. Chọn bằng lưới trên heldout (android
-    /// AddTonesTests.tuneGrid / tunePersonal, 27/09/2026).
+    /// AddTonesTests.tuneGrid / tunePersonal, 27/09/2026); 28/09/2026 (bigram vnlm.bin thay
+    /// vnbigram.bin) lưới lại trên tập dev: giữ freqW/bigramW, sàn PMI −2.5 (thay "thiếu cặp = −0.5").
     struct Params {
         var freqW = 10.0
         var bigramW = 1.0
-        var missing = -0.5
+        var floor = -2.5
         var personalUni = 0.1
         var personalBi = 1.0
     }
@@ -164,7 +166,7 @@ enum AddTones {
 
     /// Khôi phục dấu cho `text` (một đoạn — thường là `segment`). Độ dài (scalar) giữ nguyên.
     static func restore(_ text: String, personal: Personal? = nil, _ p: Params = Params(),
-                        bigram: SyllableBigram? = SyllableBigram.shared) -> Result {
+                        lm: SyllableLM? = SyllableLM.shared) -> Result {
         let s = Array(text.unicodeScalars)
         let toks = tokenize(s)
         classify(toks)
@@ -184,7 +186,7 @@ enum AddTones {
                 e += 1
             }
             vn += e - k
-            viterbi(toks, k, e, forms, personal, p, bigram, &chosen)
+            viterbi(toks, k, e, forms, personal, p, lm, &chosen)
             k = e
         }
         var outS = s
@@ -204,7 +206,7 @@ enum AddTones {
     }
 
     private static func viterbi(_ toks: [Tok?], _ from: Int, _ to: Int, _ forms: SwipeLexicon.Forms,
-                                _ personal: Personal?, _ p: Params, _ bigram: SyllableBigram?,
+                                _ personal: Personal?, _ p: Params, _ lm: SyllableLM?,
                                 _ chosen: inout [String?]) {
         let n = to - from
         let ids: [[Int]] = (0..<n).map { i in
@@ -215,7 +217,7 @@ enum AddTones {
         var score = ids.map { [Double](repeating: 0, count: $0.count) }
         var back = ids.map { [Int](repeating: 0, count: $0.count) }
         for i in 0..<n {
-            let rows = i > 0 ? bigram.map { b in ids[i - 1].map { b.row($0) } } : nil
+            let rows = i > 0 ? lm.map { m in ids[i - 1].map { m.bigram($0) } } : nil
             for s in ids[i].indices {
                 var emit = p.freqW * Double(VNSuggest.freq(id: ids[i][s])) / 255.0
                 if let personal {
@@ -228,10 +230,7 @@ enum AddTones {
                     var tr = 0.0
                     if let rows {
                         let row = rows[r]
-                        if row.size > 0 {
-                            let pmi = row.score(ids[i][s])
-                            tr = pmi > 0 ? p.bigramW * Double(pmi) : p.missing
-                        }
+                        if row.size > 0 { tr = p.bigramW * max(p.floor, Double(row.pmi(ids[i][s]))) }
                     }
                     if let personal {
                         let c = min(personal.pair(words[i - 1][r], words[i][s]), personalCap)

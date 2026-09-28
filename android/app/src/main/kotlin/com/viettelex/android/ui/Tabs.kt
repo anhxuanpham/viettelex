@@ -465,7 +465,7 @@ fun GioiThieuTab(plus: com.viettelex.android.plus.PlusController, onOpenPlus: ()
         RowDivider()
         VTRow { Text(tr("Không thu thập dữ liệu · Không theo dõi · Mã nguồn mở"), style = VTType.footnote, color = c.secondary) }
         RowDivider()
-        // Ghi công theo giấy phép dữ liệu bigram gõ vuốt (vnbigram.bin) — docs/DATA-SOURCES.md
+        // Ghi công theo giấy phép dữ liệu bigram gõ vuốt (vnlm.bin) — docs/DATA-SOURCES.md
         VTRow(onClick = { openUrl(ctx, "https://github.com/ptrinh/viettelex/blob/main/docs/DATA-SOURCES.md") }) {
             Text(tr("Dữ liệu gõ vuốt: thống kê từ Wikipedia, Wikisource… tiếng Việt (CC BY-SA 4.0) và Tatoeba (CC BY 2.0 FR)"),
                 style = VTType.footnote, color = c.secondary)

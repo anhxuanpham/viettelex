@@ -3,12 +3,17 @@
 Mã nguồn VietTelex theo [MIT](../LICENSE). Một số **file dữ liệu** đóng gói trong app có
 nguồn và giấy phép riêng, ghi dưới đây.
 
-## vnbigram.bin — bigram âm tiết cho gõ vuốt + thanh gợi ý
+## vnlm.bin — mô hình n-gram âm tiết (gõ vuốt, thanh gợi ý, Thêm dấu)
 
-`iOS/Keyboard/Resources/vnbigram.bin` = `android/app/src/main/assets/vnbigram.bin`
-(~1,2 MB, 400.807 cặp). Sinh bởi `Scripts/gen-syllable-bigram.py`. Chỉ chứa **số liệu
-thống kê**: với mỗi cặp âm tiết liền nhau (a, b) là một byte PMI đã lượng tử hoá. Không
-chứa câu hay đoạn văn nào của nguồn.
+`iOS/Keyboard/Resources/vnlm.bin` = `android/app/src/main/assets/vnlm.bin` (2.652.944 byte ≈
+2,5 MiB: 332.396 bigram, 92.541 ngữ cảnh trigram, 259.909 trigram, + 7.184 byte `uniAdj`); app
+macOS đóng gói cùng file cho Thêm dấu. Sinh bởi `Scripts/gen-syllable-lm.py` (lệnh + định dạng
+ở docstring). Chỉ chứa **số liệu thống kê** (điểm log-xác suất lượng tử 1 byte theo cặp/bộ ba
+âm tiết), không chứa câu hay đoạn văn nào của nguồn.
+
+Dùng bởi: gõ vuốt (trigram, `SwipeTyping` + `SwipeRevise`), thanh gợi ý gõ chạm (bigram PMI —
+chọn dấu inline + từ kế tiếp, `SuggestRank`), Thêm dấu cả câu (bigram PMI, `AddTones`; iOS,
+Android và process con `VietTelex --add-tones` trên macOS).
 
 ### Nguồn
 
@@ -23,11 +28,11 @@ Dump Wikimedia lấy tại https://dumps.wikimedia.org/other/cirrussearch/202512
 `text` đã là văn bản thuần). Tatoeba nhỏ nhưng là câu hội thoại, gần văn phong bàn phím
 nhất ⇒ trọng số cao (chọn trên tập dev, xem dưới).
 
-### Giấy phép của vnbigram.bin
+### Giấy phép của vnlm.bin
 
-Số đếm n-gram là dữ liệu thống kê, nhưng để an toàn ta **coi vnbigram.bin là tác phẩm
-phái sinh** của các nguồn trên và phát hành nó theo **CC BY-SA 4.0** (Tatoeba CC BY 2.0 FR
-cho phép gộp vào tác phẩm CC BY-SA khi ghi công). Hệ quả:
+Số đếm n-gram là dữ liệu thống kê, nhưng để an toàn ta **coi vnlm.bin là tác phẩm phái
+sinh** của các nguồn trên và phát hành nó theo **CC BY-SA 4.0** (Tatoeba CC BY 2.0 FR cho
+phép gộp vào tác phẩm CC BY-SA khi ghi công). Hệ quả:
 
 - Dùng thương mại được (cả CC BY-SA lẫn CC BY đều cho phép).
 - ShareAlike chỉ áp lên **file dữ liệu** (và bản sửa của nó), không lên mã nguồn app đọc
@@ -35,13 +40,13 @@ cho phép gộp vào tác phẩm CC BY-SA khi ghi công). Hệ quả:
 - Phải ghi công khi phân phối (app + repo). Ghi công đặt ở: file này, mục "Giới thiệu"
   trong app iOS/Android (dòng "Dữ liệu gõ vuốt…", mở trang này), header fixture kiểm thử.
 
-**Thông báo ghi công** (dùng nguyên văn khi phân phối lại vnbigram.bin):
+**Thông báo ghi công** (dùng nguyên văn khi phân phối lại vnlm.bin):
 
-> vnbigram.bin chứa số liệu thống kê bigram âm tiết suy ra từ nội dung Wikipedia,
+> vnlm.bin chứa số liệu thống kê n-gram âm tiết suy ra từ nội dung Wikipedia,
 > Wikisource, Wikibooks, Wikivoyage và Wikiquote tiếng Việt (© các tác giả Wikimedia,
 > CC BY-SA 4.0) và từ câu tiếng Việt của Tatoeba (© các thành viên Tatoeba, CC BY 2.0 FR).
-> Đã biến đổi: tách âm tiết, đếm cặp liền nhau, chuyển thành PMI lượng tử hoá 1 byte.
-> vnbigram.bin phát hành theo CC BY-SA 4.0.
+> Đã biến đổi: tách âm tiết, đếm n-gram, làm trơn Kneser-Ney, cắt tỉa, lượng tử hoá
+> 1 byte. vnlm.bin phát hành theo CC BY-SA 4.0.
 
 ### Nguồn KHÔNG dùng (và lý do)
 
@@ -55,55 +60,46 @@ cho phép gộp vào tác phẩm CC BY-SA khi ghi công). Hệ quả:
 
 ### Tái tạo
 
-Lệnh đầy đủ ở docstring `Scripts/gen-syllable-bigram.py` (tải dump về thư mục tạm →
-`count` → `build` → copy sang assets Android). Dữ liệu thô **không** commit. Định dạng
-file ở cùng docstring và `iOS/Keyboard/SyllableBigram.swift`.
+Lệnh đầy đủ ở docstring `Scripts/gen-syllable-lm.py` (tải dump về thư mục tạm → `count` →
+`build` → copy sang assets Android; `chains` sinh fixture kiểm thử). Dữ liệu thô **không**
+commit. Build từ cùng cache đếm cho ra file y hệt từng byte (đã kiểm 28/09/2026: bản v1 cũ tái
+tạo đúng, `count` của script mới = script cũ trên Tatoeba).
 
 - Tách âm tiết: NFC, chữ thường, kiểu dấu cũ như vnlexicon (hòa, thủy); chỉ giữ âm
   tiết có trong vnlexicon; chuỗi đứt ở dấu câu/số/từ lạ.
-- Điểm: PMI chiết khấu `ln((c(a,b) − 0.5)·N / (c(a)·c(b)))`, giữ khi đếm thô ≥ 3 và
-  PMI ≥ 0.25, lượng tử `round(pmi·16)`.
 - Câu có `blake2b(câu) % 20 == 0` là **tập kiểm thử**, `== 1` là **tập dev** — cả hai bị
   loại khỏi phép đếm. Trọng số nguồn/hệ số chấm điểm chỉnh trên tập dev.
 
-### Đo (27/09/2026)
+### vnbigram.bin (đã bỏ 28/09/2026)
 
-Tập kiểm thử: `iOS/KeyboardTests/Fixtures/bigram-heldout.txt` (1.674 câu Tatoeba giữ lại,
-12.027 vị trí có âm tiết trước). Đường vuốt giả σ = 0.25 phím; "top-3" = từ chèn + 2
-phương án đầu trên thanh gợi ý. Người dùng mới (không dữ liệu cá nhân):
+Trước đây thanh gợi ý + Thêm dấu (và gõ vuốt trước khi có vnlm) đọc một bảng riêng
+`vnbigram.bin` (~1,2 MB, 400.807 cặp PMI chiết khấu `ln((c(a,b) − 0.5)·N / (c(a)·c(b)))`,
+chỉ PMI ≥ 0.25; `Scripts/gen-syllable-bigram.py`, cùng nguồn/giấy phép). Từ 28/09/2026 mọi nơi
+đọc phần bigram của vnlm.bin (PMI = s2 + uniAdj, xem "Mô hình"), bỏ file đó (−1,2 MB mỗi app
+iOS/Android) và gộp script vào `gen-syllable-lm.py`. Đo trên tập kiểm thử (bigram-heldout.txt),
+tham số chỉnh lại trên tập dev:
 
-| | top-1 | top-3 |
+| Người dùng | vnbigram.bin | bigram vnlm.bin |
 |---|---|---|
-| Trước (tần suất unigram) | 70,4 % | 86,5 % |
-| Sau (+ bigram tĩnh, trọng số 0.3/nat, trần 1.2) | **85,6 %** | **94,8 %** |
+| Thêm dấu — âm tiết đúng (câu đúng hết) | 94,63 % (73,2 %) | **95,56 %** (76,9 %) |
+| Thêm dấu + seed UserLangModel | 94,71 % | **95,62 %** |
+| Thanh gợi ý — slot1 / 3 slot / từ kế tiếp top3 | 82,9 / 93,8 / 27,1 % | 83,0 / 93,9 / 27,0 % |
+| Thanh gợi ý, người dùng học dần | 86,1 / 94,8 / 29,1 % | 86,1 / 94,8 / 29,1 % |
+| Gõ vuốt (trigram, không đổi) | 89,4 / 96,1 % | 89,4 / 96,1 % |
 
-Test hồi quy: `SyllableBigramTests` (iOS + Android) — ngưỡng top-1 ≥ 84 %, top-3 ≥ 93,5 %,
-và các cặp điển hình (không có, cho tôi, hôm nay, ngay lập, môi trường, một nửa…) phải
-lên top-1.
-
-## vnlm.bin — mô hình trigram âm tiết cho gõ vuốt
-
-`iOS/Keyboard/Resources/vnlm.bin` = `android/app/src/main/assets/vnlm.bin` (~2,6 MB:
-332.396 bigram, 92.541 ngữ cảnh trigram, 259.909 trigram). Sinh bởi
-`Scripts/gen-syllable-lm.py` (lệnh + định dạng ở docstring). Gõ vuốt dùng nó thay
-vnbigram.bin khi có (vnbigram.bin vẫn giữ cho thanh gợi ý gõ chạm).
-
-- **Nguồn, trọng số, tách âm tiết, tập kiểm thử/dev: y hệt vnbigram.bin** (bảng nguồn ở
-  trên; script dùng lại hàm của `gen-syllable-bigram.py`). Chỉ chứa số liệu thống kê
-  (điểm log-xác suất lượng tử 1 byte theo cặp/bộ ba âm tiết), không chứa câu nào.
-- **Giấy phép: CC BY-SA 4.0**, cùng lý do và cùng hệ quả như vnbigram.bin (mã đọc nó vẫn
-  MIT). Thông báo ghi công (dùng nguyên văn khi phân phối lại vnlm.bin):
-
-> vnlm.bin chứa số liệu thống kê n-gram âm tiết suy ra từ nội dung Wikipedia,
-> Wikisource, Wikibooks, Wikivoyage và Wikiquote tiếng Việt (© các tác giả Wikimedia,
-> CC BY-SA 4.0) và từ câu tiếng Việt của Tatoeba (© các thành viên Tatoeba, CC BY 2.0 FR).
-> Đã biến đổi: tách âm tiết, đếm n-gram, làm trơn Kneser-Ney, cắt tỉa, lượng tử hoá
-> 1 byte. vnlm.bin phát hành theo CC BY-SA 4.0.
+Thêm dấu tăng vì vnlm có **bằng chứng âm** + lùi Kneser-Ney cho cặp vắng mặt (sàn −2.5 nat;
+bảng cũ chỉ có "thiếu cặp = −0.5"). Đổi trên fixture parity `add-tones.txt`: "Hà Nội mùa thu
+đẹp lắm" → "mùa thứ" (cặp "thu đẹp" bị cắt tỉa ⇒ lùi rất âm), "mấy giờ rồi bạn" → "bắn"
+(PMI "rồi bạn" < 0), "ăn phố" → "ăn phô" (đáp án "phở", cả hai sai). Đã thử: thêm lại cặp bị cắt
+tỉa (+0,3–0,9 MB) chỉ +0,05 điểm, không sửa được 2 câu trên; Viterbi trigram −0,6 điểm ⇒ không
+giữ.
 
 ### Mô hình
 
 Kneser-Ney nội suy bậc 3 (D = 0.75), lưu s = ln(P(c | 2 âm tiết trước) / P₁(c)) — có cả
-điểm ÂM ("hiếm sau ngữ cảnh này"), điều vnbigram.bin (chỉ PMI dương) không có. Cắt tỉa
+điểm ÂM ("hiếm sau ngữ cảnh này"), điều vnbigram.bin cũ (chỉ PMI dương) không có. Bản 2
+(28/09/2026) thêm `uniAdj(c) = ln(P₁(c)·N / c(c))` (1 byte/âm tiết): PMI bigram = s2(b, c) +
+uniAdj(c) ≈ ln(P(c|b) / P(c)) — khớp PMI của vnbigram.bin ±0,08 nat trên các cặp chung. Cắt tỉa
 "weighted difference" (Seymore & Rosenfeld 1996) trên chính điểm decoder dùng (β·s kẹp
 [−1, 1]), ngưỡng bigram 10 / trigram 20 (đếm có trọng số). Decoder: điểm = 0.15·s kẹp
 [−1, 1]; khi có trigram, λ tần suất lúc chọn dạng/bung dấu hạ 2.5 → 1.0 (cho cả từ tiếng
@@ -111,7 +107,8 @@ Anh, giữ cán cân Việt/Anh).
 
 ### Đo (27/09/2026)
 
-Cùng tập kiểm thử với vnbigram.bin (`bigram-heldout.txt`, 12.027 vị trí, đường giả
+Tập kiểm thử: `iOS/KeyboardTests/Fixtures/bigram-heldout.txt` (1.674 câu Tatoeba giữ lại,
+12.027 vị trí có âm tiết trước; "top-3" = từ chèn + 2 phương án đầu trên thanh gợi ý), đường giả
 σ 0.25, người dùng mới). Tham số chọn trên tập dev (11.915 vị trí), rồi đo MỘT lần trên
 tập kiểm thử:
 

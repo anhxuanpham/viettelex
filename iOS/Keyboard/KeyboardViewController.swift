@@ -293,16 +293,17 @@ final class KeyboardViewController: UIInputViewController {
         langModelStorage?.saveNow()   // extension có thể bị kill ngay sau disappear
     }
 
-    /// Nạp NỀN dữ liệu tính năng đang BẬT (tắt ⇒ không nạp gì): model cá nhân + bảng bigram
-    /// âm tiết cho thanh gợi ý / gõ vuốt; dạng không dấu (SwipeLexicon) chỉ cho gõ vuốt.
-    /// Bigram: lần chạm đầu hash vnlexicon (~150KB) — đừng để rơi vào main.
+    /// Nạp NỀN dữ liệu tính năng đang BẬT (tắt ⇒ không nạp gì): model cá nhân + mô hình âm
+    /// tiết vnlm.bin (bigram cho thanh gợi ý, trigram cho gõ vuốt — cùng một mmap); dạng không
+    /// dấu (SwipeLexicon) chỉ cho gõ vuốt. vnlm: lần chạm đầu hash vnlexicon (~150KB) — đừng để
+    /// rơi vào main.
     private func warmUpData() {
         let wantsLM = showSuggestionsSetting || swipeSetting || addTonesSetting
         if wantsLM { _ = langModel }
         let swipeOn = swipeSetting
         if showSuggestionsSetting || swipeOn {
             Self.suggestQueue.async {
-                _ = SyllableBigram.shared
+                _ = SyllableLM.shared
                 if swipeOn { _ = SwipeLexicon.forms }
             }
         }

@@ -6,14 +6,17 @@
 // Kneser-Ney nội suy bậc 3 đã cắt tỉa. Điểm s (nat) của âm tiết c sau (a, b) =
 // ln(P(c|a,b) / P1(c)): > 0 = hay theo sau hơn bình thường, < 0 = hiếm. Thiếu mục ⇒ lùi:
 // dòng trigram (a,b) có mà thiếu c → γ3(ab) + s2(b,c); không có dòng → s2(b,c); bigram
-// thiếu → γ2(b). Khác vnbigram.bin (chỉ PMI dương, 1 âm tiết trước): có bằng chứng ÂM và
-// 2 âm tiết trước. vnbigram.bin vẫn giữ cho thanh gợi ý gõ chạm.
+// thiếu → γ2(b).
 //
-// Layout (LE) — xem docstring script: 0 "VNM1" | 4 version=1 | 8 count | 12 lexHash |
+// Cũng là nguồn BIGRAM của thanh gợi ý gõ chạm + Thêm dấu (thay vnbigram.bin cũ): `bigram`
+// trả PMI ≈ ln(P(c|b) / P(c)) = s2(b, c) + uniAdj(c), uniAdj = ln(P1(c)·N / c(c)) đổi mẫu số
+// từ P1 (continuation) sang tần suất thật.
+//
+// Layout (LE) — xem docstring script: 0 "VNM1" | 4 version=2 | 8 count | 12 lexHash |
 // 16 qPerNat | 20 biEntries | 24 triContexts | 28 triEntries | 32 reserved×4 |
 // 48 gamma2 i8[count] (pad 4) | biOff u32[count+1] | biNext u16[] | biScore i8[] (pad 4) |
 // ctxKey u32[] (a<<16|b tăng dần) | ctxOff u32[ctx+1] | ctxGamma i8[] | triNext u16[] |
-// triScore i8[].
+// triScore i8[] | uniAdj i8[count].
 //
 // mmap (.alwaysMapped), đọc tại chỗ: RAM bẩn ≈ 0. Chỉ đọc ⇒ thread-safe.
 import Foundation
@@ -28,7 +31,7 @@ final class SyllableLM {
     private let g2Base = 48
     private let biOffBase: Int, biNextBase: Int, biScoreBase: Int
     private let ctxKeyBase: Int, ctxOffBase: Int, ctxGammaBase: Int
-    private let triNextBase: Int, triScoreBase: Int
+    private let triNextBase: Int, triScoreBase: Int, adjBase: Int
     let byteCount: Int
 
     private static func pad4(_ n: Int) -> Int { (n + 3) & ~3 }
@@ -49,7 +52,8 @@ final class SyllableLM {
         ctxGammaBase = ctxOffBase + (triContexts + 1) * 4
         triNextBase = ctxGammaBase + triContexts
         triScoreBase = triNextBase + triEntries * 2
-        byteCount = triScoreBase + triEntries
+        adjBase = triScoreBase + triEntries
+        byteCount = adjBase + count
     }
 
     private static func u32(_ d: Data, _ off: Int) -> Int {
@@ -127,11 +131,66 @@ final class SyllableLM {
         context(prev2: prev2, prev1: prev1)?.score(w) ?? 0
     }
 
-    /// Kiểm tra header + khớp lexicon + kích thước; nil nếu hỏng/lệch (gõ vuốt lùi về
-    /// vnbigram.bin).
+    /// ln(P1(c)·N / c(c)) — đổi s2 (so với P1) thành PMI (so với tần suất thật).
+    func uniAdj(_ w: Int) -> Float {
+        guard w >= 0, w < count else { return 0 }
+        return blob.withUnsafeBytes { i8($0, adjBase + w) }
+    }
+
+    /// Dải bigram của âm tiết trước — thanh gợi ý gõ chạm + Thêm dấu (thay vnbigram.bin).
+    /// `size` = 0 ⇒ âm tiết trước không có mục nào (không biết gì về nó).
+    struct Bigram {
+        fileprivate let lm: SyllableLM?
+        fileprivate let g2: Float
+        fileprivate let lo: Int, hi: Int
+        var size: Int { hi - lo }
+
+        /// PMI (nat) của âm tiết sau id `next`; thiếu mục ⇒ lùi γ2(prev) + uniAdj.
+        func pmi(_ next: Int) -> Float {
+            guard let lm, next >= 0, next < lm.count else { return 0 }
+            return lm.blob.withUnsafeBytes { raw -> Float in
+                let j = SyllableLM.find16(raw, lm.biNextBase, lo, hi, next)
+                return (j >= 0 ? lm.i8(raw, lm.biScoreBase + j) : g2) + lm.i8(raw, lm.adjBase + next)
+            }
+        }
+
+        /// PMI của mục tường minh; 0 nếu thiếu.
+        func explicit(_ next: Int) -> Float {
+            guard let lm, next >= 0, next < lm.count else { return 0 }
+            return lm.blob.withUnsafeBytes { raw -> Float in
+                let j = SyllableLM.find16(raw, lm.biNextBase, lo, hi, next)
+                return j >= 0 ? lm.i8(raw, lm.biScoreBase + j) + lm.i8(raw, lm.adjBase + next) : 0
+            }
+        }
+
+        /// Duyệt mọi mục tường minh (id âm tiết sau, PMI) — thanh gợi ý lấy top từ kế tiếp.
+        func forEach(_ body: (_ next: Int, _ pmi: Float) -> Void) {
+            guard let lm, lo < hi else { return }
+            lm.blob.withUnsafeBytes { raw in
+                for m in lo..<hi {
+                    let c = Int(UInt16(littleEndian: raw.loadUnaligned(fromByteOffset: lm.biNextBase + m * 2,
+                                                                      as: UInt16.self)))
+                    body(c, lm.i8(raw, lm.biScoreBase + m) + lm.i8(raw, lm.adjBase + c))
+                }
+            }
+        }
+    }
+
+    /// Dải bigram của âm tiết trước id `prev` (id vnlexicon).
+    func bigram(_ prev: Int) -> Bigram {
+        guard prev >= 0, prev < count else { return Bigram(lm: nil, g2: 0, lo: 0, hi: 0) }
+        return blob.withUnsafeBytes { raw in
+            Bigram(lm: self, g2: i8(raw, g2Base + prev),
+                   lo: Self.u32(blob, biOffBase + prev * 4), hi: Self.u32(blob, biOffBase + (prev + 1) * 4))
+        }
+    }
+
+    static let version = 2
+
+    /// Kiểm tra header + khớp lexicon + kích thước; nil nếu hỏng/lệch (chạy không LM).
     static func load(_ d: Data, lexiconHash: UInt32, lexiconCount: Int) -> SyllableLM? {
         guard d.count >= 48, d.prefix(4).elementsEqual("VNM1".utf8),
-              u32(d, 4) == 1, u32(d, 8) == lexiconCount, UInt32(u32(d, 12)) == lexiconHash,
+              u32(d, 4) == version, u32(d, 8) == lexiconCount, UInt32(u32(d, 12)) == lexiconHash,
               u32(d, 16) > 0, let lm = SyllableLM(blob: d), lm.byteCount == d.count,
               u32(d, lm.biOffBase + lm.count * 4) == lm.biEntries,
               u32(d, lm.ctxOffBase + lm.triContexts * 4) == lm.triEntries
@@ -139,11 +198,47 @@ final class SyllableLM {
         return lm
     }
 
-    /// Mô hình dùng chung — map lần đầu cần (chỉ khi gõ vuốt bật). nil nếu thiếu/hỏng/lệch.
+    /// Mô hình dùng chung (gõ vuốt + thanh gợi ý + Thêm dấu — một lần map) — map lần đầu cần,
+    /// nên chạm lần đầu ở hàng đợi nền (hash vnlexicon ~150KB). nil nếu thiếu/hỏng/lệch.
     static let shared: SyllableLM? = {
         final class BundleToken {}
         guard let url = Bundle(for: BundleToken.self).url(forResource: "vnlm", withExtension: "bin"),
               let d = try? Data(contentsOf: url, options: .alwaysMapped) else { return nil }
-        return load(d, lexiconHash: SyllableBigram.fnv1a(VNLexicon2Data.blob), lexiconCount: VNLexicon2Data.count)
+        return load(d, lexiconHash: fnv1a(VNLexicon2Data.blob), lexiconCount: VNLexicon2Data.count)
     }()
+
+    static func fnv1a(_ d: Data) -> UInt32 {
+        d.withUnsafeBytes { raw in
+            var h: UInt32 = 0x811C9DC5
+            for b in raw { h = (h ^ UInt32(b)) &* 0x01000193 }
+            return h
+        }
+    }
+
+    private static let oldStyle: [String: String] = [
+        "oà": "òa", "oá": "óa", "oả": "ỏa", "oã": "õa", "oạ": "ọa",
+        "oè": "òe", "oé": "óe", "oẻ": "ỏe", "oẽ": "õe", "oẹ": "ọe",
+        "uỳ": "ùy", "uý": "úy", "uỷ": "ủy", "uỹ": "ũy", "uỵ": "ụy",
+    ]
+
+    /// NFC, chữ thường, kiểu dấu CŨ như vnlexicon (hoà → hòa; quý giữ nguyên).
+    static func normalize(_ w: String) -> String {
+        let s = w.lowercased().precomposedStringWithCanonicalMapping
+        guard s.count >= 2 else { return s }
+        let pair = String(s.suffix(2))
+        guard let rep = oldStyle[pair] else { return s }
+        if pair.first == "u", s.count >= 3, s.dropLast(2).last == "q" { return s }
+        return String(s.dropLast(2)) + rep
+    }
+
+    /// id vnlexicon của âm tiết `word` (đã normalize), nil nếu không có.
+    static func id(of word: String) -> Int? {
+        let w = normalize(word)
+        guard let f = SwipeLexicon.index(of: SwipeLexicon.fold(w)) else { return nil }
+        let forms = SwipeLexicon.forms
+        for id in Int(forms.idStart[f])..<Int(forms.idStart[f + 1]) where VNSuggest.display(id) == w {
+            return id
+        }
+        return nil
+    }
 }

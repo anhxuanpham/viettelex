@@ -4,8 +4,7 @@
 // Luồng: KeyboardView phân loại chạm→vuốt (GestureClassifier) → `begin` HUỶ chữ
 // đầu đã chèn lúc chạm xuống (checkpoint engine, không ⌫) → nhấc tay → `finish`:
 // decode top-5 dạng không dấu (ngữ cảnh = từ kế tiếp hay gặp sau từ trước, theo
-// UserLangModel, + LM âm tiết tĩnh: trigram SyllableLM theo 2 âm tiết trước, thiếu thì
-// bigram SyllableBigram) → expand dạng thắng thành âm tiết có dấu → chèn top-1 (dấu cách
+// UserLangModel, + LM âm tiết tĩnh: trigram SyllableLM theo 2 âm tiết trước) → expand dạng thắng thành âm tiết có dấu → chèn top-1 (dấu cách
 // treo + seed engine, xem EngineBridge.insertSwipeWord) → thanh gợi ý hiện biến thể.
 //
 // SwipeDecoder KHÔNG thread-safe: MỌI truy cập đi qua một hàng đợi serial (`queue`);
@@ -65,16 +64,14 @@ final class SwipeTyping {
     /// Điểm ngữ cảnh (log-domain, GIỐNG bản Android SwipeSuggest.Context):
     ///  - cá nhân: +1.5 nếu là từ kế tiếp hay gặp sau từ trước (UserLangModel.nextWords);
     ///    +0.4·ln(1+count) cho từ hay gõ, trần 1.5;
-    ///  - tĩnh: PMI bigram âm tiết (vnbigram.bin) sau âm tiết trước ·0.3, trần 1.2 (< 1.5 ⇒
-    ///    dữ liệu cá nhân vẫn thắng); đã có nextWords thì nhân 0.5.
+    ///  - tĩnh: trigram âm tiết (vnlm.bin) — xem lmWeight; đã có nextWords thì nhân 0.5.
+    ///    Không có vnlm.bin / âm tiết trước lạ ⇒ không có điểm tĩnh.
     static let nextBonus: Float = 1.5
     static let personalWeight: Float = 0.4
     static let personalCap: Float = 1.5
-    static let staticWeight: Float = 0.3
-    static let staticCap: Float = 1.2
     static let staticDamp: Float = 0.5
     private static let lambdaFreq = SwipeDecoder.Params().lambdaFreq
-    /// Mô hình trigram (vnlm.bin, SyllableLM) — thay bigram PMI khi có: điểm = s·lmWeight
+    /// Mô hình trigram (vnlm.bin, SyllableLM): điểm = s·lmWeight
     /// kẹp [lmFloor, lmCap] (có bằng chứng ÂM: "hiếm sau ngữ cảnh này"), và khi đó λ tần
     /// suất lúc chọn dạng/bung dấu hạ còn lmLambdaFreq (LM gánh phần tiên nghiệm). Chỉnh
     /// trên tập dev (Scripts/gen-syllable-lm.py, docs/DATA-SOURCES.md): heldout top-1
@@ -92,43 +89,33 @@ final class SwipeTyping {
     }
 
     /// Ngữ cảnh một cú vuốt: cá nhân + LM tĩnh theo âm tiết trước — trigram (`prev2`, `prev`)
-    /// của SyllableLM nếu có, không thì bigram PMI của SyllableBigram theo `prev`.
+    /// của SyllableLM.
     struct Context {
         let next: Set<String>
         let count: (String) -> Int
-        private let row: SyllableBigram.Row?
         private let lmContext: SyllableLM.Context?
         private let weight: Float
         /// λ tần suất khi chọn dạng + bung dấu (hạ khi có trigram).
         let lambdaFreq: Float
 
         init(next: Set<String>, count: @escaping (String) -> Int = { _ in 0 },
-             prev: String? = nil, bigram: SyllableBigram? = nil,
-             prev2: String? = nil, lm: SyllableLM? = nil) {
+             prev: String? = nil, prev2: String? = nil, lm: SyllableLM? = nil) {
             self.next = next
             self.count = count
-            let id1 = prev.flatMap { SyllableBigram.id(of: $0) }
+            let id1 = prev.flatMap { SyllableLM.id(of: $0) }
             if let lm, let id1 {
-                lmContext = lm.context(prev2: prev2.flatMap { SyllableBigram.id(of: $0) } ?? -1, prev1: id1)
+                lmContext = lm.context(prev2: prev2.flatMap { SyllableLM.id(of: $0) } ?? -1, prev1: id1)
             } else { lmContext = nil }
-            if lmContext == nil, let bigram, let id1 {
-                let r = bigram.row(id1)
-                row = r.size > 0 ? r : nil
-            } else { row = nil }
             let damp: Float = next.isEmpty ? 1 : SwipeTyping.staticDamp
-            weight = (lmContext != nil ? SwipeTyping.lmWeight : SwipeTyping.staticWeight) * damp
+            weight = SwipeTyping.lmWeight * damp
             lambdaFreq = lmContext != nil ? SwipeTyping.lmLambdaFreq : SwipeTyping.lambdaFreq
         }
 
         /// Điểm LM tĩnh của âm tiết có dấu `w` (0 nếu không có dữ liệu).
         func staticScore(_ w: String) -> Float {
-            if let lmContext {
-                guard let id = SyllableBigram.id(of: w) else { return 0 }
-                let damp: Float = next.isEmpty ? 1 : SwipeTyping.staticDamp
-                return max(SwipeTyping.lmFloor * damp, min(SwipeTyping.lmCap * damp, weight * lmContext.score(id)))
-            }
-            guard let row, let id = SyllableBigram.id(of: w) else { return 0 }
-            return min(SwipeTyping.staticCap, weight * row.score(id))
+            guard let lmContext, let id = SyllableLM.id(of: w) else { return 0 }
+            let damp: Float = next.isEmpty ? 1 : SwipeTyping.staticDamp
+            return max(SwipeTyping.lmFloor * damp, min(SwipeTyping.lmCap * damp, weight * lmContext.score(id)))
         }
 
         func word(_ w: String) -> Float {
@@ -164,8 +151,7 @@ final class SwipeTyping {
             if let f = self?.futo { f.setLayout(l); if prepare { f.load() } }
             if prepare {
                 d.prepare()
-                _ = SyllableBigram.shared   // bảng bigram tĩnh dùng chung (thanh gợi ý cũng map sẵn)
-                _ = SyllableLM.shared       // map mô hình trigram (vnlm.bin)
+                _ = SyllableLM.shared       // map mô hình trigram (vnlm.bin — thanh gợi ý dùng chung)
             }
         }
     }
@@ -211,21 +197,21 @@ final class SwipeTyping {
     /// `english` (giai đoạn 3) = tham số tiếng Anh theo ngữ cảnh (SwipeLangContext.prior);
     /// nil = chỉ tiếng Việt (công tắc "Vuốt từ tiếng Anh" tắt).
     func resolve(_ path: SwipePath, contextWords: [String], count: @escaping (String) -> Int = { _ in 0 },
-                 prev: String? = nil, bigram: SyllableBigram? = SyllableBigram.shared,
+                 prev: String? = nil,
                  prev2: String? = nil, lm: SyllableLM? = SyllableLM.shared,
                  english: SwipeEnglishPrior? = nil, englishOnly: Bool = false,
                  case sc: SwipeCase) -> Choice? {
-        resolveFull(path, contextWords: contextWords, count: count, prev: prev, bigram: bigram,
+        resolveFull(path, contextWords: contextWords, count: count, prev: prev,
                     prev2: prev2, lm: lm, english: english, englishOnly: englishOnly, case: sc)?.choice
     }
 
     private func resolveFull(_ path: SwipePath, contextWords: [String], count: @escaping (String) -> Int,
-                             prev: String?, bigram: SyllableBigram?, prev2: String?, lm: SyllableLM?,
+                             prev: String?, prev2: String?, lm: SyllableLM?,
                              english: SwipeEnglishPrior?, englishOnly: Bool = false, case sc: SwipeCase)
         -> (choice: Choice, cands: [SwipeCandidate], ctx: Context)? {
         guard layout != nil, path.count >= 2 else { return nil }
         let ctx = Context(next: Set(contextWords.map { $0.lowercased() }), count: count,
-                          prev: prev, bigram: bigram, prev2: prev2, lm: lm)
+                          prev: prev, prev2: prev2, lm: lm)
         let d = decoder
         // từ tiếng Anh: chỉ điểm cá nhân/từ kế tiếp (bigram tĩnh là của âm tiết Việt)
         let next = ctx.next
@@ -319,10 +305,10 @@ final class SwipeTyping {
                 count: @escaping (String) -> Int = { _ in 0 }, prev: String? = nil,
                 prev2: String? = nil, english: SwipeEnglishPrior? = nil, englishOnly: Bool = false,
                 previous: Revisable? = nil, nextWords: ((String, String?) -> [String])? = nil,
-                bigram: SyllableBigram? = SyllableBigram.shared, lm: SyllableLM? = SyllableLM.shared,
+                lm: SyllableLM? = SyllableLM.shared,
                 bridge: EngineBridge, proxy: TextProxyLike) -> Outcome? {
         guard let full = resolveFull(path, contextWords: contextWords, count: count, prev: prev,
-                                     bigram: bigram, prev2: prev2, lm: lm, english: english,
+                                     prev2: prev2, lm: lm, english: english,
                                      englishOnly: englishOnly, case: sc) else {
             TouchLog.write("swipe: không có ứng viên (pts=\(path.count))")
             return nil
@@ -342,7 +328,7 @@ final class SwipeTyping {
                bridge.replaceSwipeWord(with: newCased, accepted: false, proxy: proxy) {
                 revised = Revision(old: rec.word, new: newCased)
                 let nctx = Context(next: Set((nextWords?(new, prev2) ?? []).map { $0.lowercased() }),
-                                   count: count, prev: new, bigram: bigram, prev2: prev2, lm: lm)
+                                   count: count, prev: new, prev2: prev2, lm: lm)
                 let re = SwipeRevise.rerank(full.cands, old: full.ctx.word, oldLambda: full.ctx.lambdaFreq,
                                             new: nctx.word, newLambda: nctx.lambdaFreq)
                 if let c = Self.pick(re, context: nctx, case: sc) {

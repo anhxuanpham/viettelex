@@ -14,7 +14,7 @@ cao 246pt khi bật, 216pt khi tắt) có **ba trạng thái** theo ngữ cảnh
 | Trạng thái | Hiển thị | Nguồn dữ liệu |
 |---|---|---|
 | Field trống, chưa gõ | 3 từ user hay mở đầu nhất | `UserLangModel.topWords` |
-| Vừa space sau một từ ("Anh ␣") | 3 từ **kế tiếp** dự đoán | `UserLangModel.nextWords` (trigram ⊕ bigram ⊕ seed), thiếu thì lấp bằng `SyllableBigram` (tầng 7) |
+| Vừa space sau một từ ("Anh ␣") | 3 từ **kế tiếp** dự đoán | `UserLangModel.nextWords` (trigram ⊕ bigram ⊕ seed), thiếu thì lấp bằng bigram tĩnh `SyllableLM.bigram` (tầng 7) |
 | Đang gõ dở một từ | `["nguyên văn"] \| ứng viên 1 \| ứng viên 2 (hoặc ≤3 emoji)` | `VNSuggest` (inline) + bigram tĩnh (tầng 7) + `EmojiSuggest` |
 
 Rule ngữ cảnh cứng chạy trước cả ba: token trước con trỏ kết thúc bằng `@` →
@@ -128,18 +128,20 @@ App Store review) giấu chúng khỏi thanh. Phân tầng: chỉ token thô (l�
 đời thường (cướp, giết, đánh rắm, mày/má) KHÔNG lọc. Khi lọc, over-fetch 6
 lấy top-3 nên slot luôn được lấp.
 
-### 7. `SyllableBigram` — bigram âm tiết tĩnh (27/09/2026)
+### 7. Bigram âm tiết tĩnh — `SyllableLM.bigram` (27/09/2026; vnlm.bin từ 28/09/2026)
 
-Bảng `Resources/vnbigram.bin` (PMI chiết khấu cặp âm tiết liền nhau, ~1,2MB; nguồn/giấy phép
-`docs/DATA-SOURCES.md`) — CÙNG một instance `SyllableBigram.shared` với gõ vuốt (map một lần).
-Mục đích: người dùng MỚI (UserLangModel chỉ có seed) vẫn được gợi ý theo ngữ cảnh.
+Phần bigram của `Resources/vnlm.bin` (Kneser-Ney, cùng file với trigram gõ vuốt; nguồn/giấy phép
+`docs/DATA-SOURCES.md`) — CÙNG một instance `SyllableLM.shared` với gõ vuốt (map một lần). PMI =
+s2(b, c) + uniAdj(c) ≈ ln(P(c|b) / P(c)); thanh gợi ý chỉ dùng mục TƯỜNG MINH (thiếu = 0, như
+bảng vnbigram.bin cũ — đã bỏ, tiết kiệm 1,2 MB/app). Mục đích: người dùng MỚI (UserLangModel chỉ
+có seed) vẫn được gợi ý theo ngữ cảnh.
 
 - **Inline**: `bigram = min(8, 2.5·PMI(âm tiết trước → ứng viên))`, nhân **0.45** khi có ứng
   viên nào của pool nằm trong nextWords (cá nhân/seed đã có ý kiến về lượt này) ⇒ trần hiệu
   dụng 3.6 < 4 (điểm nextWords) — **cá nhân thắng** khi còn lại ngang nhau (golden: user gõ
   "sao có" 3 lần ⇒ "co" ra có, dù bigram nghiêng cô). Không âm tiết trước / từ lạ ⇒ 0.
 - **Từ kế tiếp**: nextWords (cá nhân/seed) giữ trước; còn < 3 thì lấp bằng top âm tiết theo
-  `PMI + 12·freq/255` sau từ trước (PMI thuần nghiêng cặp hiếm), qua lọc nhạy cảm + DisplayCase
+  `PMI + 10·freq/255` sau từ trước (PMI thuần nghiêng cặp hiếm), qua lọc nhạy cảm + DisplayCase
   + viết hoa đầu câu như mọi gợi ý; cuối cùng mới đệm topWords.
 - **Hiệu năng**: PMI cho pool tính ở `suggestQueue` (nền, cùng generation token); từ kế tiếp
   tra trên main ~µs. Bảng mmap `.alwaysMapped`, đọc tại chỗ: RAM bẩn ≈ 0 (test đo
@@ -147,6 +149,8 @@ Mục đích: người dùng MỚI (UserLangModel chỉ có seed) vẫn được
 - **Đo** (`SuggestBigramTests`, câu Tatoeba giữ lại, người dùng mới gõ chạm không dấu):
   slot1 0.747 → 0.829, 3 slot 0.880 → 0.938, từ kế tiếp top3 0.111 → 0.271; người dùng đã học
   dần cũng tăng (không tụt). Trọng số chọn bằng lưới `tuneGrid` (Android, `VT_TUNE=1`).
+  Chuyển sang vnlm.bin (28/09/2026, lưới lại trên tập dev): slot1 0.830, 3 slot 0.939, từ kế
+  tiếp 0.270 — ngang bảng cũ (±0.1 điểm).
 
 ### 8. `NumberChips` — đọc số, định dạng tiền, máy tính nhanh
 
@@ -189,7 +193,7 @@ khi ẩn danh, ô bảo mật, clipboard "concealed"/nhạy cảm; khoá sau Plu
 ### 10. `AddTones` — thêm dấu cả câu (Plus)
 
 Chưa gõ dở, chữ trước con trỏ là câu không dấu có thể thêm dấu ⇒ chip **"Thêm dấu"** ở slot
-đầu (Viterbi trên lưới âm tiết: vnlexicon + vnbigram + đếm cá nhân — `AddTones.swift`, fixture
+đầu (Viterbi trên lưới âm tiết: vnlexicon + bigram vnlm.bin + đếm cá nhân — `AddTones.swift`, fixture
 chung `add-tones.txt`). Chỉ thay khi bấm, fail-safe (đuôi context phải đúng bản gốc). Sau khi
 thay: chip **"↩︎ Hoàn tác"** (và ⌫ ngay sau) trả bản gốc, đoạn vừa hoàn tác không mời lại.
 
@@ -246,7 +250,7 @@ dấu" ẩn); sau vuốt ⌫ trong lúc có chip số: iOS `[↩︎ Khôi phục
 | `ios/Keyboard/EmojiSuggest.swift` | GENERATED — emoji theo nghĩa |
 | `ios/Keyboard/DisplayCase.swift` | Case chuẩn proper noun |
 | `ios/Keyboard/SensitiveWords.swift` | Bộ lọc từ nhạy cảm |
-| `ios/Keyboard/SyllableBigram.swift` | Bảng bigram âm tiết tĩnh (mmap, dùng chung gõ vuốt) |
+| `ios/Keyboard/SyllableLM.swift` | LM âm tiết tĩnh vnlm.bin (mmap): trigram gõ vuốt + bigram PMI thanh gợi ý / Thêm dấu |
 | `ios/Keyboard/SuggestionSupport.swift` | `SuggestRank` (xếp hạng inline + lấp từ kế tiếp), `SuggestionFill` |
 | `ios/Keyboard/NumberChips.swift` | Chip số: đọc chữ / định dạng tiền / máy tính (thuần) |
 | `ios/Keyboard/ClipDetect.swift`, `ClipboardFeature.swift` | Chip tách số clipboard, lịch sử, ẩn danh |

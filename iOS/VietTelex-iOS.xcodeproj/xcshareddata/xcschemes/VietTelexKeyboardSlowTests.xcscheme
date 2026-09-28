@@ -67,12 +67,6 @@
                   Identifier = "SwipeReviseTests/testHeldoutRevisionGain">
                </Test>
                <Test
-                  Identifier = "SyllableBigramTests/testHeldoutAccuracy">
-               </Test>
-               <Test
-                  Identifier = "SyllableBigramTests/testHeldoutAccuracyWithEnglish">
-               </Test>
-               <Test
                   Identifier = "SuggestBigramTests/testHeldoutNewUser">
                </Test>
                <Test

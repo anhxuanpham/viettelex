@@ -33,6 +33,7 @@ enum SuggestionFill {
 ///
 /// Từ kế tiếp (sau dấu cách): nextWords cá nhân/seed trước; thiếu thì lấp bằng top âm tiết theo
 /// bigram tĩnh sau từ trước (PMI + nextFreqWeight·freq/255 — PMI thuần nghiêng về cặp hiếm).
+/// Bigram tĩnh = phần bigram của vnlm.bin (SyllableLM.bigram; vnbigram.bin cũ đã bỏ 28/09/2026).
 enum SuggestRank {
     struct Params {
         var bigramWeight = SuggestRank.bigramWeight
@@ -41,11 +42,13 @@ enum SuggestRank {
         var nextFreqWeight = SuggestRank.nextFreqWeight
     }
 
-    // chọn trên heldout (27/09/2026, lưới trong android SuggestBigramTests.tuneGrid); cap·damp = 3.6 < 4
+    // chọn trên heldout (27/09/2026, lưới trong android SuggestBigramTests.tuneGrid); cap·damp = 3.6 < 4.
+    // 28/09/2026 chuyển sang bigram của vnlm.bin: lưới lại trên tập dev — giữ w/cap/damp,
+    // nextFreqWeight 12 → 10 (PMI KN có thang khác chút).
     static let bigramWeight = 2.5
     static let bigramCap = 8.0
     static let bigramDamp = 0.45
-    static let nextFreqWeight = 12.0
+    static let nextFreqWeight = 10.0
 
     /// Xếp pool VNSuggest (chưa lọc nhạy cảm). `pmi[i]` = PMI bigram của `pool[i]` (nil = không
     /// có âm tiết trước / bảng). Hoà điểm giữ thứ tự pool (tần suất tĩnh) — Kotlin y hệt.
@@ -64,20 +67,21 @@ enum SuggestRank {
         return scored.sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0 < $1.0 }.map { pool[$0.0].word }
     }
 
-    /// PMI bigram của từng ứng viên sau âm tiết `prev` (nil nếu không có dữ liệu). Chạy nền.
+    /// PMI bigram (vnlm.bin, chỉ mục tường minh — thiếu = 0) của từng ứng viên sau âm tiết
+    /// `prev` (nil nếu không có dữ liệu). Chạy nền.
     static func inlinePmi(_ pool: [VNSuggest.Match], prev: String?,
-                          bigram: SyllableBigram? = SyllableBigram.shared) -> [Float]? {
-        guard let prev, let bigram, !pool.isEmpty, let id = VNSuggest.lexiconId(of: prev) else { return nil }
-        let row = bigram.row(id)
+                          lm: SyllableLM? = SyllableLM.shared) -> [Float]? {
+        guard let prev, let lm, !pool.isEmpty, let id = VNSuggest.lexiconId(of: prev) else { return nil }
+        let row = lm.bigram(id)
         guard row.size > 0 else { return nil }
-        return pool.map { $0.id >= 0 ? row.score($0.id) : 0 }
+        return pool.map { $0.id >= 0 ? row.explicit($0.id) : 0 }
     }
 
-    /// Top `limit` âm tiết hay theo sau `prev` theo bigram tĩnh (chữ thường, dạng lexicon).
-    static func bigramNext(_ prev: String, limit: Int, bigram: SyllableBigram? = SyllableBigram.shared,
+    /// Top `limit` âm tiết hay theo sau `prev` theo bigram tĩnh vnlm.bin (chữ thường, dạng lexicon).
+    static func bigramNext(_ prev: String, limit: Int, lm: SyllableLM? = SyllableLM.shared,
                            _ p: Params = Params()) -> [String] {
-        guard let bigram, limit > 0, let pid = VNSuggest.lexiconId(of: prev) else { return [] }
-        let row = bigram.row(pid)
+        guard let lm, limit > 0, let pid = VNSuggest.lexiconId(of: prev) else { return [] }
+        let row = lm.bigram(pid)
         guard row.size > 0 else { return [] }
         var ids = [Int](repeating: 0, count: limit), sc = [Double](repeating: 0, count: limit), n = 0
         row.forEach { id, pmi in

@@ -12,9 +12,9 @@ import java.nio.ByteOrder
 import java.util.Locale
 
 /**
- * Mô hình trigram âm tiết tĩnh (vnlm.bin) + tác dụng lên gõ vuốt. Song sinh iOS
- * SyllableLMTests.swift. Đo trên cùng câu Tatoeba GIỮ LẠI với SyllableBigramTests
- * (bigram-heldout.txt, không nằm trong dữ liệu dựng mô hình).
+ * Mô hình trigram âm tiết tĩnh (vnlm.bin) + tác dụng lên gõ vuốt; cả phần bigram PMI mà thanh
+ * gợi ý + Thêm dấu dùng (thay vnbigram.bin từ 28/09/2026). Song sinh iOS SyllableLMTests.swift.
+ * Đo trên câu Tatoeba GIỮ LẠI (bigram-heldout.txt, không nằm trong dữ liệu dựng mô hình).
  */
 class SyllableLMTests {
     @Before fun setUp() = TestAssets.install()
@@ -22,7 +22,7 @@ class SyllableLMTests {
     private val layout = SwipeLayout.qwerty(keyWidth = 40f, rowHeight = 54f)
     private val lm get() = SyllableLM.shared!!
 
-    private fun id(w: String) = SyllableBigram.idOf(w).also { assertTrue("thiếu $w", it >= 0) }
+    private fun id(w: String) = SyllableLM.idOf(w).also { assertTrue("thiếu $w", it >= 0) }
     private fun s(a: String?, b: String, c: String) = lm.score(if (a == null) -1 else id(a), id(b), id(c))
 
     @Test fun loadsAndMatchesLexicon() {
@@ -32,14 +32,45 @@ class SyllableLMTests {
         assertTrue("bigram ${m.biEntries}", m.biEntries in 100_000..600_000)
         assertTrue("trigram ${m.triEntries}", m.triEntries in 100_000..600_000)
         val size = KeyboardData.buffer(Keys.ASSET_LM).capacity()
-        assertTrue("kích thước $size", size <= 3_000_000)
+        assertTrue("kích thước $size", size <= 2_700_000)
+    }
+
+    private fun pmi(a: String, b: String) = lm.bigram(id(a)).pmi(id(b))
+
+    /** Bigram PMI (s2 + uniAdj) — thay vnbigram.bin cho thanh gợi ý + Thêm dấu. */
+    @Test fun bigramPmi() {
+        assertTrue(pmi("hôm", "nay") > 2f)
+        assertTrue(pmi("không", "có") > pmi("không", "cô"))
+        assertTrue(pmi("hôm", "nay") > pmi("hôm", "ngay"))
+        assertTrue(pmi("ngay", "lập") > 2f)
+        assertTrue(pmi("điện", "thoại") > 3f)
+        // bằng chứng âm (cặp hiếm) + lùi γ2 khi thiếu mục tường minh
+        assertTrue(pmi("hôm", "xịch") < 0f)
+        assertEquals(0f, lm.bigram(id("hôm")).explicit(id("xịch")), 0f)
+        assertEquals(pmi("hôm", "nay"), lm.bigram(id("hôm")).explicit(id("nay")), 0f)
+        // PMI = s2 + uniAdj (s2 = điểm bigram của decoder vuốt)
+        assertEquals(lm.score(-1, id("hôm"), id("nay")) + lm.uniAdj(id("nay")), pmi("hôm", "nay"), 1e-6f)
+        assertEquals(0, lm.bigram(-1).size)
+        assertEquals(0, lm.bigram(VNLexicon2Data.count).size)
+        assertEquals(0f, lm.bigram(-1).pmi(id("nay")), 0f)
+        var n = 0; var hasNay = false
+        lm.bigram(id("hôm")).forEach { c, v -> n++; if (c == id("nay")) { hasNay = true; assertEquals(pmi("hôm", "nay"), v, 0f) } }
+        assertTrue(hasNay && n == lm.bigram(id("hôm")).size)
+    }
+
+    @Test fun normalizeOldStyleAndCase() {
+        assertEquals("hòa", SyllableLM.normalize("Hoà"))
+        assertEquals("thủy", SyllableLM.normalize("thuỷ"))
+        assertEquals("quý", SyllableLM.normalize("quý"))
+        assertEquals(SyllableLM.idOf("hòa"), SyllableLM.idOf("HOÀ"))
+        assertEquals(-1, SyllableLM.idOf("hello"))
     }
 
     @Test fun typicalScores() {
         assertTrue(s(null, "hôm", "nay") > 2f)
         assertTrue(s(null, "hôm", "nay") > s(null, "hôm", "ngay"))
         assertTrue(s(null, "không", "có") > s(null, "không", "cô"))
-        // bằng chứng âm: cặp hiếm có điểm < 0 (vnbigram.bin chỉ có PMI dương)
+        // bằng chứng âm: cặp hiếm có điểm < 0
         assertTrue(s(null, "hôm", "xịch") < 0f)
         // trigram: 2 âm tiết trước đổi lựa chọn
         assertTrue(s("cuối", "cùng", "cũng") > s("cuối", "cùng", "chúng"))
@@ -53,13 +84,15 @@ class SyllableLMTests {
         val src = KeyboardData.buffer(Keys.ASSET_LM)
         val bytes = ByteArray(src.capacity()) { src.get(it) }
         fun buf(b: ByteArray) = ByteBuffer.wrap(b).order(ByteOrder.LITTLE_ENDIAN)
-        val lexHash = SyllableBigram.fnv1a(KeyboardData.buffer(Keys.ASSET_LEXICON))
+        val lexHash = SyllableLM.fnv1a(KeyboardData.buffer(Keys.ASSET_LEXICON))
         assertNotNull(SyllableLM.load(buf(bytes), lexHash, VNLexicon2Data.count))
         assertNull(SyllableLM.load(buf(bytes), lexHash xor 1, VNLexicon2Data.count))
         assertNull(SyllableLM.load(buf(bytes), lexHash, VNLexicon2Data.count - 1))
         assertNull(SyllableLM.load(buf(bytes.copyOf(bytes.size - 1)), lexHash, VNLexicon2Data.count))
         val bad = bytes.copyOf(); bad[3] = 'X'.code.toByte()
         assertNull(SyllableLM.load(buf(bad), lexHash, VNLexicon2Data.count))
+        val v1 = bytes.copyOf(); v1[4] = 1   // bản cũ (không có uniAdj) ⇒ từ chối
+        assertNull(SyllableLM.load(buf(v1), lexHash, VNLexicon2Data.count))
     }
 
     // ---- gõ vuốt trong ngữ cảnh ----
@@ -76,7 +109,7 @@ class SyllableLMTests {
 
     @Test fun contextPicksInTop1() {
         val d = decoder()
-        // cặp điển hình (như SyllableBigramTests) — trigram không được làm hỏng
+        // cặp điển hình — trigram không được làm hỏng
         for ((prev, w) in listOf("không" to "có", "cho" to "tôi", "hôm" to "nay", "ngay" to "lập",
             "đi" to "ngay", "trong" to "nhà", "bây" to "giờ", "nửa" to "đêm", "bữa" to "nay",
             "môi" to "trường", "ở" to "trong", "làm" to "cho", "một" to "nửa")) {
@@ -93,7 +126,7 @@ class SyllableLMTests {
     @Test fun personalStillWins() {
         // user hay gõ "không cô" (tên riêng…) ⇒ nextWords thắng LM tĩnh
         val ctx = SwipeSuggest.Context(setOf("cô"), setOf("co"), { if (it == "cô") 6 else 0 },
-            prev = "không", bigram = SyllableBigram.shared, prev2 = "tôi", lm = SyllableLM.shared)
+            prev = "không", prev2 = "tôi", lm = SyllableLM.shared)
         val p = SwipeSim(1).path("co", layout, sigma = 0.0, jitter = 0.0)
         assertEquals("cô", SwipeSuggest.choose(decoder().decode(p, SwipeSuggest.TOP_K, ctx.folded), ctx.word,
             lambdaFreq = ctx.lambdaFreq)?.word)
@@ -120,7 +153,7 @@ class SyllableLMTests {
             top1.toDouble() / n, top3.toDouble() / n, n, ms)
     }
 
-    /** [useLM]=false ⇒ bigram PMI (giai đoạn 2). */
+    /** [useLM]=false ⇒ không LM tĩnh (chỉ tần suất — vnbigram.bin cũ đã bỏ). */
     private fun measure(useLM: Boolean, english: Boolean = false): Acc {
         val d = decoder()
         val sim = SwipeSim(2027)
@@ -144,12 +177,12 @@ class SyllableLMTests {
 
     @Test fun heldoutAccuracy() {
         SlowTests.assume()
-        val bigram = measure(false)
+        val none = measure(false)
         val tri = measure(true)
-        println("LM heldout bigram: ${bigram.fmt()} | trigram: ${tri.fmt()}")
+        println("LM heldout không LM: ${none.fmt()} | trigram: ${tri.fmt()}")
         assertTrue("top1 ${tri.fmt()}", tri.top1.toDouble() / tri.n >= TOP1)
         assertTrue("top3 ${tri.fmt()}", tri.top3.toDouble() / tri.n >= TOP3)
-        assertTrue("trigram phải hơn bigram ≥ $GAIN_TOP1", (tri.top1 - bigram.top1).toDouble() / tri.n >= GAIN_TOP1)
+        assertTrue("trigram phải hơn không LM ≥ $GAIN_TOP1", (tri.top1 - none.top1).toDouble() / tri.n >= GAIN_TOP1)
     }
 
     /** Bật cả vuốt tiếng Anh: ứng viên Anh không làm tụt trigram quá 1 điểm. */
@@ -189,16 +222,36 @@ class SyllableLMTests {
             return Triple(t1, t3, n)
         }
         val off = run(false); val on = run(true)
-        println("LM câu trộn Việt–Anh (n=${on.third}): bigram top1 ${off.first} top3 ${off.second} | trigram top1 ${on.first} top3 ${on.second}")
-        assertTrue("top1 trigram ${on.first} < bigram ${off.first} − 3%", on.first >= off.first - off.third * 3 / 100)
+        println("LM câu trộn Việt–Anh (n=${on.third}): không LM top1 ${off.first} top3 ${off.second} | trigram top1 ${on.first} top3 ${on.second}")
+        assertTrue("top1 trigram ${on.first} < không LM ${off.first}", on.first >= off.first)
         assertTrue("top3 ${on.second}/${on.third}", on.second >= on.third * 9 / 10)
     }
 
     companion object {
         // đo 27/09/2026 (decoder tầng 2): bigram 0.861/0.951 → trigram 0.894/0.962;
-        // ngưỡng hồi quy chừa ~1.5 điểm
+        // ngưỡng hồi quy chừa ~1.5 điểm. 28/09/2026 (bỏ vnbigram.bin): không LM 0.702/0.869
+        // → trigram 0.894/0.961.
         const val TOP1 = 0.877
         const val TOP3 = 0.950
-        const val GAIN_TOP1 = 0.025
+        const val GAIN_TOP1 = 0.17
+    }
+
+    /** Dump ứng viên hình học để chỉnh tham số ngoài (BIGRAM_DUMP=đường-dẫn, BIGRAM_CHAINS=chuỗi). */
+    @Test fun dumpGeometry() {
+        val out = System.getenv("BIGRAM_DUMP") ?: return
+        val chains = File(System.getenv("BIGRAM_CHAINS")).readLines()
+            .filter { it.isNotBlank() && !it.startsWith("#") }.map { it.split(' ') }
+        val d = decoder()
+        val sim = SwipeSim(2027)
+        val sb = StringBuilder()
+        for (chain in chains) for (i in 1 until chain.size) {
+            val w = chain[i]
+            val p = sim.path(SwipeSuggest.fold(w), layout)
+            val c = d.decode(p, 16)
+            sb.append(chain[i - 1]).append('\t').append(w).append('\t')
+            c.joinTo(sb, ";") { it.folded + ":" + String.format(Locale.ROOT, "%.4f", it.score) }
+            sb.append('\n')
+        }
+        File(out).writeText(sb.toString())
     }
 }

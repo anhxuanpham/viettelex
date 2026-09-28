@@ -144,7 +144,7 @@ enum VNSuggest {
     /// id lexicon của đúng âm tiết `word` (chữ thường, NFC, dấu kiểu cũ như vnlexicon:
     /// hoà → hòa), nil nếu không có. Không đụng SwipeLexicon (thanh gợi ý chạy cả khi tắt vuốt).
     static func lexiconId(of word: String) -> Int? {
-        let w = SyllableBigram.normalize(word)
+        let w = SyllableLM.normalize(word)
         guard let dec = decompose(w) else { return nil }
         let prefix = dec.map { $0.base }
         for id in range(ofFoldedPrefix: prefix) {

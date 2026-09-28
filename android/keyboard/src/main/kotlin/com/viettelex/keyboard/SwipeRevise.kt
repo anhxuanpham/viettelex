@@ -102,9 +102,9 @@ object SwipeRevise {
                lm: SyllableLM? = SyllableLM.shared, margin: Float = MARGIN,
                weight: Float = JOINT_WEIGHT): String? {
         if (lm == null || scored.size < 2 || next.isEmpty()) return null
-        val prevId = if (prev == null) -1 else SyllableBigram.idOf(prev)
-        val curId = SyllableBigram.idOf(current)
-        val nextIds = IntArray(next.size) { SyllableBigram.idOf(next[it].word) }
+        val prevId = if (prev == null) -1 else SyllableLM.idOf(prev)
+        val curId = SyllableLM.idOf(current)
+        val nextIds = IntArray(next.size) { SyllableLM.idOf(next[it].word) }
         val curCtx = if (curId < 0) null else lm.context(prevId, curId)
         // điểm từ kế bỏ phần trigram theo từ đang hiện (cộng lại theo từng ứng viên c)
         val base = FloatArray(next.size) {
@@ -114,7 +114,7 @@ object SwipeRevise {
         var best: String? = null
         var bestScore = Float.NEGATIVE_INFINITY
         for (w in scored) {
-            val id = SyllableBigram.idOf(w.word)
+            val id = SyllableLM.idOf(w.word)
             if (id < 0) continue
             val ctx = lm.context(prevId, id)
             var nb = Float.NEGATIVE_INFINITY
@@ -138,14 +138,14 @@ object SwipeRevise {
                lm: SyllableLM? = SyllableLM.shared, margin: Float = MARGIN,
                weight: Float = RIGHT_WEIGHT): String? {
         if (lm == null || scored.size < 2) return null
-        val nextId = SyllableBigram.idOf(next)
+        val nextId = SyllableLM.idOf(next)
         if (nextId < 0) return null
-        val prevId = if (prev == null) -1 else SyllableBigram.idOf(prev)
+        val prevId = if (prev == null) -1 else SyllableLM.idOf(prev)
         var cur = Float.NaN
         var best: String? = null
         var bestScore = Float.NEGATIVE_INFINITY
         for (w in scored) {
-            val id = SyllableBigram.idOf(w.word)
+            val id = SyllableLM.idOf(w.word)
             if (id < 0) continue
             val s = w.score + rightScore(lm, prevId, id, nextId, weight)
             if (w.word == current) cur = s
