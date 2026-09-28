@@ -9,7 +9,7 @@
   <a href="https://github.com/ptrinh/viettelex/releases/latest"><img src="https://img.shields.io/github/v/release/ptrinh/viettelex?color=c22727" alt="Release"></a>
   <a href="https://github.com/ptrinh/viettelex/releases"><img src="https://img.shields.io/github/downloads/ptrinh/viettelex/total?label=Downloads&color=4c1" alt="Downloads"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/ptrinh/viettelex?color=555" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/macOS-14%2B-17233d" alt="macOS 14+">
+  <img src="https://img.shields.io/badge/macOS-13%2B-17233d" alt="macOS 13+">
 </p>
 
 **VietTelex** (ViệtTelex / ViếtTelex) là bộ gõ tiếng Việt **Telex** (và **VNI**) cho macOS, được xây dựng trên **InputMethodKit** của Apple để tích hợp sâu. Không gạch chân từ đang gõ, con trỏ luôn ở cuối, dấu bỏ trực tiếp vào chữ, và gõ được cả trong **Terminal** mà không phá autocomplete của shell.
