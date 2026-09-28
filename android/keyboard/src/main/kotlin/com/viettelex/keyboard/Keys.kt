@@ -6,6 +6,13 @@ package com.viettelex.keyboard
  */
 object Keys {
     const val PREFS = "viettelex"
+    /**
+     * Prefs RIÊNG cho số đo lúc chạy của IME (cỡ vùng bàn phím dọc cho trình chỉnh ảnh nền) —
+     * tách khỏi [PREFS] để IME ghi không bắn listener của chính nó, và không vào sao lưu.
+     */
+    const val RUNTIME_PREFS = "viettelex_runtime"
+    /** "w×h" px của gốc input view lần gần nhất ở hướng dọc. */
+    const val IME_PORTRAIT_SIZE = "imePortraitSize"
 
     // Kiểu Gõ
     const val SIMPLE_TELEX = "simpleTelex"
@@ -100,6 +107,8 @@ object Keys {
     const val WALLPAPER_DIM = "wallpaperDim"
     const val WALLPAPER_BLUR = "wallpaperBlur"
     const val WALLPAPER_VERSION = "wallpaperVersion"
+    /** Khung cắt ảnh nền "x,y,w,h" chuẩn hoá theo ảnh gốc ([WallpaperCrop]); thiếu = cắt giữa. */
+    const val WALLPAPER_CROP = "wallpaperCrop"
     /** Độ trong suốt phím (nền + phím) / ký tự trên phím, 0…100. */
     const val KEYBOARD_TRANSPARENCY = "keyboardTransparency"
     const val KEY_LABEL_TRANSPARENCY = "keyLabelTransparency"
@@ -123,7 +132,10 @@ object Keys {
     // file trong filesDir
     const val USERLM_FILE = "userlm.bin"
     const val TOUCHLOG_FILE = "touchlog.txt"
-    /** Ảnh nền đã thu nhỏ/mờ/nén cho IME; bản chưa mờ để đổi độ mờ không cần chọn lại. */
+    /**
+     * Ảnh nền đã CẮT theo khung/thu nhỏ/mờ/nén cho IME; bản gốc (≤2048 px, chưa mờ, chưa cắt)
+     * để đổi độ mờ / chỉnh khung không cần chọn lại. Cả hai KHÔNG vào sao lưu.
+     */
     const val WALLPAPER_FILE = "wallpaper.jpg"
     const val WALLPAPER_SRC_FILE = "wallpaper-src.jpg"
     const val CLIPBOARD_FILE = "clipboard-history.txt"

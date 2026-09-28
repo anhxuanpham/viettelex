@@ -168,6 +168,12 @@ struct RootView: View {
                 tab = .mauCau
             }
         }
+        #if DEBUG
+        // `-wallpaperEditorDemo 1`: mở thẳng trình chỉnh ảnh nền với ảnh mẫu — chụp màn hình tự động.
+        .fullScreenCover(isPresented: .constant(UserDefaults.standard.bool(forKey: "wallpaperEditorDemo"))) {
+            WallpaperEditorView.demo()
+        }
+        #endif
     }
 
     @ViewBuilder private var kieuGoTab: some View {

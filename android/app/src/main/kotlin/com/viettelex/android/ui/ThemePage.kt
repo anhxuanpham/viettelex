@@ -52,6 +52,7 @@ import com.viettelex.keyboard.Keys
 import com.viettelex.keyboard.ThemeGate
 import com.viettelex.keyboard.ThemePalette
 import com.viettelex.keyboard.ThemeSettings
+import com.viettelex.keyboard.WallpaperCrop
 import com.viettelex.keyboard.WallpaperMath
 import com.viettelex.keyboard.withTransparency
 import kotlinx.coroutines.Dispatchers
@@ -62,24 +63,26 @@ import java.io.File
 import com.viettelex.keyboard.tr
 
 /**
- * Ảnh nền: app thu nhỏ (inSampleSize + scale ≤1080px, xoay theo EXIF), mờ (hộp 3 lượt),
- * nén JPEG ≤400KB → filesDir/wallpaper.jpg (IME cùng process đọc). Bản chưa mờ giữ
- * riêng để đổi độ mờ không cần chọn lại ảnh.
+ * Ảnh nền: app giữ bản gốc (inSampleSize + scale ≤2048px, xoay theo EXIF, chưa mờ, chưa cắt)
+ * ở filesDir/wallpaper-src.jpg + khung cắt [WallpaperCrop] trong prefs; "nướng" đúng vùng cắt
+ * ≤1080px, mờ (hộp 3 lượt), nén JPEG ≤400KB → filesDir/wallpaper.jpg (IME cùng process đọc,
+ * chỉ giải vùng thấy được). Hai file KHÔNG vào sao lưu (backup_rules.xml).
  */
 object WallpaperStore {
     fun file(ctx: Context) = File(ctx.filesDir, Keys.WALLPAPER_FILE)
     private fun src(ctx: Context) = File(ctx.filesDir, Keys.WALLPAPER_SRC_FILE)
+    fun hasSource(ctx: Context) = src(ctx).exists()
 
-    /** Ảnh từ picker → bitmap ≤ MAX_EDGE (không giải bản gốc full-size). */
-    fun decodeSmall(ctx: Context, uri: Uri): Bitmap? {
+    /** Ảnh từ picker → bitmap ≤ [maxEdge] (không giải bản gốc full-size). */
+    fun decodeSmall(ctx: Context, uri: Uri, maxEdge: Int = WallpaperMath.SOURCE_MAX_EDGE): Bitmap? {
         val cr = ctx.contentResolver
         val b = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         cr.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, b) }
         if (b.outWidth <= 0) return null
-        val (tw, th) = WallpaperMath.targetSize(b.outWidth, b.outHeight)
+        val (tw, th) = WallpaperMath.targetSize(b.outWidth, b.outHeight, maxEdge)
         val o = BitmapFactory.Options().apply { inSampleSize = WallpaperMath.sampleSize(b.outWidth, b.outHeight, tw, th) }
         var bmp = cr.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, o) } ?: return null
-        val (sw, sh) = WallpaperMath.targetSize(bmp.width, bmp.height)
+        val (sw, sh) = WallpaperMath.targetSize(bmp.width, bmp.height, maxEdge)
         if (sw != bmp.width) bmp = Bitmap.createScaledBitmap(bmp, sw, sh, true)
         val rot = runCatching {
             when (cr.openInputStream(uri)?.use {
@@ -113,17 +116,38 @@ object WallpaperStore {
         return Bitmap.createBitmap(px, bmp.width, bmp.height, Bitmap.Config.ARGB_8888)
     }
 
-    fun import(ctx: Context, uri: Uri, blur: Int): Boolean {
-        val small = decodeSmall(ctx, uri) ?: return false
-        src(ctx).writeBytes(encode(small))
-        file(ctx).writeBytes(encode(blurred(small, blur)))
+    /** Bản gốc đã lưu (≤2048; ảnh chọn trước bản có trình chỉnh ≤1080). */
+    fun loadSource(ctx: Context): Bitmap? =
+        src(ctx).takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.path) }
+
+    /**
+     * Ảnh cho IME: cắt vùng [crop] (null = cả ảnh — ảnh cũ chưa có khung, IME tự cắt giữa như
+     * trước), thu ≤1080, mờ. Luôn là bitmap MỚI.
+     */
+    fun render(source: Bitmap, crop: WallpaperCrop?, blur: Int): Bitmap {
+        val r = crop?.pixelRect(source.width, source.height) ?: intArrayOf(0, 0, source.width, source.height)
+        val cw = r[2] - r[0]; val ch = r[3] - r[1]
+        val (tw, th) = WallpaperMath.bakedSize(source.width, source.height, crop)
+        val m = Matrix().apply { setScale(tw.toFloat() / cw, th.toFloat() / ch) }
+        var cut = Bitmap.createBitmap(source, r[0], r[1], cw, ch, m, true)
+        if (cut === source) cut = source.copy(Bitmap.Config.ARGB_8888, false)
+        return blurred(cut, blur)
+    }
+
+    /** "Xong" ở trình chỉnh: lưu bản gốc (nếu mới chọn) + nướng vùng cắt cho IME. */
+    fun save(ctx: Context, source: Bitmap, isNew: Boolean, crop: WallpaperCrop?, blur: Int): Boolean {
+        val out = encode(render(source, crop, blur))
+        if (isNew) src(ctx).writeBytes(encodeSource(source))
+        file(ctx).writeBytes(out)
         return true
     }
 
-    fun reblur(ctx: Context, blur: Int): Boolean {
-        val s = src(ctx).takeIf { it.exists() } ?: return false
-        val bmp = BitmapFactory.decodeFile(s.path) ?: return false
-        file(ctx).writeBytes(encode(blurred(bmp, blur)))
+    fun encodeSource(bmp: Bitmap): ByteArray =
+        ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.JPEG, 88, it) }.toByteArray()
+
+    fun reblur(ctx: Context, blur: Int, crop: WallpaperCrop?): Boolean {
+        val bmp = loadSource(ctx) ?: return false
+        file(ctx).writeBytes(encode(render(bmp, crop, blur)))
         return true
     }
 
@@ -148,6 +172,7 @@ private fun saveThemeSettings(ctx: Context, s: ThemeSettings) {
         putInt(Keys.WALLPAPER_DIM, s.dim)
         putInt(Keys.WALLPAPER_BLUR, s.blur)
         putLong(Keys.WALLPAPER_VERSION, s.version)
+        s.crop?.let { putString(Keys.WALLPAPER_CROP, it.serialize()) } ?: remove(Keys.WALLPAPER_CROP)
         putInt(Keys.KEYBOARD_TRANSPARENCY, s.keyboardTransparency)
         putInt(Keys.KEY_LABEL_TRANSPARENCY, s.labelTransparency)
     }.apply()
@@ -187,6 +212,8 @@ fun ThemePage(onBack: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var confirmReset by remember { mutableStateOf(false) }
+    // Ảnh đưa vào trình chỉnh (mới chọn: chưa ghi gì — Huỷ thì ảnh nền cũ còn nguyên).
+    var editor by remember { mutableStateOf<EditorInput?>(null) }
     fun update(n: ThemeSettings) { s = n; saveThemeSettings(ctx, n) }
 
     fun afterWrite(ok: Boolean, enable: Boolean) {
@@ -200,11 +227,30 @@ fun ThemePage(onBack: () -> Unit) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         busy = true
-        val blur = s.blur
         scope.launch {
-            val ok = withContext(Dispatchers.Default) { runCatching { WallpaperStore.import(ctx, uri, blur) }.getOrDefault(false) }
-            afterWrite(ok, enable = true)
+            val bmp = withContext(Dispatchers.Default) { runCatching { WallpaperStore.decodeSmall(ctx, uri) }.getOrNull() }
+            busy = false
+            if (bmp == null) error = tr("Không đọc được ảnh này.") else { error = null; editor = EditorInput(bmp, null, isNew = true) }
         }
+    }
+
+    editor?.let { input ->
+        WallpaperEditorDialog(input.image, input.crop, remember(input) { KeyboardFrame.portrait(ctx) },
+            palette = (s.effectiveTheme.palette(dark) ?: previewPalette(KeyboardTheme.SYSTEM, dark)).overWallpaper()
+                .withTransparency(s.keyboardTransparency, s.labelTransparency, dark),
+            initialDim = s.dim, initialBlur = s.blur,
+            onCancel = { editor = null },
+            onDone = { crop, dim, blur ->
+                editor = null
+                busy = true
+                scope.launch {
+                    val ok = withContext(Dispatchers.Default) {
+                        runCatching { WallpaperStore.save(ctx, input.image, input.isNew, crop, blur) }.getOrDefault(false)
+                    }
+                    if (ok) s = s.copy(crop = crop, dim = dim, blur = blur)
+                    afterWrite(ok, enable = true)
+                }
+            })
     }
 
     SubPageHeader(FeaturePage.GiaoDien.title, onBack)
@@ -249,6 +295,22 @@ fun ThemePage(onBack: () -> Unit) {
             Text(if (wall != null) tr("Đổi ảnh nền") else tr("Chọn ảnh nền"), style = VTType.body,
                 color = if (ThemeGate.allowsWallpaper) c.accent else c.secondary)
         }
+        if (wall != null && WallpaperStore.hasSource(ctx)) {
+            RowDivider()
+            // Mở lại bản gốc với khung đang dùng (ảnh cũ chưa có khung ⇒ bắt đầu từ khung giữa).
+            VTRow(onClick = if (busy || !ThemeGate.allowsWallpaper) null else {
+                {
+                    busy = true
+                    scope.launch {
+                        val bmp = withContext(Dispatchers.Default) { runCatching { WallpaperStore.loadSource(ctx) }.getOrNull() }
+                        busy = false
+                        if (bmp == null) error = tr("Không đọc được ảnh này.") else editor = EditorInput(bmp, s.crop, isNew = false)
+                    }
+                }
+            }) {
+                Text(tr("Chỉnh ảnh"), style = VTType.body, color = if (ThemeGate.allowsWallpaper) c.accent else c.secondary)
+            }
+        }
         if (wall != null) {
             RowDivider()
             SettingToggle(tr("Dùng ảnh nền"), null, s.wallpaper) { update(s.copy(wallpaper = it)) }
@@ -260,9 +322,9 @@ fun ThemePage(onBack: () -> Unit) {
                 Slider(value = s.blur.toFloat(), onValueChange = { s = s.copy(blur = it.toInt()) }, valueRange = 0f..20f,
                     onValueChangeFinished = {
                         busy = true
-                        val blur = s.blur
+                        val blur = s.blur; val crop = s.crop
                         scope.launch {
-                            val ok = withContext(Dispatchers.Default) { runCatching { WallpaperStore.reblur(ctx, blur) }.getOrDefault(false) }
+                            val ok = withContext(Dispatchers.Default) { runCatching { WallpaperStore.reblur(ctx, blur, crop) }.getOrDefault(false) }
                             afterWrite(ok, enable = false)
                         }
                     })
@@ -270,7 +332,7 @@ fun ThemePage(onBack: () -> Unit) {
             RowDivider()
             VTRow(onClick = {
                 WallpaperStore.remove(ctx); wall = null
-                update(s.copy(wallpaper = false, version = System.currentTimeMillis()))
+                update(s.copy(wallpaper = false, crop = null, version = System.currentTimeMillis()))
             }) { Text(tr("Xoá ảnh nền"), style = VTType.body, color = c.red) }
         }
         if (busy) VTRow { Text(tr("Đang xử lý ảnh…"), style = VTType.footnote, color = c.secondary) }
@@ -323,7 +385,8 @@ fun ThemePage(onBack: () -> Unit) {
             if (blurChanged && wall != null) {
                 busy = true
                 scope.launch {
-                    val ok = withContext(Dispatchers.Default) { runCatching { WallpaperStore.reblur(ctx, 0) }.getOrDefault(false) }
+                    val crop = s.crop
+                    val ok = withContext(Dispatchers.Default) { runCatching { WallpaperStore.reblur(ctx, 0, crop) }.getOrDefault(false) }
                     afterWrite(ok, enable = false)
                 }
             }
@@ -332,13 +395,16 @@ fun ThemePage(onBack: () -> Unit) {
     )
 }
 
-/** Bàn phím thu nhỏ vẽ bằng đúng token theme. */
+/** Ảnh đưa vào trình chỉnh ảnh nền. */
+private data class EditorInput(val image: Bitmap, val crop: WallpaperCrop?, val isNew: Boolean)
+
+/** Bàn phím thu nhỏ vẽ bằng đúng token theme. [keysOnly]: chỉ phím (lớp phủ trình chỉnh ảnh nền). */
 @Composable
-private fun KeyboardPreview(p: ThemePalette, wallpaper: ImageBitmap?, dim: Int, large: Boolean, modifier: Modifier,
-                            backdrop: Int? = null) {
+internal fun KeyboardPreview(p: ThemePalette, wallpaper: ImageBitmap?, dim: Int, large: Boolean, modifier: Modifier,
+                             backdrop: Int? = null, keysOnly: Boolean = false) {
     Box(modifier) {
         val bottom = p.bgBottom
-        Canvas(Modifier.fillMaxSize()) {
+        if (!keysOnly) Canvas(Modifier.fillMaxSize()) {
             // Nền trong suốt: lộ app phía sau (giả lập bằng màu nền app sáng/tối).
             backdrop?.let { drawRect(Color(it)) }
             if (bottom != null) drawRect(Brush.verticalGradient(listOf(Color(p.bg), Color(bottom))))
