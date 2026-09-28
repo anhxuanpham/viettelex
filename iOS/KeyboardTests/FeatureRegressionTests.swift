@@ -235,7 +235,7 @@ final class AutoSpaceTests: XCTestCase {
     }
 
     func testNotInUrlsEmailsPaths() {
-        XCTAssertFalse(AutoSpace.shouldAdd(punct: ".", before: "mail ptrinh@gmail.", after: ""))
+        XCTAssertFalse(AutoSpace.shouldAdd(punct: ".", before: "mail ban@gmail.", after: ""))
         XCTAssertFalse(AutoSpace.shouldAdd(punct: ".", before: "xem https://vnexpress.", after: ""))
         XCTAssertFalse(AutoSpace.shouldAdd(punct: ".", before: "mở ~/Documents/a.", after: ""))
         XCTAssertFalse(AutoSpace.shouldAdd(punct: ".", before: "vào www.", after: ""))

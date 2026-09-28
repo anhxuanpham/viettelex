@@ -25,7 +25,7 @@ class AutoSpaceTests {
     }
 
     @Test fun notInUrlsEmailsPaths() {
-        assertFalse(AutoSpace.shouldAdd(".", "mail ptrinh@gmail.", ""))
+        assertFalse(AutoSpace.shouldAdd(".", "mail ban@gmail.", ""))
         assertFalse(AutoSpace.shouldAdd(".", "xem https://vnexpress.", ""))
         assertFalse(AutoSpace.shouldAdd(".", "mở ~/Documents/a.", ""))
         assertFalse(AutoSpace.shouldAdd(".", "vào www.", ""))
