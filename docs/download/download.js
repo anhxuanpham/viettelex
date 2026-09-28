@@ -18,7 +18,7 @@
   var OS = ["ios", "android", "macos", "windows", "linux", "web"];
   var ALIAS = { mac: "macos", osx: "macos", darwin: "macos", win: "windows", win32: "windows",
     iphone: "ios", ipad: "ios", ipados: "ios", ubuntu: "linux", deb: "linux",
-    chromeos: "android", chromebook: "android", learn: "web" };
+    chromeos: "android", chromebook: "android", learn: "web", sdk: "web", js: "web", npm: "web" };
   function norm(v) {
     v = String(v || "").toLowerCase().replace(/^#/, "");
     v = ALIAS[v] || v;
@@ -138,9 +138,13 @@
     // Android chưa có mục trong stable.json; khi có {version, apk, play} thì tự dùng.
     var an = d.android;
     if (an && an.apk) { link("apkBtn", an.apk, (EN ? "Download APK " : "Tải APK ") + (an.version || "")); setText('[data-ver="android"]', an.version || S.latest); }
-    if (an && an.play) {
+    // Chỉ dùng huy hiệu Google Play khi đã có trang Play công khai (guideline: huy hiệu phải dẫn tới listing thật).
+    if (an && an.play && /^https:\/\/play\.google\.com\//.test(an.play)) {
       var pb = document.getElementById("playBtn");
-      if (pb) { pb.outerHTML = '<a class="btn store" id="playBtn" href="' + esc(an.play) + '" rel="noopener"><span class="glyph" aria-hidden="true">▶</span><span><small>' + (EN ? "Get it on" : "Tải trên") + "</small>Google Play</span></a>"; }
+      if (pb) {
+        pb.outerHTML = '<a class="badge-link" id="playBtn" href="' + esc(an.play) + '" rel="noopener"><img class="badge-play" src="' +
+          esc(pb.getAttribute("data-badge")) + '" alt="' + esc(pb.getAttribute("data-badge-alt")) + '"></a>';
+      }
     }
 
     var l = d.linux, box = document.getElementById("debs");
