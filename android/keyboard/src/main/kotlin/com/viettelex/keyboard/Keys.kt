@@ -72,6 +72,8 @@ object Keys {
     const val KEY_SOUND = "keySound"
     /** Int 0…100 (%) — âm lượng âm phím riêng, mặc định 50. */
     const val KEY_SOUND_VOLUME = "keySoundVolume"
+    /** String — kiểu âm phím ([KeySoundStyle.id]): subtle|wood|mechanical|typewriter|bubble|custom, mặc định subtle. */
+    const val KEY_SOUND_STYLE = "keySoundStyle"
     /** Int −10…10 (dp mỗi hàng). */
     const val ROW_HEIGHT_ADJUST = "rowHeightAdjust"
     /** Bool — hàng phím số trên plane chữ (tên như iOS App Group). */

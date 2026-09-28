@@ -33,6 +33,8 @@ data class KeyboardSettings(
     var keySound: Boolean = false,
     /** Âm lượng âm phím riêng 0…100 %. */
     var keySoundVolume: Int = 50,
+    /** Kiểu âm phím ([KeySoundStyle.id]) — mặc định "subtle" (Nhẹ nhàng). */
+    var keySoundStyle: String = KeySoundStyle.DEFAULT.id,
     /** Gợi ý sửa lỗi chạm trượt (AdjacentKeyFixer) — mặc định BẬT. */
     var autoFixAdjacent: Boolean = true,
     /** Quyết định theo ngữ cảnh ("he is" giữ tiếng Anh) — mặc định BẬT. */
@@ -109,6 +111,7 @@ data class KeyboardSettings(
             s.hapticStrength = HapticStrength.clamp((get(Keys.HAPTIC_STRENGTH) as? Number)?.toInt() ?: HapticStrength.DEFAULT)
             s.keySound = b(Keys.KEY_SOUND, s.keySound)
             s.keySoundVolume = ((get(Keys.KEY_SOUND_VOLUME) as? Number)?.toInt() ?: s.keySoundVolume).coerceIn(0, 100)
+            s.keySoundStyle = (get(Keys.KEY_SOUND_STYLE) as? String)?.takeIf { it in KeySoundStyle.IDS } ?: KeySoundStyle.DEFAULT.id
             s.autoFixAdjacent = b(Keys.AUTO_FIX_ADJACENT, s.autoFixAdjacent)
             s.contextualEnglish = b(Keys.CONTEXTUAL_ENGLISH, s.contextualEnglish)
             s.reEditWords = b(Keys.RE_EDIT_WORDS, s.reEditWords)

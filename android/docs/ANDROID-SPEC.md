@@ -285,6 +285,12 @@ Toàn bộ thuật toán, trọng số, ngưỡng, hợp đồng seed giữ nguy
   SoundPool phát 3 click tổng hợp (`KeySoundSynth`: chữ / xoá / còn lại), KHÔNG kèm
   playSoundEffect; im khi ringer ≠ NORMAL (Rung/Im lặng — như AOSP LatinIME, đọc lại ≤ 2 s/lần).
   WAV tất định ghi 1 lần vào cacheDir; SoundPool dựng lúc hiện, nhả khi ẩn. TẮT ⇒ 0 chi phí.
+- `keySoundStyle` (subtle|wood|mechanical|typewriter|bubble|custom, mặc định subtle): 5 kiểu tổng hợp
+  (công thức ở iOS/Shared/KeySoundSynth.swift, checksum chung 2 nền tảng) hoặc âm tự chọn —
+  SAF audio/* → MediaCodec → `KeySoundCustom.process` (≤ 300 ms, chuẩn hoá) → noBackupFilesDir;
+  vắng/hỏng ⇒ subtle. Kéo Âm lượng / Độ mạnh rung ⇒ nghe/rung thử (≤ 1 lần/120 ms + lúc thả).
+- Rung: `HapticStrength.plan` chọn hiệu ứng rẻ pin nhất — primitive TICK/CLICK có scale (API 30+)
+  → one-shot 7–16 ms có biên độ → predefined TICK/CLICK → one-shot theo độ dài.
 - Rung: toggle `hapticFeedback` (mặc định TẮT) ⇒ `performHapticFeedback(KEYBOARD_TAP)`.
   Android không cần Full Access ⇒ bật là chạy.
 

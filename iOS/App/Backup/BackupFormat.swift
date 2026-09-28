@@ -52,6 +52,8 @@ enum BackupSettings {
         Spec(key: "hapticStrength", kind: .int(45, 10...100)),
         Spec(key: "keySound", kind: .bool(false)),
         Spec(key: "keySoundVolume", kind: .int(50, 0...100)),
+        // Kiểu âm phím; "custom" đi theo nhưng FILE âm không — máy mới thiếu file ⇒ bàn phím dùng mặc định.
+        Spec(key: "keySoundStyle", kind: .string("subtle", ["subtle", "wood", "mechanical", "typewriter", "bubble", "custom"])),
         Spec(key: "numberRow", kind: .bool(false)),
         Spec(key: "rowHeightAdjust", kind: .int(0, -10...10)),
         Spec(key: "shortcutsEnabled", kind: .bool(true)),

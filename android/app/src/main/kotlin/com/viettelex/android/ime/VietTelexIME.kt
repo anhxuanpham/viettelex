@@ -270,7 +270,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         feedback.hapticsEnabled = settings.hapticFeedback
         feedback.hapticStrength = settings.hapticStrength
         // Âm thanh phím riêng: TẮT ⇒ nhả/không dựng gì (tiếng hệ thống như cũ).
-        feedback.configureSound(settings.keySound, settings.keySoundVolume) { worker().post(it) }
+        feedback.configureSound(settings.keySound, settings.keySoundVolume, settings.keySoundStyle) { worker().post(it) }
         kb.searchSettings = settings
         syncClipHistory(settings.clipboardHistory)
         // Copy lúc process IME chưa sống (listener không thấy) → bù khi hiện, không làm mới mục cũ.

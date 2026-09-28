@@ -2,87 +2,35 @@
 //
 // TẮT ⇒ giữ nguyên hành vi cũ: UIDevice.playInputClick (theo Cài đặt → Âm thanh →
 // Tiếng bấm bàn phím), không dựng engine, không tốn gì thêm.
-// BẬT ⇒ phát 3 tiếng click tự tổng hợp (chữ / xoá / phím chức năng như stock) theo âm
-// lượng thanh trượt, KHÔNG kèm click hệ thống (không kêu đôi).
+// BẬT ⇒ phát 3 tiếng (chữ / xoá / phím chức năng như stock) theo KIỂU đã chọn
+// (`keySoundStyle`: 5 kiểu tổng hợp + âm tự chọn) và âm lượng thanh trượt, KHÔNG kèm
+// click hệ thống (không kêu đôi).
 //
-// - Mẫu âm: tổng hợp tất định lúc chạy (sine tắt dần + nhiễu lọc, ~25–40 ms) — không có
-//   file âm thanh bên thứ ba. Thuật toán y hệt android/keyboard/.../KeySoundSynth.kt.
+// - Mẫu âm: Shared/KeySoundSynth.swift (tất định, dùng chung với app để nghe thử). Âm tự
+//   chọn: WAV đã xử lý trong App Group (KeySoundCustom.fileURL) — vắng/hỏng ⇒ "Nhẹ nhàng".
 // - Độ trễ: AVAudioEngine + 1 AVAudioPlayerNode/loại, buffer PCM dựng sẵn; bấm phím chỉ
 //   scheduleBuffer(.interrupts) — không cấp phát, không chặn main (lock.try()).
 // - Audio session .ambient (+ mixWithOthers): không ngắt nhạc đang phát, TÔN TRỌNG gạt
 //   im lặng — như click bàn phím stock (iOS 17+ im khi bật chế độ im lặng).
 // - Cần Toàn quyền Truy cập: không có Full Access, audio của extension không phát được ổn
 //   định ⇒ controller chỉ bật đường này khi hasFullAccess, thiếu thì quay về click hệ thống.
+// - PIN (Phil 28/09): engine đang chạy = phần cứng audio render liên tục (~vài mW) dù im.
+//   ⇒ NGHỈ sau `idleTimeout` (8 s) không bấm: engine.pause() + nhả session. Lần bấm kế
+//   tiếp khởi động lại NỀN (không chặn main); tiếng của lần bấm đó chỉ phát nếu engine
+//   sẵn sàng trong `lateWindow` (40 ms), trễ hơn thì bỏ (thà im một tiếng còn hơn kêu muộn).
+//   Kiểm tra nghỉ là một asyncAfter một lần (hẹn lại theo lastPlay) — không timer lặp,
+//   bấm phím không hẹn gì thêm.
 // - Vòng đời: engine dựng/khởi động trên queue riêng khi bàn phím hiện (setting BẬT),
 //   dừng + nhả khi ẩn hoặc thiếu RAM.
 import AVFoundation
 
-enum KeySoundKind: Int, CaseIterable {
-    case letter, delete, modifier
-}
-
-/// Tổng hợp mẫu click (thuần, tất định — test được). Giống hệt bản Kotlin.
-enum KeySoundSynth {
-    static let sampleRate = 44_100.0
-
-    struct Voice {
-        let freq: Double       // tần số "thân" click (Hz)
-        let toneTau: Double    // hằng số tắt dần của tone (s)
-        let noiseTau: Double   // hằng số tắt dần của nhiễu (s)
-        let noiseMix: Double   // tỉ lệ nhiễu so với tone
-        let duration: Double   // độ dài mẫu (s)
-        let seed: UInt32
-    }
-
-    static func voice(_ k: KeySoundKind) -> Voice {
-        switch k {
-        case .letter:   return Voice(freq: 1850, toneTau: 0.0045, noiseTau: 0.0022, noiseMix: 0.55, duration: 0.028, seed: 0x1234_5678)
-        case .delete:   return Voice(freq: 1300, toneTau: 0.0055, noiseTau: 0.0028, noiseMix: 0.50, duration: 0.032, seed: 0x2345_6789)
-        case .modifier: return Voice(freq: 900, toneTau: 0.0075, noiseTau: 0.0035, noiseMix: 0.45, duration: 0.040, seed: 0x3456_789A)
-        }
-    }
-
-    /// Mẫu mono Float −1…1, đỉnh chuẩn hoá 0.9.
-    static func samples(_ k: KeySoundKind) -> [Float] {
-        let v = voice(k)
-        let n = Int((v.duration * sampleRate).rounded())
-        var out = [Double](repeating: 0, count: n)
-        var state = v.seed
-        // Nhiễu trắng → high-pass một cực (bỏ ù) → low-pass một cực (bỏ xì) ≈ dải 1–6 kHz.
-        let hpA = exp(-2 * Double.pi * 1000 / sampleRate)
-        let lpA = exp(-2 * Double.pi * 6000 / sampleRate)
-        var hpPrevIn = 0.0, hpPrevOut = 0.0, lp = 0.0
-        let attack = Int(0.0004 * sampleRate)          // 0.4 ms mở — bớt "bụp"
-        let release = Int(0.002 * sampleRate)          // 2 ms đóng — không vấp cuối mẫu
-        var peak = 0.0
-        for i in 0..<n {
-            let t = Double(i) / sampleRate
-            state ^= state << 13; state ^= state >> 17; state ^= state << 5   // xorshift32
-            let white = Double(state) / Double(UInt32.max) * 2 - 1
-            let hp = hpA * (hpPrevOut + white - hpPrevIn)
-            hpPrevIn = white; hpPrevOut = hp
-            lp = (1 - lpA) * hp + lpA * lp
-            let tone = sin(2 * Double.pi * v.freq * t) * exp(-t / v.toneTau)
-                + 0.35 * sin(2 * Double.pi * v.freq * 2.03 * t) * exp(-t / (v.toneTau * 0.6))
-            var s = tone + v.noiseMix * 3 * lp * exp(-t / v.noiseTau)
-            if i < attack { s *= Double(i) / Double(attack) }
-            if i >= n - release { s *= Double(n - 1 - i) / Double(release) }
-            out[i] = s
-            peak = max(peak, abs(s))
-        }
-        let norm = peak > 0 ? 0.9 / peak : 0
-        return out.map { Float($0 * norm) }
-    }
-
-    /// 0…100 % → biên độ; bình phương cho cảm giác to/nhỏ đều tay hơn tuyến tính.
-    static func gain(forPercent p: Int) -> Float {
-        let x = Float(max(0, min(100, p))) / 100
-        return x * x
-    }
-}
-
 final class KeySound {
     static let shared = KeySound()
+
+    /// Không bấm quá chừng này ⇒ tạm dừng engine (pin). Test chỉnh nhỏ lại.
+    var idleTimeout: TimeInterval = 8
+    /// Bấm lúc engine đang nghỉ: khởi động xong trong khoảng này thì vẫn phát tiếng đó.
+    static let lateWindow: TimeInterval = 0.040
 
     private let lock = NSLock()
     private let queue = DispatchQueue(label: "vt.keysound", qos: .userInteractive)
@@ -92,8 +40,18 @@ final class KeySound {
     private var buffers: [AVAudioPCMBuffer] = []
     private var running = false
     private var wanted = false
+    private var restarting = false
+    private var pending: (kind: KeySoundKind, at: TimeInterval)?
+    private var lastPlay: TimeInterval = 0
+    private var idleCheckScheduled = false
     private var gain: Float = KeySoundSynth.gain(forPercent: 50)
     private var configObserver: NSObjectProtocol?
+    /// Kiểu mong muốn (giá trị lưu) + khoá bộ mẫu đang dựng (kiểu + mtime file tự chọn).
+    private var styleRaw = KeySoundStyle.defaultStyle.rawValue
+    private var customURL: URL? = KeySoundCustom.fileURL
+    private var builtKey: String?
+    /// Kiểu thật sự đang phát (custom thiếu file ⇒ subtle) — log/test.
+    private(set) var activeStyle: KeySoundStyle = .defaultStyle
 
     func setVolume(percent: Int) {
         let g = KeySoundSynth.gain(forPercent: percent)
@@ -102,9 +60,19 @@ final class KeySound {
         engine?.mainMixerNode.outputVolume = g
     }
 
+    /// Chọn kiểu (giá trị `keySoundStyle`). Đổi ⇒ bộ mẫu dựng lại ở lần khởi động kế tiếp.
+    func setStyle(_ raw: String, customURL: URL? = KeySoundCustom.fileURL) {
+        lock.lock(); defer { lock.unlock() }
+        styleRaw = raw
+        self.customURL = customURL
+    }
+
     /// Dựng + khởi động engine NỀN (không chặn lúc bàn phím hiện).
     func prepare() {
-        lock.lock(); wanted = true; let ready = running; lock.unlock()
+        lock.lock()
+        wanted = true
+        let ready = running && builtKey == KeySoundCustom.bankKey(style: styleRaw, customURL: customURL)
+        lock.unlock()
         if ready { return }
         queue.async { [self] in _ = startNow() }
     }
@@ -117,16 +85,22 @@ final class KeySound {
     }
 
     /// Phát ngay (gọi ở touch-down trên main). false = engine chưa sẵn sàng (bỏ tiếng này,
-    /// KHÔNG chờ). Không cấp phát ở đường nóng.
+    /// KHÔNG chờ — trừ khi khởi động lại kịp trong lateWindow). Không cấp phát ở đường nóng.
     @discardableResult
     func play(_ kind: KeySoundKind) -> Bool {
         guard lock.try() else { return false }   // queue đang start/stop — bỏ 1 tiếng, không chặn main
         defer { lock.unlock() }
-        guard running, let e = engine else { return false }
-        guard e.isRunning else {
-            // Bị ngắt (cuộc gọi, Siri…) hoặc đổi route: dựng lại nền, tiếng này bỏ.
+        let now = CACurrentMediaTime()
+        lastPlay = now
+        guard wanted else { return false }
+        guard running, let e = engine, e.isRunning else {
+            // Nghỉ (pin), bị ngắt (cuộc gọi, Siri…) hoặc đổi route: dựng lại nền.
             running = false
-            queue.async { [self] in _ = startNow() }
+            pending = (kind, now)
+            if !restarting {
+                restarting = true
+                queue.async { [self] in _ = startNow() }
+            }
             return false
         }
         nodes[kind.rawValue].scheduleBuffer(buffers[kind.rawValue], at: nil, options: .interrupts, completionHandler: nil)
@@ -135,34 +109,38 @@ final class KeySound {
 
     var isRunning: Bool { lock.lock(); defer { lock.unlock() }; return running }
 
+    /// Quyết định nghỉ (thuần — test được): true ⇒ dừng ngay; false ⇒ hẹn kiểm lại sau `recheck` giây.
+    static func idleDecision(now: TimeInterval, lastPlay: TimeInterval, timeout: TimeInterval) -> (stop: Bool, recheck: TimeInterval) {
+        let idle = now - lastPlay
+        if idle >= timeout { return (true, 0) }
+        return (false, max(0.05, timeout - idle))
+    }
+
     /// Đồng bộ (queue nền hoặc test). true = engine chạy.
     @discardableResult
     func startNow() -> Bool {
         lock.lock(); defer { lock.unlock() }
-        guard wanted else { return false }
-        if running, engine?.isRunning == true { return true }
+        defer { restarting = false }
+        guard wanted else { pending = nil; return false }
+        let key = KeySoundCustom.bankKey(style: styleRaw, customURL: customURL)
+        if running, engine?.isRunning == true, builtKey == key { return true }
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.ambient, options: [.mixWithOthers])
             try? session.setPreferredIOBufferDuration(0.005)
             try session.setActive(true)
+            guard let fmt = AVAudioFormat(standardFormatWithSampleRate: KeySoundSynth.sampleRate, channels: 1)
+            else { return false }
             let e = engine ?? AVAudioEngine()
             if engine == nil {
-                guard let fmt = AVAudioFormat(standardFormatWithSampleRate: KeySoundSynth.sampleRate, channels: 1)
-                else { return false }
-                var ns: [AVAudioPlayerNode] = [], bs: [AVAudioPCMBuffer] = []
-                for k in KeySoundKind.allCases {
-                    let s = KeySoundSynth.samples(k)
-                    guard let b = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(s.count)),
-                          let ch = b.floatChannelData?[0] else { return false }
-                    s.withUnsafeBufferPointer { ch.update(from: $0.baseAddress!, count: s.count) }
-                    b.frameLength = AVAudioFrameCount(s.count)
+                var ns: [AVAudioPlayerNode] = []
+                for _ in KeySoundKind.allCases {
                     let node = AVAudioPlayerNode()
                     e.attach(node)
                     e.connect(node, to: e.mainMixerNode, format: fmt)
-                    ns.append(node); bs.append(b)
+                    ns.append(node)
                 }
-                nodes = ns; buffers = bs; engine = e
+                nodes = ns; engine = e
                 configObserver = NotificationCenter.default.addObserver(
                     forName: .AVAudioEngineConfigurationChange, object: e, queue: nil) { [weak self] _ in
                     // Không đụng lock ở đây (có thể đang ở trong start/stop) — dồn về queue.
@@ -170,35 +148,85 @@ final class KeySound {
                     self.queue.async { _ = self.startNow() }
                 }
             }
+            if builtKey != key {
+                let custom = styleRaw == KeySoundStyle.custom.rawValue ? KeySoundCustom.load(customURL) : nil
+                let bank = KeySoundSynth.bank(styleRaw, custom: custom)
+                var bs: [AVAudioPCMBuffer] = []
+                for s in bank.samples {
+                    guard let b = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(s.count)),
+                          let ch = b.floatChannelData?[0] else { return false }
+                    s.withUnsafeBufferPointer { ch.update(from: $0.baseAddress!, count: s.count) }
+                    b.frameLength = AVAudioFrameCount(s.count)
+                    bs.append(b)
+                }
+                buffers = bs; builtKey = key; activeStyle = bank.style
+                if bank.style.rawValue != styleRaw { TouchLog.write("keysound: \(styleRaw) thiếu file → \(bank.style.rawValue)") }
+            }
             e.mainMixerNode.outputVolume = gain
-            e.prepare()
-            try e.start()
-            for n in nodes { n.play() }
+            if !e.isRunning {
+                e.prepare()
+                try e.start()
+            }
+            for n in nodes where !n.isPlaying { n.play() }
             running = true
+            let now = CACurrentMediaTime()
+            if let p = pending, now - p.at <= Self.lateWindow {
+                nodes[p.kind.rawValue].scheduleBuffer(buffers[p.kind.rawValue], at: nil, options: .interrupts, completionHandler: nil)
+            }
+            pending = nil
+            lastPlay = now   // khởi động = hoạt động: đếm 8 s nghỉ từ đây
+            scheduleIdleCheckLocked(after: idleTimeout)
             #if DEBUG
-            NSLog("VTKB keysound start io=%.1fms out=%.1fms", session.ioBufferDuration * 1000, session.outputLatency * 1000)
+            NSLog("VTKB keysound start style=%@ io=%.1fms out=%.1fms", activeStyle.rawValue, session.ioBufferDuration * 1000, session.outputLatency * 1000)
             #endif
             return true
         } catch {
             TouchLog.write("keysound: không khởi động được engine \(error)")
             running = false
+            pending = nil
             return false
         }
+    }
+
+    private func scheduleIdleCheckLocked(after delay: TimeInterval) {
+        guard !idleCheckScheduled else { return }
+        idleCheckScheduled = true
+        queue.asyncAfter(deadline: .now() + delay) { [weak self] in self?.idleCheck() }
+    }
+
+    private func idleCheck() {
+        lock.lock(); defer { lock.unlock() }
+        idleCheckScheduled = false
+        guard running, let e = engine else { return }
+        let d = Self.idleDecision(now: CACurrentMediaTime(), lastPlay: lastPlay, timeout: idleTimeout)
+        if !d.stop { scheduleIdleCheckLocked(after: d.recheck); return }
+        // Nghỉ: giữ node/buffer (khởi động lại nhanh), dừng phần cứng + nhả session.
+        running = false
+        e.pause()
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #if DEBUG
+        NSLog("VTKB keysound idle pause")
+        #endif
     }
 
     func stopNow() {
         lock.lock(); defer { lock.unlock() }
         guard !wanted, engine != nil else { return }   // prepare() lại kịp ⇒ giữ engine
         running = false
+        pending = nil
         if let o = configObserver { NotificationCenter.default.removeObserver(o); configObserver = nil }
         for n in nodes { n.stop() }
         engine?.stop()
-        engine = nil; nodes = []; buffers = []
+        engine = nil; nodes = []; buffers = []; builtKey = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     #if DEBUG
     /// Test: bật cờ muốn chạy mà không qua queue.
     func debugWant(_ on: Bool) { lock.lock(); wanted = on; lock.unlock() }
+    /// Test: chạy kiểm tra nghỉ ngay (đồng bộ).
+    func debugIdleCheck() { idleCheck() }
+    /// Test: giả lập lần bấm cuối cách đây `ago` giây.
+    func debugSetLastPlay(ago: TimeInterval) { lock.lock(); lastPlay = CACurrentMediaTime() - ago; lock.unlock() }
     #endif
 }

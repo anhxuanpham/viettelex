@@ -125,6 +125,7 @@ targets:
       - Keyboard/KeyLayout.swift
       - Keyboard/KeyboardView.swift
       - Keyboard/KeySound.swift
+      - App/KeySoundImport.swift
       - Keyboard/OneHand.swift
       - Keyboard/EmojiPlane.swift
       - Keyboard/EmojiData.swift

@@ -4,80 +4,55 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.SoundPool
-import android.os.Build
 import android.os.SystemClock
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import android.view.HapticFeedbackConstants
 import android.view.View
 import com.viettelex.keyboard.HapticStrength
+import com.viettelex.keyboard.KeySoundCustom
+import com.viettelex.keyboard.KeySoundStyle
 import com.viettelex.keyboard.KeySoundSynth
 import java.io.File
 
 /**
  * Âm + rung ở TOUCH-DOWN (spec §8). Âm: AudioManager.playSoundEffect — chỉ kêu khi
  * "Âm thanh khi chạm" của hệ thống bật. Rung: toggle hapticFeedback (mặc định TẮT) +
- * độ mạnh hapticStrength 10…100 % (giống iOS). Rung bằng Vibrator (quyền VIBRATE) chứ
- * không performHapticFeedback: KEYBOARD_TAP bị hệ thống bỏ qua khi "Phản hồi khi chạm"/
- * "Rung bàn phím" tắt (FLAG_IGNORE_GLOBAL_SETTING vô hiệu từ API 33) và không chỉnh
- * được độ mạnh. Một VibrationEffect dựng sẵn cho mỗi độ mạnh (không cấp phát mỗi phím);
- * tắt rung ⇒ không lấy Vibrator, không dựng gì. Máy không có motor ⇒ performHapticFeedback.
+ * độ mạnh hapticStrength 10…100 % (giống iOS). Rung bằng Vibrator (quyền VIBRATE, qua
+ * [KeyVibrator] — hiệu ứng rẻ pin nhất: primitive TICK có scale / one-shot ngắn) chứ không
+ * performHapticFeedback: KEYBOARD_TAP bị hệ thống bỏ qua khi "Phản hồi khi chạm"/"Rung bàn
+ * phím" tắt (FLAG_IGNORE_GLOBAL_SETTING vô hiệu từ API 33) và không chỉnh được độ mạnh.
+ * Tắt rung ⇒ không lấy Vibrator, không dựng gì. Máy không có motor ⇒ performHapticFeedback.
  *
  * Âm thanh phím riêng (setting keySound, mặc định TẮT ⇒ playSoundEffect như trên): BẬT ⇒
- * click tổng hợp ([KeySoundSynth], SoundPool nạp sẵn) theo âm lượng thanh trượt, KHÔNG kèm
- * tiếng hệ thống; im khi máy ở Rung/Im lặng (như Gboard/AOSP LatinIME).
+ * tiếng theo kiểu keySoundStyle ([KeySoundSynth] 5 kiểu tổng hợp, hoặc âm tự chọn trong
+ * noBackupFilesDir) qua SoundPool nạp sẵn, theo âm lượng thanh trượt, KHÔNG kèm tiếng hệ
+ * thống; im khi máy ở Rung/Im lặng (như Gboard/AOSP LatinIME). SoundPool rảnh không tốn
+ * CPU (không có luồng render liên tục như AVAudioEngine iOS) và được nhả khi ẩn bàn phím.
  */
 class Feedback(private val ctx: Context) {
     private val audio = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    private val appCtx = ctx.applicationContext
+    private val vibrator = KeyVibrator(ctx)
     @Volatile var hapticsEnabled = false
-        set(v) { field = v; if (!v) { tapEffect = null; tickEffect = null } }
+        set(v) { field = v; if (!v) vibrator.clear() }
 
-    /** % đã kẹp; đổi ⇒ dựng lại hiệu ứng lười ở lần rung sau. */
+    /** % đã kẹp. */
     @Volatile var hapticStrength = HapticStrength.DEFAULT
-        set(v) {
-            val c = HapticStrength.clamp(v)
-            if (c != field) { field = c; tapEffect = null; tickEffect = null }
-        }
-
-    private var vibratorLoaded = false
-    private var vibrator: Vibrator? = null
-    private var tapEffect: VibrationEffect? = null
-    private var tickEffect: VibrationEffect? = null
-
-    private fun vib(): Vibrator? {
-        if (!vibratorLoaded) {
-            vibratorLoaded = true
-            vibrator = runCatching {
-                if (Build.VERSION.SDK_INT >= 31)
-                    (appCtx.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
-                else @Suppress("DEPRECATION") (appCtx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
-            }.getOrNull()?.takeIf { it.hasVibrator() }
-        }
-        return vibrator
-    }
-
-    private fun effect(v: Vibrator, percent: Int): VibrationEffect =
-        if (v.hasAmplitudeControl())
-            VibrationEffect.createOneShot(HapticStrength.amplitudeDurationMs(percent), HapticStrength.amplitude(percent))
-        else VibrationEffect.createOneShot(HapticStrength.durationOnlyMs(percent), VibrationEffect.DEFAULT_AMPLITUDE)
+        set(v) { field = HapticStrength.clamp(v) }
 
     /** Rung một nhịp theo độ mạnh; false ⇒ không có Vibrator, gọi view.performHapticFeedback. */
-    private fun vibrate(tick: Boolean): Boolean {
-        val v = vib() ?: return false
-        val e = if (tick) tickEffect ?: effect(v, hapticStrength / 2).also { tickEffect = it }
-                else tapEffect ?: effect(v, hapticStrength).also { tapEffect = it }
-        return runCatching { v.vibrate(e) }.isSuccess
-    }
+    private fun vibrate(tick: Boolean): Boolean =
+        vibrator.vibrate(if (tick) hapticStrength / 2 else hapticStrength)
 
     // --- Âm phím riêng (chỉ đụng trên main, trừ nạp WAV trên worker) ---
     private var soundEnabled = false
     private var volumePercent = 50
     private var gain = KeySoundSynth.gain(50)
     private var pool: SoundPool? = null
+    /** Khoá bộ mẫu đang nạp (kiểu + mtime file tự chọn) — đổi ⇒ nạp lại. */
+    private var poolKey: String? = null
     /** id SoundPool theo [KeySoundSynth.Kind.ordinal]; 0 = chưa nạp xong. */
     private val ids = IntArray(KeySoundSynth.Kind.entries.size)
+    /** Hệ số âm lượng từng loại (âm tự chọn: một file, xoá/chức năng nhỏ hơn chút). */
+    private val kindGain = FloatArray(ids.size) { 1f }
     @Volatile private var loaded = BooleanArray(ids.size)
     private var ringerNormal = true
     private var ringerCheckedAt = 0L
@@ -87,32 +62,40 @@ class Feedback(private val ctx: Context) {
 
     /**
      * Áp setting lúc bàn phím hiện. BẬT ⇒ dựng SoundPool + nạp 3 mẫu ([worker] ghi WAV cache
-     * lần đầu); TẮT ⇒ nhả hết (0 chi phí).
+     * lần đầu / đọc file tự chọn); TẮT ⇒ nhả hết (0 chi phí). Đổi kiểu/file ⇒ nạp lại.
      */
-    fun configureSound(enabled: Boolean, volume: Int, worker: (Runnable) -> Unit) {
+    fun configureSound(enabled: Boolean, volume: Int, style: String, worker: (Runnable) -> Unit) {
         soundEnabled = enabled
         volumePercent = volume.coerceIn(0, 100)
         gain = KeySoundSynth.gain(volumePercent)
         if (!enabled || volumePercent == 0) { releaseSound(); return }
         refreshRinger(force = true)
-        if (pool != null) return
+        val customFile = customFile(ctx)
+        val key = KeySoundCustom.bankKey(style, customFile)
+        if (pool != null && key == poolKey) return
+        releaseSound()
         val p = SoundPool.Builder().setMaxStreams(4).setAudioAttributes(
             AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()).build()
-        pool = p
+        pool = p; poolKey = key
         val fresh = BooleanArray(ids.size); loaded = fresh
         p.setOnLoadCompleteListener { sp, sampleId, status ->
             if (sp !== pool || status != 0) return@setOnLoadCompleteListener
-            val i = ids.indexOf(sampleId)
-            if (i >= 0) fresh[i] = true
+            for (i in ids.indices) if (ids[i] == sampleId) fresh[i] = true
         }
         val dir = ctx.cacheDir
         worker(Runnable {
-            val files = KeySoundSynth.Kind.entries.map { k -> wavFile(dir, k) }
+            val files = soundFiles(dir, style, customFile)
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 if (pool !== p) return@post
-                files.forEachIndexed { i, f -> if (f != null) ids[i] = p.load(f.path, 1) }
+                val custom = files.distinct().size == 1 && files[0] == customFile
+                var sharedId = 0
+                files.forEachIndexed { i, f ->
+                    if (f == null) return@forEachIndexed
+                    ids[i] = if (custom && sharedId != 0) sharedId else p.load(f.path, 1).also { sharedId = it }
+                    kindGain[i] = if (custom) CUSTOM_KIND_GAIN[i] else 1f
+                }
             }
         })
     }
@@ -121,6 +104,7 @@ class Feedback(private val ctx: Context) {
     fun releaseSound() {
         pool?.release()
         pool = null
+        poolKey = null
         ids.fill(0)
         loaded = BooleanArray(ids.size)
     }
@@ -137,7 +121,8 @@ class Feedback(private val ctx: Context) {
             })
             KeySoundSynth.Route.CUSTOM -> {
                 val i = soundKind(kind).ordinal
-                if (loaded[i]) pool?.play(ids[i], gain, gain, 1, 0, 1f)
+                val g = gain * kindGain[i]
+                if (loaded[i]) pool?.play(ids[i], g, g, 1, 0, 1f)
             }
             KeySoundSynth.Route.SILENT -> {}
         }
@@ -179,6 +164,7 @@ class Feedback(private val ctx: Context) {
         const val MODIFIER = 2
         const val SPACE = 3
         const val RETURN = 4
+        private val CUSTOM_KIND_GAIN = floatArrayOf(1f, 0.9f, 0.82f)   // = KeySoundCustom.variant
 
         /** Loại phím → tiếng: chữ / xoá / còn lại (cách, Enter, shift… như stock). */
         fun soundKind(kind: Int): KeySoundSynth.Kind = when (kind) {
@@ -187,12 +173,28 @@ class Feedback(private val ctx: Context) {
             else -> KeySoundSynth.Kind.MODIFIER
         }
 
-        /** WAV tất định ghi 1 lần vào cache (tên kèm VERSION). null nếu ghi lỗi. */
-        fun wavFile(dir: File, k: KeySoundSynth.Kind): File? = runCatching {
-            val f = File(dir, "keysound-v${KeySoundSynth.VERSION}-${k.name.lowercase()}.wav")
+        /** File âm tự chọn đã xử lý (noBackupFilesDir — không vào Auto Backup). */
+        fun customFile(ctx: Context): File = File(ctx.noBackupFilesDir, KeySoundCustom.FILE_NAME)
+
+        /**
+         * File cho 3 loại phím theo kiểu đã lưu: custom hợp lệ ⇒ cùng một file tự chọn; còn lại
+         * (hoặc custom vắng/hỏng) ⇒ WAV tổng hợp của kiểu thật sự phát. Chạy trên worker.
+         */
+        fun soundFiles(dir: File, style: String, custom: File?): List<File?> {
+            val ok = style == KeySoundStyle.CUSTOM.id && KeySoundCustom.load(custom) != null
+            val st = KeySoundStyle.resolve(style, ok)
+            return if (st == KeySoundStyle.CUSTOM) KeySoundSynth.Kind.entries.map { custom }
+            else KeySoundSynth.Kind.entries.map { wavFile(dir, st, it) }
+        }
+
+        /** WAV tất định ghi 1 lần vào cache (tên kèm VERSION + kiểu). null nếu ghi lỗi. */
+        fun wavFile(dir: File, k: KeySoundSynth.Kind): File? = wavFile(dir, KeySoundStyle.DEFAULT, k)
+
+        fun wavFile(dir: File, style: KeySoundStyle, k: KeySoundSynth.Kind): File? = runCatching {
+            val f = File(dir, "keysound-v${KeySoundSynth.VERSION}-${style.id}-${k.name.lowercase()}.wav")
             if (!f.exists() || f.length() == 0L) {
                 val tmp = File(dir, f.name + ".tmp")
-                tmp.writeBytes(KeySoundSynth.wav(k))
+                tmp.writeBytes(KeySoundSynth.wav(style, k))
                 tmp.renameTo(f)
             }
             f

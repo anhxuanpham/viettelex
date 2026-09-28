@@ -51,6 +51,8 @@ object BackupSettings {
         Spec(Keys.HAPTIC_STRENGTH, SettingKind.IntRange(HapticStrength.DEFAULT, HapticStrength.RANGE)),
         Spec(Keys.KEY_SOUND, SettingKind.Bool(false)),
         Spec(Keys.KEY_SOUND_VOLUME, SettingKind.IntRange(50, 0..100)),
+        // Kiểu âm; "custom" đi theo nhưng FILE âm không — máy mới thiếu file ⇒ IME dùng mặc định.
+        Spec(Keys.KEY_SOUND_STYLE, SettingKind.Choice(KeySoundStyle.DEFAULT.id, KeySoundStyle.IDS)),
         Spec(Keys.NUMBER_ROW, SettingKind.Bool(false)),
         Spec(Keys.ROW_HEIGHT_ADJUST, SettingKind.IntRange(0, -10..10)),
         Spec(Keys.SHORTCUTS_ENABLED, SettingKind.Bool(true)),

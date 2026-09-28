@@ -38,6 +38,7 @@
     "hapticFeedback" : true,
     "keyLabelTransparency" : 20,
     "keySound" : true,
+    "keySoundStyle" : "wood",
     "keySoundVolume" : 70,
     "keyboardTransparency" : 40,
     "liveSpellCheck" : true,
