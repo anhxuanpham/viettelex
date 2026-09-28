@@ -65,6 +65,10 @@ public:
     // True when `ev` is the Vi/En toggle hotkey (press). Frontends whose framework grabs
     // the same chord first (Fcitx5 trigger key) check this early and route it here.
     bool isToggleHotkey(const KeyEvent &ev) const;
+    // True when `ev` is the "Thêm dấu cho vùng chọn" hotkey (Settings::addTonesHotkey, off by
+    // default). Frontends check it BEFORE processKey and run the text tool themselves; it
+    // never matches the toggle hotkey (that one wins).
+    bool isAddTonesHotkey(const KeyEvent &ev) const;
 
     // Returns true when the key was consumed (the app must not see it).
     bool processKey(const KeyEvent &ev, InputContext &ic);
@@ -109,6 +113,8 @@ private:
     bool lastWasBoundaryChar_ = false; // previous key typed one boundary char (reopen)
     uint32_t hotkeySym_ = 0, hotkeyMods_ = 0;
     bool hotkeyValid_ = false;
+    uint32_t addTonesSym_ = 0, addTonesMods_ = 0;
+    bool addTonesValid_ = false;
     std::shared_ptr<const ShortcutTable> shortcuts_;
     std::string preedit_;
 };

@@ -6,6 +6,31 @@ Files: *
 Copyright: 2026 The VietTelex authors (see LICENSE)
 License: MIT
 
+Files: iOS/Keyboard/Resources/vnlm.bin
+Copyright: Wikimedia contributors (Vietnamese Wikipedia, Wikisource, Wikibooks,
+ Wikivoyage, Wikiquote); Tatoeba contributors
+Comment: Installed as /usr/share/viettelex/vnlm.bin (viettelex-text-tools). Syllable
+ n-gram statistics derived from those texts (CC BY-SA 4.0 / CC BY 2.0 FR); transformed:
+ syllable split, n-gram counts, Kneser-Ney smoothing, pruning, quantisation,
+ compression. Released under CC BY-SA 4.0. Sources: docs/DATA-SOURCES.md.
+License: CC-BY-SA-4.0
+ https://creativecommons.org/licenses/by-sa/4.0/legalcode
+
+Files: iOS/Keyboard/Resources/vnlexicon.bin
+Copyright: 2026 The VietTelex authors; frequencies from hermitdave/FrequencyWords
+Comment: Installed as /usr/share/viettelex/vnlexicon.bin. Syllable list + frequencies
+ (OpenSubtitles-derived counts, FrequencyWords content CC BY-SA 4.0).
+License: CC-BY-SA-4.0
+ https://creativecommons.org/licenses/by-sa/4.0/legalcode
+
+Files: iOS/Keyboard/Resources/enlexicon.bin
+Copyright: Google (Google Books Ngram data); orgtre/google-books-ngram-frequency;
+ 2015 Ilya Semenov (wikipedia-word-frequency)
+Comment: Installed as /usr/share/viettelex/enlexicon.bin. English word list + 1-byte
+ frequencies; filtered, merged, rescaled. Sources: docs/DATA-SOURCES.md.
+License: CC-BY-3.0
+ https://creativecommons.org/licenses/by/3.0/legalcode
+
 License: MIT
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal

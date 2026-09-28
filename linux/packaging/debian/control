@@ -56,11 +56,28 @@ Description: VietTelex Vietnamese input method - typing engine
  installed in a private directory and is not meant for other programs. It
  also ships the input-method status icons shared by both frontends.
 
+Package: viettelex-text-tools
+Architecture: any
+Build-Profiles: <!pkg.viettelex.noengine>
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Enhances: viettelex-fcitx5, viettelex-ibus
+Description: VietTelex Vietnamese input method - text tools for the selection
+ VietTelex types Vietnamese exactly like its macOS version: Telex, Simple
+ Telex, VNI, free tone placement, Quick Telex, live spell-check, automatic
+ English restore and context-aware decisions.
+ .
+ This package adds "Tools..." to the input method menu: add Vietnamese tones
+ to unaccented selected text ("toi di hoc" becomes "tôi đi học"), UPPERCASE,
+ lowercase, Title Case, Sentence case and remove tones. It contains the
+ viettelex-text-tool helper (run as a separate process, so the tone
+ dictionary never stays in the input method's memory) and its data files.
+
 Package: viettelex-fcitx5
 Architecture: any
 Build-Profiles: <!pkg.viettelex.noengine>
 Depends: ${shlibs:Depends}, ${misc:Depends}, libviettelex-core (= ${binary:Version}), fcitx5
 Recommends: viettelex-settings,
+            viettelex-text-tools (= ${binary:Version}),
             fcitx5-frontend-gtk3,
             fcitx5-frontend-gtk4,
             fcitx5-frontend-qt5,
@@ -81,6 +98,8 @@ Architecture: any
 Build-Profiles: <!pkg.viettelex.noengine>
 Depends: ${shlibs:Depends}, ${misc:Depends}, libviettelex-core (= ${binary:Version}), ibus
 Recommends: viettelex-settings,
+            viettelex-text-tools (= ${binary:Version}),
+
             ibus-gtk3,
             ibus-gtk4
 Description: VietTelex Vietnamese input method - IBus engine

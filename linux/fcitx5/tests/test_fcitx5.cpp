@@ -15,6 +15,8 @@
 #include <fcitx/inputmethodmanager.h>
 #include <fcitx/inputpanel.h>
 #include <fcitx/instance.h>
+#include <fcitx/action.h>
+#include <fcitx/userinterfacemanager.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -48,6 +50,8 @@ void type(AddonInstance *tf, ICUUID uuid, const std::string &keys) {
 std::string preeditOf(InputContext *ic) { return ic->inputPanel().clientPreedit().toString(); }
 
 void phase2(EventDispatcher *dispatcher, Instance *instance, ICUUID uuid);
+void phase3(EventDispatcher *dispatcher, Instance *instance, ICUUID uuid);
+void finish(EventDispatcher *dispatcher, Instance *instance);
 
 void scheduleEvent(EventDispatcher *dispatcher, Instance *instance) {
     dispatcher->schedule([dispatcher, instance]() {
@@ -85,12 +89,20 @@ void scheduleEvent(EventDispatcher *dispatcher, Instance *instance) {
         tf->call<ITestFrontend::pushCommitExpectation>("google");
         type(tf, uuid, "google ");
 
-        // 3. … and once active, Ctrl+Space is VietTelex's Việt/Anh toggle: keys pass through
+        // 3. … and once active, Ctrl+Space is VietTelex's Việt/Anh toggle: keys pass through.
+        //    The tray icon follows it (Vᴛ ↔ E, like the macOS menu bar).
+        EXPECT(instance->inputMethodIcon(ic) == "viettelex");
         tf->call<ITestFrontend::keyEvent>(uuid, Key("Control+space"), false);
         EXPECT(instance->inputMethod(ic) == "viettelex");
+        EXPECT(instance->inputMethodIcon(ic) == "viettelex-off");
         type(tf, uuid, "vieejt ");
         EXPECT(preeditOf(ic).empty());
         tf->call<ITestFrontend::keyEvent>(uuid, Key("Control+space"), false);
+        EXPECT(instance->inputMethodIcon(ic) == "viettelex");
+        // "Công cụ…" and its six tools are registered actions.
+        EXPECT(instance->userInterfaceManager().lookupAction("viettelex-tools"));
+        EXPECT(instance->userInterfaceManager().lookupAction("viettelex-tool-addTones"));
+        EXPECT(instance->userInterfaceManager().lookupAction("viettelex-tool-stripDiacritics"));
 
         // 4. password field: literal
         ic->setCapabilityFlags(CapabilityFlags{CapabilityFlag::Preedit, CapabilityFlag::Password});
@@ -155,16 +167,63 @@ void phase2(EventDispatcher *dispatcher, Instance *instance, ICUUID uuid) {
             std::ifstream st(g_cfgDir + "/../state/viettelex/app-state");
             std::string all((std::istreambuf_iterator<char>(st)), std::istreambuf_iterator<char>());
             EXPECT(all.find("kitty\ten") != std::string::npos);
-
-            std::printf("fcitx5 smoke: %d checks passed\n", g_checks);
-            instance->deactivate();
-            dispatcher->schedule([dispatcher, instance]() {
-                dispatcher->detach();
-                instance->exit();
-            });
+            ic2->focusOut();
+            phase3(dispatcher, instance, uuid);
             return true;
         });
 }
+
+void finish(EventDispatcher *dispatcher, Instance *instance) {
+    std::printf("fcitx5 smoke: %d checks passed\n", g_checks);
+    instance->deactivate();
+    dispatcher->schedule([dispatcher, instance]() {
+        dispatcher->detach();
+        instance->exit();
+    });
+}
+
+// Text tools end to end (needs the helper: ctest sets VIETTELEX_TEXT_TOOL): the selection
+// comes from surrounding text, the result is committed over it.
+std::unique_ptr<EventSourceTime> g_toolTimer;
+std::unique_ptr<HandlerTableEntry<EventHandler>> g_commitWatch;
+std::string g_committed;
+int g_polls = 0;
+
+void phase3(EventDispatcher *dispatcher, Instance *instance, ICUUID uuid) {
+    const char *helper = std::getenv("VIETTELEX_TEXT_TOOL");
+    if (!helper || !*helper) {
+        std::printf("fcitx5 smoke: text tools skipped (VIETTELEX_TEXT_TOOL unset)\n");
+        return finish(dispatcher, instance);
+    }
+    auto *ic = instance->inputContextManager().findByUUID(uuid);
+    ic->focusIn();
+    ic->setCapabilityFlags(CapabilityFlags{CapabilityFlag::Preedit, CapabilityFlag::SurroundingText});
+    ic->surroundingText().setText("xin: toi di hoc", 15, 5);  // "toi di hoc" selected
+    ic->updateSurroundingText();
+    g_commitWatch = instance->watchEvent(EventType::InputContextCommitString, EventWatcherPhase::PreInputMethod,
+                                         [](Event &e) {
+                                             g_committed = static_cast<CommitStringEvent &>(e).text();
+                                         });
+    auto *tf = instance->addonManager().addon("testfrontend");
+    tf->call<ITestFrontend::pushCommitExpectation>("tôi đi học");
+    auto *a = instance->userInterfaceManager().lookupAction("viettelex-tool-addTones");
+    EXPECT(a);
+    a->activate(ic);
+
+    g_toolTimer = instance->eventLoop().addTimeEvent(
+        CLOCK_MONOTONIC, now(CLOCK_MONOTONIC) + 100000, 0,
+        [dispatcher, instance](EventSourceTime *src, uint64_t) {
+            if (g_committed.empty() && ++g_polls < 100) {  // ≤ 10 s
+                src->setNextInterval(100000);
+                src->setOneShot();
+                return true;
+            }
+            EXPECT(g_committed == "tôi đi học");
+            finish(dispatcher, instance);
+            return true;
+        });
+}
+
 
 }  // namespace
 

@@ -629,9 +629,13 @@ final class SyllableLM {
     /// Mô hình dùng chung (gõ vuốt + thanh gợi ý + Thêm dấu — một lần map) — map lần đầu cần,
     /// nên chạm lần đầu ở hàng đợi nền (hash vnlexicon ~150KB). nil nếu thiếu/hỏng/lệch.
     static let shared: SyllableLM? = {
+        #if VIETTELEX_CLI   // công cụ văn bản Linux (linux/engine-capi: viettelex-text-tool)
+        let url = VTDataFile.url("vnlm.bin")
+        #else
         final class BundleToken {}
-        guard let url = Bundle(for: BundleToken.self).url(forResource: "vnlm", withExtension: "bin"),
-              let d = try? Data(contentsOf: url, options: .alwaysMapped) else { return nil }
+        let url = Bundle(for: BundleToken.self).url(forResource: "vnlm", withExtension: "bin")
+        #endif
+        guard let url, let d = try? Data(contentsOf: url, options: .alwaysMapped) else { return nil }
         return load(d, lexiconHash: fnv1a(VNLexicon2Data.blob), lexiconCount: VNLexicon2Data.count)
     }()
 

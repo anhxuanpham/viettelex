@@ -17,10 +17,13 @@ enum VNLexicon2Data {
 
     /// Toàn bộ file resource, memory-mapped — không copy vào dirty memory.
     static let blob: Data = {
+        #if VIETTELEX_CLI   // công cụ văn bản Linux (linux/engine-capi: viettelex-text-tool)
+        let url = VTDataFile.url("vnlexicon.bin")
+        #else
         final class BundleToken {}
-        guard let url = Bundle(for: BundleToken.self)
-                .url(forResource: "vnlexicon", withExtension: "bin"),
-              let d = try? Data(contentsOf: url, options: .alwaysMapped)
+        let url = Bundle(for: BundleToken.self).url(forResource: "vnlexicon", withExtension: "bin")
+        #endif
+        guard let url, let d = try? Data(contentsOf: url, options: .alwaysMapped)
         else { fatalError("vnlexicon.bin missing from bundle") }
         precondition(d.count > 64, "vnlexicon.bin truncated")
         return d

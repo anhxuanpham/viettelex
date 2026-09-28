@@ -39,6 +39,11 @@ struct Settings {
     std::string toggleHotkey = "Ctrl+space";
     bool perAppState = true;
     bool defaultVietnamese = true;
+    // UI language of the IM menu + settings app: "vi" (DEFAULT, whatever the system locale
+    // is) | "en". Anything else reads as "vi".
+    std::string uiLanguage = "vi";
+    bool textToolsMenu = true;        // "Công cụ…" submenu (text tools) in the IM menu
+    std::string addTonesHotkey;       // "Thêm dấu cho vùng chọn" hotkey; "" = off (default)
     // [app_modes] app id (lowercase) -> "preedit" | "surrounding" | "direct" | "off"
     std::map<std::string, std::string> appModes;
     // shortcuts.yml (never null after load)

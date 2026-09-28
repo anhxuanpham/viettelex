@@ -569,7 +569,23 @@ sudo apt install viettelex-fcitx5   # hoặc: sudo apt install viettelex-ibus</p
       </ul>
     </div>
     <div class="card">
+      <h3>Công cụ văn bản</h3>
+      <ul>
+        <li>Bôi đen chữ ở app bất kỳ rồi mở menu bộ gõ (biểu tượng VietTelex trên khay / thanh trên cùng) → <b>Công cụ…</b> — <b>Thêm dấu cho vùng chọn</b> (<code>toi di hoc</code> → tôi đi học), HOA, thường, Hoa Đầu Từ, Hoa đầu câu, Xoá dấu. Giống bản macOS.</li>
+        <li>Bật/tắt ở tab Tuỳ chỉnh → <b>Hiện công cụ văn bản trong menu</b> (mặc định bật); <b>Phím tắt Thêm dấu</b> mặc định tắt — chọn một tổ hợp có Ctrl/Alt/Super.</li>
+        <li>Cần gói <code>viettelex-text-tools</code> (apt tự cài kèm). App không báo chữ quanh con trỏ cho bộ gõ thì VietTelex đọc vùng đang bôi đen (PRIMARY); với IBus cần <code>wl-clipboard</code> hoặc <code>xclip</code> đã cài sẵn. Clipboard không bị đụng tới. Không chạy ở ô mật khẩu và terminal.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Ngôn ngữ &amp; biểu tượng</h3>
+      <ul>
+        <li>Tab Tuỳ chỉnh → <b>Ngôn ngữ / Language</b>: Tiếng Việt (mặc định, kể cả khi máy cài tiếng Anh) hoặc English — áp dụng ngay cho app cài đặt và menu bộ gõ.</li>
+        <li>Biểu tượng khay giống thanh menu macOS: <b>Vᴛ</b> khi gõ tiếng Việt, <b>E</b> khi chuyển sang tiếng Anh. GNOME hiện chữ <code>VT</code> / <code>E</code>.</li>
+      </ul>
+    </div>
+    <div class="card">
       <h3>Tương thích &amp; khác</h3>
+
       <ul>
         <li>Tab <b>Tương thích</b> chỉ liệt kê lưu ý khớp với máy bạn, kèm nút chép lệnh sửa — vd Chrome/Electron trên Wayland cần <code>--enable-wayland-ime</code>. Danh sách đầy đủ: <a href="https://github.com/ptrinh/viettelex/tree/main/linux" rel="noopener">linux/README</a>.</li>
         <li>Ô mật khẩu <code>sudo</code> trong terminal không nhận ra được — chuyển sang tiếng Anh trước khi gõ mật khẩu.</li>

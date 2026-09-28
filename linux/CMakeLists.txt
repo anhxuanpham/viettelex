@@ -17,6 +17,11 @@ option(VT_BUILD_FCITX5 "Build the Fcitx5 addon" ON)
 option(VT_BUILD_IBUS "Build the IBus engine" ON)
 option(VT_BUILD_TESTS "Build unit tests + golden corpus replay" ON)
 set(VT_CORE_LIB "" CACHE FILEPATH "Prebuilt libtelexcore.so (empty = build with SwiftPM)")
+# viettelex-text-tool: text tools for the selection (Thêm dấu, HOA…), a child process of the
+# frontends. Built by the same SwiftPM package; with a prebuilt VT_CORE_LIB it is looked
+# for next to it unless VT_TEXT_TOOL points at it.
+option(VT_BUILD_TEXT_TOOL "Install viettelex-text-tool + its data (vnlexicon/vnlm/enlexicon)" ON)
+set(VT_TEXT_TOOL "" CACHE FILEPATH "Prebuilt viettelex-text-tool (empty = SwiftPM build / next to VT_CORE_LIB)")
 
 # Private library dir: libtelexcore is an implementation detail of the two frontends.
 set(VT_PRIVATE_LIBDIR "${CMAKE_INSTALL_LIBDIR}/viettelex")
@@ -27,18 +32,22 @@ if(NOT VT_CORE_LIB)
   find_program(SWIFT_EXECUTABLE swift REQUIRED)
   set(VT_SWIFT_SCRATCH "${CMAKE_BINARY_DIR}/swift")
   set(VT_CORE_LIB "${VT_SWIFT_SCRATCH}/release/libtelexcore.so")
+  if(NOT VT_TEXT_TOOL)
+    set(VT_TEXT_TOOL "${VT_SWIFT_SCRATCH}/release/viettelex-text-tool")
+  endif()
   file(GLOB VT_ENGINE_SOURCES CONFIGURE_DEPENDS
        "${VT_REPO_ROOT}/TelexCore/Sources/TelexCore/*.swift"
-       "${CMAKE_CURRENT_SOURCE_DIR}/engine-capi/Sources/TelexCoreC/*.swift")
+       "${CMAKE_CURRENT_SOURCE_DIR}/engine-capi/Sources/TelexCoreC/*.swift"
+       "${CMAKE_CURRENT_SOURCE_DIR}/engine-capi/Sources/TextToolCLI/*.swift")
   add_custom_command(
-    OUTPUT "${VT_CORE_LIB}"
+    OUTPUT "${VT_CORE_LIB}" "${VT_SWIFT_SCRATCH}/release/viettelex-text-tool"
     COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/engine-capi/scripts/check-engine-links.sh"
     COMMAND "${SWIFT_EXECUTABLE}" build -c release --static-swift-stdlib
             --package-path "${CMAKE_CURRENT_SOURCE_DIR}/engine-capi"
             --scratch-path "${VT_SWIFT_SCRATCH}"
     DEPENDS ${VT_ENGINE_SOURCES} "${CMAKE_CURRENT_SOURCE_DIR}/engine-capi/Package.swift"
-            "${CMAKE_CURRENT_SOURCE_DIR}/engine-capi/exports.map"
-    COMMENT "Building libtelexcore (SwiftPM, static Swift stdlib)"
+            "${CMAKE_CURRENT_SOURCE_DIR}/engine-capi/exports.map" "${VT_REPO_ROOT}/TelexCore/Package.swift"
+    COMMENT "Building libtelexcore + viettelex-text-tool (SwiftPM, static Swift stdlib)"
     VERBATIM)
   add_custom_target(telexcore_swift ALL DEPENDS "${VT_CORE_LIB}")
 endif()
@@ -52,6 +61,23 @@ if(TARGET telexcore_swift)
   add_dependencies(telexcore telexcore_swift)
 endif()
 install(FILES "${VT_CORE_LIB}" DESTINATION "${VT_PRIVATE_LIBDIR}")
+
+# ---- viettelex-text-tool + data -------------------------------------------------------
+if(NOT VT_TEXT_TOOL)
+  get_filename_component(_vt_core_dir "${VT_CORE_LIB}" DIRECTORY)
+  if(EXISTS "${_vt_core_dir}/viettelex-text-tool")
+    set(VT_TEXT_TOOL "${_vt_core_dir}/viettelex-text-tool")
+  endif()
+endif()
+set(VT_TEXT_TOOL_INSTALLED "${CMAKE_INSTALL_FULL_LIBDIR}/viettelex/viettelex-text-tool")
+set(VT_TEXT_DATA_SRC "${VT_REPO_ROOT}/iOS/Keyboard/Resources")
+if(VT_BUILD_TEXT_TOOL AND VT_TEXT_TOOL)
+  install(PROGRAMS "${VT_TEXT_TOOL}" DESTINATION "${VT_PRIVATE_LIBDIR}")
+  install(FILES "${VT_TEXT_DATA_SRC}/vnlexicon.bin" "${VT_TEXT_DATA_SRC}/vnlm.bin" "${VT_TEXT_DATA_SRC}/enlexicon.bin"
+          DESTINATION "${CMAKE_INSTALL_DATADIR}/viettelex")
+elseif(VT_BUILD_TEXT_TOOL)
+  message(WARNING "viettelex-text-tool not found (set VT_TEXT_TOOL): text tools will be hidden")
+endif()
 
 # Frontends find libtelexcore in the private dir (and next to themselves in the build tree).
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_FULL_LIBDIR}/viettelex")
@@ -68,8 +94,10 @@ add_library(viettelex-common STATIC
   common/src/app.cpp
   common/src/watcher.cpp
   common/src/gnome.cpp
-  common/src/gnome_monitor.cpp)
+  common/src/gnome_monitor.cpp
+  common/src/text_tools.cpp)
 target_include_directories(viettelex-common PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/common/include")
+target_compile_definitions(viettelex-common PRIVATE VT_TEXT_TOOL_PATH="${VT_TEXT_TOOL_INSTALLED}")
 target_link_libraries(viettelex-common PUBLIC telexcore PkgConfig::GIO Threads::Threads)
 target_compile_options(viettelex-common PRIVATE -Wall -Wextra)
 
@@ -94,6 +122,18 @@ if(VT_BUILD_TESTS)
   target_link_libraries(test_common PRIVATE viettelex-common)
   target_compile_definitions(test_common PRIVATE VT_SOURCE_ROOT="${VT_REPO_ROOT}")
   add_test(NAME common COMMAND test_common)
+  if(VT_TEXT_TOOL)
+    # test_common also runs the real helper end to end (runTextTool / TextToolRunner).
+    set_tests_properties(common PROPERTIES ENVIRONMENT
+      "VIETTELEX_TEXT_TOOL=${VT_TEXT_TOOL};VIETTELEX_DATA_DIR=${VT_TEXT_DATA_SRC}")
+    # Shared iOS/Android fixtures, byte for byte, through the Linux build of the Swift sources.
+    add_test(NAME text_tool_fixtures
+             COMMAND "${VT_TEXT_TOOL}" --check-fixtures
+                     "${VT_REPO_ROOT}/iOS/KeyboardTests/Fixtures/text-tools.txt"
+                     "${VT_REPO_ROOT}/iOS/KeyboardTests/Fixtures/add-tones.txt")
+    set_tests_properties(text_tool_fixtures PROPERTIES ENVIRONMENT "VIETTELEX_DATA_DIR=${VT_TEXT_DATA_SRC}")
+  endif()
+
 
   # GnomeAppMonitor against a real dbus-daemon with a fake gnome-shell + portal
   # (BecomeMonitor, sender allow-list, pending/overview). Needs dbus-daemon.

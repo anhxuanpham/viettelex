@@ -176,6 +176,13 @@ Settings parseConfig(const std::string &toml) {
             else if (key == "terminal_direct") setBool(s.terminalDirect, v);
             else if (key == "per_app_state") setBool(s.perAppState, v);
             else if (key == "default_vietnamese") setBool(s.defaultVietnamese, v);
+            else if (key == "ui_language") {
+                if (v.kind == Value::Str) s.uiLanguage = lower(trim(v.s)) == "en" ? "en" : "vi";
+            }
+            else if (key == "text_tools_menu") setBool(s.textToolsMenu, v);
+            else if (key == "add_tones_hotkey") {
+                if (v.kind == Value::Str) s.addTonesHotkey = v.s;
+            }
         } else if (section == "app_modes") {
             if (v.kind == Value::Str && !key.empty()) {
                 std::string m = lower(v.s);
@@ -210,6 +217,9 @@ std::string serializeConfig(const Settings &s) {
       << "toggle_hotkey = " << quote(s.toggleHotkey) << "\n"
       << "per_app_state = " << b(s.perAppState) << "\n"
       << "default_vietnamese = " << b(s.defaultVietnamese) << "\n"
+      << "ui_language = " << quote(s.uiLanguage == "en" ? "en" : "vi") << "\n"
+      << "text_tools_menu = " << b(s.textToolsMenu) << "\n"
+      << "add_tones_hotkey = " << quote(s.addTonesHotkey) << "\n"
       << "\n[app_modes]\n";
     for (auto &kv : s.appModes) o << quote(kv.first) << " = " << quote(kv.second) << "\n";
     return o.str();

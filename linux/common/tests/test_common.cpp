@@ -7,12 +7,15 @@
 #include "viettelex/keys.h"
 #include "viettelex/session.h"
 #include "viettelex/settings.h"
+#include "viettelex/text_tools.h"
 #include "viettelex/watcher.h"
 
 #include <glib.h>
 
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
+#include <mutex>
 #include <random>
 #include <string>
 #include <unistd.h>
@@ -293,9 +296,195 @@ void testModesAgreeOnRandomScripts() {
     ++g_pass;
 }
 
+// MARK: - Text tools (Công cụ…)
+
+void testTextToolSettings() {
+    Settings d = parseConfig("");
+    CHECK_EQ(d.uiLanguage, std::string("vi"));  // default Vietnamese whatever the locale is
+    CHECK(d.textToolsMenu);
+    CHECK_EQ(d.addTonesHotkey, std::string(""));  // hotkey off by default
+    Settings s = parseConfig("[general]\nui_language = \"EN\"\ntext_tools_menu = false\nadd_tones_hotkey = \"Ctrl+Alt+t\"\n");
+    CHECK_EQ(s.uiLanguage, std::string("en"));
+    CHECK(!s.textToolsMenu);
+    CHECK_EQ(s.addTonesHotkey, std::string("Ctrl+Alt+t"));
+    CHECK_EQ(parseConfig("[general]\nui_language = \"fr\"\n").uiLanguage, std::string("vi"));
+    CHECK_EQ(parseConfig("[general]\nui_language = 1\n").uiLanguage, std::string("vi"));
+    Settings r = parseConfig(serializeConfig(s));
+    CHECK_EQ(r.uiLanguage, std::string("en"));
+    CHECK(!r.textToolsMenu);
+    CHECK_EQ(r.addTonesHotkey, std::string("Ctrl+Alt+t"));
+}
+
+void testAddTonesHotkey() {
+    Session s;
+    Mock m;
+    Settings st;
+    s.applySettings(st);
+    KeyEvent ev;
+    ev.keysym = 't';
+    ev.unicode = 't';
+    ev.mods = VT_MOD_CTRL | VT_MOD_ALT;
+    CHECK(!s.isAddTonesHotkey(ev));  // off by default
+    st.addTonesHotkey = "Ctrl+Alt+t";
+    s.applySettings(st);
+    CHECK(s.isAddTonesHotkey(ev));
+    ev.keysym = 'T';  // Caps Lock
+    CHECK(s.isAddTonesHotkey(ev));
+    ev.mods = VT_MOD_CTRL;
+    CHECK(!s.isAddTonesHotkey(ev));
+    ev.mods = VT_MOD_CTRL | VT_MOD_ALT;
+    ev.release = true;
+    CHECK(!s.isAddTonesHotkey(ev));
+    ev.release = false;
+    ev.forwarded = true;
+    CHECK(!s.isAddTonesHotkey(ev));
+    // Same chord as Việt/Anh: the toggle wins, the tool hotkey is ignored.
+    st.addTonesHotkey = "Ctrl+space";
+    s.applySettings(st);
+    KeyEvent sp;
+    sp.keysym = ks::space;
+    sp.unicode = ' ';
+    sp.mods = VT_MOD_CTRL;
+    CHECK(!s.isAddTonesHotkey(sp));
+    CHECK(s.isToggleHotkey(sp));
+    // A bare printable key would eat typing.
+    st.addTonesHotkey = "t";
+    s.applySettings(st);
+    ev.forwarded = false;
+    ev.mods = 0;
+    CHECK(!s.isAddTonesHotkey(ev));
+    (void)m;
+}
+
+void testTextToolNamesAndSelection() {
+    // Menu order and CLI ids = macOS TextAction / viettelex-text-tool arguments.
+    const char *ids[] = {"addTones", "upper", "lower", "title", "sentence", "stripDiacritics"};
+    for (int i = 0; i < kTextToolCount; ++i) {
+        TextTool t = textToolAt(i);
+        CHECK_EQ(std::string(textToolId(t)), std::string(ids[i]));
+        TextTool back = TextTool::Upper;
+        CHECK(textToolFromId(ids[i], back));
+        CHECK(back == t);
+        CHECK(!textToolLabel(t, false).empty());
+        CHECK(textToolLabel(t, false) != textToolLabel(t, true) || t == TextTool::Upper);
+    }
+    TextTool none = TextTool::Upper;
+    CHECK(!textToolFromId("bogus", none));
+    CHECK_EQ(textToolLabel(TextTool::AddTones, false), std::string("Thêm dấu cho vùng chọn"));
+    CHECK_EQ(textToolLabel(TextTool::AddTones, true), std::string("Add tones to selection"));
+    // Every IM menu string the frontends use has an English entry.
+    const char *ui[] = {"Tiếng Việt", "English", "Đang gõ tiếng Việt — bấm để chuyển sang English",
+                        "Đang gõ English — bấm để chuyển sang tiếng Việt", "Chuyển Việt/Anh (Ctrl+Space)",
+                        "Cài đặt…", "Mở VietTelex Settings", "Công cụ…", "Công cụ văn bản cho chữ đang bôi đen"};
+    for (const char *k : ui) {
+        CHECK_EQ(uiText(k, false), std::string(k));
+        std::string en = uiText(k, true);
+        CHECK(!en.empty());
+        // English strings carry no Vietnamese letters (ASCII + typographic punctuation only).
+        bool vietnamese = false;
+        for (size_t i = 0; i + 1 < en.size(); ++i) {
+            unsigned char c = static_cast<unsigned char>(en[i]);
+            if (c == 0xc3 || c == 0xc4 || c == 0xc6 || c == 0xe1) vietnamese = true;
+        }
+        CHECK(!vietnamese);
+        if (std::string(k) != "English") CHECK(en != k);
+    }
+    CHECK(isEnglishUi("en"));
+    CHECK(!isEnglishUi("vi"));
+    CHECK(!isEnglishUi(""));
+    // Selection inside surrounding text (offsets in characters, either direction).
+    std::string sel;
+    CHECK(selectionFromSurrounding("Tôi đi học", 4, 6, sel));
+    CHECK_EQ(sel, std::string("đi"));
+    CHECK(selectionFromSurrounding("Tôi đi học", 10, 7, sel));
+    CHECK_EQ(sel, std::string("học"));
+    CHECK(!selectionFromSurrounding("Tôi đi học", 3, 3, sel));
+    CHECK(!selectionFromSurrounding("abc", 1, 9, sel));
+}
+
+// Runs the real viettelex-text-tool when ctest points at it (VIETTELEX_TEXT_TOOL).
+void testTextToolHelper() {
+    const char *helper = std::getenv("VIETTELEX_TEXT_TOOL");
+    if (!helper || !*helper) {
+        std::fprintf(stderr, "(viettelex-text-tool not set: helper tests skipped)\n");
+        return;
+    }
+    CHECK(textToolAvailable());
+    std::string out;
+    CHECK(runTextTool(TextTool::AddTones, "toi di hoc hom nay", out));
+    CHECK_EQ(out, std::string("tôi đi học hôm nay"));
+    CHECK(runTextTool(TextTool::Upper, "Tiếng Việt", out));
+    CHECK_EQ(out, std::string("TIẾNG VIỆT"));
+    CHECK(runTextTool(TextTool::Title, "tiếng việt có dấu", out));
+    CHECK_EQ(out, std::string("Tiếng Việt Có Dấu"));
+    CHECK(runTextTool(TextTool::Sentence, "tiếng việt. có dấu", out));
+    CHECK_EQ(out, std::string("Tiếng việt. Có dấu"));
+    CHECK(runTextTool(TextTool::StripDiacritics, "Đường phố", out));
+    CHECK_EQ(out, std::string("Duong pho"));
+    CHECK(!runTextTool(TextTool::Lower, "already lower", out));  // unchanged → false
+    CHECK(!runTextTool(TextTool::Upper, "", out));
+    CHECK(!runTextTool(TextTool::Upper, "123 ... !!", out) || out == "123 ... !!");
+    // Large input (more than a pipe buffer: 3-byte letters, just under the length limit)
+    // must not deadlock — stdin and stdout are pumped together.
+    std::string big;
+    for (size_t i = 0; i < kTextToolMaxChars / 2 - 10; ++i) big += "ệ ";
+
+    CHECK(runTextTool(TextTool::Upper, big, out));
+    CHECK_EQ(out.size(), big.size());
+    // Too long for the macOS limit → untouched.
+    std::string huge(kTextToolMaxChars + 10, 'a');
+    CHECK(!runTextTool(TextTool::Upper, huge, out));
+    // A missing helper fails closed.
+    setenv("VIETTELEX_TEXT_TOOL", "/nonexistent/viettelex-text-tool", 1);
+    CHECK(!textToolAvailable());
+    CHECK(!runTextTool(TextTool::Upper, "abc", out));
+    setenv("VIETTELEX_TEXT_TOOL", helper, 1);
+
+    // TextToolRunner: worker thread → posted back → done(), one job at a time.
+    std::vector<std::function<void()>> queue;
+    std::mutex mu;
+    TextToolRunner runner([&](std::function<void()> f) {
+        std::lock_guard<std::mutex> l(mu);
+        queue.push_back(std::move(f));
+    });
+    bool called = false, changed = false;
+    std::string input, result;
+    CHECK(runner.start(TextTool::AddTones,
+                       [](std::string &o) {
+                           o = "khong co gi";
+                           return true;
+                       },
+                       [&](bool c, const std::string &in, const std::string &r) {
+                           called = true;
+                           changed = c;
+                           input = in;
+                           result = r;
+                       }));
+    CHECK(!runner.start(TextTool::Upper, nullptr, nullptr));  // busy
+    for (int i = 0; i < 500; ++i) {
+        {
+            std::lock_guard<std::mutex> l(mu);
+            if (!queue.empty()) break;
+        }
+        usleep(10000);
+    }
+    std::vector<std::function<void()>> q;
+    {
+        std::lock_guard<std::mutex> l(mu);
+        q.swap(queue);
+    }
+    CHECK_EQ(q.size(), size_t(1));
+    for (auto &f : q) f();
+    CHECK(called && changed);
+    CHECK_EQ(input, std::string("khong co gi"));
+    CHECK_EQ(result, std::string("không có gì"));
+    CHECK(!runner.busy());
+}
+
 // MARK: - Settings
 
 void testConfigParse() {
+
     Settings d;
     std::string round = serializeConfig(d);
     Settings r = parseConfig(round);
@@ -1278,6 +1467,10 @@ int main() {
     testDirectResets();
     testDirectPolicyTable();
     testUnderlineAndDirectSettings();
+    testTextToolSettings();
+    testAddTonesHotkey();
+    testTextToolNamesAndSelection();
+    testTextToolHelper();
     std::printf("common tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }
