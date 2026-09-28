@@ -640,6 +640,7 @@ struct SettingsView: View {
 
 struct GeneralTab: View {
     @EnvironmentObject var model: SettingsModel
+    @State private var textToolsExpanded = false   // gọn mặc định (Phil 28/09)
 
     var body: some View {
         Form {
@@ -744,32 +745,37 @@ struct GeneralTab: View {
                 Text(model.loc("After an English word, an ambiguous next word whose keys spell an English word is kept English instead of Vietnamese — “he is” → “he is”, not “he í”. After a Vietnamese or unclear word it stays Vietnamese — “sao í”."))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section(header: Label(model.loc("Text tools"), systemImage: "textformat")) {
-                Text(model.loc("Select text in any app, then open the VietTelex menu → Tools… and pick (or press 1–6): add tones to unaccented text (toi di hoc → tôi đi học), UPPERCASE, lowercase, Title Case, Sentence case, remove tones."))
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle(model.loc("Show text tools in the VietTelex menu"), isOn: $model.textToolsInMenu)
-                Picker(model.loc("Add-tones hotkey"), selection: $model.addTonesHotkey) {
-                    ForEach(TextActionHotkey.choices, id: \.id) { c in
-                        Text(c.id == "off" ? model.loc("Off") : c.label).tag(c.id)
+            Section {
+                DisclosureGroup(isExpanded: $textToolsExpanded) {
+                    Text(model.loc("Select text in any app, then open the VietTelex menu → Tools… and pick (or press 1–6): add tones to unaccented text (toi di hoc → tôi đi học), UPPERCASE, lowercase, Title Case, Sentence case, remove tones."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Toggle(model.loc("Show text tools in the VietTelex menu"), isOn: $model.textToolsInMenu)
+                    Picker(model.loc("Add-tones hotkey"), selection: $model.addTonesHotkey) {
+                        ForEach(TextActionHotkey.choices, id: \.id) { c in
+                            Text(c.id == "off" ? model.loc("Off") : c.label).tag(c.id)
+                        }
                     }
+                    Text(model.loc("Works in any app, even when another input source is active. Needs Accessibility permission (copies the selection, then pastes the result — your clipboard is restored)."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Toggle(model.loc("Show maths results"), isOn: $model.mathResults)
+                    Text(model.loc("Type a calculation followed by “=” (12*3=, 200+10%=) — the result shows next to the cursor; press Tab or Enter to insert it."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Toggle(model.loc("Number chips"), isOn: $model.numberChips)
+                    Text(model.loc("Type an amount with k/tr/tỷ (50k, 1tr2, 2 tỷ) and a space — the money format (1.200.000 ₫) shows next to the cursor; press Tab to replace it."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Toggle(model.loc("Suggest typo fixes"), isOn: $model.typoHints)
+                    Text(model.loc("After a word that isn’t Vietnamese or English (tpoi, nayd), a likely fix (tôi, này) shows next to the cursor; press Tab to replace it. Esc stops suggesting that word."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Toggle(model.loc("Suggest tones for unaccented sentences"), isOn: $model.toneHints)
+                    Text(model.loc("After 3+ unaccented syllables (toi di hoc), when you type . ! ? or pause after a space, the toned text (tôi đi học) shows next to the cursor; press Tab to replace it."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Toggle(model.loc("Suggest dates and times"), isOn: $model.dateHints)
+                    Text(model.loc("Type “hôm nay”, “ngày mai”, “hôm qua” or “bây giờ” (after an English word: today, tomorrow, yesterday, now) and a space — the date (28/09/2026) or time (21:35) shows next to the cursor; press Tab to replace the words with it."))
+                        .font(.caption).foregroundStyle(.secondary)
+            
+                } label: {
+                    Label(model.loc("Text tools"), systemImage: "textformat")
                 }
-                Text(model.loc("Works in any app, even when another input source is active. Needs Accessibility permission (copies the selection, then pastes the result — your clipboard is restored)."))
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle(model.loc("Show maths results"), isOn: $model.mathResults)
-                Text(model.loc("Type a calculation followed by “=” (12*3=, 200+10%=) — the result shows next to the cursor; press Tab or Enter to insert it."))
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle(model.loc("Number chips"), isOn: $model.numberChips)
-                Text(model.loc("Type an amount with k/tr/tỷ (50k, 1tr2, 2 tỷ) and a space — the money format (1.200.000 ₫) shows next to the cursor; press Tab to replace it."))
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle(model.loc("Suggest typo fixes"), isOn: $model.typoHints)
-                Text(model.loc("After a word that isn’t Vietnamese or English (tpoi, nayd), a likely fix (tôi, này) shows next to the cursor; press Tab to replace it. Esc stops suggesting that word."))
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle(model.loc("Suggest tones for unaccented sentences"), isOn: $model.toneHints)
-                Text(model.loc("After 3+ unaccented syllables (toi di hoc), when you type . ! ? or pause after a space, the toned text (tôi đi học) shows next to the cursor; press Tab to replace it."))
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle(model.loc("Suggest dates and times"), isOn: $model.dateHints)
-                Text(model.loc("Type “hôm nay”, “ngày mai”, “hôm qua” or “bây giờ” (after an English word: today, tomorrow, yesterday, now) and a space — the date (28/09/2026) or time (21:35) shows next to the cursor; press Tab to replace the words with it."))
-                    .font(.caption).foregroundStyle(.secondary)
             }
             Section(header: Label(model.loc("iCloud sync"), systemImage: "icloud")) {
                 Toggle(model.loc("Sync typing settings and shortcuts with iPhone/iPad"), isOn: $model.icloudSync)
