@@ -26,7 +26,7 @@ final class SyllableLMTests: XCTestCase {
         XCTAssertEqual(m.count, VNLexicon2Data.count)
         XCTAssertTrue((100_000...600_000).contains(m.biEntries), "bigram \(m.biEntries)")
         XCTAssertTrue((100_000...600_000).contains(m.triEntries), "trigram \(m.triEntries)")
-        XCTAssertLessThanOrEqual(try blob().count, 2_700_000)
+        XCTAssertLessThanOrEqual(try blob().count, 1_500_000)   // v3 (28/09/2026): 1.427.048 byte
     }
 
     private func pmi(_ a: String, _ b: String) -> Float { lm.bigram(id(a)).pmi(id(b)) }
@@ -85,8 +85,46 @@ final class SyllableLMTests: XCTestCase {
         XCTAssertNil(SyllableLM.load(Data(d.dropLast()), lexiconHash: h, lexiconCount: n))
         var bad = d; bad[3] = UInt8(ascii: "X")
         XCTAssertNil(SyllableLM.load(bad, lexiconHash: h, lexiconCount: n))
-        var v1 = d; v1[4] = 1   // bản cũ (không có uniAdj) ⇒ từ chối
-        XCTAssertNil(SyllableLM.load(v1, lexiconHash: h, lexiconCount: n))
+        var v2 = d; v2[4] = 2   // bản cũ (mảng thô, không Elias–Fano) ⇒ từ chối
+        XCTAssertNil(SyllableLM.load(v2, lexiconHash: h, lexiconCount: n))
+        var sec = d; sec[48 + 4 * 9] &+= 8   // bảng phần lệch
+        XCTAssertNil(SyllableLM.load(sec, lexiconHash: h, lexiconCount: n))
+        var sh = d; sh[36] = 0   // mẫu select0 = 2^0 ⇒ ngoài miền
+        XCTAssertNil(SyllableLM.load(sh, lexiconHash: h, lexiconCount: n))
+    }
+
+    /// Parity v3: Swift ≡ Kotlin ≡ script — fixture vnlm-parity.txt (sinh cùng lần với vnlm.bin):
+    /// điểm ×16 của ~2.800 truy vấn (score / pmi / explicit / size, cả ca biên) + checksum duyệt
+    /// TOÀN BỘ mô hình (mọi mục bigram/trigram/γ3 giải mã khớp dict của script) + hash cả file.
+    func testParityFixtureAndChecksum() throws {
+        let url = try XCTUnwrap(Bundle(for: SyllableLMTests.self).url(forResource: "vnlm-parity", withExtension: "txt"))
+        let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
+        func q(_ v: Float) -> Int { Int((v * 16).rounded()) }
+        var n = 0, bad = 0
+        for line in lines where !line.hasPrefix("#") {
+            let t = line.split(separator: " ")
+            let a = t.dropFirst().map { Int($0)! }
+            let ok: Bool
+            switch t[0] {
+            case "CHECKSUM": ok = UInt32(a[0]) == lm.modelChecksum()
+            case "FILE": ok = UInt32(a[0]) == SyllableLM.fnv1a(try blob())
+            case "S": ok = q(lm.score(prev2: a[0], prev1: a[1], a[2])) == a[3]
+            case "P": ok = q(lm.bigram(a[0]).pmi(a[1])) == a[2]
+            case "E": ok = q(lm.bigram(a[0]).explicit(a[1])) == a[2]
+            case "N": ok = lm.bigram(a[0]).size == a[1]
+            default: ok = true
+            }
+            if !ok { bad += 1; if bad <= 5 { XCTFail("parity: \(line)") } }
+            n += 1
+        }
+        XCTAssertGreaterThan(n, 2000)
+        XCTAssertEqual(bad, 0)
+        XCTAssertTrue(lm.payloadHashOK())
+        // forEach ≡ explicit trên một dòng dày (EF theo dòng + quét tuần tự)
+        let row = lm.bigram(id("của"))
+        var k = 0
+        row.forEach { c, v in XCTAssertEqual(row.explicit(c), v); k += 1 }
+        XCTAssertEqual(row.size, k)
     }
 
     // MARK: gõ vuốt trong ngữ cảnh
@@ -185,6 +223,39 @@ final class SyllableLMTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(Double(tri.top1) / Double(tri.n), 0.877, f(tri))
         XCTAssertGreaterThanOrEqual(Double(tri.top3) / Double(tri.n), 0.950, f(tri))
         XCTAssertGreaterThanOrEqual(Double(tri.top1 - none.top1) / Double(tri.n), 0.17)
+    }
+
+    /// Độ trễ tra LM (bộ chậm), theo cách consumer gọi: một vị trí vuốt = context + 32 điểm
+    /// ứng viên; một dòng Thêm dấu = bigram + 32 pmi; thanh gợi ý = forEach cả dòng. Min 15 vòng.
+    func testLookupLatency() throws {
+        try SlowTests.require()
+        let lm = try XCTUnwrap(SyllableLM.shared)
+        let qs: [(Int, Int, Int)] = try heldout().prefix(400).flatMap { c in
+            (1..<c.count).map { i in (i >= 2 ? SyllableLM.id(of: c[i - 2]) ?? -1 : -1,
+                                      SyllableLM.id(of: c[i - 1]) ?? -1, SyllableLM.id(of: c[i]) ?? -1) }
+        }.filter { $0.1 >= 0 && $0.2 >= 0 }
+        let cands = qs.prefix(32).map(\.2)
+        let c2 = qs.map { lm.context(prev2: $0.0, prev1: $0.1)! }
+        let rs = qs.map { lm.bigram($0.1) }
+        var sink: Float = 0
+        let cases: [(String, () -> Void)] = [
+            ("vị trí (context + 32 score)", { for q in qs { if let c = lm.context(prev2: q.0, prev1: q.1) { for w in cands { sink += c.score(w) } } } }),
+            ("dòng (bigram + 32 pmi)", { for q in qs { let r = lm.bigram(q.1); for w in cands { sink += r.pmi(w) } } }),
+            ("context+score", { for q in qs { sink += lm.score(prev2: q.0, prev1: q.1, q.2) } }),
+            ("forEach dòng", { for q in qs { lm.bigram(q.1).forEach { _, v in sink += v } } }),
+            ("score(ctx)", { for (i, q) in qs.enumerated() { sink += c2[i].score(q.2) } }),
+            ("pmi(row)", { for (i, q) in qs.enumerated() { sink += rs[i].pmi(q.2) } }),
+        ]
+        for (_, b) in cases { b() }
+        let out = cases.map { name, b -> String in
+            var best = Double.infinity
+            for _ in 0..<15 {
+                let t = CFAbsoluteTimeGetCurrent(); b()
+                best = min(best, (CFAbsoluteTimeGetCurrent() - t) * 1e9 / Double(qs.count))
+            }
+            return String(format: "%@ %.0f", name, best)
+        }
+        print("LM độ trễ iOS (ns/truy vấn, min 15 vòng, n=\(qs.count)): " + out.joined(separator: " | ") + " [\(Int(sink))]")
     }
 
     func testHeldoutAccuracyWithEnglish() throws {

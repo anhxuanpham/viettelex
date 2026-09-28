@@ -32,7 +32,7 @@ class SyllableLMTests {
         assertTrue("bigram ${m.biEntries}", m.biEntries in 100_000..600_000)
         assertTrue("trigram ${m.triEntries}", m.triEntries in 100_000..600_000)
         val size = KeyboardData.buffer(Keys.ASSET_LM).capacity()
-        assertTrue("kích thước $size", size <= 2_700_000)
+        assertTrue("kích thước $size", size <= 1_500_000)       // v3 (28/09/2026): 1.427.048 byte
     }
 
     private fun pmi(a: String, b: String) = lm.bigram(id(a)).pmi(id(b))
@@ -91,8 +91,44 @@ class SyllableLMTests {
         assertNull(SyllableLM.load(buf(bytes.copyOf(bytes.size - 1)), lexHash, VNLexicon2Data.count))
         val bad = bytes.copyOf(); bad[3] = 'X'.code.toByte()
         assertNull(SyllableLM.load(buf(bad), lexHash, VNLexicon2Data.count))
-        val v1 = bytes.copyOf(); v1[4] = 1   // bản cũ (không có uniAdj) ⇒ từ chối
-        assertNull(SyllableLM.load(buf(v1), lexHash, VNLexicon2Data.count))
+        val v2 = bytes.copyOf(); v2[4] = 2   // bản cũ (mảng thô, không Elias–Fano) ⇒ từ chối
+        assertNull(SyllableLM.load(buf(v2), lexHash, VNLexicon2Data.count))
+        val sec = bytes.copyOf(); sec[48 + 4 * 9] = (sec[48 + 4 * 9] + 8).toByte()   // bảng phần lệch
+        assertNull(SyllableLM.load(buf(sec), lexHash, VNLexicon2Data.count))
+        val sh = bytes.copyOf(); sh[36] = 0   // mẫu select0 = 2^0 ⇒ ngoài miền
+        assertNull(SyllableLM.load(buf(sh), lexHash, VNLexicon2Data.count))
+    }
+
+    /**
+     * Parity v3: Kotlin ≡ Swift ≡ script — fixture vnlm-parity.txt (sinh cùng lần với vnlm.bin):
+     * điểm ×16 của ~2.800 truy vấn (score / pmi / explicit / size, cả ca biên) + checksum duyệt
+     * TOÀN BỘ mô hình (mọi mục bigram/trigram/γ3 giải mã khớp dict của script) + hash cả file.
+     */
+    @Test fun parityFixtureAndChecksum() {
+        val f = listOf("../../iOS", "../iOS", "iOS").map { File(it, "KeyboardTests/Fixtures/vnlm-parity.txt") }
+            .firstOrNull { it.exists() } ?: error("không thấy vnlm-parity.txt")
+        fun q(v: Float) = Math.round(v * 16)
+        var n = 0
+        for (line in f.readLines()) {
+            if (line.isBlank() || line.startsWith("#")) continue
+            val t = line.split(' ')
+            val a = t.drop(1).map { it.toLong().toInt() }
+            when (t[0]) {
+                "CHECKSUM" -> assertEquals("checksum duyệt toàn bộ", a[0], lm.modelChecksum())
+                "FILE" -> assertEquals("hash cả file", a[0], SyllableLM.fnv1a(KeyboardData.buffer(Keys.ASSET_LM)))
+                "S" -> assertEquals(line, a[3], q(lm.score(a[0], a[1], a[2])))
+                "P" -> assertEquals(line, a[2], q(lm.bigram(a[0]).pmi(a[1])))
+                "E" -> assertEquals(line, a[2], q(lm.bigram(a[0]).explicit(a[1])))
+                "N" -> assertEquals(line, a[1], lm.bigram(a[0]).size)
+            }
+            n++
+        }
+        assertTrue("fixture $n dòng", n > 2000)
+        assertTrue("payloadHash header", lm.payloadHashOK())
+        // forEach ≡ explicit trên một dòng dày (EF theo dòng + quét tuần tự)
+        val row = lm.bigram(id("của")); var k = 0
+        row.forEach { c, v -> assertEquals(row.explicit(c), v, 0f); k++ }
+        assertEquals(row.size, k)
     }
 
     // ---- gõ vuốt trong ngữ cảnh ----
@@ -225,6 +261,38 @@ class SyllableLMTests {
         println("LM câu trộn Việt–Anh (n=${on.third}): không LM top1 ${off.first} top3 ${off.second} | trigram top1 ${on.first} top3 ${on.second}")
         assertTrue("top1 trigram ${on.first} < không LM ${off.first}", on.first >= off.first)
         assertTrue("top3 ${on.second}/${on.third}", on.second >= on.third * 9 / 10)
+    }
+
+    /**
+     * Độ trễ tra LM trên JVM (bộ chậm), theo cách consumer gọi: một vị trí vuốt = context +
+     * 32 điểm ứng viên; một dòng Thêm dấu = bigram + 32 pmi; thanh gợi ý = forEach cả dòng.
+     * Lấy min của 9 vòng (máy bận). So v2 ↔ v3: docs/DATA-SOURCES.md mục vnlm.bin.
+     */
+    @Test fun lookupLatency() {
+        SlowTests.assume()
+        val qs = heldout().take(400).flatMap { c -> (1 until c.size).map { i ->
+            Triple(if (i >= 2) SyllableLM.idOf(c[i - 2]) else -1, SyllableLM.idOf(c[i - 1]), SyllableLM.idOf(c[i])) } }
+        val cands = qs.take(32).map { it.third }.toIntArray()
+        val c1 = qs.map { lm.context(-1, it.second)!! }
+        val c2 = qs.map { lm.context(it.first, it.second)!! }
+        val rs = qs.map { lm.bigram(it.second) }
+        var sink = 0f
+        val cases = listOf<Pair<String, () -> Unit>>(
+            "vị trí (context + 32 score)" to { for (q in qs) { val c = lm.context(q.first, q.second) ?: continue; for (w in cands) sink += c.score(w) } },
+            "dòng (bigram + 32 pmi)" to { for (q in qs) { val r = lm.bigram(q.second); for (w in cands) sink += r.pmi(w) } },
+            "context+score" to { for (q in qs) sink += lm.score(q.first, q.second, q.third) },
+            "forEach dòng" to { for (q in qs) lm.bigram(q.second).forEach { _, v -> sink += v } },
+            "score(ctx)" to { for (i in qs.indices) sink += c2[i].score(qs[i].third) },
+            "score bigram-only(ctx)" to { for (i in qs.indices) sink += c1[i].score(qs[i].third) },
+            "pmi(row)" to { for (i in qs.indices) sink += rs[i].pmi(qs[i].third) },
+            "context()" to { for (q in qs) sink += lm.context(q.first, q.second)!!.score(0) })
+        repeat(40) { for ((_, b) in cases) b() }          // làm nóng JIT (C2)
+        val out = cases.map { (name, b) ->
+            var best = Double.MAX_VALUE
+            repeat(15) { val t = System.nanoTime(); b(); best = minOf(best, (System.nanoTime() - t).toDouble() / qs.size) }
+            String.format(Locale.ROOT, "%s %.0f", name, best)
+        }
+        println("LM độ trễ JVM (ns/truy vấn, min 15 vòng, n=${qs.size}): " + out.joinToString(" | ") + " [${sink.toInt()}]")
     }
 
     companion object {

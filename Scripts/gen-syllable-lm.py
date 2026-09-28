@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """gen-syllable-lm.py — sinh MÔ HÌNH NGÔN NGỮ ÂM TIẾT TRIGRAM tĩnh (vnlm.bin) cho gõ vuốt, thanh
-gợi ý gõ chạm và Thêm dấu: Kneser-Ney nội suy bậc 3, cắt tỉa + lượng tử hoá 1 byte, mmap được.
+gợi ý gõ chạm và Thêm dấu: Kneser-Ney nội suy bậc 3, cắt tỉa + lượng tử codebook, nén Elias–Fano,
+mmap đọc tại chỗ.
 Chỉ python3 stdlib. (Thay cả vnbigram.bin + Scripts/gen-syllable-bigram.py cũ từ 28/09/2026 —
 hàm tách nguồn/âm tiết/tập giữ lại của script đó chuyển nguyên văn vào đây.)
 
@@ -19,7 +20,9 @@ commit; tải về thư mục tạm rồi chạy:
       --cache /tmp/lm/ngrams.pkl --test-out /tmp/lm/test.txt --dev-out /tmp/lm/dev.txt \\
       /tmp/bg/*.gz /tmp/bg/*.bz2                                    # ~3 phút, ~4,5 GB RAM
   python3 Scripts/gen-syllable-lm.py build --lexicon iOS/Keyboard/Resources/vnlexicon.bin \\
-      --cache /tmp/lm/ngrams.pkl --out iOS/Keyboard/Resources/vnlm.bin
+      --cache /tmp/lm/ngrams.pkl --out iOS/Keyboard/Resources/vnlm.bin \\
+      --parity iOS/KeyboardTests/Fixtures/vnlm-parity.txt \\
+      --chains iOS/KeyboardTests/Fixtures/bigram-heldout.txt           # ~30 giây, tự kiểm
   cp iOS/Keyboard/Resources/vnlm.bin android/app/src/main/assets/
   # fixture đo độ chính xác (câu kiểm thử đã tách âm tiết)
   python3 Scripts/gen-syllable-lm.py chains --lexicon iOS/Keyboard/Resources/vnlexicon.bin \\
@@ -45,30 +48,50 @@ Mô hình (đo & chọn trên tập dev, xem docs/DATA-SOURCES.md mục vnlm.bin
   - Cắt tỉa kiểu "weighted difference" (Seymore & Rosenfeld 1996) trên ĐIỂM decoder thật
     sự dùng: bỏ mục khi c_trọng_số · |clip(β·s) − clip(β·s_lùi)| < ngưỡng (β = 0.15,
     clip [−1, 1] — hằng số của SwipeTyping). Ngưỡng bigram 10, trigram 20.
-  - Lượng tử i8 = round(s·16), bão hoà ±127 (±7.9 nat — vượt vùng clip của decoder).
+  - Lượng tử i8 = round(s·16), bão hoà ±127 (±7.9 nat — vượt vùng clip của decoder), rồi
+    CODEBOOK phi tuyến (v3): k-means 1-D tối ưu (quy hoạch động, trọng số √đếm) với tâm là
+    số nguyên i8 — bigram 64 mức (lưu i8 thô), trigram 16 mức + γ3 16 mức (lưu mã 4 bit).
+    Hai lượt: khớp codebook trên mô hình chưa lượng tử, rồi dựng lại và cắt tỉa trên CHÍNH
+    điểm đã lượng tử. Ngữ cảnh trigram (a, b) phải có mục bigram (a, b) tường minh (v3 đánh
+    chỉ số ngữ cảnh theo mục bigram) — 0,3 % ngữ cảnh mồ côi bị bỏ (đo: không đổi gì).
   - uniAdj(c) = q(ln(P1(c)·N / c(c))): cộng vào s2(b, c) ⇒ PMI ln(P2(c|b) / P(c)) theo tần suất
     thật — thanh gợi ý + Thêm dấu dùng (thay vnbigram.bin; khớp PMI cũ ±0.08 nat trên cặp chung).
 
-vnlm.bin (little-endian; mọi mảng đọc tại chỗ):
+vnlm.bin v3 (little-endian; mọi mảng đọc tại chỗ, không giải mã vào heap):
    0  "VNM1"
-   4  version u32 = 2
+   4  version u32 = 3
    8  count u32          — số âm tiết vnlexicon (id theo THỨ TỰ vnlexicon.bin)
   12  lexHash u32        — FNV-1a 32 của vnlexicon.bin (reader từ chối nếu lệch)
-  16  qPerNat u32 = 16
-  20  biEntries u32
-  24  triContexts u32
-  28  triEntries u32
-  32  reserved u32 ×4
-  48  gamma2 i8[count]              — q(ln γ2(b)); pad 0 tới bội 4
-      biOff u32[count+1]            — mục bigram của b: [biOff[b], biOff[b+1])
-      biNext u16[biEntries]         — id c, TĂNG DẦN trong mỗi dải
-      biScore i8[biEntries]         — pad 0 tới bội 4
-      ctxKey u32[triContexts]       — a<<16 | b, TĂNG DẦN (binary search)
-      ctxOff u32[triContexts+1]     — mục trigram của ngữ cảnh k: [ctxOff[k], ctxOff[k+1])
-      ctxGamma i8[triContexts]      — q(ln γ3(ab))
-      triNext u16[triEntries]       — id c, TĂNG DẦN trong mỗi dải
-      triScore i8[triEntries]
-      uniAdj i8[count]              — q(ln(P1(c)·N / c(c))) (version 2)
+  16  qPerNat u32 = 16   — mọi điểm là i8 / 16 nat
+  20  biEntries u32 (nb)   24 triContexts u32 (nk)   28 triEntries u32 (nt)
+  32  u8: triL, 8 (bit điểm bigram = i8 thô), bits3, bitsG3, biSel, triSel; u16 0
+  40  payloadHash u32    — FNV-1a của byte [128, hết) (test kiểm; reader không quét lúc nạp)
+  44  0
+  48  offset u32 × 19    — đầu 18 phần dưới đây (theo thứ tự) + kết thúc (= cỡ file)
+ 128  các phần, mỗi phần pad 0 tới bội 8 rồi thêm 8 byte 0 (đọc u64 vắt biên không tràn;
+      reader kiểm cỡ từng phần = đúng như tính từ header):
+      g2 i8[count]          — q(ln γ2(b))
+      adj i8[count]         — uniAdj: q(ln(P1(c)·N / c(c)))
+      cb3 i8[2^bits3], cbg i8[2^bitsG3] — codebook trigram / γ3
+      biRow u32[count+1]    — mục bigram của dòng b: [biRow[b], biRow[b+1]) (n_b = hiệu)
+      biZero u32[count+1]   — số bit 0 của high trước dòng b (Z_b = count >> L_b + 1, 0 nếu rỗng)
+      biLowOff u32[count+1] — bit đầu phần thấp của dòng b trong biLow
+      biLow                 — Elias–Fano THEO DÒNG: L_b = ⌊log2(count/n_b)⌋ bit thấp mỗi id c
+      biHigh u64[]          — dòng b bắt đầu ở bit biRow[b] + biZero[b]; mục i của dòng (id c)
+                              đặt bit (c >> L_b) + i sau đầu dòng; xô h kết thúc ở số 0 thứ h
+      biSel u32[]           — vị trí số 0 thứ t·2^biSel (select0 ~1 từ 64 bit: dòng nào cũng
+                              có bit 1 ≈ bit 0 nên không dòng dày nào làm quét dài)
+      biScore i8[nb]        — điểm s2 (64 mức)
+      hasTri bit[nb]        — mục bigram (a, b) có dòng trigram; ngữ cảnh k = rank(j)
+      triRank u32[nb/64+1]  — số cờ trước mỗi từ 64 bit
+      g3 bitsG3-bit[nk]     — mã γ3 của ngữ cảnh k
+      triLow / triHigh / triSel — Elias–Fano TOÀN CỤC của khoá k·count + c (L = triL,
+                              số 0 = (nk·count >> L) + 1, mẫu select0 mỗi 2^triSel số 0)
+      triScore bits3-bit[nt] — mã điểm trigram
+    Khoá bigram (cho checksum) = b·count + c. Dòng ≤ 8 mục quét tuần tự từ đầu dòng; dài
+    hơn: select0(biZero[b] + h − 1) mở xô h = c >> L_b (0–2 mục). Checksum mô hình (fixture
+    vnlm-parity.txt) = FNV-1a trên (khoá u32, điểm i8, cờ u8) mọi mục bigram, γ3 mọi ngữ
+    cảnh, (khoá u32, điểm i8) mọi mục trigram — script tính từ dict, Swift/Kotlin duyệt file.
 """
 import argparse, array, bz2, collections, hashlib, importlib.util, json, math, os, pickle, re
 import struct, sys, unicodedata, zlib
@@ -78,7 +101,10 @@ HOLDOUT_MOD = 20
 
 D = 0.75
 Q = 16
-VERSION = 2
+VERSION = 3
+BITS2, BITS3, BITSG = 6, 4, 4                # mức codebook 2^bits: bigram (lưu i8 thô), trigram, γ3 (lưu mã)
+BI_SEL = 6                                     # mẫu select0 bigram mỗi 64 số 0
+TRI_SEL = 8                                    # trigram mỗi 256 (chỉ dùng lúc dựng Context)
 BETA, CLIP_LO, CLIP_HI = 0.15, -1.0, 1.0      # = SwipeTyping.lmWeight / lmFloor / lmCap
 BR = 0xFFFF
 M13 = 0x1FFF
@@ -263,76 +289,485 @@ class KN:
 def qz(s): return max(-127, min(127, round(s * Q)))
 def clip(s): return max(CLIP_LO, min(CLIP_HI, BETA * s))
 
-def build_model(m, th2, th3, mc2=2):
+# ---- codebook (lượng tử phi tuyến) ------------------------------------------------
+
+def fit_codebook(hist, k):
+    """hist: giá trị i8 → trọng số. K-means 1-D TỐI ƯU (quy hoạch động) với tâm NGUYÊN (bội
+    1/16 nat — giải mã ra đúng một giá trị i8, parity dễ kiểm). Trả ≤ k tâm tăng dần."""
+    xs = sorted(hist)
+    if len(xs) <= k: return xs
+    n = len(xs)
+    P = [0.0]; PX = [0.0]; PXX = [0.0]
+    for x in xs:
+        w = hist[x]
+        P.append(P[-1] + w); PX.append(PX[-1] + w * x); PXX.append(PXX[-1] + w * x * x)
+    memo = {}
+    def cost(i, j):                                   # cụm xs[i:j] → (sai số, tâm nguyên)
+        r = memo.get((i, j))
+        if r is None:
+            W, S, SS = P[j] - P[i], PX[j] - PX[i], PXX[j] - PXX[i]
+            mu = S / W
+            r = min((SS - 2 * c * S + c * c * W, c) for c in (math.floor(mu), math.ceil(mu)))
+            memo[(i, j)] = r
+        return r
+    INF = float("inf")
+    dp = [[INF] * (n + 1) for _ in range(k + 1)]; bk = [[0] * (n + 1) for _ in range(k + 1)]
+    dp[0][0] = 0.0
+    for q in range(1, k + 1):
+        for j in range(1, n + 1):
+            best, arg = INF, 0
+            for i in range(q - 1, j):
+                if dp[q - 1][i] == INF: continue
+                v = dp[q - 1][i] + cost(i, j)[0]
+                if v < best: best, arg = v, i
+            dp[q][j], bk[q][j] = best, arg
+    cents, j = [], n
+    for q in range(k, 0, -1):
+        i = bk[q][j]; cents.append(cost(i, j)[1]); j = i
+    return sorted(set(cents))
+
+def nearest_map(cb):
+    """i8 → tâm gần nhất (hoà ⇒ tâm nhỏ hơn)."""
+    return {v: min(cb, key=lambda c: (abs(c - v), c)) for v in range(-127, 128)}
+
+# ---- dựng mô hình ------------------------------------------------------------------
+
+def _build(m, th2, th3, q2=None, q3=None, qg=None, mc2=2):
+    """Một lượt: tính điểm (đã lượng tử theo codebook nếu có) rồi cắt tỉa trên CHÍNH điểm
+    lưu. Trả g2, bi, g3, tri + trọng số (đếm) từng mục để khớp codebook."""
     g2 = {}
     for b, f in m.fol1.items():
         cb = m.uni.get(b, 0)
         if cb > 0 and f > 0: g2[b] = qz(math.log(D * f / cb))
-    bi = {}
+    bi = {}; w2 = {}
     for k, r in m.bi_raw.items():
         if r < mc2: continue
         b, c = k >> 13, k & M13
         if b not in g2: continue
         q = qz(math.log(m.p2(b, c) / m.p1(c)))
-        if m.bi[k] * abs(clip(q / Q) - clip(g2[b] / Q)) >= th2: bi[k] = q
+        if q2: q = q2[q]
+        if m.bi[k] * abs(clip(q / Q) - clip(g2[b] / Q)) >= th2: bi[k] = q; w2[k] = m.bi[k]
     def s2(b, c):
         q = bi.get(b << 13 | c)
         return (q if q is not None else g2.get(b, 0)) / Q
-    tri = {}; g3 = {}
+    tri = {}; g3 = {}; w3 = {}; wg = {}
     for k in m.tri_raw:
         ab = k >> 13; a, b, c = ab >> 13, ab & M13, k & M13
         cab = m.bi.get(ab, 0.0); f = m.fol2.get(ab, 0)
         if cab <= 0 or f == 0: continue
         g = g3.get(ab)
-        if g is None: g = g3[ab] = qz(math.log(D * f / cab))
+        if g is None:
+            g = qz(math.log(D * f / cab))
+            if qg: g = qg[g]
+            g3[ab] = g; wg[ab] = cab
         q = qz(math.log(m.p3(a, b, c) / m.p1(c)))
-        if m.tri[k] * abs(clip(q / Q) - clip(g / Q + s2(b, c))) >= th3: tri[k] = q
-    rows = {k >> 13 for k in tri}
-    return g2, bi, {k: v for k, v in g3.items() if k in rows}, tri
+        if q3: q = q3[q]
+        if m.tri[k] * abs(clip(q / Q) - clip(g / Q + s2(b, c))) >= th3: tri[k] = q; w3[k] = m.tri[k]
+    # dòng trigram phải treo vào một mục bigram (a, b) tường minh (v3 đánh chỉ số ngữ cảnh
+    # theo mục bigram): ~0,3 % ngữ cảnh mồ côi (bigram bị cắt tỉa) ⇒ bỏ (đo: không đổi gì)
+    rows = {k >> 13 for k in tri if (k >> 13) in bi}
+    tri = {k: v for k, v in tri.items() if (k >> 13) in rows}
+    g3 = {k: v for k, v in g3.items() if k in rows}
+    return g2, bi, g3, tri, w2, w3, wg
 
-def pad4(b): return b + b"\0" * (-len(b) % 4)
+def build_model(m, th2, th3, bits2=BITS2, bits3=BITS3, bitsg=BITSG):
+    """Hai lượt: (1) không lượng tử → khớp codebook trên mục giữ lại (trọng số √đếm);
+    (2) dựng lại với điểm đã lượng tử (cắt tỉa theo giá trị thật sự lưu). Tất định."""
+    g2, bi, g3, tri, w2, w3, wg = _build(m, th2, th3)
+    def hist(d, w):
+        h = collections.defaultdict(float)
+        for k in sorted(d): h[d[k]] += math.sqrt(w[k])
+        return h
+    cb2 = fit_codebook(hist(bi, w2), 1 << bits2)
+    cb3 = fit_codebook(hist(tri, w3), 1 << bits3)
+    cbg = fit_codebook(hist(g3, wg), 1 << bitsg)
+    g2, bi, g3, tri, *_ = _build(m, th2, th3, nearest_map(cb2), nearest_map(cb3), nearest_map(cbg))
+    return g2, bi, g3, tri, (cb2, cb3, cbg)
 
 def uni_adj(m):
     """q(ln(P1(c)·N / c(c))) — cộng vào s2 ⇒ PMI ln(P2(c|b) / P(c)) theo unigram thật."""
     n = float(sum(m.uni.values()))
     return {c: qz(math.log(m.p1(c) * n / u)) for c, u in m.uni.items() if u > 0}
 
-def serialize(count, lex_hash, g2, bi, g3, tri, adj):
-    bl = sorted(bi.items())
-    off = [0] * (count + 1)
-    for k, _ in bl: off[(k >> 13) + 1] += 1
-    for i in range(count): off[i + 1] += off[i]
-    ctx = sorted(g3)
-    tl = sorted(tri.items())
-    coff = [0]; j = 0
+# ---- v3: Elias–Fano + bit-pack ----------------------------------------------------
+
+SECTIONS = ("g2", "adj", "cb3", "cbg", "biRow", "biZero", "biLowOff", "biLow", "biHigh", "biSel",
+            "biScore", "hasTri", "triRank", "g3", "triLow", "triHigh", "triSel", "triScore")
+HEADER = 128
+
+def ef_low_bits(n, u):
+    """L = ⌊log2(u/n)⌋ (0 nếu n = 0 hoặc u < n)."""
+    return (u // n).bit_length() - 1 if n and u >= n else 0
+
+def pack_bits(values, width):
+    out = bytearray(); acc = 0; na = 0
+    if width == 0: return bytes()
+    for v in values:
+        acc |= v << na; na += width
+        while na >= 8: out.append(acc & 0xFF); acc >>= 8; na -= 8
+    if na: out.append(acc & 0xFF)
+    return bytes(out)
+
+def ef_encode(keys, u):
+    """Elias–Fano TOÀN CỤC (trigram): keys tăng ngặt < u → (L, low, high, sel). high: bit
+    (key>>L) + i; số bit 0 = (u>>L)+1 (mọi xô có số 0 kết thúc); sel[t] = vị trí số 0 thứ
+    t·2^TRI_SEL."""
+    n = len(keys)
+    L = ef_low_bits(n, u)
+    mask = (1 << L) - 1
+    low = pack_bits((k & mask for k in keys), L)
+    zeros = (u >> L) + 1
+    H = n + zeros
+    high = bytearray((H + 7) // 8)
+    prev = -1
+    for i, k in enumerate(keys):
+        assert k > prev and k < u; prev = k
+        p = (k >> L) + i
+        high[p >> 3] |= 1 << (p & 7)
+    sel, z = select_samples(high, H, TRI_SEL)
+    assert z == zeros
+    return L, low, bytes(high), sel
+
+def select_samples(high, H, shift):
+    """sel[t] = vị trí số 0 thứ t·2^shift trong H bit đầu của `high`; trả (byte, số số 0)."""
+    sel = []; z = 0
+    for p in range(H):
+        if not (high[p >> 3] >> (p & 7)) & 1:
+            if z & ((1 << shift) - 1) == 0: sel.append(p)
+            z += 1
+    return struct.pack("<%dI" % len(sel), *sel), z
+
+def ef_rows(rows, u):
+    """Elias–Fano THEO DÒNG (dòng b: id tăng dần < u): mỗi dòng L_b = ⌊log2(u/n_b)⌋ riêng,
+    Z_b = (u >> L_b) + 1 số 0 (dòng rỗng: 0); bit high của cả bảng nối liền — dòng b bắt đầu ở
+    bit row[b] + zero[b]. Mật độ bit 1 / bit 0 của mọi dòng ~ 1 ⇒ select0 theo mẫu luôn quét
+    ngắn (EF toàn cục sẽ dày đặc ở dòng lớn như "của", "và")."""
+    row = [0]; zero = [0]; lowoff = [0]
+    for ids in rows:
+        n = len(ids); L = ef_low_bits(n, u)
+        row.append(row[-1] + n); zero.append(zero[-1] + ((u >> L) + 1 if n else 0))
+        lowoff.append(lowoff[-1] + n * L)
+    H = row[-1] + zero[-1]
+    high = bytearray((H + 7) // 8)
+    lows = []
+    for b, ids in enumerate(rows):
+        n = len(ids); L = ef_low_bits(n, u); start = row[b] + zero[b]; prev = -1
+        for i, c in enumerate(ids):
+            assert prev < c < u; prev = c
+            p = start + (c >> L) + i
+            high[p >> 3] |= 1 << (p & 7)
+            lows.append((c & ((1 << L) - 1), L))
+    acc = 0; na = 0; low = bytearray()
+    for v, L in lows:
+        acc |= v << na; na += L
+        while na >= 8: low.append(acc & 0xFF); acc >>= 8; na -= 8
+    if na: low.append(acc & 0xFF)
+    sel, z = select_samples(high, H, BI_SEL)
+    assert z == zero[-1]
+    return (struct.pack("<%dI" % len(row), *row), struct.pack("<%dI" % len(zero), *zero),
+            struct.pack("<%dI" % len(lowoff), *lowoff), bytes(low), bytes(high), sel)
+
+def pad_section(b):
+    """Bội 8 + 8 byte 0: đọc u64 vắt qua ranh giới luôn nằm trong file."""
+    return b + b"\0" * (-len(b) % 8 + 8)
+
+def serialize(count, lex_hash, g2, bi, g3, tri, adj, cbs):
+    _, cb3, cbg = cbs                               # codebook bigram không lưu (điểm i8 thô)
+    b3, bg = BITS3, BITSG
+    def code_of(cb, width):
+        assert len(cb) <= 1 << width
+        return {v: i for i, v in enumerate(cb)}, cb + [cb[-1]] * ((1 << width) - len(cb))
+    c3, t3 = code_of(cb3, b3); cg, tg = code_of(cbg, bg)
+    bkeys = sorted(bi)                              # (b<<13|c), cùng thứ tự với b·count + c
+    bidx = {k: j for j, k in enumerate(bkeys)}
+    ctx = sorted(g3, key=lambda ab: bidx[ab])       # ngữ cảnh k ↔ mục bigram thứ rank(j)
+    kidx = {ab: i for i, ab in enumerate(ctx)}
+    tkeys = sorted(tri, key=lambda t: (kidx[t >> 13], t & M13))
+    nb, nk, nt = len(bkeys), len(ctx), len(tkeys)
+    rows = [[] for _ in range(count)]
+    for k in bkeys: rows[k >> 13].append(k & M13)
+    brow, bzero, blowoff, blow, bhigh, bsel = ef_rows(rows, count)
+    tL, tlow, thigh, tsel = ef_encode([kidx[t >> 13] * count + (t & M13) for t in tkeys], nk * count)
+    has = bytearray((nb + 7) // 8)
     for ab in ctx:
-        while j < len(tl) and tl[j][0] >> 13 == ab: j += 1
-        coff.append(j)
-    assert coff[-1] == len(tl)
-    head = b"VNM1" + struct.pack("<7I4I", VERSION, count, lex_hash, Q, len(bl), len(ctx), len(tl), 0, 0, 0, 0)
-    blob = head
-    blob += pad4(struct.pack("<%db" % count, *(g2.get(i, 0) for i in range(count))))
-    blob += struct.pack("<%dI" % (count + 1), *off)
-    blob += struct.pack("<%dH" % len(bl), *(k & M13 for k, _ in bl))
-    blob += pad4(struct.pack("<%db" % len(bl), *(q for _, q in bl)))
-    blob += struct.pack("<%dI" % len(ctx), *((ab >> 13) << 16 | (ab & M13) for ab in ctx))
-    blob += struct.pack("<%dI" % len(coff), *coff)
-    blob += struct.pack("<%db" % len(ctx), *(g3[ab] for ab in ctx))
-    blob += struct.pack("<%dH" % len(tl), *(k & M13 for k, _ in tl))
-    blob += struct.pack("<%db" % len(tl), *(q for _, q in tl))
-    blob += struct.pack("<%db" % count, *(adj.get(i, 0) for i in range(count)))
-    return blob
+        j = bidx[ab]; has[j >> 3] |= 1 << (j & 7)
+    rank = []; r = 0                                 # số cờ trước mỗi từ 64 bit (rank = 1 đọc + popcount)
+    for t in range((nb >> 6) + 1):
+        rank.append(r)
+        r += sum(bin(x).count("1") for x in has[t * 8: t * 8 + 8])
+    sec = {
+        "g2": struct.pack("<%db" % count, *(g2.get(i, 0) for i in range(count))),
+        "adj": struct.pack("<%db" % count, *(adj.get(i, 0) for i in range(count))),
+        "cb3": struct.pack("<%db" % len(t3), *t3),
+        "cbg": struct.pack("<%db" % len(tg), *tg),
+        "biRow": brow, "biZero": bzero, "biLowOff": blowoff,
+        "biLow": blow, "biHigh": bhigh, "biSel": bsel,
+        # điểm bigram: giá trị i8 THÔ (đã lượng tử về 2^BITS2 mức) — tra ngẫu nhiên nhiều nhất:
+        # 1 byte đọc thẳng thay mã 6 bit + codebook (+83 KB, độ trễ JVM/iOS, docs/DATA-SOURCES.md)
+        "biScore": struct.pack("<%db" % nb, *(bi[k] for k in bkeys)),
+        "hasTri": bytes(has), "triRank": struct.pack("<%dI" % len(rank), *rank),
+        "g3": pack_bits((cg[g3[ab]] for ab in ctx), bg),
+        "triLow": tlow, "triHigh": thigh, "triSel": tsel,
+        "triScore": pack_bits((c3[tri[t]] for t in tkeys), b3),
+    }
+    body = bytearray(); offs = []
+    for name in SECTIONS:
+        offs.append(HEADER + len(body)); body += pad_section(sec[name])
+    offs.append(HEADER + len(body))
+    head = b"VNM1" + struct.pack("<7I", VERSION, count, lex_hash, Q, nb, nk, nt)
+    head += struct.pack("<6BH", tL, 8, b3, bg, BI_SEL, TRI_SEL, 0)
+    head += struct.pack("<I", fnv1a(body))
+    head += struct.pack("<I", 0)
+    head += struct.pack("<%dI" % len(offs), *offs)
+    head += b"\0" * (HEADER - len(head))
+    assert len(head) == HEADER
+    return bytes(head) + bytes(body)
+
+def model_checksum(count, g2, bi, g3, tri):
+    """FNV-1a trên toàn bộ mô hình theo thứ tự giải mã (reader Swift/Kotlin tính y hệt khi
+    duyệt hết file): mỗi mục bigram (key u32, điểm i8, cờ trigram u8); γ3 mỗi ngữ cảnh (i8);
+    mỗi mục trigram (key u32, điểm i8). key bigram = b·count + c, trigram = k·count + c."""
+    h = 0x811C9DC5
+    def mix(bs):
+        nonlocal h
+        for x in bs: h = ((h ^ x) * 0x01000193) & 0xFFFFFFFF
+    bkeys = sorted(bi); bidx = {k: j for j, k in enumerate(bkeys)}
+    ctx = sorted(g3, key=lambda ab: bidx[ab]); kidx = {ab: i for i, ab in enumerate(ctx)}
+    for k in bkeys:
+        mix(struct.pack("<Ibb", (k >> 13) * count + (k & M13), bi[k], 1 if k in g3 else 0))
+    for ab in ctx: mix(struct.pack("<b", g3[ab]))
+    for t in sorted(tri, key=lambda t: (kidx[t >> 13], t & M13)):
+        mix(struct.pack("<Ib", kidx[t >> 13] * count + (t & M13), tri[t]))
+    return h
+
+class RefLM:
+    """Tham chiếu ngữ nghĩa (từ dict, không qua byte) — sinh fixture parity."""
+    def __init__(self, count, g2, bi, g3, tri, adj):
+        self.count, self.g2, self.bi, self.g3, self.tri, self.adj = count, g2, bi, g3, tri, adj
+        self.rows = collections.Counter(k >> 13 for k in bi)
+    def score(self, p2, p1, w):                       # đơn vị q (1/16 nat)
+        if not (0 <= p1 < self.count) or not (0 <= w < self.count): return 0
+        ab = p2 << 13 | p1 if 0 <= p2 < self.count else None
+        if ab is not None and ab in self.g3:
+            t = self.tri.get(ab << 13 | w)
+            if t is not None: return t
+        q = self.bi.get(p1 << 13 | w)
+        s2 = q if q is not None else self.g2.get(p1, 0)
+        return (self.g3[ab] + s2) if ab is not None and ab in self.g3 else s2
+    def pmi(self, p, w):
+        if not (0 <= p < self.count) or self.rows[p] == 0 or not (0 <= w < self.count): return 0
+        q = self.bi.get(p << 13 | w)
+        return (q if q is not None else self.g2.get(p, 0)) + self.adj.get(w, 0)
+    def explicit(self, p, w):
+        if not (0 <= p < self.count) or not (0 <= w < self.count): return 0
+        q = self.bi.get(p << 13 | w)
+        return q + self.adj.get(w, 0) if q is not None else 0
+    def size(self, p):
+        return self.rows[p] if 0 <= p < self.count else 0
+
+class V3:
+    """Reader v3 bằng Python — CÙNG thuật toán với SyllableLM.swift/.kt (select0 theo mẫu,
+    xô Elias–Fano, rank cờ trigram). Tự kiểm sau khi sinh (build) + làm đặc tả."""
+    def __init__(self, blob):
+        assert blob[:4] == b"VNM1"
+        (self.version, self.count, self.lex_hash, self.q, self.nb, self.nk, self.nt) = struct.unpack_from("<7I", blob, 4)
+        assert self.version == VERSION
+        self.tL, self.b2, self.b3, self.bg, self.bsel, self.tsel, _ = struct.unpack_from("<6BH", blob, 32)
+        self.payload_hash, = struct.unpack_from("<I", blob, 40)
+        offs = struct.unpack_from("<%dI" % (len(SECTIONS) + 1), blob, 48)
+        self.sec = {n: offs[i] for i, n in enumerate(SECTIONS)}
+        assert offs[-1] == len(blob)
+        self.b = blob
+    def u64(self, sec, wi): return struct.unpack_from("<Q", self.b, self.sec[sec] + wi * 8)[0]
+    def bits(self, sec, pos, width):
+        if width == 0: return 0
+        wi, sh = pos >> 6, pos & 63
+        v = self.u64(sec, wi) >> sh
+        if sh + width > 64: v |= self.u64(sec, wi + 1) << (64 - sh)
+        return v & ((1 << width) - 1)
+    def i8(self, sec, i): return struct.unpack_from("<b", self.b, self.sec[sec] + i)[0]
+    def u32(self, sec, i): return struct.unpack_from("<I", self.b, self.sec[sec] + i * 4)[0]
+    def bit(self, sec, p): return (self.b[self.sec[sec] + (p >> 3)] >> (p & 7)) & 1
+    # --- Elias–Fano ---
+    def select0(self, pre, shift, r):
+        """Vị trí số 0 thứ r (từ 0) trong mảng high của `pre` (mẫu mỗi 2^shift số 0)."""
+        hi = pre + "High"
+        t = r >> shift
+        p = self.u32(pre + "Sel", t)
+        k = r - (t << shift)
+        if k == 0: return p
+        pos = p + 1
+        wi = pos >> 6
+        w = ~self.u64(hi, wi) & ((1 << 64) - 1) & ~((1 << (pos & 63)) - 1)
+        while True:
+            c = bin(w).count("1")
+            if c >= k:
+                for _ in range(k - 1): w &= w - 1
+                return wi * 64 + ((w & -w).bit_length() - 1)
+            k -= c; wi += 1
+            w = ~self.u64(hi, wi) & ((1 << 64) - 1)
+    def run_len(self, hi, pos):
+        n = 0
+        while self.bit(hi, pos): n += 1; pos += 1
+        return n
+    # trigram: EF toàn cục, khoá k·count + c
+    def tri_bucket(self, h):
+        if h == 0: return 0, 0
+        z = self.select0("tri", self.tsel, h - 1)
+        return z + 1, z + 1 - h
+    def tri_lower_bound(self, x):
+        L = self.tL; h = x >> L; t = x & ((1 << L) - 1)
+        pos, idx = self.tri_bucket(h)
+        while self.bit("triHigh", pos) and self.bits("triLow", idx * L, L) < t: pos += 1; idx += 1
+        return idx, pos
+    def tri_find(self, x):
+        L = self.tL
+        pos, idx = self.tri_bucket(x >> L)
+        for m in range(idx, idx + self.run_len("triHigh", pos)):
+            if self.bits("triLow", m * L, L) == x & ((1 << L) - 1): return m
+        return -1
+    # bigram: EF theo dòng
+    def bi_row(self, b):
+        lo, hi = self.u32("biRow", b), self.u32("biRow", b + 1)
+        L = ef_low_bits(hi - lo, self.count)
+        return lo, hi, L, self.u32("biZero", b), self.u32("biLowOff", b)
+    def bi_find(self, b, c):
+        lo, hi, L, z0, lowoff = self.bi_row(b)
+        if lo == hi: return -1
+        h = c >> L
+        if h == 0: pos, idx = lo + z0, lo
+        else:
+            z = z0 + h - 1
+            pos = self.select0("bi", self.bsel, z) + 1; idx = pos - (z + 1)
+        for m in range(idx, idx + self.run_len("biHigh", pos)):
+            if self.bits("biLow", lowoff + (m - lo) * L, L) == c & ((1 << L) - 1): return m
+        return -1
+    def bi_scan(self, b):
+        lo, hi, L, z0, lowoff = self.bi_row(b)
+        pos = lo + z0; out = []
+        for m in range(lo, hi):
+            while not self.bit("biHigh", pos): pos += 1
+            out.append((m, ((pos - (lo + z0) - (m - lo)) << L) | self.bits("biLow", lowoff + (m - lo) * L, L)))
+            pos += 1
+        return out
+    # --- mô hình ---
+    def q2(self, j): return self.i8("biScore", j)
+    def q3(self, t): return self.i8("cb3", self.bits("triScore", t * self.b3, self.b3))
+    def qg(self, k): return self.i8("cbg", self.bits("g3", k * self.bg, self.bg))
+    def rank(self, j):
+        r = self.u32("triRank", j >> 6)
+        for x in range((j >> 6) * 64, j): r += self.bit("hasTri", x)
+        return r
+    def score(self, p2, p1, w):
+        C = self.count
+        if not (0 <= p1 < C) or not (0 <= w < C): return 0
+        k = -1
+        if 0 <= p2 < C:
+            j = self.bi_find(p2, p1)
+            if j >= 0 and self.bit("hasTri", j): k = self.rank(j)
+        if k >= 0:
+            t = self.tri_find(k * C + w)
+            if t >= 0: return self.q3(t)
+        j = self.bi_find(p1, w)
+        s2 = self.q2(j) if j >= 0 else self.i8("g2", p1)
+        return self.qg(k) + s2 if k >= 0 else s2
+    def pmi(self, p, w):
+        C = self.count
+        if not (0 <= p < C) or not (0 <= w < C) or self.size(p) == 0: return 0
+        j = self.bi_find(p, w)
+        return (self.q2(j) if j >= 0 else self.i8("g2", p)) + self.i8("adj", w)
+    def explicit(self, p, w):
+        C = self.count
+        if not (0 <= p < C) or not (0 <= w < C): return 0
+        j = self.bi_find(p, w)
+        return self.q2(j) + self.i8("adj", w) if j >= 0 else 0
+    def size(self, p):
+        if not (0 <= p < self.count): return 0
+        return self.u32("biRow", p + 1) - self.u32("biRow", p)
+    def checksum(self):
+        h = 0x811C9DC5
+        def mix(bs):
+            nonlocal h
+            for x in bs: h = ((h ^ x) * 0x01000193) & 0xFFFFFFFF
+        for b in range(self.count):
+            for j, c in self.bi_scan(b):
+                mix(struct.pack("<Ibb", b * self.count + c, self.q2(j), self.bit("hasTri", j)))
+        for k in range(self.nk): mix(struct.pack("<b", self.qg(k)))
+        pos = 0; L = self.tL
+        for t in range(self.nt):
+            while not self.bit("triHigh", pos): pos += 1
+            mix(struct.pack("<Ib", ((pos - t) << L) | self.bits("triLow", t * L, L), self.q3(t)))
+            pos += 1
+        # dòng trigram định vị bằng lower_bound phải khớp thứ tự
+        for k in range(0, self.nk, 997):
+            idx, _ = self.tri_lower_bound(k * self.count)
+            assert idx < self.nt
+        return h
+
+def verify(blob, ref, checksum, queries):
+    """Tự kiểm: payload hash, checksum duyệt toàn bộ, mọi truy vấn parity (reader Python v3 ≡
+    tham chiếu dict)."""
+    r = V3(blob)
+    assert r.payload_hash == fnv1a(blob[HEADER:]), "payload hash"
+    assert r.checksum() == checksum, "checksum duyệt toàn bộ"
+    for p2, p1, w in queries:
+        assert r.score(p2, p1, w) == ref.score(p2, p1, w), ("score", p2, p1, w)
+        assert r.pmi(p1, w) == ref.pmi(p1, w), ("pmi", p1, w)
+        assert r.explicit(p1, w) == ref.explicit(p1, w), ("explicit", p1, w)
+        assert r.size(p1) == ref.size(p1), ("size", p1)
+
+def parity_queries(words, chains_path):
+    """Truy vấn parity (tất định): bộ ba liên tiếp của 120 chuỗi kiểm thử đầu + 200 bộ ngẫu
+    nhiên (seed cố định) + ca biên (−1, count)."""
+    import random
+    wid = {w: i for i, w in enumerate(words)}
+    rnd = random.Random(20260928)
+    n = len(words)
+    qs = []
+    if chains_path:
+        chains = [l.split() for l in open(chains_path, encoding="utf-8") if l.strip() and not l.startswith("#")]
+        for ch in chains[:120]:
+            ids = [wid[w] for w in ch]
+            for i in range(1, len(ids)):
+                qs.append((ids[i - 2] if i >= 2 else -1, ids[i - 1], ids[i]))
+    for _ in range(200):
+        qs.append((rnd.randrange(-1, n), rnd.randrange(0, n), rnd.randrange(0, n)))
+    qs += [(-1, -1, 5), (-1, n, 5), (3, 5, n), (-1, 0, 0), (n - 1, n - 1, n - 1), (0, n - 1, 0)]
+    return qs
 
 def cmd_build(a):
     words, lex_hash = load_lexicon(a.lexicon)
     with open(a.cache, "rb") as f: c = pickle.load(f)
     assert c["count"] == len(words), "cache dựng từ lexicon khác"
     m = KN(c)
-    g2, bi, g3, tri = build_model(m, a.th2, a.th3)
-    blob = serialize(len(words), lex_hash, g2, bi, g3, tri, uni_adj(m))
+    g2, bi, g3, tri, cbs = build_model(m, a.th2, a.th3)
+    adj = uni_adj(m)
+    n = len(words)
+    blob = serialize(n, lex_hash, g2, bi, g3, tri, adj, cbs)
+    ref = RefLM(n, g2, bi, g3, tri, adj)
+    checksum = model_checksum(n, g2, bi, g3, tri)
+    qs = parity_queries(words, a.chains)
+    verify(blob, ref, checksum, qs)
     open(a.out, "wb").write(blob)
-    print(f"{len(bi)} bigram, {len(g3)} ngữ cảnh trigram, {len(tri)} trigram, "
-          f"{len(blob)} byte → {a.out}", file=sys.stderr)
+    print(f"{len(bi)} bigram, {len(g3)} ngữ cảnh trigram, {len(tri)} trigram, codebook "
+          f"{cbs[0]} / {cbs[1]} / {cbs[2]}, {len(blob)} byte (đã tự kiểm) → {a.out}", file=sys.stderr)
+    if a.parity: write_parity(a.parity, ref, qs, checksum, fnv1a(blob), n)
+
+def write_parity(path, ref, qs, checksum, filehash, n):
+    """Fixture parity Swift ≡ Kotlin ≡ script: truy vấn (id) → điểm ×16 (số nguyên — mọi điểm
+    lưu là bội 1/16 nat) + checksum duyệt toàn bộ mô hình + hash cả file."""
+    out = [f"# vnlm-parity v3 — sinh bởi Scripts/gen-syllable-lm.py build --parity (cùng lần sinh "
+           f"vnlm.bin). Dòng: S p2 p1 w q (score·16) | P p w q (pmi·16) | E p w q (explicit·16) | "
+           f"N p size. CHECKSUM = FNV-1a duyệt toàn bộ mô hình; FILE = FNV-1a cả file.",
+           f"CHECKSUM {checksum}", f"FILE {filehash}"]
+    for p2, p1, w in qs:
+        out.append(f"S {p2} {p1} {w} {ref.score(p2, p1, w)}")
+        out.append(f"P {p1} {w} {ref.pmi(p1, w)}")
+        out.append(f"E {p1} {w} {ref.explicit(p1, w)}")
+    for p in sorted({q[1] for q in qs[:200]}) + [-1, n]:
+        out.append(f"N {p} {ref.size(p)}")
+    open(path, "w", encoding="utf-8").write("\n".join(out) + "\n")
+    print(f"{len(out)} dòng parity → {path}", file=sys.stderr)
 
 def cmd_chains(a):
     """Câu giữ lại → chuỗi âm tiết liên tiếp (mỗi dòng một chuỗi ≥ 2 âm tiết) — fixture
@@ -372,6 +807,8 @@ def main():
     p.add_argument("--out", required=True)
     p.add_argument("--th2", type=float, default=10)
     p.add_argument("--th3", type=float, default=20)
+    p.add_argument("--parity", help="ghi fixture parity (vnlm-parity.txt)")
+    p.add_argument("--chains", help="chuỗi kiểm thử cho truy vấn parity (bigram-heldout.txt)")
     p = sp.add_parser("chains")
     p.add_argument("--lexicon", required=True)
     p.add_argument("--input", required=True)
