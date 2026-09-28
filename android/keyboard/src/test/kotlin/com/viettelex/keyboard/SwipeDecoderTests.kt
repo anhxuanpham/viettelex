@@ -403,13 +403,33 @@ class SwipeDecoderTests {
      * định đi (nét thật: tốc độ tại phím lướt qua ≈ 2× trung bình, phím định đi ≈ 0.8×).
      */
     @Test fun fastPassThroughKeyIsNotInserted() {
-        val p = glide(Stop('c', hold = 0.08), Stop('h', speed = 38f), Stop('u', speed = 30f, hold = 0.1),
+        // gần như thẳng c→u: lướt nhanh sượt h 0.4 phím (nét thật "cũng": uốn về h ≈ 0)
+        val p = glide(Stop('c', hold = 0.08), Stop('h', dx = -0.3f, dy = -0.28f, speed = 38f), Stop('u', speed = 30f, hold = 0.1),
             Stop('n', speed = 20f, hold = 0.06), Stop('g', speed = 15f, hold = 0.1))
         assertEquals("cung", decoder().decode(p, 3).first().folded)
         // dừng ở h ⇒ chung (phím có chủ đích)
         val q = glide(Stop('c', hold = 0.08), Stop('h', speed = 20f, hold = 0.1), Stop('u', speed = 20f, hold = 0.1),
             Stop('n', speed = 20f, hold = 0.06), Stop('g', speed = 15f, hold = 0.1))
         assertEquals("chung", decoder().decode(q, 3).first().folded)
+    }
+
+    /**
+     * chưa/của (500 nét thật: chua→cua ×19/28): h của "ch" bị lướt NHANH như phím thường, không
+     * chậm lại — thứ phân biệt là đường UỐN về h so với dây cung c→u ([SwipeDecoder.Params.bendWeight]).
+     */
+    @Test fun digraphHBendSeparatesChuaFromCua() {
+        fun path(f: Float, last: Char = 'a') = glide(Stop('c', hold = 0.08),
+            Stop('h', dx = -0.4f * f, dy = -0.37f * f, speed = 38f), Stop('u', speed = 30f, hold = 0.1),
+            Stop(last, speed = 20f, hold = 0.1))
+        assertEquals("chua", decoder().decode(path(0.25f), 3).first().folded)   // uốn về h, lướt nhanh
+        assertEquals("cua", decoder().decode(path(1f), 3).first().folded)       // thẳng c→u
+        // không uốn thì như cũ: tắt kênh uốn, đường qua h vẫn ra "cua" (tiền nghiệm của > chưa)
+        val off = SwipeDecoder(SwipeDecoder.Params(bendWeight = 0f)).also { it.setLayout(layout) }
+        assertEquals("cua", off.decode(path(0.25f), 3).first().folded)
+        // chỉ đổi chỗ TRONG cặp: ứng viên thứ ba giữ nguyên vị trí tương đối
+        val on = decoder().decode(path(0.25f), 5).map { it.folded }
+        assertEquals(off.decode(path(0.25f), 5).map { it.folded }.filter { it != "chua" && it != "cua" },
+            on.filter { it != "chua" && it != "cua" })
     }
 
     /** Đường "tự nhiên" (nhịp + lố như nét thật): nhịp phải tăng rõ top-1, đường đều không tụt. */
@@ -502,6 +522,17 @@ class SwipeDecoderTests {
         val mn = tn.sorted()[4]; val mo = to.sorted()[4]
         println(String.format(Locale.ROOT, "SWIPE benchmark nhịp: %.4f ms/đường (tắt nhịp %.4f, %+.1f%%)", mn, mo, (mn / mo - 1) * 100))
         assertTrue("nhịp chậm quá: $mn vs $mo ms", mn <= mo * 1.2 + 0.01)
+        // uốn h của phụ âm ghép (28/09/2026, 500 nét thật): bật vs tắt, trần +10 %
+        val nob = SwipeDecoder(SwipeDecoder.Params(bendWeight = 0f)).also { it.setLayout(layout); it.prepare() }
+        repeat(5) { for (p in nat) nob.decode(p, 5) }
+        val tb = ArrayList<Double>(); val tnb = ArrayList<Double>()
+        repeat(9) {
+            var t = System.nanoTime(); for (p in nat) d.decode(p, 5); tb.add((System.nanoTime() - t) / 1e6 / nat.size)
+            t = System.nanoTime(); for (p in nat) nob.decode(p, 5); tnb.add((System.nanoTime() - t) / 1e6 / nat.size)
+        }
+        val mb = tb.sorted()[4]; val mnb = tnb.sorted()[4]
+        println(String.format(Locale.ROOT, "SWIPE benchmark uốn h: %.4f ms/đường (tắt %.4f, %+.1f%%)", mb, mnb, (mb / mnb - 1) * 100))
+        assertTrue("uốn h chậm quá: $mb vs $mnb ms", mb <= mnb * 1.1 + 0.005)
     }
 
     // ---- Fixture parity Swift ↔ Kotlin ----

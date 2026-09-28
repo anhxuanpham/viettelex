@@ -226,6 +226,57 @@ iOS Debug simulator +5 %; sửa chung cặp thêm ≤ 12 × 16 lần tra LM sau 
 Chạy lại: `SWIPE_TUNE=1 SWIPE_TRACES=… SWIPE_CFGS='legacy;base' ./gradlew --offline
 :keyboard:test --tests '*SwipeTuneTests*' -i | grep TUNE` (xem đầu SwipeTuneTests.kt).
 
+#### 500 nét thật (iPhone, Luyện vuốt, 28/09/2026) — chữ h của phụ âm ghép
+
+Kho 500 nét (415 Việt / 85 Anh, 257 từ mục tiêu, gồm cả 45 nét trên). Luyện vuốt lặp một từ tới
+khi đúng ⇒ kho **nghiêng về từ khó** (chưa 16 lần, chọn 13, chúa 12…) và các lần thử cùng từ tương
+quan. Tách TẤT ĐỊNH 70/30 (`SwipeTuneTests.split`): phân tầng theo dạng mục tiêu, trong nhóm xếp
+theo băm chỉ số, lần thứ k vào tập giữ lại khi (3k + băm(từ)) mod 10 < 3 ⇒ chỉnh 341 / giữ lại 159.
+Chỉ chỉnh trên 341 nét + đường giả dev; báo trên 159 nét + tập kiểm thử giả + câu giữ lại.
+
+Phân tích lỗi lớn nhất (chua→cua ×19, chon→con ×9, cho→co ×7 trên tập chỉnh):
+- h của ch/nh… bị lướt **nhanh như phím thường** (tốc độ tương đối tại h: chọn ≈ 2,1, chưa ≈ 1,5,
+  phím lướt qua ≈ 2) — miễn phạt lướt qua cho chữ thứ hai của phụ âm ghép, hay lấy tốc độ nhỏ nhất
+  quanh phím ("chậm nhẹ"), **không** cứu được: tắt hẳn phạt nhịp thì "cua" vẫn thắng (tiền nghiệm
+  của 234 > chưa 204, hình học gần hoà) mà cũng → chung tăng. Đã thử, không giữ.
+- Thứ phân biệt được là đường **UỐN về h**: uốn = khoảng cách h tới dây cung c→u − khoảng cách h
+  tới đường. chưa: trung vị +0,22 (n = 28); của: −0,20 / −0,12; cũng: ≈ 0 (7/10 ≤ 0,12). Với
+  chọn/con, có/cho (h gần như nằm trên dây cung c→o, 0,14 phím) và trên/tên, trả/ta (r thẳng hàng)
+  hình học KHÔNG phân biệt được — chọn/con từ rời là do tiền nghiệm, cần ngữ cảnh.
+- Decoder (cả hai nền tảng, cùng hằng số, không cần thời gian điểm): `bendWeight` 3 — hai ứng viên
+  trong pool khác nhau đúng một h giữa sau c/n/t/p/k/g (Anh t/s/c/w/p/g), dây cung cách h
+  0,3–1 phím ⇒ ứng viên có h += 3·kẹp(uốn − 0,05, ±0,3), rồi kẹp trong điểm của cặp ± 0,01 (chỉ đổi
+  chỗ TRONG cặp). Mở rộng cho r/g/i (tr, ng, gi) làm hỏng từ rời giả (ta → tra, nang → ngang) — bỏ.
+
+Trước = main sau commit nhịp (fe1dae6); số tập giữ lại in đậm:
+
+| tập | trước | sau |
+|---|---|---|
+| nét thật chỉnh (341) top-1 / top-3 | 0,730 / 0,953 | 0,768 / 0,953 |
+| **nét thật giữ lại (159) top-1 / top-3** | 0,774 / 0,937 | **0,780** / 0,937 |
+| — giữ lại: Việt / Anh | 0,756 / 0,857 | 0,763 / 0,857 |
+| — giữ lại: đúng cả DẤU (dạng + dấu mạnh nhất = mục tiêu) | 0,616 | 0,616 |
+| cả 500: top-1 | 0,744 | 0,772 |
+| từ rời giả test: tự nhiên / đều top-1 | 0,873 / 0,905 | 0,875 / 0,903 |
+| câu giữ lại test (LM, bật EN): tự nhiên / đều top-1 | 0,882 / 0,914 | 0,882 / 0,913 |
+| vuốt tuần tự cả câu test (n = 4 631): tự nhiên / đều | 0,8933 / 0,9136 | 0,8927 / 0,9125 |
+| — cùng, tập chỉnh (n = 2 389) | 0,8966 / 0,9326 | 0,8974 / 0,9334 |
+| từ Anh sau từ Việt top-1 (tự nhiên / đều) | 0,886 / 0,864 | 0,886 / 0,864 |
+
+Tuần tự cả câu test −3/−5 từ trên 4 631 (đều: của → chúa ×4 — đường giả nhiễu uốn ngẫu nhiên về h);
+tập chỉnh +2. Độ trễ decode (đường tự nhiên, bật vs tắt uốn): JVM +5 %, iOS Debug simulator +4 %.
+
+**Dấu (Luyện vuốt hiện từ CÓ dấu, chấm theo dạng không dấu):** 16 % nét giữ lại đúng dạng nhưng
+sai dấu (đấy → đây, nhỏ → nhớ, cầu → cậu, máy → mày…) — không phải lỗi decoder: `expand` đã xếp
+dấu theo tần suất của CHÍNH âm tiết có dấu; từ rời không có ngữ cảnh thì dấu mạnh nhất luôn thắng
+(mày 203 > máy 183 là thiên lệch phụ đề của OpenSubtitles). Các "lỗi" dạng chi→chi, cam→cam trong
+danh sách lỗi là lỗi dấu này, không phải decoder.
+
+Còn sai trên tập giữ lại: chưa → của ×4 (nét thẳng), chọn → con ×4, cho → có ×2, trả → ta ×2
+(thẳng hàng — chỉ ngữ cảnh gỡ được), chú → chỉ ×2, trượt vài từ Anh (qua→wits, own→owen, good→fog/
+golf, felt→left). Có ngữ cảnh (vuốt tuần tự): chưa cuối câu hỏi ("…đài loan chưa") và "không cho"
+→ "không có" vẫn thua LM — việc của trọng số LM, chưa đụng.
+
 ## enlexicon.bin — từ điển tiếng Anh cho gõ vuốt (giai đoạn 3)
 
 - File: `iOS/Keyboard/Resources/enlexicon.bin`, `android/app/src/main/assets/enlexicon.bin`

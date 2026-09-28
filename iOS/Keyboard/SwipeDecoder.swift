@@ -29,6 +29,8 @@
 //     nét cuối (người thật trôi quá phím cuối ~0.45 phím trước khi nhấc tay); tầng 2 phạt phím
 //     giữa nằm trên đoạn lướt nhanh và đòi điểm DỪNG gần một phím. Không có thời gian ⇒ y hệt
 //     thuật toán cũ. Đo trên nét thật: docs/DATA-SOURCES.md "Nét vuốt thật".
+//   • UỐN h (tầng 2, không cần thời gian): cặp ứng viên chỉ khác chữ h của phụ âm ghép
+//     (chưa/của) đổi chỗ theo độ uốn của đường về h (Params.bendWeight).
 // Hằng số tinh chỉnh bằng đường vuốt giả (σ nhiễu 0.25 phím) trên 500 âm tiết
 // phổ biến — xem SwipeDecoderTests. Mọi phép tính Float32 cùng thứ tự với bản
 // Kotlin để hai nền tảng ra cùng điểm (không dùng exp/log trong vòng chấm).
@@ -198,6 +200,19 @@ final class SwipeDecoder {
         /// Điểm DỪNG (cực tiểu r < dwellRatio, không sát 2 đầu) phải gần một phím: −w·Σ d².
         var dwellWeight: Float = 3
         var dwellRatio: Float = 0.35
+        /// CHỮ "h" CỦA PHỤ ÂM GHÉP (tầng 2): hai ứng viên trong pool khác nhau đúng một phím giữa h
+        /// đứng sau c/n/t/p/k/g (Việt) hoặc t/s/c/w/p/g (Anh) — chưa/của, chú/cụ. Nét thật lướt qua h
+        /// nhanh như phím thường (không chậm lại) nên nhịp không phân biệt được; thứ phân biệt là
+        /// đường UỐN về h: uốn = khoảng cách h tới dây cung nối 2 phím kề − khoảng cách h tới đường
+        /// (phím). Ứng viên có h += w·kẹp(uốn − bendBias, ±bendCap), rồi kẹp trong [min, max] điểm
+        /// cặp ± 0,01 (chỉ đổi chỗ TRONG cặp, không vượt ứng viên khác). Chỉ khi dây cung cách h
+        /// trong [bendMinChord, bendMaxChord] phím (h gần thẳng hàng như chọn/con ⇒ hình học không
+        /// phân biệt được; xa ⇒ kênh location đã đủ). 0 = tắt.
+        var bendWeight: Float = 3
+        var bendBias: Float = 0.05
+        var bendCap: Float = 0.3
+        var bendMinChord: Float = 0.3
+        var bendMaxChord: Float = 1
         /// Lố đích ở đầu cuối: thành phần lệch THEO hướng nét cuối của template (đi quá phím cuối
         /// trước khi nhấc tay) được miễn tới `overshoot` phím ở điểm cuối (giảm dần về 0 hết đoạn
         /// endSpan); chỉ khi đuôi nét chậm (`tailGate`). 0 = tắt.
@@ -240,6 +255,9 @@ final class SwipeDecoder {
     private var mx: [Float], my: [Float], dp: [Float], back: [Int], corners: [Int]
     private var cornerCount = 0
     private var rkx = [Float](repeating: 0, count: 32), rky = [Float](repeating: 0, count: 32)
+    /// Mã phím ứng viên vừa `candidateKeys`; pool tầng 2: mã phím từng ứng viên (32/ô) + số phím.
+    private var rkc = [UInt8](repeating: 0, count: 32)
+    private var poolKeys: [UInt8] = [], poolLen: [Int] = [], poolHasH: [Bool] = []
     private let cosCorner: Float
     /// Lệch tay hệ thống của người dùng (đơn vị bề rộng phím; + = phải/xuống), trừ khỏi
     /// đường vuốt trước khi chấm. Học bằng `learnOffset`; caller lưu/khôi phục.
@@ -622,6 +640,7 @@ final class SwipeDecoder {
             guard c < 26 else { return -1 }
             let x = l.centers[c * 2]
             guard x.isFinite else { return -1 }
+            rkc[k] = UInt8(c)
             rkx[k] = x; rky[k] = l.centers[c * 2 + 1]; k += 1
         }
         return k
@@ -646,8 +665,22 @@ final class SwipeDecoder {
         detectCorners(w)
         computeSpeed(xs, ys, ts, count)
         let t = params.rescoreTunnel * w
+        let bend = params.bendWeight > 0
+        if bend && poolLen.count < filled {
+            poolLen = [Int](repeating: 0, count: filled)
+            poolKeys = [UInt8](repeating: 0, count: filled * 32)
+            poolHasH = [Bool](repeating: false, count: filled)
+        }
         for k in 0..<filled {
             let km = candidateKeys(topIdx[k], l, en, fc)
+            if bend {
+                // false = không có h giữa ⇒ bỏ qua khi ghép cặp (đa số ứng viên)
+                var hasH = false
+                if km > 2 { for j in 1..<(km - 1) where rkc[j] == Self.hKey { hasH = true; break } }
+                poolLen[k] = km > 0 ? km : 0
+                poolHasH[k] = hasH
+                for j in 0..<max(km, 0) { poolKeys[k * 32 + j] = rkc[j] }
+            }
             guard km > 0 else { continue }
             var cost: Float = 0
             if params.alignWeight > 0 || speedOn {
@@ -671,6 +704,7 @@ final class SwipeDecoder {
             }
             topScore[k] -= cost
         }
+        if bend { insertionBend(l, fc, filled) }
         // insertion sort ổn định, giảm dần
         if filled > 1 {
             for i in 1..<filled {
@@ -681,6 +715,66 @@ final class SwipeDecoder {
                     j -= 1
                 }
                 topScore[j] = s; topIdx[j] = id; topDl[j] = d
+            }
+        }
+    }
+
+    private static let bendEps: Float = 0.01
+    private static let hKey: UInt8 = 7   // 'h'
+    /// Phím đứng trước h thành phụ âm ghép: Việt ch nh th ph kh gh; Anh th sh ch wh ph gh.
+    private static let hAfterVI = keySet("cntpkg"), hAfterEN = keySet("tscwpg")
+
+    private static func keySet(_ s: String) -> [Bool] {
+        var m = [Bool](repeating: false, count: 26)
+        for c in s.utf8 { m[Int(c) - 97] = true }
+        return m
+    }
+
+    /// Cặp ứng viên B = A + một phím giữa K (cùng ngôn ngữ): B += w·kẹp(uốn − bias, ±cap), uốn =
+    /// d(K, dây cung phím trước–phím sau) − d(K, đường 48 điểm) (phím). Mỗi B lấy cặp A đầu tiên.
+    private func insertionBend(_ l: SwipeLayout, _ fc: Int, _ filled: Int) {
+        let w = l.keyWidth
+        let c = l.centers
+        for b in 0..<filled {
+            let nb = poolLen[b]
+            if nb < 3 || !poolHasH[b] { continue }
+            let bEn = topIdx[b] >= fc
+            for a in 0..<filled {
+                if poolLen[a] != nb - 1 || (topIdx[a] >= fc) != bEn { continue }
+                var j = 0
+                while j < nb - 1 && poolKeys[b * 32 + j] == poolKeys[a * 32 + j] { j += 1 }
+                if j == 0 || j >= nb - 1 { continue }
+                var same = true
+                for q in j..<(nb - 1) where poolKeys[b * 32 + q + 1] != poolKeys[a * 32 + q] { same = false; break }
+                if !same { continue }
+                let kk = poolKeys[b * 32 + j]
+                let kp = Int(poolKeys[b * 32 + j - 1]), kn = Int(poolKeys[b * 32 + j + 1])
+                if kk != Self.hKey || !(bEn ? Self.hAfterEN : Self.hAfterVI)[kp] { continue }
+                let k = Int(kk)
+                let px = c[kp * 2], py = c[kp * 2 + 1], kx = c[k * 2], ky = c[k * 2 + 1]
+                let nx = c[kn * 2], ny = c[kn * 2 + 1]
+                let dx = nx - px, dy = ny - py
+                let len2 = dx * dx + dy * dy
+                var u: Float = len2 > 0 ? ((kx - px) * dx + (ky - py) * dy) / len2 : 0
+                if u < 0 { u = 0 } else if u > 1 { u = 1 }
+                let cx = kx - (px + u * dx), cy = ky - (py + u * dy)
+                let chord = (cx * cx + cy * cy).squareRoot() / w
+                if chord < params.bendMinChord || chord > params.bendMaxChord { break }
+                var best = Float.greatestFiniteMagnitude
+                for i in 0..<mx.count {
+                    let ex = mx[i] - kx, ey = my[i] - ky
+                    let q = ex * ex + ey * ey
+                    if q < best { best = q }
+                }
+                var g = chord - best.squareRoot() / w - params.bendBias
+                if g > params.bendCap { g = params.bendCap } else if g < -params.bendCap { g = -params.bendCap }
+                // chỉ đổi thứ tự TRONG cặp: B mới kẹp trong [min(A, B) − ε, max(A, B) + ε]
+                let sa = topScore[a], sb = topScore[b]
+                var v = sb + params.bendWeight * g
+                let hi = (sa > sb ? sa : sb) + Self.bendEps, lo = (sa < sb ? sa : sb) - Self.bendEps
+                if v > hi { v = hi } else if v < lo { v = lo }
+                topScore[b] = v
+                break
             }
         }
     }

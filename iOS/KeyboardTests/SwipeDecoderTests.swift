@@ -408,13 +408,31 @@ final class SwipeDecoderTests: XCTestCase {
 
     /// "cũng" ra "chung": lướt NHANH qua h trên đường c→u rồi dừng ở u — h không phải phím định đi.
     func testFastPassThroughKeyIsNotInserted() {
-        let p = glide([Stop(at: "c", hold: 0.08), Stop(at: "h", speed: 38), Stop(at: "u", speed: 30, hold: 0.1),
+        // gần như thẳng c→u: lướt nhanh sượt h 0.4 phím (nét thật "cũng": uốn về h ≈ 0)
+        let p = glide([Stop(at: "c", hold: 0.08), Stop(at: "h", dx: -0.3, dy: -0.28, speed: 38), Stop(at: "u", speed: 30, hold: 0.1),
                        Stop(at: "n", speed: 20, hold: 0.06), Stop(at: "g", speed: 15, hold: 0.1)])
         XCTAssertEqual(decoder().decode(p, topK: 3).first?.folded, "cung")
         // dừng ở h ⇒ chung (phím có chủ đích)
         let q = glide([Stop(at: "c", hold: 0.08), Stop(at: "h", speed: 20, hold: 0.1), Stop(at: "u", speed: 20, hold: 0.1),
                        Stop(at: "n", speed: 20, hold: 0.06), Stop(at: "g", speed: 15, hold: 0.1)])
         XCTAssertEqual(decoder().decode(q, topK: 3).first?.folded, "chung")
+    }
+
+    /// chưa/của (500 nét thật: chua→cua ×19/28): h của "ch" bị lướt NHANH như phím thường — thứ
+    /// phân biệt là đường UỐN về h so với dây cung c→u (`Params.bendWeight`). Cùng ca Kotlin.
+    func testDigraphHBendSeparatesChuaFromCua() {
+        func path(_ f: Float, _ last: Character = "a") -> SwipePath {
+            glide([Stop(at: "c", hold: 0.08), Stop(at: "h", dx: -0.4 * f, dy: -0.37 * f, speed: 38),
+                   Stop(at: "u", speed: 30, hold: 0.1), Stop(at: last, speed: 20, hold: 0.1)])
+        }
+        XCTAssertEqual(decoder().decode(path(0.25), topK: 3).first?.folded, "chua")   // uốn về h, lướt nhanh
+        XCTAssertEqual(decoder().decode(path(1), topK: 3).first?.folded, "cua")       // thẳng c→u
+        var np = SwipeDecoder.Params(); np.bendWeight = 0
+        let off = SwipeDecoder(params: np); off.setLayout(layout)
+        XCTAssertEqual(off.decode(path(0.25), topK: 3).first?.folded, "cua")
+        // chỉ đổi chỗ TRONG cặp: ứng viên khác giữ thứ tự
+        let on = decoder().decode(path(0.25), topK: 5).map(\.folded).filter { $0 != "chua" && $0 != "cua" }
+        XCTAssertEqual(off.decode(path(0.25), topK: 5).map(\.folded).filter { $0 != "chua" && $0 != "cua" }, on)
     }
 
     /// Đường "tự nhiên" (nhịp + lố như nét thật): nhịp phải tăng rõ top-1, đường đều không tụt.
@@ -521,6 +539,22 @@ final class SwipeDecoderTests: XCTestCase {
         let mn = tn.sorted()[2], mo = to.sorted()[2]
         print(String(format: "SWIPE benchmark nhịp iOS: %.4f ms/đường (tắt nhịp %.4f, %+.1f%%)", mn, mo, (mn / mo - 1) * 100))
         XCTAssertLessThanOrEqual(mn, mo * 1.2 + 0.02)
+        // uốn h của phụ âm ghép (28/09/2026, 500 nét thật): bật vs tắt, trần +10 %
+        var bp = SwipeDecoder.Params(); bp.bendWeight = 0
+        let nob = SwipeDecoder(params: bp); nob.setLayout(layout); nob.prepare()
+        for p in nat { _ = nob.decode(p, topK: 5) }
+        var tb: [Double] = [], tnb: [Double] = []
+        for _ in 0..<5 {
+            var t = CFAbsoluteTimeGetCurrent()
+            for p in nat { _ = d.decode(p, topK: 5) }
+            tb.append((CFAbsoluteTimeGetCurrent() - t) * 1000 / Double(nat.count))
+            t = CFAbsoluteTimeGetCurrent()
+            for p in nat { _ = nob.decode(p, topK: 5) }
+            tnb.append((CFAbsoluteTimeGetCurrent() - t) * 1000 / Double(nat.count))
+        }
+        let mb = tb.sorted()[2], mnb = tnb.sorted()[2]
+        print(String(format: "SWIPE benchmark uốn h iOS: %.4f ms/đường (tắt %.4f, %+.1f%%)", mb, mnb, (mb / mnb - 1) * 100))
+        XCTAssertLessThanOrEqual(mb, mnb * 1.1 + 0.02)
     }
 
     /// Parity phần NHỊP: đường "tự nhiên" x,y,ms (Fixtures/swipe-paths-timed.txt, sinh bởi Kotlin).
