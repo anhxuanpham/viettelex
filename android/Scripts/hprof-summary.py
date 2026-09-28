@@ -55,8 +55,9 @@ def walk(data, on):
                         if t == 2: statics.append(rid(q + idsz + 1))
                         q += idsz + 1 + (idsz if t == 2 else PSIZE[t])
                     fc = struct.unpack('>H', data[q:q + 2])[0]; q += 2
-                    ftypes = [data[q + i * (idsz + 1) + idsz] for i in range(fc)]; q += fc * (idsz + 1)
-                    on('cdump', cid, sup, isz, statics, ftypes)
+                    ftypes = [data[q + i * (idsz + 1) + idsz] for i in range(fc)]
+                    fnames = [rid(q + i * (idsz + 1)) for i in range(fc)]; q += fc * (idsz + 1)
+                    on('cdump', cid, sup, isz, statics, ftypes, fnames)
                 elif st == 0x21:
                     oid = rid(q); cid = rid(q + idsz + 4); bl = struct.unpack('>I', data[q + 2 * idsz + 4:q + 2 * idsz + 8])[0]
                     b0 = q + 2 * idsz + 8; q = b0 + bl
@@ -74,19 +75,21 @@ def walk(data, on):
         p = end
 
 
-def root_paths(data, targets, cname):
-    """Đồ thị ngược chính xác (theo kiểu field) → BFS từ mỗi target lên GC root gần nhất."""
-    sup, ftypes, statics, kind = {}, {}, {}, {}
+def root_paths(data, targets, cname, strings):
+    """Đồ thị ngược chính xác (theo kiểu field) → BFS từ mỗi target lên GC root gần nhất.
+    Bỏ field `referent` của java.lang.ref.Reference (WeakHashMap$Entry, Cleaner, … không giữ sống)."""
+    sup, ftypes, fnames, statics, kind = {}, {}, {}, {}, {}
     def onA(k, *x):
-        if k == 'cdump': sup[x[0]] = x[1]; ftypes[x[0]] = x[4]; statics[x[0]] = x[3]
+        if k == 'cdump': sup[x[0]] = x[1]; ftypes[x[0]] = x[4]; fnames[x[0]] = x[5]; statics[x[0]] = x[3]
     walk(data, onA)
     layout = {}
     def refoffs(cid, idsz):
         if cid in layout: return layout[cid]
         offs, o, c = [], 0, cid
         while c:
-            for t in ftypes.get(c, []):
-                if t == 2: offs.append(o)
+            weakbase = cname.get(c) == 'java.lang.ref.Reference'
+            for t, fn in zip(ftypes.get(c, []), fnames.get(c, [])):
+                if t == 2 and not (weakbase and strings.get(fn) == 'referent'): offs.append(o)
                 o += idsz if t == 2 else PSIZE[t]
             c = sup.get(c, 0)
         layout[cid] = offs; return offs
@@ -161,7 +164,7 @@ def main():
 
     print(f'{len(targets)} instance {a.referrers}')
     if a.path:
-        return root_paths(data, targets, cname)
+        return root_paths(data, targets, cname, strings)
     refs = defaultdict(list)
 
     def scan(owner, rng, rid, idsz):

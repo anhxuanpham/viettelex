@@ -523,6 +523,9 @@ class EmojiPane(
         if (popup != null) { popup = null; host.invalidate() }
     }
 
+    /** Bàn phím ẩn lâu: bỏ danh sách emoji (String theo category) — [open] dựng lại. */
+    fun releaseData() { sections = emptyList() }
+
     fun onHidden() {
         host.removeCallbacks(holdRun); host.removeCallbacks(delStartRun); host.removeCallbacks(delTickRun)
         host.removeCallbacks(animRun)

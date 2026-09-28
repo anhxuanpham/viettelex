@@ -60,6 +60,7 @@
 		28204C66017B9ADA8F8C46FE /* Wallpaper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69A12BC49EB45298684CF97D /* Wallpaper.swift */; };
 		28C579703223D53D46A60F0D /* swipe-paths-en.txt in Resources */ = {isa = PBXBuildFile; fileRef = 38966B5E3DF4C19B07287B0C /* swipe-paths-en.txt */; };
 		28F59AFC0EA801B2565A2A41 /* FeaturePages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CD424A6A736C971B3F87998 /* FeaturePages.swift */; };
+		2ADC518FE5C55961C93038B7 /* swipe-lang-sentences.txt in Resources */ = {isa = PBXBuildFile; fileRef = CFEF10E3C02C542D5C49792E /* swipe-lang-sentences.txt */; };
 		2B0B920D87566C26DAABB175 /* SwipePracticeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D0C7CC44A57FCB3E41047D7 /* SwipePracticeTests.swift */; };
 		2B6BD2360AA9943D6F05C350 /* KeyboardTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81B2DDC0E24D11BD96525161 /* KeyboardTheme.swift */; };
 		2BCBE4C85250474B6AC8B5CC /* TemplateEdit.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4D95DF2E5846D5F65882073 /* TemplateEdit.swift */; };
@@ -440,6 +441,7 @@
 		CAD72939A03B2CDB528A0C4A /* Keyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Keyboard.entitlements; sourceTree = "<group>"; };
 		CBD24780DBDAEB07E6645C3E /* ScrollEdgeEffectTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollEdgeEffectTests.swift; sourceTree = "<group>"; };
 		CCEDEE554C73498F36146A9D /* VietTelexApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = VietTelexApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CFEF10E3C02C542D5C49792E /* swipe-lang-sentences.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "swipe-lang-sentences.txt"; sourceTree = "<group>"; };
 		D0E5388BE246A2014C812518 /* TextToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextToolsTests.swift; sourceTree = "<group>"; };
 		D146E8AD1DCD530316701E0E /* KeySoundImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeySoundImport.swift; sourceTree = "<group>"; };
 		D20B596D225BB513FA414DB3 /* KeyAlternatesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyAlternatesTests.swift; sourceTree = "<group>"; };
@@ -544,6 +546,7 @@
 				DF447D2ACACB4E96B9438498 /* key-alternates.txt */,
 				209C000B31A56F2E72663A5D /* math-results.txt */,
 				2B96A58C6EE35D288C488202 /* number-chips.txt */,
+				CFEF10E3C02C542D5C49792E /* swipe-lang-sentences.txt */,
 				38966B5E3DF4C19B07287B0C /* swipe-paths-en.txt */,
 				A42C0808FA2107FC8B2A9D05 /* swipe-paths-timed.txt */,
 				E7BF9D54E0DFCE9D7395F598 /* swipe-paths.txt */,
@@ -949,6 +952,7 @@
 				9E05D33874006BB326EDC4C6 /* math-results.txt in Resources */,
 				DF225D04D7CF81C8C54070B8 /* number-chips.txt in Resources */,
 				59C66E8A96CED913A07EA832 /* sample-shortcuts.yml in Resources */,
+				2ADC518FE5C55961C93038B7 /* swipe-lang-sentences.txt in Resources */,
 				28C579703223D53D46A60F0D /* swipe-paths-en.txt in Resources */,
 				A2CEEACB594EB47AF40541A3 /* swipe-paths-timed.txt in Resources */,
 				4C0088B0166B00B8536D2B75 /* swipe-paths.txt in Resources */,

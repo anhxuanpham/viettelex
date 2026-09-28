@@ -57,10 +57,15 @@ class ImeRootView(
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         val f = wallpaperFile ?: return
-        val b = WallpaperBitmap.load(f, theme.settings.version, w, h)
+        reloadGen++
+        setWallpaper(WallpaperBitmap.load(f, theme.settings.version, w, h, isHardwareAccelerated))
+    }
+
+    private fun setWallpaper(b: android.graphics.Bitmap?) {
         wallpaper = b
         if (b != null) {
-            // center-crop
+            // center-crop (bitmap đã là vùng thấy được — tỉ lệ ≈ view; phần lệch làm tròn cắt nốt)
+            val w = width; val h = height
             val s = maxOf(w.toFloat() / b.width, h.toFloat() / b.height)
             wallMatrix.setScale(s, s)
             wallMatrix.postTranslate((w - b.width * s) / 2f, (h - b.height * s) / 2f)
@@ -68,9 +73,32 @@ class ImeRootView(
         invalidate()
     }
 
+    private var reloadGen = 0
+
+    /** Hẹn giờ ẩn: bỏ bitmap (true nếu đã có) — [reloadWallpaper] lúc hiện lại. */
+    fun dropWallpaper(): Boolean {
+        val had = wallpaper != null
+        wallpaper = null; reloadGen++
+        return had
+    }
+
+    /** Giải lại ảnh nền trên [background] (không chặn main); chưa xong thì nền màu theme. */
+    fun reloadWallpaper(background: (Runnable) -> Unit) {
+        val f = wallpaperFile ?: return
+        if (wallpaper != null || width <= 0 || height <= 0) return
+        val gen = ++reloadGen
+        val w = width; val h = height; val hw = isHardwareAccelerated
+        background(Runnable {
+            val b = WallpaperBitmap.load(f, theme.settings.version, w, h, hw)
+            post { if (gen == reloadGen && width == w && height == h) setWallpaper(b) }
+        })
+    }
+
     override fun onDraw(canvas: android.graphics.Canvas) {
         super.onDraw(canvas)
         val b = wallpaper ?: return
+        // Bitmap HARDWARE chỉ vẽ được trên canvas GPU (canvas phần mềm — vd chụp view — bỏ qua).
+        if (b.config == android.graphics.Bitmap.Config.HARDWARE && !canvas.isHardwareAccelerated) return
         canvas.drawBitmap(b, wallMatrix, wallPaint)
         canvas.drawColor(dimColor)
     }

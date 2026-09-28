@@ -57,6 +57,11 @@ class PlayPlusStore(
         }
     }
 
+    override fun release() {
+        listener = null
+        runCatching { client.endConnection() }
+    }
+
     override suspend fun queryProducts(ids: List<String>): List<StoreProduct> {
         val params = QueryProductDetailsParams.newBuilder().setProductList(ids.map {
             QueryProductDetailsParams.Product.newBuilder()

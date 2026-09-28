@@ -100,3 +100,26 @@ Không cần làm: không có Compose trong view IME (KeyboardView vẽ một ca
 - AOSP LatinIME / HeliBoard: từ điển nhị phân mmap ở native (không vào Java heap) — VietTelex đã làm tương đương với ByteBuffer mmap; bảng/phím dựng sẵn offline thay vì lúc chạy (chính là #1). Bảng emoji dựng lười.
 - FlorisBoard dùng Compose cho cả UI IME — nặng hơn đáng kể; VietTelex đúng hướng khi giữ View/Canvas trong IME (và nên tách Compose của app ra, #5).
 - Tài liệu Android: từ API 34 chỉ còn `TRIM_MEMORY_UI_HIDDEN`/`BACKGROUND` được gửi; bitmap pixel ở native heap từ API 26; `HARDWARE` bitmap chỉ ở GPU; `inSampleSize` chỉ lũy thừa 2 — muốn đúng cỡ thì crop/scale khi lưu.
+
+## Đã sửa #1–6 (28/09/2026) — đo lại cùng emulator, bản release
+
+Cùng kịch bản `ram-audit.sh matrix` (thêm trạng thái `hidden-idle` = ẩn 50 s cho hẹn giờ nhả) + `settings` + `switch`; "trước" = `fb17c37`, "sau" = nhánh sửa. KB PSS trừ khi ghi khác.
+
+| Đo | default trước → sau | off trước → sau | all trước → sau |
+|---|---|---|---|
+| PSS vừa hiện (process mới) | 64 355 → **36 212** | 35 828 → 35 546 | 78 215 → **48 390** |
+| Java heap vừa hiện | 30 092 → **2 752** | 2 552 → 2 564 | 34 888 → **8 612** |
+| Native vừa hiện | 17 864 → 17 812 | 17 660 → 17 644 | 21 492 → **18 020** (ảnh nền) |
+| PSS sau 200 phím | 48 640 → 47 720 | 45 732 → 45 298 | 61 423 → **56 090** |
+| PSS sau 20 lần hiện/ẩn | 54 051 → **44 629** | 43 637 → 42 694 | 64 191 → **60 035** |
+| Cấp phát ART tới lúc hiện | 31.7 MB → **5.1 MB** | 4.8 → 4.9 MB | 37.9 → **11.3 MB** |
+| Cấp phát mỗi lần hiện (21 lần) | 1 365 → **98 KB** | 103 → 108 KB | 4 486 → **536 KB** |
+| Số GC cả kịch bản | 10 → 8 | 8 → 8 | 17 → 10 |
+
+- **#1** trie chọn phím thông minh: asset `keyprior.bin` (569 KB, mmap; nút đánh số BFS ⇒ không lưu edgeTo). `KeyPriorBlobTests` chốt asset byte-bằng bản dựng trong RAM + CRC dữ liệu nguồn (đổi vnlexicon/enlexicon/seed ⇒ test đỏ ⇒ `VT_REGEN_KEYPRIOR=1`). JVM: giữ 0.1 KB, rác 0 (trước 0.8 MB + 30 MB). Không nhả ở onTrimMemory nữa. iOS giữ nguyên (cùng thuật toán, cùng số). APK +570 KB.
+- **#2** đổi IME ×3 (heap dump -g): vẫn 4 `VietTelexIME` (1 sống + 3 vỏ do `ImeOnBackInvokedDispatcher` của framework giữ qua jni-global tới khi system_server GC — ngoài tầm app) nhưng vỏ giờ **rỗng**: cây view 4 → 1 (thay input view + đo lại khung vì `FrameLayout.mMatchParentChildren` giữ con cũ), bảng UserLangModel bỏ (`close()` ghi nốt rồi dừng IO), HashMap 2 282 → 1 307, shallow heap 23.4 → 21.9 MB. ClipboardManager lấy từ applicationContext.
+- **#3** FUTO: giữ weights qua các lần hiện. **Lỗi gốc**: onTrimMemory nhả ở `UI_HIDDEN` (tới mỗi lần ẩn) ⇒ giờ chỉ nhả khi thiếu RAM thật hoặc hẹn giờ ẩn (`ImeTrim`, có test). all: 95 → 11 MB cấp phát / 20 lần hiện. Chọn (a) thay vì fp32 mmap: không thêm 1.3 MB APK, không chậm encoder.
+- **#4** ảnh nền: giải đúng vùng center-crop (`BitmapRegionDecoder`, cùng inSampleSize ⇒ cùng điểm ảnh) rồi chuyển `Bitmap.Config.HARDWARE` (ARGB_8888 ở GPU — không vằn như RGB_565, alpha paint vẫn chạy) ⇒ native −3.4 MB; canvas phần mềm bỏ qua bitmap HARDWARE.
+- **#5** app cài đặt: finish ở onStop (trừ khi app vừa mở activity khác chờ kết quả / tắt màn hình — `SettingsExit`, có test). Heap dump tìm ra **rò thật**: Play Billing (hẹn giờ nối lại) → store → lambda → `MainActivity` sống thêm ~2–3 phút; PowerManager lấy từ activity cũng giữ activity. Sửa (WeakReference, `endConnection` ở onDestroy, applicationContext) ⇒ 0 instance ngay khi rời app. **Nhưng PSS vẫn +15 MB** (Dalvik heap chưa trim + malloc/HWUI giữ trang + .art/.oat Compose): process IME ở oom_adj 100 không được ART trim heap — chỉ tách process `:settings` mới trả hết (phải làm lại đồng bộ prefs, chưa làm).
+- **#6** hẹn giờ ẩn 45 s (`IDLE_RELEASE_MS`): nhả FUTO, từ điển Anh (1.4 MB), template vuốt, ảnh nền, String emoji, bảng clipboard, cache mẫu câu; hiện lại ⇒ nạp lại trên luồng `vt-rewarm` ưu tiên thấp (không chen hàng đợi gợi ý; ảnh nền hiện lại sau < 1 s, đã chụp màn hình kiểm). Heap sống lúc `hidden-idle` (all) 7.5 → 3.2 MB; PSS chỉ về khi ART trim heap (trim-bg).
+- `hprof-summary.py --path` bỏ cạnh `Reference.referent` (WeakHashMap$Entry…) — trước đó có thể in đường giả qua tham chiếu yếu.

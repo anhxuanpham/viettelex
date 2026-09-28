@@ -67,9 +67,48 @@ final class SwipeEnglishTests: XCTestCase {
         XCTAssertEqual(SwipeLangContext.classify(nil), .neutral)
         XCTAssertEqual(SwipeLangContext.classify("thế", swipedEnglish: true), .en)
         XCTAssertEqual(SwipeLangContext.prior(prev1: .en, prev2: .vi), SwipeLangContext.englishPrior)
-        XCTAssertEqual(SwipeLangContext.prior(prev1: .en, prev2: .en), SwipeLangContext.strongEnglishPrior)
-        XCTAssertEqual(SwipeLangContext.prior(prev1: .neutral, prev2: .en), SwipeLangContext.weakEnglishPrior)
         XCTAssertEqual(SwipeLangContext.prior(prev1: .neutral, prev2: .neutral), SwipeLangContext.defaultPrior)
+    }
+
+    /// Tiền nghiệm liên tục ngôn ngữ — cùng ca với SwipeEnglishTests.kt continuityPrior.
+    func testContinuityPrior() {
+        func p(_ k: SwipeLangContext.Kind...) -> SwipeEnglishPrior { SwipeLangContext.prior(k) }
+        let def = SwipeLangContext.defaultPrior, en = SwipeLangContext.englishPrior
+        // không có ngữ cảnh / toàn trung tính / mạch Việt ⇒ y hệt DEFAULT (từ rời không đổi)
+        XCTAssertEqual(p(), def)
+        XCTAssertEqual(p(.neutral, .neutral, .neutral), def)
+        XCTAssertEqual(p(.vi), def)
+        XCTAssertEqual(p(.vi, .vi, .vi), def)
+        // một từ Anh liền trước ⇒ englishPrior; mạch dài hơn ⇒ mạnh hơn, có trần
+        XCTAssertEqual(p(.en), en)
+        XCTAssertEqual(p(.en, .vi, .en), en)                         // từ Việt cắt mạch
+        XCTAssertEqual(p(.en, .en).bias, 0.5, accuracy: 1e-4)
+        XCTAssertEqual(p(.en, .en, .en).bias, 0.68, accuracy: 1e-4)
+        XCTAssertEqual(p(.en, .en, .en).margin, 0)
+        XCTAssertLessThanOrEqual(p(.en, .en, .en, .en).bias, p(.en, .en, .en).bias + 1e-6)
+        let far = p(.neutral, .en)
+        XCTAssertTrue(far.bias > def.bias && far.bias < en.bias, "\(far)")
+        XCTAssertTrue(far.margin > 0 && far.margin < def.margin, "\(far)")
+        XCTAssertGreaterThan(p(.neutral, .en, .en).bias, far.bias)
+        XCTAssertEqual(p(.vi, .en, .en), def)                        // "check mail cho …"
+        let c = SwipeLangContext.continuity
+        XCTAssertLessThanOrEqual(p(.en, .en, .en).bias, c.enBias + c.enGain * (c.enCap - 1) + 1e-6)
+    }
+
+    func testContinuityKinds() {
+        let none: (String?) -> Bool = { _ in false }
+        XCTAssertEqual(SwipeLangContext.kinds(composing: false, pending: nil, pendingEnglish: false,
+                                              recent: ["tôi", "thích", "check"], english: none), [.en, .vi, .vi])
+        XCTAssertEqual(SwipeLangContext.kinds(composing: true, pending: "này", pendingEnglish: false,
+                                              recent: ["tôi", "thích", "check"], english: none), [.vi, .en, .vi])
+        XCTAssertEqual(SwipeLangContext.kinds(composing: true, pending: nil, pendingEnglish: false,
+                                              recent: ["check"], english: none), [.neutral, .en])
+        XCTAssertEqual(SwipeLangContext.kinds(composing: false, pending: nil, pendingEnglish: false,
+                                              recent: ["to"], english: { $0 == "to" }), [.en])
+        XCTAssertEqual(SwipeLangContext.kinds(composing: true, pending: "can", pendingEnglish: true,
+                                              recent: [], english: none), [.en])
+        XCTAssertEqual(SwipeLangContext.kinds(composing: false, pending: nil, pendingEnglish: false,
+                                              recent: [], english: none), [])
     }
 
     func testCollisionPrefersVietnameseAndOffersEnglish() {

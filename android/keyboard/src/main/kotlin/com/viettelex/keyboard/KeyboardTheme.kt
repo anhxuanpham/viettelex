@@ -282,6 +282,19 @@ object WallpaperMath {
         return maxOf(1, Math.ceil(imgW * s).toInt()) to maxOf(1, Math.ceil(imgH * s).toInt())
     }
 
+    /**
+     * Vùng ảnh THẤY ĐƯỢC khi aspect-fill (center-crop) view vw×vh: [left, top, right, bottom]
+     * theo px ảnh gốc — IME chỉ giải vùng này (BitmapRegionDecoder), không giải cả ảnh.
+     */
+    fun visibleCrop(imgW: Int, imgH: Int, vw: Int, vh: Int): IntArray {
+        if (vw <= 0 || vh <= 0 || imgW <= 0 || imgH <= 0) return intArrayOf(0, 0, imgW, imgH)
+        val s = maxOf(vw.toDouble() / imgW, vh.toDouble() / imgH)
+        val cw = minOf(imgW, Math.ceil(vw / s - 1e-9).toInt().coerceAtLeast(1))
+        val ch = minOf(imgH, Math.ceil(vh / s - 1e-9).toInt().coerceAtLeast(1))
+        val l = (imgW - cw) / 2; val t = (imgH - ch) / 2
+        return intArrayOf(l, t, l + cw, t + ch)
+    }
+
     /** Mờ hộp 3 lượt (ngang + dọc) trên ARGB — thay RenderScript đã bỏ. In-place. */
     fun blur(px: IntArray, w: Int, h: Int, radius: Int) {
         if (radius <= 0 || w <= 0 || h <= 0) return

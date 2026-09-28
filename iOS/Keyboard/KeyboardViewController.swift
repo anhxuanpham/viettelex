@@ -87,6 +87,10 @@ final class KeyboardViewController: UIInputViewController {
     /// Vài từ tiếng Anh vừa vuốt ra (chữ thường) — ngữ cảnh ngôn ngữ cho cú vuốt kế
     /// (từ trùng chuỗi như "the" vuốt ra dạng Anh vẫn mở mạch Anh).
     private var recentEnglish: [String] = []
+    /// ≤ 3 từ vừa chốt (cũ → mới) cho tiền nghiệm liên tục ngôn ngữ của gõ vuốt — KHÔNG xoá ở
+    /// dấu câu (đang viết đoạn tiếng Anh thì câu sau vẫn tiếng Anh), chỉ xoá khi hiện lại bàn
+    /// phím / chữ trước con trỏ đổi từ ngoài. Chỉ ghi khi bật vuốt + vuốt tiếng Anh.
+    private var langRecent: [String] = []
     /// Lịch sử clipboard + chip tách số + ẩn danh (ClipboardFeature.swift).
     private let clip = ClipboardFeature()
     private var clipPanel: ClipboardPanel?
@@ -238,7 +242,7 @@ final class KeyboardViewController: UIInputViewController {
         keyboard.configureKeyAlternates(numbers: settings.longPressNumbers, symbols: settings.longPressSymbols)
         warmUpData()
         swipeSuggest = nil
-        recentEnglish = []
+        recentEnglish = []; langRecent = []
         addTonesUndo = nil; addTonesDismissed = nil; addTonesCache = nil
         // Trait ô (layout, return key, passthrough, bar) — force: mỗi lần hiện áp lại
         // appearance/mẫu câu dù trait y hệt (batchConfigure tự dedupe rebuild).
@@ -549,6 +553,7 @@ final class KeyboardViewController: UIInputViewController {
         }
         if verdict != .keep {
             bridge.reset(); lastWord = nil; lastWord2 = nil
+            langRecent = []
             restoreUndo = nil; undoOfferActive = false
             swipeTyped = nil; swipeTypedUndo = nil
         }
@@ -1230,6 +1235,10 @@ final class KeyboardViewController: UIInputViewController {
         if UserLangModel.learnable(word) {
             lastWord2 = lastWord
             lastWord = word
+            if swipe != nil, swipeEnglishSetting {   // tắt vuốt / vuốt tiếng Anh ⇒ 0 chi phí
+                langRecent.append(word)
+                if langRecent.count > SwipeLangContext.window { langRecent.removeFirst() }
+            }
         } else {
             lastWord = nil; lastWord2 = nil
         }
@@ -1888,14 +1897,14 @@ extension KeyboardViewController {
         let prev2 = composing ? lastWord : lastWord2
         let ctx = prev.map { langModel.nextWords(after: $0, prev2: prev2, limit: 24) } ?? []
         let lm = langModel
-        // Ngôn ngữ theo 2 từ trước (giai đoạn 3): từ Anh vừa vuốt (nhãn) chắc nhất, rồi bảng
-        // từ của engine; mặc định nghiêng tiếng Việt.
+        // Ngôn ngữ theo ≤ 3 từ trước (qua cả dấu câu — liên tục ngôn ngữ): từ Anh vừa vuốt (nhãn)
+        // chắc nhất, rồi bảng từ của engine + từ điển; mặc định nghiêng tiếng Việt.
         let englishOnly = bridge.englishMode
         let english: SwipeEnglishPrior? = englishOnly ? SwipeLangContext.onlyEnglishPrior
-            : swipeEnglishSetting ? SwipeLangContext.prior(
-            prev1: SwipeLangContext.classify(prev, swipedEnglish: bridge.isLiteralSwipeWordOpen
-                                                 || isRecentEnglish(prev)),
-            prev2: SwipeLangContext.classify(prev2, swipedEnglish: isRecentEnglish(prev2))) : nil
+            : swipeEnglishSetting ? SwipeLangContext.prior(SwipeLangContext.kinds(
+                composing: composing, pending: prev,
+                pendingEnglish: bridge.isLiteralSwipeWordOpen || isRecentEnglish(prev),
+                recent: langRecent, english: { self.isRecentEnglish($0) })) : nil
         // Từ vuốt trước còn nguyên (mở, chưa sửa dấu, chưa chọn phương án) ⇒ cú này sửa lại được.
         let previous = swipeRevisable.flatMap { r -> SwipeTyping.Revisable? in
             bridge.isSwipeWordOpen && bridge.isFreshSwipeWord && !bridge.openWordAccepted

@@ -1,12 +1,13 @@
 package com.viettelex.keyboard
 
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.lang.management.ManagementFactory
 
 /**
  * Đo RAM (JVM, xấp xỉ ART): heap GIỮ LẠI của từng cấu trúc dữ liệu bàn phím + byte cấp phát
- * mỗi phím trên đường nóng. Chỉ in số (không assert ngưỡng) — tư liệu cho android/docs/RAM-AUDIT.md.
+ * mỗi phím trên đường nóng. In số cho android/docs/RAM-AUDIT.md; [fixedFootprints] chốt ngưỡng các fix.
  *
  * Chạy: `VT_SLOW_TESTS=1 ./gradlew --offline :keyboard:test --tests '*RamFootprintTests*' -i | grep RAM`
  *
@@ -29,7 +30,8 @@ class RamFootprintTests {
 
     private val keep = ArrayList<Any?>()
 
-    private fun retained(label: String, build: () -> Any?) {
+    /** In + trả (KB giữ lại, MB cấp phát lúc dựng). */
+    private fun retained(label: String, build: () -> Any?): Pair<Double, Double> {
         val before = used()
         val t0 = System.nanoTime(); val a0 = allocated()
         keep += build()
@@ -37,6 +39,33 @@ class RamFootprintTests {
         val after = used()
         println(String.format("RAM retained %-34s %8.1f KB  (build %.0f ms, cấp phát tạm %.1f MB)",
             label, (after - before) / 1024.0, ms, garbage / 1_048_576.0))
+        return (after - before) / 1024.0 to garbage / 1_048_576.0
+    }
+
+    /**
+     * Ngưỡng sau các fix RAM-AUDIT #1/#3/#6/#7 (JVM ≈ ART ±15 %): trie chọn phím thông minh đọc
+     * asset mmap (trước: 0.86 MB giữ + 31 MB rác mỗi lần dựng); từ điển Anh / FUTO nhả được.
+     */
+    @Test fun fixedFootprints() {
+        SlowTests.assume()
+        TelexKeyPrior.release()
+        val (kpKeep, kpGarbage) = retained("TelexKeyPrior.warmUp (asset mmap)") { TelexKeyPrior.warmUp() }
+        assertTrue("trie mmap không vào heap: $kpKeep KB", kpKeep < 64)
+        assertTrue("trie mmap không dựng rác: $kpGarbage MB", kpGarbage < 0.5)
+
+        fun freed(label: String, load: () -> Any?, release: () -> Unit): Double {
+            val base = used()
+            load(); val loaded = used()
+            release(); val after = used()
+            println(String.format("RAM release %-35s nạp +%.1f KB, nhả còn +%.1f KB", label, (loaded - base) / 1024.0, (after - base) / 1024.0))
+            return (after - base) / 1024.0
+        }
+        SwipeEnglish.release()
+        assertTrue("SwipeEnglish.release trả heap", freed("SwipeEnglish.lexicon", { SwipeEnglish.lexicon }, SwipeEnglish::release) < 150)
+        val f = FutoSwipe { KeyboardData.buffer(Keys.ASSET_FUTO) }
+        assertTrue("FutoSwipe.release trả weights", freed("FutoSwipe model", { f.load() }, f::release) < 150)
+        EmojiData.releaseCategories()
+        assertTrue("emoji categories nhả được", freed("EmojiData.categories", { EmojiData.categories }, EmojiData::releaseCategories) < 60)
     }
 
     private val mx = ManagementFactory.getThreadMXBean() as com.sun.management.ThreadMXBean
@@ -63,7 +92,8 @@ class RamFootprintTests {
                 println("RAM userlm uni=${m.uniSize}")
             }
         }
-        retained("TelexKeyPrior (smart touch, ON)") { TelexKeyPrior.fromLexicon() }
+        retained("TelexKeyPrior.fromLexicon (tham chiếu)") { TelexKeyPrior.fromLexicon() }
+        retained("TelexKeyPrior.fromAsset (IME, mmap)") { TelexKeyPrior.fromAsset() }
         retained("SwipeLexicon.forms") { SwipeLexicon.forms }
         retained("SwipeDecoder templates") {
             SwipeDecoder().also { it.setLayout(SwipeLayout.qwerty(keyWidth = 108f, rowHeight = 150f)); it.prepare() }

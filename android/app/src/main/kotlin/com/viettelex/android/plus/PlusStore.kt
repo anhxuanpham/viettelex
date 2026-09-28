@@ -35,4 +35,6 @@ interface PlusStore {
     /** Mở màn thanh toán; kết quả về qua [listener]. false = không mở được. */
     fun launchPurchase(productId: String): Boolean
     var listener: ((PurchaseUpdate) -> Unit)?
+    /** Activity chủ bị huỷ: ngắt kết nối (Billing tự nối lại hẹn giờ trên main looper — giữ activity). */
+    fun release() {}
 }

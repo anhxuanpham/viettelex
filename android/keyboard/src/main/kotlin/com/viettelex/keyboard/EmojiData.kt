@@ -98,6 +98,9 @@ object EmojiData {
 
     @Volatile private var cachedCategories: List<Category>? = null
 
+    /** Bàn phím ẩn lâu: bỏ danh sách String theo category (lần mở emoji sau dựng lại). */
+    fun releaseCategories() { cachedCategories = null }
+
     /** Đúng thứ tự stock: smileys → flags (cờ 🇻🇳 đầu); chỉ emoji máy vẽ được. */
     val categories: List<Category>
         get() = cachedCategories ?: rawCategories.map { c ->

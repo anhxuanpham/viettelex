@@ -31,6 +31,7 @@ class MainActivity : ComponentActivity() {
     private val openMauCau = mutableStateOf(0)
     /** VietTelex Plus — Play Billing; ghi cờ [Keys.PLUS_UNLOCKED] cho IME. */
     private lateinit var plus: PlusController
+    private lateinit var store: PlayPlusStore
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
@@ -41,8 +42,12 @@ class MainActivity : ComponentActivity() {
         PlusPrefs.install(this)
         com.viettelex.android.shared.UiLang.install(this)   // ngôn ngữ giao diện (mặc định Tiếng Việt)
         plus = PlusController(
-            store = PlayPlusStore(this) { this },
-            writeFlag = { PlusPrefs.writePurchased(this, it) },
+            // Tham chiếu YẾU: coroutine/Billing có thể giữ store lâu hơn activity (đo: Message hẹn
+            // giờ trên main looper → store → lambda → MainActivity sống mãi sau khi rời app).
+            store = java.lang.ref.WeakReference(this).let { ref ->
+                PlayPlusStore(this) { ref.get()?.takeUnless { it.isDestroyed } }
+            }.also { store = it },
+            writeFlag = applicationContext.let { app -> { on: Boolean -> PlusPrefs.writePurchased(app, on) } },
             initialPurchased = PlusGate.purchased,
             scope = lifecycleScope,
             onboarding = PlusPrefs.onboarding(this),
@@ -63,6 +68,13 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onDestroy() {
+        // Billing (tự nối lại, hẹn giờ trên main looper) giữ store → activity: ngắt để activity
+        // + cây Compose GC được sau khi rời app (RAM-AUDIT #5).
+        if (::store.isInitialized) store.release()
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -98,6 +110,42 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // MARK: dọn RAM khi rời app (RAM-AUDIT #5)
+
+    /**
+     * App cài đặt chạy CÙNG process với bàn phím (prefs listener cùng process) — từ API 31 Back
+     * không finish activity gốc nên Compose/HWUI của nó (+16.7 MB) nằm lại trong process IME mãi
+     * (process IME không bao giờ bị dọn). ⇒ finish ở onStop, TRỪ khi chính app vừa mở activity
+     * khác mà user sẽ quay về (chọn ảnh/file, Play Billing, Cài đặt bàn phím, chia sẻ, link) —
+     * kết quả trả về cần activity còn sống.
+     */
+    private var launchedChild = false
+
+    @Deprecated("ComponentActivity") @Suppress("DEPRECATION")
+    override fun startActivityForResult(intent: Intent, requestCode: Int, options: Bundle?) {
+        launchedChild = true
+        super.startActivityForResult(intent, requestCode, options)
+    }
+
+    @Deprecated("ComponentActivity") @Suppress("DEPRECATION")
+    override fun startIntentSenderForResult(intent: android.content.IntentSender, requestCode: Int, fillInIntent: Intent?,
+                                            flagsMask: Int, flagsValues: Int, extraFlags: Int, options: Bundle?) {
+        launchedChild = true
+        super.startIntentSenderForResult(intent, requestCode, fillInIntent, flagsMask, flagsValues, extraFlags, options)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        launchedChild = false
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // context ỨNG DỤNG: PowerManager lấy từ activity giữ activity trong WeakHashMap tĩnh (rò)
+        val interactive = applicationContext.getSystemService(android.os.PowerManager::class.java)?.isInteractive ?: true
+        if (SettingsExit.shouldFinish(isChangingConfigurations, launchedChild, interactive, isFinishing)) finish()
+    }
+
     private fun refreshIme() {
         val imm = getSystemService(InputMethodManager::class.java)
         val enabled = imm.enabledInputMethodList.any { it.packageName == packageName }
@@ -105,4 +153,15 @@ class MainActivity : ComponentActivity() {
         val s = ImeStatus(enabled, enabled && cur.startsWith("$packageName/"))
         if (s != ime.value) ime.value = s
     }
+}
+
+/** Quyết định finish MainActivity ở onStop (tách hàm thuần để test). */
+object SettingsExit {
+    /**
+     * [changingConfig] xoay/đổi theme ⇒ activity dựng lại, không finish; [launchedChild] app vừa
+     * mở activity khác chờ kết quả / user quay về; ![interactive] tắt màn hình (mở lại thấy
+     * nguyên chỗ cũ — lần rời app sau vẫn finish); [finishing] đã finish.
+     */
+    fun shouldFinish(changingConfig: Boolean, launchedChild: Boolean, interactive: Boolean, finishing: Boolean): Boolean =
+        !changingConfig && !launchedChild && interactive && !finishing
 }

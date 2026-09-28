@@ -96,7 +96,13 @@ class AndroidEditorPort(val ic: InputConnection) : EditorPort {
  * Nguồn clipboard cho nút Dán (§7.1): đếm đổi bằng addPrimaryClipChangedListener; chỉ
  * đọc ClipDescription (không bật toast "đã dán") cho tới khi user chạm.
  */
-class AndroidClipboard(private val ctx: Context) : ClipboardSource {
+class AndroidClipboard(context: Context) : ClipboardSource {
+    /**
+     * Context ỨNG DỤNG, không phải service: ClipboardManager giữ context nó được lấy từ, và
+     * binder listener chỉ được thả khi system_server GC proxy ⇒ lấy từ service thì mỗi lần đổi
+     * IME rò nguyên một VietTelexIME (RAM-AUDIT #2).
+     */
+    private val ctx: Context = context.applicationContext ?: context
     private val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     @Volatile private var count = 0
     /**
