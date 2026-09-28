@@ -75,6 +75,12 @@ enum class S {
     // 1.1.5: per-app Việt/Anh — who remembers depends on how you switch
     HotkeyNoteWinPerApp, HotkeyNoteWinGlobal, HotkeyNoteWinUnknown,
     PerAppWin, PerAppWinOn, PerAppWinOff, PerAppWinUnknown, PerAppEnableButton, PerAppOpenButton,
+    // Công cụ văn bản (tray submenu, Thêm dấu hotkey)
+    SecTextTools,
+    TextToolsInMenu, TextToolsInMenuDesc,
+    AddTonesHotkey, AddTonesHotkeyDesc,
+    MenuTextTools,
+    ToolAddTones, ToolUpper, ToolLower, ToolTitle, ToolSentence, ToolStrip,
     Count
 };
 

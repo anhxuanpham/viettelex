@@ -527,11 +527,19 @@ sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
       </ul>
     </div>
     <div class="card">
+      <h3>Text tools</h3>
+      <ul>
+        <li>Select text in any app, then right-click the VietTelex tray icon → <b>Text tools</b>: <b>Add tones to selection</b> (<code>toi di hoc</code> → tôi đi học), UPPERCASE, lowercase, Title Case, Sentence case, Remove tones. Needs <b>Show icon in the notification area</b>; hide the submenu with Spelling tab → <b>Show text tools in the menu</b>.</li>
+        <li><b>Add-tones hotkey</b> (Spelling tab, off by default): <kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>T</kbd>, <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>T</kbd> or <kbd>Win</kbd><kbd>Alt</kbd><kbd>T</kbd> — adds tones to the selected text in any app, even while another input method is active.</li>
+        <li>VietTelex reads and replaces the selection directly through the input method where the app supports it; elsewhere (older Qt/Java apps, or another keyboard active) it copies the selection and pastes the result — your clipboard is restored. Never in password fields, terminals, remote-desktop apps or apps running as administrator.</li>
+      </ul>
+    </div>
+    <div class="card">
       <h3>Icons, updates, other</h3>
       <ul>
         <li><b>Keyboard icon</b> (taskbar and the <kbd>Win</kbd><kbd>Space</kbd> list): Vᴛ, Star, Vietnam flag, Logo or “VI” text — changing it needs administrator rights.</li>
         <li><b>Notification-area (tray) icon</b> (off by default): shows the current app's Vietnamese/English state (dimmed = English).</li>
-        <li><b>Language</b> of the settings window and tray menu: Tiếng Việt or English.</li>
+        <li><b>Ngôn ngữ / Language</b> of the settings window and tray menu: Tiếng Việt (the default, whatever the Windows display language) or English — applies immediately.</li>
         <li><b>Updates</b>: click Check now, or turn on the automatic check (once a day). A downloaded installer is only run if it's validly signed.</li>
         <li><b>Debug log</b>: records events to <code>%LOCALAPPDATA%\VietTelex\debug.log</code>, never what you type.</li>
         <li><b>Uninstall…</b> in VietTelex settings, or Windows Settings → Apps.</li>
@@ -561,7 +569,23 @@ sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
       </ul>
     </div>
     <div class="card">
+      <h3>Text tools</h3>
+      <ul>
+        <li>Select text in any app, then open the input-method menu (the VietTelex tray / top-bar icon) → <b>Tools…</b> (Công cụ…) — <b>add tones to the selection</b> (<code>toi di hoc</code> → tôi đi học), UPPERCASE, lowercase, Title Case, Sentence case, remove tones. Same as on macOS.</li>
+        <li>Turn it on or off in Options (Tuỳ chỉnh) → <b>Show text tools in the menu</b> (on by default); the <b>Add tones hotkey</b> is off by default — pick a combination with Ctrl/Alt/Super.</li>
+        <li>Needs the <code>viettelex-text-tools</code> package (apt installs it along). In apps that don't report the text around the cursor, VietTelex reads the highlighted text (PRIMARY selection); with IBus that needs <code>wl-clipboard</code> or <code>xclip</code> already installed. The clipboard is never touched. Disabled in password fields and terminals.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Language &amp; icon</h3>
+      <ul>
+        <li>Options (Tuỳ chỉnh) → <b>Ngôn ngữ / Language</b>: Vietnamese (the default, even on an English system) or English — applies at once to the settings app and the input-method menu.</li>
+        <li>The tray icon matches the macOS menu bar: <b>Vᴛ</b> while typing Vietnamese, <b>E</b> after switching to English. GNOME shows the text <code>VT</code> / <code>E</code>.</li>
+      </ul>
+    </div>
+    <div class="card">
       <h3>Compatibility &amp; other</h3>
+
       <ul>
         <li>The <b>Tương thích</b> (compatibility) tab lists only the issues that apply to your machine, each with a copy-the-fix button — e.g. Chrome/Electron on Wayland need <code>--enable-wayland-ime</code>. Full list: <a href="https://github.com/ptrinh/viettelex/tree/main/linux" rel="noopener">linux/README</a>.</li>
         <li>A <code>sudo</code> password prompt in a terminal can't be detected — switch to English before typing the password.</li>

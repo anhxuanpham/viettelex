@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from viettelex_settings import updater  # noqa: E402
+from viettelex_settings import i18n, updater  # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..", "..")
 BASE = "https://github.com/ptrinh/viettelex/releases/download/linux-v1.0.4/"
@@ -123,6 +123,13 @@ class PlanTests(unittest.TestCase):
         self.assertTrue(all(u == BASE + n for n, u, _ in p["files"]))
         self.assertEqual(updater.helper_argv(p, "/tmp/x"), ["pkexec", updater.HELPER, "deb", "/tmp/x"])
 
+    def test_text_tools_updated_too(self):
+        inst = dict(INSTALLED, **{"viettelex-text-tools": "1.0.3~noble1"})
+        p = updater.plan(lin(sha256={}), inst, "noble", "amd64", "/etc/apt/sources.list.d/viettelex.sources")
+        self.assertIn("viettelex-text-tools", p["packages"])
+        self.assertEqual(updater.deb_asset_name("viettelex-text-tools", "1.0.4", "noble", "arm64"),
+                         "viettelex-text-tools_1.0.4.noble1_arm64.deb")
+
     def test_deb_path_unsupported(self):
         self.assertEqual(updater.plan(lin(), INSTALLED, "resolute", "amd64", None)["kind"], "unsupported")
         self.assertEqual(updater.plan(lin(), INSTALLED, "noble", "riscv64", None)["kind"], "unsupported")
@@ -167,6 +174,16 @@ class ChecksumAndResultTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("E: Broken packages", m)
         self.assertNotIn("line 5\n", m)
+
+    def test_english(self):
+        i18n.set_language("en")
+        try:
+            info = dict(LIVE_NO_LINUX, linux=lin())
+            self.assertEqual(updater.update_message(info, "1.0.3")[0], "New version available: 1.0.4")
+            self.assertIn("Cancelled", updater.result_message(126, "", "1.0.4")[1])
+            self.assertIn("Updated to 1.0.4", updater.result_message(0, "", "1.0.4")[1])
+        finally:
+            i18n.set_language("vi")
 
     def test_restart(self):
         self.assertEqual(updater.restart_im_argv("fcitx5"), ["fcitx5", "-r", "-d"])

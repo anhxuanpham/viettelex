@@ -20,7 +20,8 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import APP_ID, VERSION, compat, config, detect, shortcuts, updater  # noqa: E402
+from . import APP_ID, VERSION, compat, config, detect, i18n, shortcuts, updater  # noqa: E402
+from .i18n import N_, _  # noqa: E402
 
 WEBSITE = "https://ptrinh.github.io/viettelex/"
 LEARN_URL = "https://ptrinh.github.io/viettelex/learn"
@@ -30,11 +31,11 @@ RELEASES_URL = "https://github.com/ptrinh/viettelex/releases"
 STABLE_JSON = "https://viettelex.com/stable.json"  # trực tiếp HTTPS (github.io 301 qua http://)
 
 APP_MODE_CHOICES = [
-    ("auto", "Tự động"),
-    ("preedit", "Chữ đang gõ (preedit)"),
-    ("surrounding", "Sửa trực tiếp (surrounding)"),
-    ("direct", "Gõ thẳng, sửa bằng Backspace"),
-    ("off", "Tắt tiếng Việt"),
+    ("auto", N_("Tự động")),
+    ("preedit", N_("Chữ đang gõ (preedit)")),
+    ("surrounding", N_("Sửa trực tiếp (surrounding)")),
+    ("direct", N_("Gõ thẳng, sửa bằng Backspace")),
+    ("off", N_("Tắt tiếng Việt")),
 ]
 # Chế độ macOS (typing-modes.yml / file xuất từ máy Mac) → gần nhất trên Linux.
 MAC_MODE_MAP = {"marked": "preedit", "inPlace": "surrounding", "passthrough": "off"}
@@ -97,8 +98,8 @@ def choose_file(parent, save, suggested, callback):
         (dlg.save if save else dlg.open)(parent, None, done)
         return
     action = Gtk.FileChooserAction.SAVE if save else Gtk.FileChooserAction.OPEN
-    dlg = Gtk.FileChooserNative.new("Lưu file" if save else "Mở file", parent, action,
-                                    "Lưu" if save else "Mở", "Huỷ")
+    dlg = Gtk.FileChooserNative.new(_("Lưu file") if save else _("Mở file"), parent, action,
+                                    _("Lưu") if save else _("Mở"), _("Huỷ"))
     dlg.add_filter(yaml_filter)
     if save:
         dlg.set_current_name(suggested)
@@ -116,7 +117,7 @@ def confirm(parent, heading, body, ok_label, callback):
     """Hộp xác nhận; nút mặc định là Huỷ (Enter không làm nhầm)."""
     if hasattr(Adw, "MessageDialog"):
         d = Adw.MessageDialog.new(parent, heading, body)
-        d.add_response("cancel", "Huỷ")
+        d.add_response("cancel", _("Huỷ"))
         d.add_response("ok", ok_label)
         d.set_response_appearance("ok", Adw.ResponseAppearance.DESTRUCTIVE)
         d.set_default_response("cancel")
@@ -127,7 +128,7 @@ def confirm(parent, heading, body, ok_label, callback):
     d = Gtk.MessageDialog(transient_for=parent, modal=True,
                           message_type=Gtk.MessageType.WARNING,
                           buttons=Gtk.ButtonsType.NONE, text=heading, secondary_text=body)
-    d.add_button("Huỷ", Gtk.ResponseType.CANCEL)
+    d.add_button(_("Huỷ"), Gtk.ResponseType.CANCEL)
     d.add_button(ok_label, Gtk.ResponseType.OK)
     d.set_default_response(Gtk.ResponseType.CANCEL)
 
@@ -145,7 +146,7 @@ class SettingsWindow(Adw.PreferencesWindow):
     def __init__(self, app, cfg):
         super().__init__(application=app)
         self.cfg = cfg
-        self.set_title("VietTelex — Cài đặt")
+        self.set_title(_("VietTelex — Cài đặt"))
         self.set_default_size(760, 700)
         self.refreshers = []          # hàm cập nhật widget khi file đổi từ bên ngoài
         self.telex_only = []          # dòng ẩn khi chọn VNI
@@ -210,48 +211,48 @@ class SettingsWindow(Adw.PreferencesWindow):
     # --- page 1: Kiểu gõ -------------------------------------------------
 
     def _page_typing(self):
-        page = Adw.PreferencesPage(title="Kiểu gõ", icon_name="input-keyboard-symbolic")
+        page = Adw.PreferencesPage(title=_("Kiểu gõ"), icon_name="input-keyboard-symbolic")
 
-        self.status_group = Adw.PreferencesGroup(title="Bộ gõ")
-        self.status_row = row("Đang kiểm tra…")
-        guide = Gtk.Button(label="Hướng dẫn bật bộ gõ…", valign=Gtk.Align.CENTER)
+        self.status_group = Adw.PreferencesGroup(title=_("Bộ gõ"))
+        self.status_row = row(_("Đang kiểm tra…"))
+        guide = Gtk.Button(label=_("Hướng dẫn bật bộ gõ…"), valign=Gtk.Align.CENTER)
         guide.connect("clicked", lambda _b: self.show_onboarding())
         self.status_row.add_suffix(guide)
         self.status_group.add(self.status_row)
         page.add(self.status_group)
         self.refresh_status()
 
-        g = Adw.PreferencesGroup(title="Kiểu gõ")
-        self.combo(g, "typing", "input_method", "Kiểu gõ",
+        g = Adw.PreferencesGroup(title=_("Kiểu gõ"))
+        self.combo(g, "typing", "input_method", _("Kiểu gõ"),
                    [("telex", "Telex"), ("vni", "VNI")],
                    on_change=self._apply_vni_visibility)
-        self.vni_help = row("Gõ dấu bằng chữ số",
-                            "Gõ dấu bằng chữ số thay cho chữ cái Telex: 1-5 = sắc/huyền/hỏi/ngã/nặng, "
+        self.vni_help = row(_("Gõ dấu bằng chữ số"),
+                            _("Gõ dấu bằng chữ số thay cho chữ cái Telex: 1-5 = sắc/huyền/hỏi/ngã/nặng, "
                             "6 = â/ê/ô, 7 = ơ/ư, 8 = ă, 9 = đ, 0 = bỏ dấu. Chữ cái giữ nguyên. Nên bật "
-                            "“Kiểm tra chính tả khi gõ” để số như “mp3” không bị biến thành dấu.")
+                            "“Kiểm tra chính tả khi gõ” để số như “mp3” không bị biến thành dấu."))
         g.add(self.vni_help)
         self.telex_only += [
-            self.switch(g, "typing", "simple_telex", "Telex đơn giản",
-                        "Chữ w đứng một mình luôn là 'w' (gõ 'uw' để ra ư). "
-                        "Tắt = Telex đầy đủ (cw→cư)."),
-            self.switch(g, "typing", "teencode", "Chính tả teencode",
-                        "Chấp nhận cách viết khi chat: w/z/k thay cho qu/d/c (wá, zui zẻ, kó) và "
+            self.switch(g, "typing", "simple_telex", _("Telex đơn giản"),
+                        _("Chữ w đứng một mình luôn là 'w' (gõ 'uw' để ra ư). "
+                        "Tắt = Telex đầy đủ (cw→cư).")),
+            self.switch(g, "typing", "teencode", _("Chính tả teencode"),
+                        _("Chấp nhận cách viết khi chat: w/z/k thay cho qu/d/c (wá, zui zẻ, kó) và "
                         "bíe, thík, gòy, ừk. Tắt = chỉ chính tả chuẩn, nên từ tiếng Anh như was, "
-                        "war, worse, zoo giữ nguyên."),
-            self.switch(g, "typing", "quick_telex", "Gõ nhanh (Quick Telex)",
-                        "Gõ đúp phụ âm đầu để ra phụ âm ghép: cc→ch, gg→gi, kk→kh, nn→ng, qq→qu, "
-                        "pp→ph, tt→th."),
-            self.switch(g, "typing", "free_marking", "Bỏ dấu tự do",
-                        "Tắt = Telex nghiêm ngặt: dấu chỉ nhận khi gõ sát nguyên âm, hợp cho "
-                        "English/code (data→data). Bật: dấu đặt tự do (ama→âm)."),
-            self.switch(g, "typing", "bracket_vowels", "Phím ngoặc: [ ra ơ, ] ra ư",
-                        "Thói quen UniKey: “th[” → “thơ”, “ng]” → “ngư” ({ và } ra chữ hoa). "
+                        "war, worse, zoo giữ nguyên.")),
+            self.switch(g, "typing", "quick_telex", _("Gõ nhanh (Quick Telex)"),
+                        _("Gõ đúp phụ âm đầu để ra phụ âm ghép: cc→ch, gg→gi, kk→kh, nn→ng, qq→qu, "
+                        "pp→ph, tt→th.")),
+            self.switch(g, "typing", "free_marking", _("Bỏ dấu tự do"),
+                        _("Tắt = Telex nghiêm ngặt: dấu chỉ nhận khi gõ sát nguyên âm, hợp cho "
+                        "English/code (data→data). Bật: dấu đặt tự do (ama→âm).")),
+            self.switch(g, "typing", "bracket_vowels", _("Phím ngoặc: [ ra ơ, ] ra ư"),
+                        _("Thói quen UniKey: “th[” → “thơ”, “ng]” → “ngư” ({ và } ra chữ hoa). "
                         "Nếu bạn gõ code thì nên để TẮT — khi bật, [ và ] thuộc về từ đang gõ "
-                        "thay vì kết thúc từ."),
+                        "thay vì kết thúc từ.")),
         ]
-        self.switch(g, "typing", "modern_tone", "Bỏ dấu kiểu mới (oà, uý)",
-                    "Tắt = kiểu cũ (hòa, thủy, khỏe). Bật = kiểu mới (hoà, thuý, khoẻ). "
-                    "Chỉ đổi vị trí dấu ở oa/oe/uy.")
+        self.switch(g, "typing", "modern_tone", _("Bỏ dấu kiểu mới (oà, uý)"),
+                    _("Tắt = kiểu cũ (hòa, thủy, khỏe). Bật = kiểu mới (hoà, thuý, khoẻ). "
+                    "Chỉ đổi vị trí dấu ở oa/oe/uy."))
         page.add(g)
         return page
 
@@ -266,72 +267,105 @@ class SettingsWindow(Adw.PreferencesWindow):
         self.assessment = a
         fw = {"fcitx5": "Fcitx5", "ibus": "IBus"}.get(a["framework"])
         if a["ok"]:
-            self.status_row.set_title(esc("VietTelex đang hoạt động"))
-            self.status_row.set_subtitle(esc("Bộ khung gõ: %s. Chuyển Việt/Anh bằng %s." % (
-                fw, hotkey_label(self.cfg.get("general", "toggle_hotkey")) or "menu bộ gõ")))
+            self.status_row.set_title(esc(_("VietTelex đang hoạt động")))
+            self.status_row.set_subtitle(esc(_("Bộ khung gõ: %s. Chuyển Việt/Anh bằng %s.") % (
+                fw, hotkey_label(self.cfg.get("general", "toggle_hotkey")) or _("menu bộ gõ"))))
         elif not fw:
-            self.status_row.set_title(esc("Chưa có bộ khung gõ Fcitx5 hoặc IBus"))
-            self.status_row.set_subtitle(esc("Cài gói viettelex-fcitx5 (khuyên dùng) hoặc "
-                                             "viettelex-ibus, rồi làm theo hướng dẫn."))
+            self.status_row.set_title(esc(_("Chưa có bộ khung gõ Fcitx5 hoặc IBus")))
+            self.status_row.set_subtitle(esc(_("Cài gói viettelex-fcitx5 (khuyên dùng) hoặc "
+                                             "viettelex-ibus, rồi làm theo hướng dẫn.")))
         else:
-            self.status_row.set_title(esc("VietTelex chưa được bật trong %s" % fw))
-            self.status_row.set_subtitle(esc("Bấm “Hướng dẫn bật bộ gõ…” để làm từng bước."))
+            self.status_row.set_title(esc(_("VietTelex chưa được bật trong %s") % fw))
+            self.status_row.set_subtitle(esc(_("Bấm “Hướng dẫn bật bộ gõ…” để làm từng bước.")))
 
     # --- page 2: Tuỳ chỉnh -----------------------------------------------
 
     def _page_options(self):
-        page = Adw.PreferencesPage(title="Tuỳ chỉnh", icon_name="preferences-system-symbolic")
+        page = Adw.PreferencesPage(title=_("Tuỳ chỉnh"), icon_name="preferences-system-symbolic")
 
-        g = Adw.PreferencesGroup(title="Chính tả")
-        self.switch(g, "typing", "auto_restore", "Tự khôi phục từ không hợp lệ",
-                    "Từ không phải tiếng Việt hợp lệ sẽ tự trả về đúng phím đã gõ khi kết thúc "
-                    "từ (retore → retore).")
-        self.switch(g, "typing", "spell_check", "Kiểm tra chính tả khi gõ",
-                    "Ngừng bỏ dấu ngay khi từ không thể là tiếng Việt (google, github…) thay vì "
-                    "đợi hết từ.")
-        self.switch(g, "typing", "contextual_english", "Quyết định theo ngữ cảnh",
-                    "Sau một từ tiếng Anh, từ nhập nhằng kế tiếp mà chuỗi phím tạo thành một từ "
+        # Tiêu đề song ngữ cố định: người không đọc được tiếng Việt vẫn tìm ra.
+        g = Adw.PreferencesGroup()
+        self.combo(g, "general", "ui_language", "Ngôn ngữ / Language",
+                   [("vi", "Tiếng Việt"), ("en", "English")],
+                   on_change=self._language_changed)
+        page.add(g)
+
+        g = Adw.PreferencesGroup(title=_("Chính tả"))
+        self.switch(g, "typing", "auto_restore", _("Tự khôi phục từ không hợp lệ"),
+                    _("Từ không phải tiếng Việt hợp lệ sẽ tự trả về đúng phím đã gõ khi kết thúc "
+                    "từ (retore → retore)."))
+        self.switch(g, "typing", "spell_check", _("Kiểm tra chính tả khi gõ"),
+                    _("Ngừng bỏ dấu ngay khi từ không thể là tiếng Việt (google, github…) thay vì "
+                    "đợi hết từ."))
+        self.switch(g, "typing", "contextual_english", _("Quyết định theo ngữ cảnh"),
+                    _("Sau một từ tiếng Anh, từ nhập nhằng kế tiếp mà chuỗi phím tạo thành một từ "
                     "tiếng Anh sẽ được giữ tiếng Anh thay vì tiếng Việt — “he is” → “he is”, không "
-                    "phải “he í”. Sau từ tiếng Việt hoặc không rõ thì để tiếng Việt — “sao í”.")
-        self.switch(g, "typing", "re_edit_word", "Gõ thêm dấu cho từ ngay trước con trỏ",
-                    "Đặt con trỏ ngay sau một từ đã gõ rồi gõ phím dấu để sửa dấu từ đó "
-                    "(toan + s → toán).")
+                    "phải “he í”. Sau từ tiếng Việt hoặc không rõ thì để tiếng Việt — “sao í”."))
+        self.switch(g, "typing", "re_edit_word", _("Gõ thêm dấu cho từ ngay trước con trỏ"),
+                    _("Đặt con trỏ ngay sau một từ đã gõ rồi gõ phím dấu để sửa dấu từ đó "
+                    "(toan + s → toán)."))
         page.add(g)
 
         g = Adw.PreferencesGroup(
-            title="Khi từ vừa là tiếng Anh vừa là tiếng Việt",
-            description="Cho các từ như last/lát, list/lít, his/hí. Ưu tiên tiếng Việt: gõ đúp "
+            title=_("Khi từ vừa là tiếng Anh vừa là tiếng Việt"),
+            description=_("Cho các từ như last/lát, list/lít, his/hí. Ưu tiên tiếng Việt: gõ đúp "
                         "phím dấu để giữ tiếng Anh (lisst → list). Ưu tiên tiếng Anh: đặt dấu ở "
                         "cuối từ để ra tiếng Việt (lits → lít). Trong câu tiếng Anh thì từ vẫn "
-                        "giữ tiếng Anh dù chọn gì.")
-        self.combo(g, "typing", "collision_prefers_vietnamese", "Ưu tiên",
-                   [(True, "Ưu tiên tiếng Việt"), (False, "Ưu tiên tiếng Anh")])
+                        "giữ tiếng Anh dù chọn gì."))
+        self.combo(g, "typing", "collision_prefers_vietnamese", _("Ưu tiên"),
+                   [(True, _("Ưu tiên tiếng Việt")), (False, _("Ưu tiên tiếng Anh"))])
         page.add(g)
 
         g = Adw.PreferencesGroup(
-            title="Hiển thị chữ đang gõ",
-            description="Chữ đang gõ (preedit): đúng chữ ở mọi app (GTK, Qt, Chrome, Electron). "
+            title=_("Hiển thị chữ đang gõ"),
+            description=_("Chữ đang gõ (preedit): đúng chữ ở mọi app (GTK, Qt, Chrome, Electron). "
                         "Sửa trực tiếp: giống macOS, chỉ áp dụng ở app hỗ trợ surrounding text — "
                         "LibreOffice và app không hỗ trợ tự về preedit. Chỉnh riêng từng app ở "
-                        "tab Bảng cơ chế gõ.")
-        self.combo(g, "general", "display_mode", "Cách hiện từ đang gõ",
-                   [("preedit", "Chữ đang gõ (preedit)"), ("surrounding", "Sửa trực tiếp (surrounding)")])
-        self.switch(g, "general", "preedit_underline", "Gạch chân chữ đang gõ",
-                    "Tắt = chữ đang gõ trông như chữ thường ở app GTK, Qt, VTE (X11). Chrome/Electron "
-                    "và app Wayland trên GNOME vẫn tự vẽ gạch chân.")
-        self.switch(g, "general", "terminal_direct", "Terminal: gõ thẳng, sửa dấu bằng Backspace",
-                    "Giống UniKey: không gạch chân trong gnome-terminal, tilix, konsole… khi app "
+                        "tab Bảng cơ chế gõ."))
+        self.combo(g, "general", "display_mode", _("Cách hiện từ đang gõ"),
+                   [("preedit", _("Chữ đang gõ (preedit)")), ("surrounding", _("Sửa trực tiếp (surrounding)"))])
+        self.switch(g, "general", "preedit_underline", _("Gạch chân chữ đang gõ"),
+                    _("Tắt = chữ đang gõ trông như chữ thường ở app GTK, Qt, VTE (X11). Chrome/Electron "
+                    "và app Wayland trên GNOME vẫn tự vẽ gạch chân."))
+        self.switch(g, "general", "terminal_direct", _("Terminal: gõ thẳng, sửa dấu bằng Backspace"),
+                    _("Giống UniKey: không gạch chân trong gnome-terminal, tilix, konsole… khi app "
                     "nhận phím qua IBus GTK3 hoặc Fcitx5 (fcitx5-gtk3/fcitx5-qt). Terminal GTK4 "
-                    "(Ptyxis, Console) và phiên Wayland GNOME vẫn dùng preedit.")
+                    "(Ptyxis, Console) và phiên Wayland GNOME vẫn dùng preedit."))
         page.add(g)
 
-        g = Adw.PreferencesGroup(title="Chuyển Việt/Anh")
-        hk = row("Phím chuyển Việt/Anh",
-                 "Mặc định Ctrl+Space. Không dùng Super+Space (GNOME dùng để đổi nguồn nhập).")
+        g = Adw.PreferencesGroup(
+            title=_("Công cụ văn bản"),
+            description=_("Bôi đen chữ ở app bất kỳ rồi chọn trong menu bộ gõ → Công cụ…: Thêm dấu "
+                          "cho vùng chọn, HOA, thường, Hoa Đầu Từ, Hoa đầu câu, Xoá dấu. Không bao "
+                          "giờ chạy ở ô mật khẩu."))
+        self.switch(g, "general", "text_tools_menu", _("Hiện công cụ văn bản trong menu"),
+                    _("Menu “Công cụ…” của bộ gõ (khay Fcitx5 / menu IBus) liệt kê 6 công cụ trên."))
+        at = row(_("Phím tắt Thêm dấu"),
+                 _("Thêm dấu cho đoạn không dấu đang bôi đen (toi di hoc → tôi đi học). Mặc định tắt."))
+        self.addtones_btn = Gtk.Button(valign=Gtk.Align.CENTER)
+        self.addtones_btn.connect("clicked", lambda _b: self.capture_hotkey(
+            _("Phím tắt Thêm dấu"), _("Esc = huỷ · Backspace = tắt phím tắt."),
+            self.set_addtones_hotkey, "action"))
+        off = Gtk.Button(icon_name="edit-clear-symbolic", valign=Gtk.Align.CENTER,
+                         tooltip_text=_("Tắt phím tắt"))
+        off.add_css_class("flat")
+        off.connect("clicked", lambda _b: self.set_addtones_hotkey(""))
+        at.add_suffix(self.addtones_btn)
+        at.add_suffix(off)
+        g.add(at)
+        self.refreshers.append(self._refresh_addtones)
+        self._refresh_addtones()
+        page.add(g)
+
+        g = Adw.PreferencesGroup(title=_("Chuyển Việt/Anh"))
+        hk = row(_("Phím chuyển Việt/Anh"),
+                 _("Mặc định Ctrl+Space. Không dùng Super+Space (GNOME dùng để đổi nguồn nhập)."))
         self.hotkey_btn = Gtk.Button(valign=Gtk.Align.CENTER)
-        self.hotkey_btn.connect("clicked", lambda _b: self.capture_hotkey())
+        self.hotkey_btn.connect("clicked", lambda _b: self.capture_hotkey(
+            _("Phím chuyển Việt/Anh"), _("Esc = huỷ · Backspace = tắt phím chuyển."),
+            self.set_hotkey, "toggle"))
         reset = Gtk.Button(icon_name="edit-undo-symbolic", valign=Gtk.Align.CENTER,
-                           tooltip_text="Về mặc định (Ctrl+Space)")
+                           tooltip_text=_("Về mặc định (Ctrl+Space)"))
         reset.add_css_class("flat")
         reset.connect("clicked", lambda _b: self.set_hotkey("Ctrl+space"))
         hk.add_suffix(self.hotkey_btn)
@@ -339,14 +373,14 @@ class SettingsWindow(Adw.PreferencesWindow):
         g.add(hk)
         self.refreshers.append(self._refresh_hotkey)
         self._refresh_hotkey()
-        self.switch(g, "general", "per_app_state", "Nhớ Việt/Anh theo từng app",
-                    "Mỗi app giữ trạng thái Việt/Anh riêng — chuyển sang terminal gõ tiếng Anh "
-                    "không làm mất tiếng Việt ở trình soạn thảo.")
-        self.switch(g, "general", "default_vietnamese", "App mới mở bắt đầu bằng tiếng Việt",
-                    "Tắt = app lần đầu gặp bắt đầu ở chế độ tiếng Anh.")
-        forget = row("Quên trạng thái Việt/Anh đã nhớ",
-                     "Xoá trạng thái đã nhớ của mọi app; lần sau mỗi app bắt đầu theo mặc định.")
-        fb = Gtk.Button(label="Quên tất cả", valign=Gtk.Align.CENTER)
+        self.switch(g, "general", "per_app_state", _("Nhớ Việt/Anh theo từng app"),
+                    _("Mỗi app giữ trạng thái Việt/Anh riêng — chuyển sang terminal gõ tiếng Anh "
+                    "không làm mất tiếng Việt ở trình soạn thảo."))
+        self.switch(g, "general", "default_vietnamese", _("App mới mở bắt đầu bằng tiếng Việt"),
+                    _("Tắt = app lần đầu gặp bắt đầu ở chế độ tiếng Anh."))
+        forget = row(_("Quên trạng thái Việt/Anh đã nhớ"),
+                     _("Xoá trạng thái đã nhớ của mọi app; lần sau mỗi app bắt đầu theo mặc định."))
+        fb = Gtk.Button(label=_("Quên tất cả"), valign=Gtk.Align.CENTER)
         fb.connect("clicked", lambda _b: self.forget_app_state())
         forget.add_suffix(fb)
         g.add(forget)
@@ -355,24 +389,47 @@ class SettingsWindow(Adw.PreferencesWindow):
 
     def _refresh_hotkey(self):
         hk = self.cfg.get("general", "toggle_hotkey")
-        self.hotkey_btn.set_label(hotkey_label(hk) or "Tắt")
+        self.hotkey_btn.set_label(hotkey_label(hk) or _("Tắt"))
 
     def set_hotkey(self, value):
         self.cfg.set("general", "toggle_hotkey", value)
         self._refresh_hotkey()
         conflict = gnome_hotkey_conflict(value)
         if conflict:
-            self.toast("Trùng phím tắt GNOME: %s — hãy chọn tổ hợp khác." % conflict)
+            self.toast(_("Trùng phím tắt GNOME: %s — hãy chọn tổ hợp khác.") % conflict)
 
-    def capture_hotkey(self):
-        win = Gtk.Window(transient_for=self, modal=True, title="Phím chuyển Việt/Anh",
+    def _refresh_addtones(self):
+        hk = self.cfg.get("general", "add_tones_hotkey")
+        self.addtones_btn.set_label(hotkey_label(hk) or _("Tắt"))
+
+    def set_addtones_hotkey(self, value):
+        self.cfg.set("general", "add_tones_hotkey", value)
+        self._refresh_addtones()
+        conflict = gnome_hotkey_conflict(value)
+        if conflict:
+            self.toast(_("Trùng phím tắt GNOME: %s — hãy chọn tổ hợp khác.") % conflict)
+
+    def _language_changed(self):
+        lang = self.cfg.get("general", "ui_language")
+        if lang == i18n.language():
+            return
+        i18n.set_language(lang)
+        app = self.get_application()
+        if app is not None:
+            GLib.idle_add(lambda: (app.rebuild_window(), False)[1])
+
+    def capture_hotkey(self, heading, esc_hint, setter, kind):
+        """kind "toggle" = phím chuyển Việt/Anh; "action" = phím công cụ (cần Ctrl/Alt/Super,
+        không trùng phím chuyển)."""
+        win = Gtk.Window(transient_for=self, modal=True, title=heading,
                          default_width=420, resizable=False)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin_top=24,
                       margin_bottom=24, margin_start=24, margin_end=24)
-        title = Gtk.Label(label="Nhấn tổ hợp phím mới…")
+        title = Gtk.Label(label=_("Nhấn tổ hợp phím mới…"))
         title.add_css_class("title-3")
-        hint = Gtk.Label(label="Cần ít nhất một phím Ctrl/Alt/Shift/Super.\n"
-                               "Esc = huỷ · Backspace = tắt phím chuyển.", justify=Gtk.Justification.CENTER)
+        need = (_("Cần ít nhất một phím Ctrl/Alt/Shift/Super.") if kind == "toggle"
+                else _("Cần ít nhất một phím Ctrl/Alt/Super."))
+        hint = Gtk.Label(label=need + "\n" + esc_hint, justify=Gtk.Justification.CENTER)
         hint.add_css_class("dim-label")
         box.append(title)
         box.append(hint)
@@ -398,17 +455,30 @@ class SettingsWindow(Adw.PreferencesWindow):
                 win.close()
                 return True
             if not mods and name == "BackSpace":
-                self.set_hotkey("")
+                setter("")
                 win.close()
                 return True
             if not mods:
-                title.set_label("Cần thêm Ctrl, Alt, Shift hoặc Super")
+                title.set_label(_("Cần thêm Ctrl, Alt, Shift hoặc Super"))
                 return True
             value = config.normalize_hotkey("+".join(mods + [name]))
             if value is None:
-                title.set_label("Không dùng được %s — chọn tổ hợp khác" % "+".join(mods + [name]))
+                title.set_label(_("Không dùng được %s — chọn tổ hợp khác") % "+".join(mods + [name]))
                 return True
-            self.set_hotkey(value)
+            if kind == "action":
+                err = config.action_hotkey_error(value, self.cfg.get("general", "toggle_hotkey"))
+                if err == "modifier":
+                    title.set_label(_("Cần thêm Ctrl, Alt hoặc Super"))
+                    return True
+                if err == "toggle":
+                    title.set_label(_("%s đang là phím chuyển Việt/Anh — chọn tổ hợp khác")
+                                    % hotkey_label(value))
+                    return True
+            elif value == self.cfg.get("general", "add_tones_hotkey"):
+                title.set_label(_("%s đang là phím tắt Thêm dấu — chọn tổ hợp khác")
+                                % hotkey_label(value))
+                return True
+            setter(value)
             win.close()
             return True
         ctl.connect("key-pressed", pressed)
@@ -424,27 +494,27 @@ class SettingsWindow(Adw.PreferencesWindow):
             except FileNotFoundError:
                 pass
             except OSError:
-                self.toast("Không xoá được %s" % path)
+                self.toast(_("Không xoá được %s") % path)
                 return
-            self.toast("Đã quên trạng thái Việt/Anh của mọi app.")
-        confirm(self, "Quên trạng thái Việt/Anh?",
-                "Mọi app sẽ bắt đầu lại theo mặc định.", "Quên tất cả", do)
+            self.toast(_("Đã quên trạng thái Việt/Anh của mọi app."))
+        confirm(self, _("Quên trạng thái Việt/Anh?"),
+                _("Mọi app sẽ bắt đầu lại theo mặc định."), _("Quên tất cả"), do)
 
     # --- page 3: Gõ tắt --------------------------------------------------
 
     def _page_shortcuts(self):
-        page = Adw.PreferencesPage(title="Gõ tắt", icon_name="document-edit-symbolic")
+        page = Adw.PreferencesPage(title=_("Gõ tắt"), icon_name="document-edit-symbolic")
         g = Adw.PreferencesGroup()
-        self.switch(g, "typing", "shortcuts_enabled", "Bật gõ tắt",
-                    "Gõ từ tắt rồi dấu cách/dấu câu để bung ra cụm đầy đủ (ko → không).")
+        self.switch(g, "typing", "shortcuts_enabled", _("Bật gõ tắt"),
+                    _("Gõ từ tắt rồi dấu cách/dấu câu để bung ra cụm đầy đủ (ko → không)."))
         page.add(g)
 
-        add = Adw.PreferencesGroup(title="Thêm / sửa gõ tắt",
-                                   description="Bấm một dòng để sửa.")
+        add = Adw.PreferencesGroup(title=_("Thêm / sửa gõ tắt"),
+                                   description=_("Bấm một dòng để sửa."))
         box = Gtk.Box(spacing=6, margin_top=6, margin_bottom=6)
-        self.sc_key = Gtk.Entry(placeholder_text="gõ", width_chars=10, max_length=64)
-        self.sc_val = Gtk.Entry(placeholder_text="thành", hexpand=True)
-        btn = Gtk.Button(label="Thêm")
+        self.sc_key = Gtk.Entry(placeholder_text=_("gõ"), width_chars=10, max_length=64)
+        self.sc_val = Gtk.Entry(placeholder_text=_("thành"), hexpand=True)
+        btn = Gtk.Button(label=_("Thêm"))
         btn.add_css_class("suggested-action")
         btn.connect("clicked", lambda _b: self.add_shortcut())
         self.sc_key.connect("activate", lambda _e: self.sc_val.grab_focus())
@@ -455,9 +525,9 @@ class SettingsWindow(Adw.PreferencesWindow):
         box.append(btn)
         add.add(box)
         io = Gtk.Box(spacing=6, halign=Gtk.Align.END, margin_top=6)
-        imp = Gtk.Button(label="Nhập…")
+        imp = Gtk.Button(label=_("Nhập…"))
         imp.connect("clicked", lambda _b: choose_file(self, False, "", self.import_shortcuts))
-        exp = Gtk.Button(label="Xuất ra YAML…")
+        exp = Gtk.Button(label=_("Xuất ra YAML…"))
         exp.connect("clicked", lambda _b: choose_file(self, True, "viettelex-shortcuts.yml",
                                                         self.export_shortcuts))
         io.append(imp)
@@ -465,7 +535,7 @@ class SettingsWindow(Adw.PreferencesWindow):
         add.add(io)
         page.add(add)
 
-        self.sc_group = Adw.PreferencesGroup(title="Bảng gõ tắt")
+        self.sc_group = Adw.PreferencesGroup(title=_("Bảng gõ tắt"))
         self.sc_rows = []
         page.add(self.sc_group)
         self._rebuild_shortcuts()
@@ -476,8 +546,8 @@ class SettingsWindow(Adw.PreferencesWindow):
             self.sc_group.remove(r)
         self.sc_rows = []
         if not self.shortcut_map:
-            r = row("Chưa có gõ tắt nào", "Thêm ở trên, hoặc Nhập… file YAML/JSON/TXT "
-                    "(mỗi dòng một cặp key: value — cùng định dạng bản macOS, Gõ Nhanh, EVKey…).")
+            r = row(_("Chưa có gõ tắt nào"), _("Thêm ở trên, hoặc Nhập… file YAML/JSON/TXT "
+                    "(mỗi dòng một cặp key: value — cùng định dạng bản macOS, Gõ Nhanh, EVKey…)."))
             self.sc_group.add(r)
             self.sc_rows.append(r)
             return
@@ -486,7 +556,7 @@ class SettingsWindow(Adw.PreferencesWindow):
             r.set_activatable(True)
             r.connect("activated", lambda _r, k=key: self._edit_shortcut(k))
             d = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER,
-                           tooltip_text="Xoá gõ tắt này")
+                           tooltip_text=_("Xoá gõ tắt này"))
             d.add_css_class("flat")
             d.connect("clicked", lambda _b, k=key: self.remove_shortcut(k))
             r.add_suffix(d)
@@ -506,10 +576,10 @@ class SettingsWindow(Adw.PreferencesWindow):
         k = self.sc_key.get_text().strip()
         v = self.sc_val.get_text().strip()
         if not shortcuts.valid_key(k):
-            self.toast("Từ gõ tắt không được trống hay chứa dấu cách (tối đa 64 ký tự).")
+            self.toast(_("Từ gõ tắt không được trống hay chứa dấu cách (tối đa 64 ký tự)."))
             return
         if not v:
-            self.toast("Nhập cụm từ sẽ thay thế.")
+            self.toast(_("Nhập cụm từ sẽ thay thế."))
             return
         self.shortcut_map[k] = v
         self._save_shortcuts()
@@ -524,39 +594,39 @@ class SettingsWindow(Adw.PreferencesWindow):
     def import_shortcuts(self, path):
         d = read_table(path)
         if d is None:
-            self.toast("Không đọc được file. Định dạng hỗ trợ: JSON, YAML, hoặc mỗi dòng một "
-                       "cặp key:value.")
+            self.toast(_("Không đọc được file. Định dạng hỗ trợ: JSON, YAML, hoặc mỗi dòng một "
+                       "cặp key:value."))
             return
         d = {k: v for k, v in d.items() if shortcuts.valid_key(k)}
         self.shortcut_map.update(d)
         self._save_shortcuts()
-        self.toast("Đã nhập %d gõ tắt — gộp vào bảng hiện có (mục trùng lấy giá trị mới)."
+        self.toast(_("Đã nhập %d gõ tắt — gộp vào bảng hiện có (mục trùng lấy giá trị mới).")
                    % len(d))
 
     def export_shortcuts(self, path):
         try:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(shortcuts.export_yaml(self.shortcut_map))
-            self.toast("Đã lưu %s" % os.path.basename(path))
+            self.toast(_("Đã lưu %s") % os.path.basename(path))
         except OSError:
-            self.toast("Không lưu được file.")
+            self.toast(_("Không lưu được file."))
 
     # --- page 4: Bảng cơ chế gõ -----------------------------------------
 
     def _page_modes(self):
-        page = Adw.PreferencesPage(title="Bảng cơ chế gõ", icon_name="view-list-symbolic")
+        page = Adw.PreferencesPage(title=_("Bảng cơ chế gõ"), icon_name="view-list-symbolic")
         g = Adw.PreferencesGroup(
-            title="Ép cơ chế gõ theo app",
-            description="App gõ sai hoặc hiện gạch chân khó chịu? Chọn riêng cho app đó. "
+            title=_("Ép cơ chế gõ theo app"),
+            description=_("App gõ sai hoặc hiện gạch chân khó chịu? Chọn riêng cho app đó. "
                         "Tự động = theo “Cách hiện từ đang gõ” ở tab Tuỳ chỉnh. Terminal và "
                         "LibreOffice mặc định dùng preedit (%s); terminal gõ thẳng khi hệ hỗ trợ. "
-                        "“Gõ thẳng” chỉ có tác dụng ở app nhận phím qua IBus GTK3 / Fcitx5 GTK3-Qt."
+                        "“Gõ thẳng” chỉ có tác dụng ở app nhận phím qua IBus GTK3 / Fcitx5 GTK3-Qt.")
                         % BUILTIN_PREEDIT_APPS)
         box = Gtk.Box(spacing=6, margin_top=6, margin_bottom=6)
         self.mode_app = Gtk.Entry(hexpand=True,
-                                  placeholder_text="Tên app (vd: org.gnome.texteditor, kitty, code)")
-        self.mode_pick = Gtk.DropDown.new_from_strings([l for v, l in APP_MODE_CHOICES[1:]])
-        btn = Gtk.Button(label="Thêm")
+                                  placeholder_text=_("Tên app (vd: org.gnome.texteditor, kitty, code)"))
+        self.mode_pick = Gtk.DropDown.new_from_strings([_(l) for v, l in APP_MODE_CHOICES[1:]])
+        btn = Gtk.Button(label=_("Thêm"))
         btn.add_css_class("suggested-action")
         btn.connect("clicked", lambda _b: self.add_app_mode())
         self.mode_app.connect("activate", lambda _e: self.add_app_mode())
@@ -565,9 +635,9 @@ class SettingsWindow(Adw.PreferencesWindow):
         box.append(btn)
         g.add(box)
         io = Gtk.Box(spacing=6, halign=Gtk.Align.END, margin_top=6)
-        imp = Gtk.Button(label="Nhập…")
+        imp = Gtk.Button(label=_("Nhập…"))
         imp.connect("clicked", lambda _b: choose_file(self, False, "", self.import_modes))
-        exp = Gtk.Button(label="Xuất ra YAML…")
+        exp = Gtk.Button(label=_("Xuất ra YAML…"))
         exp.connect("clicked", lambda _b: choose_file(self, True, "viettelex-app-modes.yml",
                                                         self.export_modes))
         io.append(imp)
@@ -576,9 +646,9 @@ class SettingsWindow(Adw.PreferencesWindow):
         page.add(g)
 
         self.mode_group = Adw.PreferencesGroup(
-            title="App đã chỉnh",
-            description="Tên app: Fcitx5 dùng tên chương trình; IBus dùng app-id Wayland hoặc "
-                        "WM_CLASS (chữ thường).")
+            title=_("App đã chỉnh"),
+            description=_("Tên app: Fcitx5 dùng tên chương trình; IBus dùng app-id Wayland hoặc "
+                        "WM_CLASS (chữ thường)."))
         self.mode_rows = []
         page.add(self.mode_group)
         self.refreshers.append(self._rebuild_modes)
@@ -591,7 +661,7 @@ class SettingsWindow(Adw.PreferencesWindow):
         self.mode_rows = []
         modes = self.cfg.data["app_modes"]
         if not modes:
-            r = row("Chưa có app nào", "Mọi app đang dùng chế độ Tự động.")
+            r = row(_("Chưa có app nào"), _("Mọi app đang dùng chế độ Tự động."))
             self.mode_group.add(r)
             self.mode_rows.append(r)
             return
@@ -599,12 +669,12 @@ class SettingsWindow(Adw.PreferencesWindow):
         for app in sorted(modes):
             r = Adw.ComboRow()
             r.set_title(esc(app))
-            r.set_model(Gtk.StringList.new([l for _v, l in APP_MODE_CHOICES]))
+            r.set_model(Gtk.StringList.new([_(l) for _v, l in APP_MODE_CHOICES]))
             r.set_selected(values.index(modes[app]) if modes[app] in values else 0)
             r.connect("notify::selected",
                       lambda rr, _p, a=app: self._mode_changed(a, values[rr.get_selected()]))
             d = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER,
-                           tooltip_text="Bỏ ghi đè cho app này")
+                           tooltip_text=_("Bỏ ghi đè cho app này"))
             d.add_css_class("flat")
             d.connect("clicked", lambda _b, a=app: self._mode_changed(a, "auto", rebuild=True))
             r.add_suffix(d)
@@ -619,7 +689,7 @@ class SettingsWindow(Adw.PreferencesWindow):
     def add_app_mode(self):
         app = self.mode_app.get_text().strip().lower()
         if not app or any(c.isspace() for c in app):
-            self.toast("Nhập tên app (không chứa dấu cách).")
+            self.toast(_("Nhập tên app (không chứa dấu cách)."))
             return
         mode = APP_MODE_CHOICES[1 + self.mode_pick.get_selected()][0]
         self.cfg.set_app_mode(app, mode)
@@ -629,8 +699,8 @@ class SettingsWindow(Adw.PreferencesWindow):
     def import_modes(self, path):
         d = read_table(path)
         if d is None:
-            self.toast("Không đọc được file. Định dạng hỗ trợ: JSON, YAML, hoặc mỗi dòng một "
-                       "cặp key:value.")
+            self.toast(_("Không đọc được file. Định dạng hỗ trợ: JSON, YAML, hoặc mỗi dòng một "
+                       "cặp key:value."))
             return
         good = {}
         for app, mode in d.items():
@@ -640,21 +710,21 @@ class SettingsWindow(Adw.PreferencesWindow):
         self.cfg.set_app_modes(good)
         applied = len(good)
         self._rebuild_modes()
-        self.toast("Đã nhập %d chế độ app. Mục có chế độ không hợp lệ bị bỏ qua." % applied)
+        self.toast(_("Đã nhập %d chế độ app. Mục có chế độ không hợp lệ bị bỏ qua.") % applied)
 
     def export_modes(self, path):
         try:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(shortcuts.export_yaml(self.cfg.data["app_modes"],
                                               header="# VietTelex — bảng cơ chế gõ theo app (Linux)"))
-            self.toast("Đã lưu %s" % os.path.basename(path))
+            self.toast(_("Đã lưu %s") % os.path.basename(path))
         except OSError:
-            self.toast("Không lưu được file.")
+            self.toast(_("Không lưu được file."))
 
     # --- page 5: Tương thích ứng dụng -----------------------------------
 
     def _page_compat(self):
-        page = Adw.PreferencesPage(title="Tương thích", icon_name="dialog-information-symbolic")
+        page = Adw.PreferencesPage(title=_("Tương thích"), icon_name="dialog-information-symbolic")
         self.compat_page = page
         self.compat_groups = []
         self._rebuild_compat()
@@ -670,11 +740,11 @@ class SettingsWindow(Adw.PreferencesWindow):
         except Exception:  # dò môi trường không được phép làm hỏng app cài đặt
             issues = []
         g = Adw.PreferencesGroup(
-            title="Tương thích ứng dụng",
-            description="Chỉ liệt kê lưu ý khớp với máy này." if issues else
-            "Không phát hiện vấn đề nào với các ứng dụng đã cài.")
+            title=_("Tương thích ứng dụng"),
+            description=_("Chỉ liệt kê lưu ý khớp với máy này.") if issues else
+            _("Không phát hiện vấn đề nào với các ứng dụng đã cài."))
         again = Gtk.Button(icon_name="view-refresh-symbolic", valign=Gtk.Align.CENTER,
-                           tooltip_text="Dò lại")
+                           tooltip_text=_("Dò lại"))
         again.add_css_class("flat")
         again.connect("clicked", lambda _b: self._rebuild_compat())
         g.set_header_suffix(again)
@@ -697,7 +767,7 @@ class SettingsWindow(Adw.PreferencesWindow):
         r.set_subtitle(esc(it["body"]))
         r.add_prefix(icon)
         copy = Gtk.Button(icon_name="edit-copy-symbolic", valign=Gtk.Align.CENTER,
-                          tooltip_text="Chép lệnh")
+                          tooltip_text=_("Chép lệnh"))
         copy.add_css_class("flat")
         copy.connect("clicked", lambda _b, t=it["fix"]: self.copy_text(t))
         r.add_action(copy)
@@ -709,12 +779,12 @@ class SettingsWindow(Adw.PreferencesWindow):
 
     def copy_text(self, text):
         self.get_clipboard().set_content(Gdk.ContentProvider.new_for_value(text))
-        self.toast("Đã chép lệnh.")
+        self.toast(_("Đã chép lệnh."))
 
     # --- page 6: Giới thiệu ----------------------------------------------
 
     def _page_about(self):
-        page = Adw.PreferencesPage(title="Giới thiệu", icon_name="help-about-symbolic")
+        page = Adw.PreferencesPage(title=_("Giới thiệu"), icon_name="help-about-symbolic")
         g = Adw.PreferencesGroup()
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_top=12,
                       halign=Gtk.Align.CENTER)
@@ -724,15 +794,15 @@ class SettingsWindow(Adw.PreferencesWindow):
         name = Gtk.Label(label="VietTelex")
         name.add_css_class("title-1")
         box.append(name)
-        ver = Gtk.Label(label="Phiên bản %s · Linux" % VERSION)
+        ver = Gtk.Label(label=_("Phiên bản %s · Linux") % VERSION)
         ver.add_css_class("dim-label")
         box.append(ver)
         g.add(box)
         page.add(g)
 
         links = Adw.PreferencesGroup()
-        for title, url in (("Website", WEBSITE), ("Học gõ Telex", LEARN_URL),
-                           ("Câu hỏi thường gặp", FAQ_URL), ("Hướng dẫn báo lỗi", BUG_URL)):
+        for title, url in (("Website", WEBSITE), (_("Học gõ Telex"), LEARN_URL),
+                           (_("Câu hỏi thường gặp"), FAQ_URL), (_("Hướng dẫn báo lỗi"), BUG_URL)):
             r = row(title)
             r.add_suffix(Gtk.Image.new_from_icon_name("adw-external-link-symbolic"))
             r.set_activatable(True)
@@ -741,8 +811,8 @@ class SettingsWindow(Adw.PreferencesWindow):
         page.add(links)
 
         upd = Adw.PreferencesGroup()
-        self.update_row = row("Kiểm tra cập nhật", "Chỉ kết nối mạng khi bạn bấm nút này.")
-        self.update_btn = Gtk.Button(label="Kiểm tra", valign=Gtk.Align.CENTER)
+        self.update_row = row(_("Kiểm tra cập nhật"), _("Chỉ kết nối mạng khi bạn bấm nút này."))
+        self.update_btn = Gtk.Button(label=_("Kiểm tra"), valign=Gtk.Align.CENTER)
         # Handler lưu lại để đổi hành động nút (Kiểm tra → Cập nhật → Khởi động lại) không chạy chồng.
         self._upd_handlers = [self.update_btn.connect("clicked", lambda _b: self.check_update())]
         self.update_row.add_suffix(self.update_btn)
@@ -750,7 +820,7 @@ class SettingsWindow(Adw.PreferencesWindow):
         page.add(upd)
 
         foot = Adw.PreferencesGroup()
-        lic = Gtk.Label(label="Mã nguồn mở (MIT) · không thu thập dữ liệu · chạy hoàn toàn trên máy")
+        lic = Gtk.Label(label=_("Mã nguồn mở (MIT) · không thu thập dữ liệu · chạy hoàn toàn trên máy"))
         lic.add_css_class("dim-label")
         foot.add(lic)
         page.add(foot)
@@ -758,7 +828,7 @@ class SettingsWindow(Adw.PreferencesWindow):
 
     def check_update(self):
         self.update_btn.set_sensitive(False)
-        self.update_row.set_subtitle(esc("Đang kiểm tra…"))
+        self.update_row.set_subtitle(esc(_("Đang kiểm tra…")))
 
         def work():
             try:
@@ -768,7 +838,7 @@ class SettingsWindow(Adw.PreferencesWindow):
                 msg, url = updater.update_message(info, VERSION)
             except (OSError, ValueError):
                 st, lin = "error", None
-                msg, url = "Không kết nối được máy chủ cập nhật.", None
+                msg, url = _("Không kết nối được máy chủ cập nhật."), None
             GLib.idle_add(self._update_done, st, lin, msg, url)
         threading.Thread(target=work, daemon=True).start()
 
@@ -783,16 +853,16 @@ class SettingsWindow(Adw.PreferencesWindow):
         self.update_btn.set_sensitive(True)
         self.update_row.set_subtitle(esc(msg))
         if st == "available":
-            self._set_update_action("Cập nhật lên %s" % lin["version"],
+            self._set_update_action(_("Cập nhật lên %s") % lin["version"],
                                     lambda: self.run_update(lin))
         elif url:
-            self._set_update_action("Mở trang tải", lambda: open_uri(url))
+            self._set_update_action(_("Mở trang tải"), lambda: open_uri(url))
         return False
 
     def run_update(self, lin):
         """Cập nhật một chạm: kho APT nếu đã thêm, không thì tải .deb (kiểm SHA256)."""
         self.update_btn.set_sensitive(False)
-        self.update_row.set_subtitle(esc("Đang chuẩn bị cập nhật…"))
+        self.update_row.set_subtitle(esc(_("Đang chuẩn bị cập nhật…")))
 
         def progress(text):
             GLib.idle_add(lambda: (self.update_row.set_subtitle(esc(text)), False)[1])
@@ -805,11 +875,11 @@ class SettingsWindow(Adw.PreferencesWindow):
     def _run_update_done(self, ok, msg, fallback, lin):
         self.update_row.set_subtitle(esc(msg))
         if ok:
-            self._set_update_action("Khởi động lại bộ gõ", self.restart_after_update)
+            self._set_update_action(_("Khởi động lại bộ gõ"), self.restart_after_update)
         elif fallback:
-            self._set_update_action("Mở trang tải", lambda: open_uri(lin.get("url") or RELEASES_URL))
+            self._set_update_action(_("Mở trang tải"), lambda: open_uri(lin.get("url") or RELEASES_URL))
         else:
-            self._set_update_action("Thử lại", lambda: self.run_update(lin))
+            self._set_update_action(_("Thử lại"), lambda: self.run_update(lin))
         return False
 
     def restart_after_update(self):
@@ -848,6 +918,9 @@ class SettingsWindow(Adw.PreferencesWindow):
         before = config.dump(self.cfg.data)
         self.cfg.load()
         if config.dump(self.cfg.data) != before:
+            if self.cfg.get("general", "ui_language") != i18n.language():
+                self._language_changed()      # dựng lại cả cửa sổ — khỏi refresh từng dòng
+                return False
             for f in self.refreshers:
                 f()
             self._apply_vni_visibility()
@@ -909,12 +982,12 @@ class OnboardingWindow(Adw.Window):
 
     def __init__(self, parent):
         super().__init__(transient_for=parent, modal=True, default_width=600,
-                         default_height=640, title="Bật bộ gõ VietTelex")
+                         default_height=640, title=_("Bật bộ gõ VietTelex"))
         self.parent_win = parent
         self.toasts = Adw.ToastOverlay()
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         header = Adw.HeaderBar()
-        refresh = Gtk.Button(icon_name="view-refresh-symbolic", tooltip_text="Kiểm tra lại")
+        refresh = Gtk.Button(icon_name="view-refresh-symbolic", tooltip_text=_("Kiểm tra lại"))
         refresh.connect("clicked", lambda _b: self.rebuild())
         header.pack_start(refresh)
         outer.append(header)
@@ -945,64 +1018,64 @@ class OnboardingWindow(Adw.Window):
         page = Adw.PreferencesPage()
         fw = a["framework"]
         choose = Adw.PreferencesGroup(
-            title="Bộ khung gõ",
-            description="VietTelex là một input method của Fcitx5 (khuyên dùng — độ trễ thấp nhất, "
-                        "hợp KDE) hoặc IBus (mặc định của Ubuntu/GNOME).")
+            title=_("Bộ khung gõ"),
+            description=_("VietTelex là một input method của Fcitx5 (khuyên dùng — độ trễ thấp nhất, "
+                        "hợp KDE) hoặc IBus (mặc định của Ubuntu/GNOME)."))
         if not fw:
-            self.step(choose, False, "Chưa thấy Fcitx5 hay IBus",
-                      "Cài một trong hai gói: sudo apt install ./viettelex-fcitx5_*.deb (hoặc "
+            self.step(choose, False, _("Chưa thấy Fcitx5 hay IBus"),
+                      _("Cài một trong hai gói: sudo apt install ./viettelex-fcitx5_*.deb (hoặc "
                       "viettelex-ibus). Với Fcitx5, chạy thêm: im-config -n fcitx5 rồi đăng "
-                      "xuất/đăng nhập lại.")
+                      "xuất/đăng nhập lại."))
             page.add(choose)
             self._finish(page, a)
             return
         name = "Fcitx5" if fw == "fcitx5" else "IBus"
-        self.step(choose, True, "Đang dùng %s" % name,
-                  "Phát hiện qua biến môi trường / im-config của phiên đăng nhập này.")
+        self.step(choose, True, _("Đang dùng %s") % name,
+                  _("Phát hiện qua biến môi trường / im-config của phiên đăng nhập này."))
         page.add(choose)
 
-        g = Adw.PreferencesGroup(title="Các bước")
+        g = Adw.PreferencesGroup(title=_("Các bước"))
         pkg = "viettelex-fcitx5" if fw == "fcitx5" else "viettelex-ibus"
-        self.step(g, a["installed"][fw], "1. Cài gói %s" % pkg,
-                  "Đã cài." if a["installed"][fw] else
-                  "sudo apt install %s (hoặc cài file .deb tải từ trang phát hành)." % pkg)
+        self.step(g, a["installed"][fw], _("1. Cài gói %s") % pkg,
+                  _("Đã cài.") if a["installed"][fw] else
+                  _("sudo apt install %s (hoặc cài file .deb tải từ trang phát hành).") % pkg)
         if fw == "fcitx5":
-            self.step(g, a["running"]["fcitx5"], "2. Fcitx5 đang chạy",
-                      "Đang chạy." if a["running"]["fcitx5"] else
-                      "Khởi động Fcitx5. Nếu mỗi lần đăng nhập đều phải bật tay: chạy "
-                      "im-config -n fcitx5 rồi đăng nhập lại.",
-                      "Khởi động Fcitx5", self.start_fcitx5)
-            self.step(g, a["enabled"]["fcitx5"], "3. Thêm VietTelex vào nhóm bộ gõ",
-                      "Đã có trong nhóm bộ gõ Fcitx5." if a["enabled"]["fcitx5"] else
-                      "Thêm “Tiếng Việt (VietTelex)” vào nhóm hiện tại. Không cần đăng xuất.",
-                      "Thêm" if a["installed"]["fcitx5"] and a["running"]["fcitx5"] else None,
+            self.step(g, a["running"]["fcitx5"], _("2. Fcitx5 đang chạy"),
+                      _("Đang chạy.") if a["running"]["fcitx5"] else
+                      _("Khởi động Fcitx5. Nếu mỗi lần đăng nhập đều phải bật tay: chạy "
+                      "im-config -n fcitx5 rồi đăng nhập lại."),
+                      _("Khởi động Fcitx5"), self.start_fcitx5)
+            self.step(g, a["enabled"]["fcitx5"], _("3. Thêm VietTelex vào nhóm bộ gõ"),
+                      _("Đã có trong nhóm bộ gõ Fcitx5.") if a["enabled"]["fcitx5"] else
+                      _("Thêm “Tiếng Việt (VietTelex)” vào nhóm hiện tại. Không cần đăng xuất."),
+                      _("Thêm") if a["installed"]["fcitx5"] and a["running"]["fcitx5"] else None,
                       self.add_fcitx5)
             if a["running"]["fcitx5"] and shutil_which("fcitx5-configtool"):
-                r = row("Cấu hình Fcitx5…", "Đổi thứ tự bộ gõ, phím chuyển giữa các bộ gõ.")
-                b = Gtk.Button(label="Mở", valign=Gtk.Align.CENTER)
+                r = row(_("Cấu hình Fcitx5…"), _("Đổi thứ tự bộ gõ, phím chuyển giữa các bộ gõ."))
+                b = Gtk.Button(label=_("Mở"), valign=Gtk.Align.CENTER)
                 b.connect("clicked", lambda _b: spawn(["fcitx5-configtool"]))
                 r.add_suffix(b)
                 g.add(r)
         else:
-            self.step(g, a["running"]["ibus"], "2. IBus đang chạy",
-                      "Đang chạy. Vừa cài gói xong thì bấm “Khởi động lại IBus” để IBus thấy "
-                      "VietTelex." if a["running"]["ibus"] else "Khởi động IBus.",
-                      "Khởi động IBus", lambda: self.run_ok(["ibus-daemon", "-drx"], "Đã khởi động IBus."))
+            self.step(g, a["running"]["ibus"], _("2. IBus đang chạy"),
+                      _("Đang chạy. Vừa cài gói xong thì bấm “Khởi động lại IBus” để IBus thấy "
+                      "VietTelex.") if a["running"]["ibus"] else _("Khởi động IBus."),
+                      _("Khởi động IBus"), lambda: self.run_ok(["ibus-daemon", "-drx"], _("Đã khởi động IBus.")))
             gnome = "GNOME" in snap_env["XDG_CURRENT_DESKTOP"].upper()
-            self.step(g, a["enabled"]["ibus"], "3. Thêm VietTelex vào nguồn nhập",
-                      "Đã có trong nguồn nhập." if a["enabled"]["ibus"] else
-                      ("Cài đặt → Bàn phím → Nguồn nhập → + → Tiếng Việt → VietTelex. "
-                       "Hoặc bấm Thêm để làm hộ." if gnome else
-                       "Mở IBus Preferences → Input Method → Add → Vietnamese → VietTelex."),
-                      "Thêm" if a["installed"]["ibus"] else None, lambda: self.add_ibus(gnome))
-            r = row("Khởi động lại IBus", "Cần sau khi cài/cập nhật gói viettelex-ibus.")
+            self.step(g, a["enabled"]["ibus"], _("3. Thêm VietTelex vào nguồn nhập"),
+                      _("Đã có trong nguồn nhập.") if a["enabled"]["ibus"] else
+                      (_("Cài đặt → Bàn phím → Nguồn nhập → + → Tiếng Việt → VietTelex. "
+                       "Hoặc bấm Thêm để làm hộ.") if gnome else
+                       _("Mở IBus Preferences → Input Method → Add → Vietnamese → VietTelex.")),
+                      _("Thêm") if a["installed"]["ibus"] else None, lambda: self.add_ibus(gnome))
+            r = row(_("Khởi động lại IBus"), _("Cần sau khi cài/cập nhật gói viettelex-ibus."))
             b = Gtk.Button(label="ibus restart", valign=Gtk.Align.CENTER)
-            b.connect("clicked", lambda _b: self.run_ok(["ibus", "restart"], "Đã khởi động lại IBus."))
+            b.connect("clicked", lambda _b: self.run_ok(["ibus", "restart"], _("Đã khởi động lại IBus.")))
             r.add_suffix(b)
             g.add(r)
             if gnome and shutil_which("gnome-control-center"):
-                r = row("Mở Cài đặt Bàn phím…", "Nơi thêm/bớt và sắp xếp nguồn nhập của GNOME.")
-                b = Gtk.Button(label="Mở", valign=Gtk.Align.CENTER)
+                r = row(_("Mở Cài đặt Bàn phím…"), _("Nơi thêm/bớt và sắp xếp nguồn nhập của GNOME."))
+                b = Gtk.Button(label=_("Mở"), valign=Gtk.Align.CENTER)
                 b.connect("clicked", lambda _b: spawn(["gnome-control-center", "keyboard"]))
                 r.add_suffix(b)
                 g.add(r)
@@ -1010,31 +1083,31 @@ class OnboardingWindow(Adw.Window):
         self._finish(page, a)
 
     def _finish(self, page, a):
-        warn = Adw.PreferencesGroup(title="Lưu ý")
+        warn = Adw.PreferencesGroup(title=_("Lưu ý"))
         has = False
         if "other_vn" in a["warnings"]:
             has = True
-            self.step(warn, False, "Có bộ gõ tiếng Việt khác: %s" % ", ".join(a["other_vn"]),
-                      "Bật cùng lúc hai bộ gõ Việt dễ bị gõ đúp dấu. Chỉ để một bộ trong danh "
-                      "sách nguồn nhập (hoặc gỡ gói kia).")
+            self.step(warn, False, _("Có bộ gõ tiếng Việt khác: %s") % ", ".join(a["other_vn"]),
+                      _("Bật cùng lúc hai bộ gõ Việt dễ bị gõ đúp dấu. Chỉ để một bộ trong danh "
+                      "sách nguồn nhập (hoặc gỡ gói kia)."))
         if "both_running" in a["warnings"]:
             has = True
-            self.step(warn, False, "Fcitx5 và IBus cùng chạy",
-                      "Nên chỉ dùng một bộ khung gõ: im-config -n fcitx5 (hoặc ibus) rồi đăng "
-                      "nhập lại.")
+            self.step(warn, False, _("Fcitx5 và IBus cùng chạy"),
+                      _("Nên chỉ dùng một bộ khung gõ: im-config -n fcitx5 (hoặc ibus) rồi đăng "
+                      "nhập lại."))
         if "wayland_chromium" in a["warnings"]:
             has = True
-            self.step(warn, True, "Phiên Wayland: Chrome/Electron (VS Code, Slack…)",
-                      "Nếu không gõ được tiếng Việt trong Chrome hay app Electron, chạy app với "
-                      "%s (hoặc %s). Lệnh copy sẵn ở tab Tương thích." %
+            self.step(warn, True, _("Phiên Wayland: Chrome/Electron (VS Code, Slack…)"),
+                      _("Nếu không gõ được tiếng Việt trong Chrome hay app Electron, chạy app với "
+                      "%s (hoặc %s). Lệnh copy sẵn ở tab Tương thích.") %
                       (compat.WAYLAND_IME_FLAGS, compat.X11_FLAG))
         if has:
             page.add(warn)
 
-        t = Adw.PreferencesGroup(title="Thử gõ",
-                                 description="Bật VietTelex (%s) rồi gõ: vieejt → việt" %
-                                 (hotkey_label(self.parent_win.cfg.get("general", "toggle_hotkey")) or "menu bộ gõ"))
-        e = Gtk.Entry(placeholder_text="Thử gõ tại đây…", margin_top=6)
+        t = Adw.PreferencesGroup(title=_("Thử gõ"),
+                                 description=_("Bật VietTelex (%s) rồi gõ: vieejt → việt") %
+                                 (hotkey_label(self.parent_win.cfg.get("general", "toggle_hotkey")) or _("menu bộ gõ")))
+        e = Gtk.Entry(placeholder_text=_("Thử gõ tại đây…"), margin_top=6)
         t.add(e)
         page.add(t)
         self.scroller.set_child(page)
@@ -1045,10 +1118,10 @@ class OnboardingWindow(Adw.Window):
             self.toast(msg)
             GLib.timeout_add(1500, lambda: (self.rebuild(), False)[1])
         else:
-            self.toast("Không chạy được %s" % argv[0])
+            self.toast(_("Không chạy được %s") % argv[0])
 
     def start_fcitx5(self):
-        self.run_ok(["fcitx5", "-d", "-r"], "Đã khởi động Fcitx5.")
+        self.run_ok(["fcitx5", "-d", "-r"], _("Đã khởi động Fcitx5."))
 
     def add_fcitx5(self):
         """Thêm VietTelex vào nhóm hiện tại qua DBus Controller1 của Fcitx5."""
@@ -1062,7 +1135,7 @@ class OnboardingWindow(Adw.Window):
             layout, items = proxy.call_sync("InputMethodGroupInfo", GLib.Variant("(s)", (group,)),
                                             Gio.DBusCallFlags.NONE, 2000, None).unpack()
             if any(i[0] == detect.FCITX5_ADDON for i in items):
-                self.toast("VietTelex đã có trong nhóm bộ gõ.")
+                self.toast(_("VietTelex đã có trong nhóm bộ gõ."))
             else:
                 items = list(items) + [(detect.FCITX5_ADDON, "")]
                 proxy.call_sync("SetInputMethodGroupInfo",
@@ -1072,13 +1145,13 @@ class OnboardingWindow(Adw.Window):
                     proxy.call_sync("Save", None, Gio.DBusCallFlags.NONE, 2000, None)
                 except GLib.Error:
                     pass
-                self.toast("Đã thêm VietTelex vào nhóm “%s”." % group)
+                self.toast(_("Đã thêm VietTelex vào nhóm “%s”.") % group)
         except GLib.Error:
             if shutil_which("fcitx5-configtool"):
                 spawn(["fcitx5-configtool"])
-                self.toast("Không thêm tự động được — hãy thêm “VietTelex” trong cửa sổ cấu hình.")
+                self.toast(_("Không thêm tự động được — hãy thêm “VietTelex” trong cửa sổ cấu hình."))
             else:
-                self.toast("Không kết nối được Fcitx5 — hãy khởi động Fcitx5 trước.")
+                self.toast(_("Không kết nối được Fcitx5 — hãy khởi động Fcitx5 trước."))
         GLib.timeout_add(800, lambda: (self.rebuild(), False)[1])
 
     def add_ibus(self, gnome):
@@ -1090,20 +1163,20 @@ class OnboardingWindow(Adw.Window):
                 cur = list(s.get_value("sources").unpack())
                 if entry not in cur:
                     s.set_value("sources", GLib.Variant("a(ss)", cur + [entry]))
-                self.toast("Đã thêm VietTelex vào nguồn nhập — chuyển bằng Super+Space.")
+                self.toast(_("Đã thêm VietTelex vào nguồn nhập — chuyển bằng Super+Space."))
             elif src and src.lookup("org.freedesktop.ibus.general", True):
                 s = Gio.Settings.new("org.freedesktop.ibus.general")
                 cur = list(s.get_strv("preload-engines"))
                 if detect.IBUS_ENGINE not in cur:
                     s.set_strv("preload-engines", cur + [detect.IBUS_ENGINE])
                 spawn(["ibus", "restart"])
-                self.toast("Đã thêm VietTelex vào IBus.")
+                self.toast(_("Đã thêm VietTelex vào IBus."))
             elif shutil_which("ibus-setup"):
                 spawn(["ibus-setup"])
             else:
-                self.toast("Không tìm thấy cấu hình IBus.")
+                self.toast(_("Không tìm thấy cấu hình IBus."))
         except GLib.Error:
-            self.toast("Không thêm được — hãy thêm tay trong Cài đặt → Bàn phím.")
+            self.toast(_("Không thêm được — hãy thêm tay trong Cài đặt → Bàn phím."))
         GLib.timeout_add(800, lambda: (self.rebuild(), False)[1])
 
 
@@ -1117,14 +1190,17 @@ def shutil_which(name):
 class App(Adw.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
+        # Ngôn ngữ giao diện: theo config (mặc định tiếng Việt, KHÔNG theo locale của máy).
+        self.cfg = config.Config()
+        i18n.set_language(self.cfg.get("general", "ui_language"))
         self.win = None
         self.want_onboarding = False
         self.add_main_option("onboarding", 0, GLib.OptionFlags.NONE, GLib.OptionArg.NONE,
-                             "Mở hướng dẫn bật bộ gõ", None)
+                             _("Mở hướng dẫn bật bộ gõ"), None)
         self.add_main_option("no-onboarding", 0, GLib.OptionFlags.NONE, GLib.OptionArg.NONE,
-                             "Không tự mở hướng dẫn khi bộ gõ chưa bật", None)
+                             _("Không tự mở hướng dẫn khi bộ gõ chưa bật"), None)
         self.add_main_option("page", 0, GLib.OptionFlags.NONE, GLib.OptionArg.STRING,
-                             "Mở tab: typing|options|shortcuts|modes|compat|about", "TAB")
+                             _("Mở tab: typing|options|shortcuts|modes|compat|about"), "TAB")
 
     def do_command_line(self, cmdline):
         opts = cmdline.get_options_dict().end().unpack()
@@ -1137,7 +1213,7 @@ class App(Adw.Application):
     def do_activate(self):
         Gtk.Window.set_default_icon_name(APP_ID)
         if not self.win:
-            self.win = SettingsWindow(self, config.Config())
+            self.win = SettingsWindow(self, self.cfg)
         pages = {"typing": 0, "options": 1, "shortcuts": 2, "modes": 3, "compat": 4, "about": 5}
         if getattr(self, "page", None) in pages:
             self._select_page(pages[self.page])
@@ -1146,6 +1222,30 @@ class App(Adw.Application):
         if self.want_onboarding or auto:
             self.want_onboarding = False
             GLib.idle_add(lambda: (self.win.show_onboarding(), False)[1])
+
+    def rebuild_window(self):
+        """Đổi ngôn ngữ: dựng lại cửa sổ (mọi nhãn) ngay, giữ nguyên tab đang mở."""
+        old = self.win
+        if old is None:
+            return
+        index = self._current_page()
+        self.win = SettingsWindow(self, old.cfg)
+        self._select_page(index)
+        self.win.present()
+        if getattr(old, "_monitor", None) is not None:
+            old._monitor.cancel()
+        old.destroy()
+
+    def _current_page(self):
+        stack = _find(self.win, Adw.ViewStack)
+        if not stack:
+            return 0
+        cur, child, i = stack.get_visible_child(), stack.get_first_child(), 0
+        while child is not None:
+            if child == cur:
+                return i
+            child, i = child.get_next_sibling(), i + 1
+        return 0
 
     def _select_page(self, index):
         # PreferencesWindow không có API chọn trang theo chỉ số ở libadwaita 1.1.

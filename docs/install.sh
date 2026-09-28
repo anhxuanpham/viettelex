@@ -27,7 +27,7 @@ MAC_TEAM="Developer ID Installer: SENPRINTS LLC (84T567KMYD)"
 BREW_CASK="ptrinh/viettelex/viettelex"
 KEYRING=/etc/apt/keyrings/viettelex.gpg
 SOURCES=/etc/apt/sources.list.d/viettelex.sources
-PKGS_ALL="viettelex libviettelex-core viettelex-fcitx5 viettelex-ibus viettelex-settings"
+PKGS_ALL="viettelex libviettelex-core viettelex-fcitx5 viettelex-ibus viettelex-text-tools viettelex-settings"
 
 FRONTEND=""
 ASSUME_YES=0

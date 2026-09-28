@@ -31,11 +31,13 @@ import subprocess
 import tempfile
 import urllib.request
 
+from .i18n import _
+
 HELPER = "/usr/libexec/viettelex/viettelex-update"
 POLKIT_ACTION = "org.viettelex.update"
 RELEASES_URL = "https://github.com/ptrinh/viettelex/releases"
-PACKAGES = ("libviettelex-core", "viettelex-fcitx5", "viettelex-ibus", "viettelex-settings",
-            "viettelex")
+PACKAGES = ("libviettelex-core", "viettelex-fcitx5", "viettelex-ibus", "viettelex-text-tools",
+            "viettelex-settings", "viettelex")
 ARCH_ALL = ("viettelex-settings", "viettelex")
 SUPPORTED_ARCHES = ("amd64", "arm64")
 APT_SOURCE_FILES = ("/etc/apt/sources.list.d/viettelex.sources",
@@ -87,11 +89,11 @@ def update_message(info, current):
     """(chữ hiển thị, url mở trang tải hoặc None) — giữ API cũ cho nút Kiểm tra."""
     st, lin = state(info, current)
     if st == "noinfo":
-        return ("Chưa có thông tin bản Linux trên kênh ổn định — xem trang phát hành.",
+        return (_("Chưa có thông tin bản Linux trên kênh ổn định — xem trang phát hành."),
                 RELEASES_URL)
     if st == "available":
-        return ("Có bản mới: %s" % lin["version"], lin.get("url") or RELEASES_URL)
-    return ("Bạn đang dùng bản mới nhất (%s)." % current, None)
+        return (_("Có bản mới: %s") % lin["version"], lin.get("url") or RELEASES_URL)
+    return (_("Bạn đang dùng bản mới nhất (%s).") % current, None)
 
 
 # --- môi trường máy -------------------------------------------------------------------
@@ -171,19 +173,19 @@ def plan(lin, installed, series, arch, repo_path, allowed_prefix=None):
     pkgs = [p for p in PACKAGES if p in installed]
     if not pkgs:
         return {"kind": "unsupported",
-                "reason": "Không thấy gói VietTelex nào được cài bằng dpkg/apt."}
+                "reason": _("Không thấy gói VietTelex nào được cài bằng dpkg/apt.")}
     if repo_path:
         return {"kind": "apt", "packages": pkgs}
     if arch not in SUPPORTED_ARCHES:
-        return {"kind": "unsupported", "reason": "Chưa có bản cho kiến trúc %s." % arch}
+        return {"kind": "unsupported", "reason": _("Chưa có bản cho kiến trúc %s.") % arch}
     have = lin.get("series") or []
     if not series or series not in have:
         return {"kind": "unsupported",
-                "reason": "Chưa có bản cho %s (hỗ trợ: %s)." % (
-                    series or "hệ điều hành này", ", ".join(have) or "—")}
+                "reason": _("Chưa có bản cho %s (hỗ trợ: %s).") % (
+                    series or _("hệ điều hành này"), ", ".join(have) or "—")}
     base = lin.get("download") or ""
     if not base.startswith(allowed_prefix or ALLOWED_DOWNLOAD_PREFIX):
-        return {"kind": "unsupported", "reason": "Địa chỉ tải không hợp lệ trong stable.json."}
+        return {"kind": "unsupported", "reason": _("Địa chỉ tải không hợp lệ trong stable.json.")}
     if not base.endswith("/"):
         base += "/"
     sums = lin.get("sha256") or {}
@@ -192,7 +194,7 @@ def plan(lin, installed, series, arch, repo_path, allowed_prefix=None):
         name = deb_asset_name(p, lin["version"], series, arch)
         sha = sums.get(name)
         if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha):
-            return {"kind": "unsupported", "reason": "Thiếu mã kiểm tra SHA256 cho %s." % name}
+            return {"kind": "unsupported", "reason": _("Thiếu mã kiểm tra SHA256 cho %s.") % name}
         files.append((name, base + name, sha))
     return {"kind": "deb", "files": files, "packages": pkgs}
 
@@ -228,15 +230,15 @@ def tail(text, n=8):
 def result_message(code, output, version):
     """(ok, chữ hiển thị) từ mã thoát helper/pkexec."""
     if code == EXIT_OK:
-        return True, ("Đã cập nhật lên %s. Khởi động lại bộ gõ và mở lại ứng dụng này "
-                      "để dùng bản mới." % version)
+        return True, (_("Đã cập nhật lên %s. Khởi động lại bộ gõ và mở lại ứng dụng này "
+                        "để dùng bản mới.") % version)
     if code in (EXIT_PKEXEC_DISMISSED, EXIT_PKEXEC_NOAUTH):
-        return False, "Đã huỷ — chưa cập nhật (cần mật khẩu quản trị)."
+        return False, _("Đã huỷ — chưa cập nhật (cần mật khẩu quản trị).")
     if code == EXIT_LOCK or "Could not get lock" in (output or "") \
             or "Unable to acquire the dpkg frontend lock" in (output or ""):
-        return False, ("Trình quản lý gói đang bận (Software Updater/apt khác đang chạy). "
-                       "Đợi xong rồi thử lại.")
-    return False, "Cập nhật lỗi (mã %d):\n%s" % (code, tail(output) or "không có thông báo")
+        return False, _("Trình quản lý gói đang bận (Software Updater/apt khác đang chạy). "
+                         "Đợi xong rồi thử lại.")
+    return False, _("Cập nhật lỗi (mã %d):\n%s") % (code, tail(output) or _("không có thông báo"))
 
 
 def restart_im_argv(framework):
@@ -271,37 +273,37 @@ def run_update(lin, progress=lambda _t: None, allowed_prefix=None, helper=None):
     try:
         installed, arch, series = machine()
     except (OSError, subprocess.SubprocessError):
-        return False, "Máy này không dùng dpkg/apt — cập nhật theo cách bạn đã cài.", True
+        return False, _("Máy này không dùng dpkg/apt — cập nhật theo cách bạn đã cài."), True
     p = plan(lin, installed, series, arch, apt_repo_configured(), allowed_prefix)
     if p["kind"] == "unsupported":
         return False, p["reason"], True
     if not os.path.exists(helper) or not shutil.which("pkexec"):
-        return False, ("Thiếu pkexec hoặc helper cập nhật — cài gói pkexec (22.04: policykit-1) "
-                       "hoặc cập nhật bằng apt."), True
+        return False, _("Thiếu pkexec hoặc helper cập nhật — cài gói pkexec (22.04: policykit-1) "
+                         "hoặc cập nhật bằng apt."), True
     tmp = None
     try:
         if p["kind"] == "deb":
             tmp = tempfile.mkdtemp(prefix="viettelex-upd-")
             for i, (name, url, sha) in enumerate(p["files"], 1):
                 if not is_allowed_download(url, allowed_prefix):
-                    return False, "Địa chỉ tải không hợp lệ: %s" % url, True
-                progress("Đang tải %d/%d: %s" % (i, len(p["files"]), name))
+                    return False, _("Địa chỉ tải không hợp lệ: %s") % url, True
+                progress(_("Đang tải %d/%d: %s") % (i, len(p["files"]), name))
                 dest = os.path.join(tmp, name)
                 try:
                     with urllib.request.urlopen(url, timeout=30) as r, open(dest, "wb") as f:
                         shutil.copyfileobj(r, f)
                 except OSError:
-                    return False, "Không tải được %s — kiểm tra mạng rồi thử lại." % name, False
+                    return False, _("Không tải được %s — kiểm tra mạng rồi thử lại.") % name, False
                 if not verify_sha256(dest, sha):
-                    return False, "Sai mã SHA256 của %s — đã huỷ, không cài." % name, True
+                    return False, _("Sai mã SHA256 của %s — đã huỷ, không cài.") % name, True
             os.chmod(tmp, 0o755)
-        progress("Đang cài (cần mật khẩu quản trị)…")
+        progress(_("Đang cài (cần mật khẩu quản trị)…"))
         argv = helper_argv(p, tmp)
         argv[1] = helper
         try:
             r = subprocess.run(argv, capture_output=True, text=True, timeout=1800)
         except (OSError, subprocess.SubprocessError) as e:
-            return False, "Không chạy được pkexec: %s" % e, False
+            return False, _("Không chạy được pkexec: %s") % e, False
         ok, msg = result_message(r.returncode, r.stdout + r.stderr, lin["version"])
         return ok, msg, False
     finally:

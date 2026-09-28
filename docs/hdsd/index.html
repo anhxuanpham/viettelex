@@ -527,11 +527,19 @@ sudo apt install viettelex-fcitx5   # hoặc: sudo apt install viettelex-ibus</p
       </ul>
     </div>
     <div class="card">
+      <h3>Công cụ văn bản</h3>
+      <ul>
+        <li>Bôi đen chữ ở app bất kỳ rồi bấm chuột phải biểu tượng VietTelex ở khay → <b>Công cụ văn bản</b>: <b>Thêm dấu cho vùng chọn</b> (<code>toi di hoc</code> → tôi đi học), HOA, thường, Hoa Đầu Từ, Hoa đầu câu, Xoá dấu. Cần bật <b>Hiện biểu tượng ở khay hệ thống</b>; ẩn menu này ở tab Chính tả → <b>Hiện công cụ văn bản trong menu</b>.</li>
+        <li><b>Phím tắt Thêm dấu</b> (tab Chính tả, mặc định tắt): <kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>T</kbd>, <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>T</kbd> hoặc <kbd>Win</kbd><kbd>Alt</kbd><kbd>T</kbd> — thêm dấu cho chữ đang bôi đen ở mọi app, kể cả khi đang dùng bộ gõ khác.</li>
+        <li>VietTelex đọc và thay vùng chọn thẳng qua bộ gõ khi app hỗ trợ; nơi không đọc được (app Qt/Java cũ, hoặc khi đang dùng bàn phím khác) thì chép vùng chọn rồi dán kết quả — clipboard của bạn được trả lại. Không chạy trong ô mật khẩu, terminal, app điều khiển từ xa và app chạy quyền quản trị.</li>
+      </ul>
+    </div>
+    <div class="card">
       <h3>Biểu tượng, cập nhật, khác</h3>
       <ul>
         <li><b>Biểu tượng bàn phím</b> (thanh tác vụ và danh sách <kbd>Win</kbd><kbd>Space</kbd>): Vᴛ, Ngôi sao, Cờ Việt Nam, Logo hoặc Chữ VI — đổi cần quyền quản trị.</li>
         <li><b>Hiện biểu tượng ở khay hệ thống</b> (mặc định tắt): hiện Việt/Anh của app đang dùng (mờ = tiếng Anh).</li>
-        <li><b>Ngôn ngữ</b> của cửa sổ cài đặt và menu khay: Tiếng Việt hoặc English.</li>
+        <li><b>Ngôn ngữ / Language</b> của cửa sổ cài đặt và menu khay: Tiếng Việt (mặc định, dù Windows đặt ngôn ngữ nào) hoặc English — đổi là áp dụng ngay.</li>
         <li><b>Cập nhật</b>: bấm Kiểm tra ngay, hoặc bật tự kiểm tra (mỗi ngày một lần). Bản tải về phải có chữ ký hợp lệ mới được cài.</li>
         <li><b>Ghi nhật ký gỡ lỗi</b>: ghi sự kiện vào <code>%LOCALAPPDATA%\VietTelex\debug.log</code>, không ghi nội dung bạn gõ.</li>
         <li><b>Gỡ cài đặt…</b> trong Cài đặt VietTelex, hoặc Cài đặt Windows → Ứng dụng.</li>
@@ -561,7 +569,23 @@ sudo apt install viettelex-fcitx5   # hoặc: sudo apt install viettelex-ibus</p
       </ul>
     </div>
     <div class="card">
+      <h3>Công cụ văn bản</h3>
+      <ul>
+        <li>Bôi đen chữ ở app bất kỳ rồi mở menu bộ gõ (biểu tượng VietTelex trên khay / thanh trên cùng) → <b>Công cụ…</b> — <b>Thêm dấu cho vùng chọn</b> (<code>toi di hoc</code> → tôi đi học), HOA, thường, Hoa Đầu Từ, Hoa đầu câu, Xoá dấu. Giống bản macOS.</li>
+        <li>Bật/tắt ở tab Tuỳ chỉnh → <b>Hiện công cụ văn bản trong menu</b> (mặc định bật); <b>Phím tắt Thêm dấu</b> mặc định tắt — chọn một tổ hợp có Ctrl/Alt/Super.</li>
+        <li>Cần gói <code>viettelex-text-tools</code> (apt tự cài kèm). App không báo chữ quanh con trỏ cho bộ gõ thì VietTelex đọc vùng đang bôi đen (PRIMARY); với IBus cần <code>wl-clipboard</code> hoặc <code>xclip</code> đã cài sẵn. Clipboard không bị đụng tới. Không chạy ở ô mật khẩu và terminal.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Ngôn ngữ &amp; biểu tượng</h3>
+      <ul>
+        <li>Tab Tuỳ chỉnh → <b>Ngôn ngữ / Language</b>: Tiếng Việt (mặc định, kể cả khi máy cài tiếng Anh) hoặc English — áp dụng ngay cho app cài đặt và menu bộ gõ.</li>
+        <li>Biểu tượng khay giống thanh menu macOS: <b>Vᴛ</b> khi gõ tiếng Việt, <b>E</b> khi chuyển sang tiếng Anh. GNOME hiện chữ <code>VT</code> / <code>E</code>.</li>
+      </ul>
+    </div>
+    <div class="card">
       <h3>Tương thích &amp; khác</h3>
+
       <ul>
         <li>Tab <b>Tương thích</b> chỉ liệt kê lưu ý khớp với máy bạn, kèm nút chép lệnh sửa — vd Chrome/Electron trên Wayland cần <code>--enable-wayland-ime</code>. Danh sách đầy đủ: <a href="https://github.com/ptrinh/viettelex/tree/main/linux" rel="noopener">linux/README</a>.</li>
         <li>Ô mật khẩu <code>sudo</code> trong terminal không nhận ra được — chuyển sang tiếng Anh trước khi gõ mật khẩu.</li>

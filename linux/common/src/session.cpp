@@ -121,6 +121,11 @@ void Session::applySettings(const Settings &s) {
     hotkeyValid_ = parseHotkey(s.toggleHotkey, hk);
     hotkeySym_ = hk.keysym;
     hotkeyMods_ = hk.mods;
+    Hotkey at;
+    addTonesValid_ = parseHotkey(s.addTonesHotkey, at) &&
+                     !(hotkeyValid_ && at.keysym == hotkeySym_ && at.mods == hotkeyMods_);
+    addTonesSym_ = at.keysym;
+    addTonesMods_ = at.mods;
 }
 
 void Session::setDisplayMode(DisplayMode m, InputContext &ic) {
@@ -321,6 +326,14 @@ bool Session::isToggleHotkey(const KeyEvent &ev) const {
     if (sym >= 'A' && sym <= 'Z') sym += 0x20;
     return sym == hotkeySym_ &&
            (ev.mods & (VT_MOD_CTRL | VT_MOD_ALT | VT_MOD_SHIFT | VT_MOD_SUPER)) == hotkeyMods_;
+}
+
+bool Session::isAddTonesHotkey(const KeyEvent &ev) const {
+    if (!addTonesValid_ || ev.release || ev.forwarded) return false;
+    uint32_t sym = ev.keysym;
+    if (sym >= 'A' && sym <= 'Z') sym += 0x20;
+    return sym == addTonesSym_ &&
+           (ev.mods & (VT_MOD_CTRL | VT_MOD_ALT | VT_MOD_SHIFT | VT_MOD_SUPER)) == addTonesMods_;
 }
 
 bool Session::handleLetter(uint32_t ch, InputContext &ic) {

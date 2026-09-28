@@ -29,6 +29,7 @@
 #include "ipc.h"
 #include "settings_store.h"
 #include "strings.h"
+#include "text_actions.h"
 #include "tip_control.h"
 #include "updater.h"
 #include "uninstall.h"
@@ -49,7 +50,7 @@ constexpr UINT kTrayMsg = WM_APP + 0x57;
 constexpr UINT kTrayId = 1;
 UINT g_taskbarCreated = 0;
 
-enum TrayCmd : UINT { kTraySettings = 1, kTrayUpdate, kTrayAbout, kTrayQuit };
+enum TrayCmd : UINT { kTraySettings = 1, kTrayUpdate, kTrayAbout, kTrayQuit, kTrayToolBase = 100 /* +6 text tools */ };
 
 
 // Tray glyph = the keyboard icon chosen in settings, for the current taskbar theme.
@@ -119,6 +120,11 @@ void syncTrayIcon() {
 
 void showTrayMenu() {
     HMENU m = CreatePopupMenu();
+    // Công cụ văn bản first (settings textToolsInMenu): the menu's most frequent action.
+    if (g_settings.textToolsInMenu) {
+        appendTextToolsMenu(m, kTrayToolBase);
+        AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    }
     AppendMenuW(m, MF_STRING, kTraySettings, tr(S::MenuSettings));
     AppendMenuW(m, MF_STRING, kTrayUpdate, tr(S::MenuCheckUpdate));
     AppendMenuW(m, MF_STRING, kTrayAbout, tr(S::MenuAbout));
@@ -138,7 +144,7 @@ void showTrayMenu() {
             settingsChanged();
             refreshSettingsWindow();
             break;
-        default: break;
+        default: runTextToolMenuCommand(cmd, kTrayToolBase); break;  // (DestroyMenu freed the submenu too)
     }
 }
 
@@ -174,6 +180,7 @@ void CALLBACK fgWinEvent(HWINEVENTHOOK, DWORD, HWND hwnd, LONG idObject, LONG, D
     if (idObject != OBJID_WINDOW || !hwnd) return;
     const FgApp app = describeWindow(hwnd);
     const bool on = fgVietnamese(hwnd, app);
+    textActionsNoteForeground(hwnd);  // tray text tools act on the app the user came from
     if (appLogging())
         appLog("app", "tray state for " + narrowAscii(app.identity) + " (class " + app.windowClass + "): " +
                           (on ? "vi" : "en"));
@@ -200,6 +207,7 @@ void runCommand(unsigned cmd, LPARAM lp = 0) {
         case AppCommand::StateChanged: setTrayState(lp != 0); break;
         case AppCommand::DirectMode: hookSetDirectFromTip(lp != 0); break;
         case AppCommand::SetAppLanguage: onAppLanguage(lp); break;
+        case AppCommand::TextToolReply: textActionsTipReply(lp); break;
         case AppCommand::OpenSettings: showSettings(Tab::Typing); break;
         case AppCommand::CheckUpdate: startUpdateCheck(g_mainWnd, true); break;
         case AppCommand::OpenAbout: showSettings(Tab::About); break;
@@ -253,6 +261,8 @@ LRESULT CALLBACK mainProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         syncTrayIcon();
         return 0;
     }
+    LRESULT handled = 0;
+    if (textActionsMessage(msg, wp, lp, handled)) return handled;  // hotkey, TIP selection, timers
     switch (msg) {
         case kAppCommandMsg: runCommand(static_cast<unsigned>(wp), lp); return 0;
         // Restart Manager / logoff / an upgrade closing us: agree, then exit cleanly
@@ -289,6 +299,7 @@ LRESULT CALLBACK mainProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         case kMsgUpdateDownloaded: onDownloaded(wp, reinterpret_cast<wchar_t*>(lp)); return 0;
         case WM_DESTROY:
             removeTrayIcon();
+            textActionsShutdown();
             hookShutdown();
             PostQuitMessage(0);
             return 0;
@@ -435,6 +446,7 @@ void settingsChanged() {
     syncTrayIcon();
     setEnglish(g_settings.uiLanguage == "en");
     hookConfigure(g_settings);
+    textActionsConfigure();
 }
 
 }  // namespace vtx::app
@@ -511,10 +523,13 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     if (!g_mainWnd) return 1;
     // The TIP posts from inside other apps, some at lower integrity (UIPI).
     ChangeWindowMessageFilterEx(g_mainWnd, kAppCommandMsg, MSGFLT_ALLOW, nullptr);
+    // Công cụ văn bản: the TIP hands over the selection with WM_COPYDATA (text_tool_ipc.h).
+    ChangeWindowMessageFilterEx(g_mainWnd, WM_COPYDATA, MSGFLT_ALLOW, nullptr);
     g_taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
     syncTrayIcon();
     hookSetElevationNotifier(showElevationNotice);
     hookConfigure(g_settings);
+    textActionsConfigure();
     mirrorAppLanguage();  // AppContainer hosts read the per-app Việt/Anh memory from here
     appLog("app", std::string("started ") + VTX_VER_STRING);
 

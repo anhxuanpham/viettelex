@@ -15,7 +15,7 @@ export DEBIAN_FRONTEND=noninteractive
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export LC_ALL=C.UTF-8
 
-ALLOWED="libviettelex-core viettelex-fcitx5 viettelex-ibus viettelex-settings viettelex"
+ALLOWED="libviettelex-core viettelex-fcitx5 viettelex-ibus viettelex-text-tools viettelex-settings viettelex"
 SOURCES="/etc/apt/sources.list.d/viettelex.sources /etc/apt/sources.list.d/viettelex.list"
 LOCK_WAIT=${VT_LOCK_WAIT:-60}
 

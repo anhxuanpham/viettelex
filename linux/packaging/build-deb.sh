@@ -39,11 +39,17 @@ trap 'rm -rf "$WORK"' EXIT
 STAGE="$WORK/viettelex-$VERSION"
 mkdir -p "$STAGE"
 
-# Chỉ những gì gói cần: engine Swift dùng chung (TelexCore) + cây linux/ + file mẫu.
+# Chỉ những gì gói cần: engine Swift dùng chung (TelexCore) + cây linux/ + file mẫu +
+# nguồn iOS mà viettelex-text-tool symlink tới (Thêm dấu/TextTools + dữ liệu + fixture chung).
 ( cd "$REPO" && tar -cf - \
     --exclude='.build' --exclude='.swiftpm' --exclude='__pycache__' \
     --exclude='linux/packaging/out' --exclude='linux/dist' --exclude='*.o' \
     LICENSE sample-shortcuts.yml typing-modes.yml TelexCore linux \
+    iOS/Keyboard/TextTools.swift iOS/Keyboard/AddTones.swift iOS/Keyboard/SyllableLM.swift \
+    iOS/Keyboard/VNLexicon2.swift iOS/Keyboard/VNSuggest.swift iOS/Keyboard/SwipeLexicon.swift \
+    iOS/Keyboard/SwipeEnglish.swift \
+    iOS/Keyboard/Resources/vnlexicon.bin iOS/Keyboard/Resources/vnlm.bin iOS/Keyboard/Resources/enlexicon.bin \
+    iOS/KeyboardTests/Fixtures/text-tools.txt iOS/KeyboardTests/Fixtures/add-tones.txt \
     android/telexcore/src/test/resources/golden.tsv.gz ) | tar -xf - -C "$STAGE"
 cp -a "$HERE/debian" "$STAGE/debian"
 

@@ -49,7 +49,7 @@ polkit): máy có kho APT thì chạy `apt-get install --only-upgrade` các gói
 .deb thì tải đúng bộ .deb, kiểm SHA256 theo `stable.json` rồi cài.
 
 Gỡ: `curl -fsSL https://viettelex.com/install.sh | bash -s -- --uninstall`, hoặc
-`sudo apt remove viettelex viettelex-fcitx5 viettelex-ibus viettelex-settings libviettelex-core`,
+`sudo apt remove viettelex viettelex-fcitx5 viettelex-ibus viettelex-text-tools viettelex-settings libviettelex-core`,
 rồi xoá `/etc/apt/sources.list.d/viettelex.sources` và `/etc/apt/keyrings/viettelex.gpg`.
 
 ## English — install
@@ -70,7 +70,8 @@ set, then install it with one command:
 
 ```sh
 sudo apt install ./libviettelex-core_*_amd64.deb ./viettelex-fcitx5_*_amd64.deb \
-                 ./viettelex-settings_*_all.deb
+                 ./viettelex-text-tools_*_amd64.deb ./viettelex-settings_*_all.deb
+
 ```
 
 Cách này không tự cập nhật qua apt; nút *Kiểm tra cập nhật* trong app tải + kiểm SHA256 +
@@ -97,7 +98,8 @@ VT_APT_KEY=<fingerprint> linux/packaging/apt-repo.sh --out ../viettelex-apt
   tải lại `viettelex-archive-keyring.gpg`. **Nhớ sửa `APT_KEY_FPR` trong `docs/install.sh`** —
   script từ chối kho ký bằng khoá khác. Khoá hiện tại hết hạn 2031-09.
 - Gói `viettelex` (metapackage, `_all`) build cùng các gói khác; phụ thuộc
-  `libviettelex-core`, `viettelex-settings (=)` và `viettelex-fcitx5 | viettelex-ibus`.
+  `libviettelex-core`, `viettelex-settings (=)` và `viettelex-fcitx5 | viettelex-ibus`;
+  Recommends `viettelex-text-tools`.
 - `viettelex-settings` mang helper `/usr/libexec/viettelex/viettelex-update` + polkit action
   `org.viettelex.update` (`/usr/share/polkit-1/actions/org.viettelex.update.policy`) cho nút
   cập nhật một chạm; helper chỉ nhận các gói VietTelex (danh sách trắng).

@@ -1,0 +1,165 @@
+// add_tones.hpp — THÊM DẤU ("toi di hoc hom nay" → "tôi đi học hôm nay") for Windows.
+// Port of iOS/Keyboard/AddTones.swift (twin of android AddTones.kt) + the readers it
+// needs: vnlexicon.bin (VNLexicon2.swift / SwipeLexicon.swift), enlexicon.bin
+// (SwipeEnglish.swift) and the syllable LM vnlm.bin v3 (SyllableLM.swift — format at the
+// top of that file and in Scripts/gen-syllable-lm.py). Parity: the shared fixtures
+// iOS/KeyboardTests/Fixtures/add-tones.txt and vnlm-parity.txt (tests/text_tests.cpp).
+//
+// The readers never copy the files: they read in place from a caller-owned byte range —
+// on Windows the RCDATA resources of VietTelex.exe (image-mapped, demand-paged, shared).
+// The bytes must outlive the reader. Read-only after load ⇒ thread-safe.
+#pragma once
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace vtx { namespace addtones {
+
+uint32_t fnv1a(const uint8_t* p, size_t n);
+
+/// vnlexicon.bin ("VNL2" v1): 7184 syllables sorted by folded key, then frequency.
+class Lexicon {
+public:
+    bool load(const uint8_t* data, size_t size);
+    bool ok() const { return data_ != nullptr; }
+    int count() const { return count_; }
+    uint32_t hash() const { return hash_; }
+    /// Display form (lowercase Vietnamese, UTF-8) of syllable `id`.
+    std::string_view display(int id) const;
+    int freq(int id) const { return data_[freqs_ + id]; }
+    /// Unaccented forms (SwipeLexicon.forms): index of `folded` (lowercase a–z), -1 if none.
+    int formIndex(std::string_view folded) const;
+    int formFirstId(int f) const { return formStart_[static_cast<size_t>(f)]; }
+    int formEndId(int f) const { return formStart_[static_cast<size_t>(f) + 1]; }
+    int formCount() const { return static_cast<int>(forms_.size()); }
+
+private:
+    uint32_t u32(size_t off) const;
+    const uint8_t* data_ = nullptr;
+    size_t size_ = 0;
+    int count_ = 0;
+    uint32_t hash_ = 0;
+    size_t folded_ = 0, display_ = 0, offsets_ = 0, dispOffsets_ = 0, freqs_ = 0;
+    std::vector<std::string_view> forms_;
+    std::vector<int> formStart_;
+};
+
+/// enlexicon.bin ("VTE1" | count | [len][freq][a–z]…, sorted): English words.
+class EnglishLexicon {
+public:
+    bool load(const uint8_t* data, size_t size);
+    bool contains(std::string_view word) const;
+    size_t size() const { return words_.size(); }
+
+private:
+    std::vector<std::string_view> words_;
+};
+
+/// vnlm.bin v3 — Kneser–Ney trigram syllable LM, Elias–Fano, read in place.
+class SyllableLM {
+public:
+    /// Validates header, lexicon match and section sizes (never scans the body). false =
+    /// missing / corrupt / built for another lexicon: Thêm dấu then runs without the LM.
+    bool load(const uint8_t* data, size_t size, uint32_t lexiconHash, int lexiconCount);
+    bool ok() const { return d_ != nullptr; }
+    int count() const { return count_; }
+
+    struct Row {  // one bigram row (per-row Elias–Fano)
+        int lo = 0, hi = 0, l = 0, zero = 0, lowOff = 0;
+        int start() const { return lo + zero; }
+    };
+    /// Bigram band of the previous syllable (SyllableLM.Bigram).
+    class Bigram {
+    public:
+        int size() const { return row_.hi - row_.lo; }
+        /// PMI (nat) of the next syllable; missing entry ⇒ γ2(prev) + uniAdj; empty band ⇒ 0.
+        float pmi(int next) const;
+        /// PMI of an explicit entry; 0 if missing.
+        float explicitPmi(int next) const;
+
+    private:
+        friend class SyllableLM;
+        const SyllableLM* lm_ = nullptr;
+        float g2_ = 0;
+        Row row_;
+    };
+    Bigram bigram(int prev) const;
+    /// s (nat) of `w` after (`prev2`, `prev1`); 0 without a context.
+    float score(int prev2, int prev1, int w) const;
+    float uniAdj(int w) const;
+    /// FNV-1a over the whole decoded model (= CHECKSUM of vnlm-parity.txt). Tests only.
+    uint32_t modelChecksum() const;
+    bool payloadHashOK() const;
+
+private:
+    struct EF {
+        int n = 0, l = 0, low = 0, high = 0, sel = 0, words = 0, selShift = 0;
+        int64_t mask() const { return (int64_t{1} << l) - 1; }
+    };
+    uint64_t u64(int base, int64_t wi) const;
+    int u32At(int base, int64_t i) const;
+    int bits(int base, int64_t pos, int width) const;
+    bool bit(int base, int64_t p) const;
+    int low(const EF& e, int m) const { return bits(e.low, static_cast<int64_t>(m) * e.l, e.l); }
+    int select0(const EF& e, int64_t r) const;
+    void bucket(const EF& e, int64_t h, int64_t& pos, int64_t& idx) const;
+    int runLength(const EF& e, int64_t pos) const;
+    int find(const EF& e, int64_t x) const;
+    void lowerBound(const EF& e, int64_t x, int64_t& idx, int64_t& pos) const;
+    int scanFind(const EF& e, int64_t lo, int64_t pos, int64_t x) const;
+    Row rowAt(int b) const;
+    int rowLow(const Row& r, int m) const { return bits(biLow_, static_cast<int64_t>(r.lowOff) + static_cast<int64_t>(m - r.lo) * r.l, r.l); }
+    int biFind(const Row& r, int c) const;
+    int context(int j) const;
+    float q(int v) const { return static_cast<float>(v) / qPerNat_; }
+    float biScoreAt(int j) const { return q(static_cast<int8_t>(d_[biScore_ + j])); }
+    float adj(int w) const { return q(static_cast<int8_t>(d_[adjBase_ + w])); }
+    int cbValue(int cb, int base, int64_t i, int w) const {
+        return static_cast<int8_t>(d_[cb + bits(base, i * w, w)]);
+    }
+    template <class F> void biScan(const Row& r, F&& body) const;
+    template <class F> void scan(const EF& e, int lo, int64_t pos, int n, F&& body) const;
+
+    const uint8_t* d_ = nullptr;
+    size_t size_ = 0;
+    int count_ = 0, biEntries_ = 0, triContexts_ = 0, triEntries_ = 0;
+    float qPerNat_ = 1;
+    int bits3_ = 0, bitsG_ = 0;
+    int g2Base_ = 0, adjBase_ = 0, cb3Base_ = 0, cbgBase_ = 0;
+    int biRow_ = 0, biZero_ = 0, biLowOff_ = 0, biLow_ = 0;
+    int biScore_ = 0, hasTri_ = 0, triRank_ = 0, g3Base_ = 0, triScore_ = 0;
+    EF bi_, tri_;
+};
+
+/// The three data files, loaded once (VietTelex.exe keeps one for the process).
+struct LanguageData {
+    Lexicon lexicon;
+    EnglishLexicon english;
+    SyllableLM lm;
+    /// Lexicon required; English list and LM optional (a missing/corrupt one is skipped).
+    bool load(const uint8_t* vnlexicon, size_t vnlexiconSize, const uint8_t* enlexicon, size_t enlexiconSize,
+              const uint8_t* vnlm, size_t vnlmSize);
+    bool ok() const { return lexicon.ok(); }
+};
+
+/// Weights — KEEP identical to AddTones.swift / AddTones.kt.
+struct Params {
+    double freqW = 10.0;
+    double bigramW = 1.0;
+    double floor = -2.5;
+};
+
+struct Result {
+    std::u32string text;
+    int vnTokens = 0;
+    int enTokens = 0;
+    int changed = 0;
+};
+
+/// AddTones.restore (static data only, no personal model): same length in code points,
+/// case and punctuation kept, non-Vietnamese tokens untouched.
+Result restore(const std::u32string& text, const LanguageData& data, const Params& p = Params());
+
+}}  // namespace vtx::addtones

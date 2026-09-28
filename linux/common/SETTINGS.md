@@ -47,6 +47,9 @@ terminal_direct = true              # Terminal: gõ thẳng, sửa dấu bằng 
 toggle_hotkey = "Ctrl+space"        # xem §4; "" = tắt phím chuyển
 per_app_state = true                # Nhớ Việt/Anh theo từng app
 default_vietnamese = true           # Trạng thái khi gặp app lần đầu
+ui_language = "vi"                  # Ngôn ngữ giao diện (app cài đặt + menu bộ gõ): "vi" | "en" — xem §6
+text_tools_menu = true              # Hiện "Công cụ…" (công cụ văn bản) trong menu bộ gõ — xem §7
+add_tones_hotkey = ""               # Phím tắt "Thêm dấu cho vùng chọn" (cú pháp §4); "" = tắt (mặc định)
 
 [app_modes]
 # key = định danh app (Fcitx5: program; IBus: client name / app-id Wayland / WM_CLASS, chữ thường)
@@ -129,4 +132,35 @@ khi đang ở keyboard-us thì trigger của Fcitx5 chuyển sang VietTelex như
 
 ## 5. `app-state` (frontend sở hữu)
 
+
 Dòng `app<TAB>vi|en`. Chỉ frontend đọc/ghi; settings app có thể xoá file để "quên tất cả".
+
+## 6. Ngôn ngữ giao diện (`ui_language`)
+
+`"vi"` (mặc định) hoặc `"en"`; thiếu / giá trị lạ → `"vi"`. **Không bao giờ theo locale của
+máy** (quy ước chung với iOS `L10n`): máy tiếng Anh vẫn mở tiếng Việt cho tới khi người dùng
+chọn English ở Tuỳ chỉnh → "Ngôn ngữ / Language". Áp dụng ngay: app cài đặt dựng lại cửa sổ;
+frontend (qua inotify) đổi nhãn menu bộ gõ (Tiếng Việt/English, Công cụ…, tên 6 công cụ,
+Cài đặt…). Tên riêng (VietTelex, Fcitx5, IBus, Telex, VNI) giữ nguyên. Hộp cấu hình gốc của
+Fcitx5 (`fcitx5-config-qt`) và tên bộ gõ "Tiếng Việt (VietTelex)" vẫn tiếng Việt.
+
+## 7. Công cụ văn bản (`text_tools_menu`, `add_tones_hotkey`)
+
+Như bản macOS (menu VietTelex → Công cụ…): bôi đen chữ ở app bất kỳ rồi chọn trong menu bộ gõ
+(Fcitx5: action "Công cụ…" ở status area/tray; IBus: property menu "Công cụ…") — **Thêm dấu cho
+vùng chọn** (toi di hoc → tôi đi học), **HOA**, **thường**, **Hoa Đầu Từ**, **Hoa đầu câu**,
+**Xoá dấu**. `add_tones_hotkey` (vd `"Ctrl+Alt+v"`, phải có Ctrl/Alt/Super, không trùng
+`toggle_hotkey` — trùng thì phím chuyển thắng) chạy Thêm dấu; bộ gõ nuốt phím đó.
+
+- Biến đổi chạy ở **process con** `/usr/lib/<multiarch>/viettelex/viettelex-text-tool`
+  (gói `viettelex-text-tools`, dữ liệu `/usr/share/viettelex/*.bin`) — cùng mã Swift với
+  iOS/macOS (`linux/engine-capi/Sources/TextToolCLI`), dữ liệu không bao giờ nằm trong process
+  bộ gõ. Thiếu gói → menu tự ẩn. Vùng chọn > 20.000 ký tự: bỏ qua.
+- Lấy chữ: surrounding text có vùng chọn (GTK, Qt, LibreOffice…) — app báo surrounding mà không
+  có vùng chọn thì không làm gì. App không báo surrounding: vùng chọn PRIMARY (Fcitx5: addon
+  clipboard; IBus/dự phòng: `wl-paste --primary` / `xclip` / `xsel` nếu có sẵn — không phải
+  phụ thuộc bắt buộc).
+- Thay: commit kết quả đè lên vùng chọn (gõ đè thay vùng chọn). **Không đụng clipboard** nên
+  không có gì phải khôi phục. Nếu menu làm app mất focus, kết quả được commit ở lần focus lại
+  (trong 3 giây).
+- Không chạy ở ô mật khẩu / ô nhạy cảm và terminal (gõ đè không thay được gì ở đó).

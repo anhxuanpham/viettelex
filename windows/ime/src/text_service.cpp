@@ -4,6 +4,8 @@
 
 #include "config.h"
 #include "ipc.h"
+#include "text_tool_ipc.h"
+#include "version.h"
 #include "display_attribute.h"
 #include "edit_session.h"
 #include "tsf_sink.h"
@@ -123,6 +125,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* ptim, TfClientId tid, DWORD f
     }
     registerDisplayAtom();
     updatePreservedKey();
+    createToolWindow();  // Công cụ văn bản: VietTelex.exe asks for the selection here
 
     // No language-bar item: the taskbar already shows the keyboard-profile icon (the one
     // chosen in Settings); a second, input-mode icon next to it was redundant (1.0.8).
@@ -138,6 +141,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* ptim, TfClientId tid, DWORD f
 }
 
 STDMETHODIMP TextService::Deactivate() {
+    destroyToolWindow();
     clearLangProp();
     if (composition_ && compositionContext_) {
         // Best effort: close our composition so the app keeps plain text.
@@ -542,16 +546,23 @@ void TextService::evaluateHost(ITfContext* ctx) {
 }
 
 bool TextService::fieldIsLiteral(ITfContext* ctx, TfEditCookie ec) {
+    int buf[32];
+    const UINT n = inputScopesAtSelection(ctx, ec, buf, 32);
+    return n > 0 && classifyInputScopes(buf, n) == FieldPolicy::Literal;
+}
+
+// Input scopes of the field at the selection (up to `cap`); 0 = none / unknown.
+UINT TextService::inputScopesAtSelection(ITfContext* ctx, TfEditCookie ec, int* buf, UINT cap) {
     // Input scope is a text-store attribute (app property); some stores expose it as a
     // regular property instead.
     ITfReadOnlyProperty* prop = nullptr;
     if (FAILED(ctx->GetAppProperty(GUID_PROP_INPUTSCOPE, &prop)) || !prop) {
         prop = nullptr;
         ITfProperty* p = nullptr;
-        if (FAILED(ctx->GetProperty(GUID_PROP_INPUTSCOPE, &p)) || !p) return false;
+        if (FAILED(ctx->GetProperty(GUID_PROP_INPUTSCOPE, &p)) || !p) return 0;
         prop = p;
     }
-    bool literal = false;
+    UINT found = 0;
     TF_SELECTION sel;
     ULONG fetched = 0;
     if (SUCCEEDED(ctx->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &fetched)) && fetched == 1) {
@@ -563,10 +574,8 @@ bool TextService::fieldIsLiteral(ITfContext* ctx, TfEditCookie ec) {
                 InputScope* scopes = nullptr;
                 UINT count = 0;
                 if (SUCCEEDED(is->GetInputScopes(&scopes, &count)) && scopes) {
-                    int buf[32];
-                    UINT n = count < 32 ? count : 32;
-                    for (UINT i = 0; i < n; ++i) buf[i] = static_cast<int>(scopes[i]);
-                    literal = classifyInputScopes(buf, n) == FieldPolicy::Literal;
+                    found = count < cap ? count : cap;
+                    for (UINT i = 0; i < found; ++i) buf[i] = static_cast<int>(scopes[i]);
                     CoTaskMemFree(scopes);
                 }
                 is->Release();
@@ -576,12 +585,13 @@ bool TextService::fieldIsLiteral(ITfContext* ctx, TfEditCookie ec) {
         sel.range->Release();
     }
     prop->Release();
-    return literal;
+    return found;
 }
 
 // ---------------------------------------------------------------- thread manager events
 
 STDMETHODIMP TextService::OnSetFocus(ITfDocumentMgr* focus, ITfDocumentMgr*) {
+    dropTextToolPending();  // a text-tool request belongs to the field it was made in
     if (composition_) endCompositionAsync();
     session_.resetContext();
     chord_.disarm();
@@ -850,6 +860,311 @@ STDMETHODIMP TextService::GetDisplayAttributeInfo(REFGUID guid, ITfDisplayAttrib
     *ppInfo = nullptr;
     if (!IsEqualGUID(guid, GUID_DisplayAttributeInput)) return E_INVALIDARG;
     return CreateDisplayAttributeInfo(ppInfo);
+}
+
+// ---------------------------------------------------------------- Công cụ văn bản
+// VietTelex.exe asks this thread's TIP for the SELECTION (text_tool_ipc.h has the whole
+// protocol). Only here, on request: nothing runs per keystroke, nothing is cached beyond
+// one request, and the transform itself happens in VietTelex.exe.
+
+namespace {
+constexpr UINT kMsgToolRead = WM_APP + 0x59;   // read session finished (possibly async)
+constexpr UINT kMsgToolApply = WM_APP + 0x5A;  // result arrived (WM_COPYDATA) -> replace
+
+void postToolReply(uint32_t request, TextToolStatus s) {
+    if (HWND app = FindWindowW(kAppWindowClass, nullptr))
+        PostMessageW(app, kAppCommandMsg, static_cast<WPARAM>(AppCommand::TextToolReply),
+                     static_cast<LPARAM>(textToolReplyParam(request, s)));
+}
+
+// Whole text of `r` (without moving it), false if longer than `cap` UTF-16 units.
+bool rangeText(ITfRange* r, TfEditCookie ec, size_t cap, std::u16string& out) {
+    out.clear();
+    ITfRange* c = nullptr;
+    if (FAILED(r->Clone(&c)) || !c) return false;
+    WCHAR buf[1024];
+    bool ok = true;
+    while (true) {
+        ULONG got = 0;
+        if (FAILED(c->GetText(ec, TF_TF_MOVESTART, buf, 1024, &got)) || got == 0) break;
+        out.append(reinterpret_cast<const char16_t*>(buf), got);
+        if (out.size() > cap) {
+            ok = false;
+            break;
+        }
+    }
+    c->Release();
+    return ok;
+}
+}  // namespace
+
+LRESULT CALLBACK TextService::toolWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    auto* self = reinterpret_cast<TextService*>(GetWindowLongPtrW(h, GWLP_USERDATA));
+    if (msg == static_cast<UINT>(kTipTextToolMsg)) {
+        if (self) self->onTextToolRequest(static_cast<unsigned>(wp), static_cast<uint32_t>(lp));
+        return 0;
+    }
+    switch (msg) {
+        case kMsgToolRead:
+            if (self) self->sendTextToolSelection();
+            return 0;
+        case kMsgToolApply:
+            if (self) self->applyTextToolResult();
+            return 0;
+        case WM_COPYDATA: {
+            const auto* cds = reinterpret_cast<const COPYDATASTRUCT*>(lp);
+            if (!self || !cds || cds->dwData != kCopyResult) return FALSE;
+            // Only VietTelex.exe answers a request, and only the pending one.
+            if (reinterpret_cast<HWND>(wp) != FindWindowW(kAppWindowClass, nullptr)) return FALSE;
+            uint32_t request = 0, tool = 0;
+            std::u16string text;
+            if (!unpackTextToolData(cds->lpData, cds->cbData, request, tool, text)) return FALSE;
+            if (request != self->tool_.request || !self->tool_.range) return FALSE;
+            self->tool_.result = std::move(text);
+            PostMessageW(h, kMsgToolApply, 0, 0);  // edit outside the sent message
+            return TRUE;
+        }
+        default: break;
+    }
+    return DefWindowProcW(h, msg, wp, lp);
+}
+
+namespace {
+// Class name unique to this module load (address + build): a class that an unloaded TIP
+// failed to unregister keeps a dangling window procedure, and must never match ours.
+const wchar_t* toolClassName() {
+    static const std::wstring name = [] {
+        std::wstring n = std::wstring(L"VietTelexTip_") + VTX_VER_STRING_W + L"_";
+        const uintptr_t v = reinterpret_cast<uintptr_t>(g_hInst);
+        for (int s = static_cast<int>(sizeof v * 8) - 4; s >= 0; s -= 4) n.push_back(L"0123456789abcdef"[(v >> s) & 0xF]);
+        return n;
+    }();
+    return name.c_str();
+}
+}  // namespace
+
+void UnregisterToolWindowClass() { UnregisterClassW(toolClassName(), g_hInst); }
+
+void TextService::createToolWindow() {
+    if (toolWnd_ || config::secureMode()) return;
+    WNDCLASSEXW wc = {};
+    wc.cbSize = sizeof wc;
+    wc.lpfnWndProc = toolWndProc;
+    wc.hInstance = g_hInst;
+    wc.lpszClassName = toolClassName();
+    RegisterClassExW(&wc);  // fails harmlessly when another thread of this module registered it
+    const std::wstring title = textToolWindowTitle(GetCurrentThreadId());
+    toolWnd_ = CreateWindowExW(0, toolClassName(), title.c_str(), 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, g_hInst,
+                               nullptr);
+    if (toolWnd_) SetWindowLongPtrW(toolWnd_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+}
+
+void TextService::destroyToolWindow() {
+    dropTextToolPending();
+    if (!toolWnd_) return;
+    SetWindowLongPtrW(toolWnd_, GWLP_USERDATA, 0);
+    DestroyWindow(toolWnd_);
+    toolWnd_ = nullptr;
+}
+
+void TextService::dropTextToolPending() {
+    SafeRelease(tool_.range);
+    SafeRelease(tool_.ctx);
+    tool_.request = 0;
+    tool_.tool = 0;
+    tool_.status = 0;
+    tool_.text.clear();
+    tool_.result.clear();
+}
+
+// The context that holds the selection, or nullptr + the reason (Fallback: no usable TSF
+// text here — console, IMM32/CUAS app, no focus; Failed: read-only).
+ITfContext* TextService::textToolContext(TextToolStatus& why) {
+    why = TextToolStatus::Fallback;
+    if (consoleHost_ || !threadMgr_) return nullptr;
+    ITfDocumentMgr* dm = nullptr;
+    if (FAILED(threadMgr_->GetFocus(&dm)) || !dm) return nullptr;
+    ITfContext* ctx = nullptr;
+    if (FAILED(dm->GetTop(&ctx)) || !ctx) {
+        dm->Release();
+        return nullptr;
+    }
+    ITfContext* target = nullptr;
+    TF_STATUS st = {};
+    const bool haveStatus = SUCCEEDED(ctx->GetStatus(&st));
+    if (compartmentFlag(ctx, GUID_COMPARTMENT_KEYBOARD_DISABLED, ~0) ||
+        compartmentFlag(ctx, GUID_COMPARTMENT_EMPTYCONTEXT, ~0)) {
+        // games / canvases: no text store
+    } else if (haveStatus && (st.dwDynamicFlags & TF_SD_READONLY)) {
+        why = TextToolStatus::Failed;
+    } else if (haveStatus && (st.dwStaticFlags & TF_SS_TRANSITORY)) {
+        // Same rule as evaluateHost (Mozc): classic Edit/RichEdit via the full parent,
+        // CUAS-emulated IMM32 apps have nothing readable, Chromium & co are readable.
+        VARIANT v;
+        if (compartmentVariant(dm, kCompartmentTransitoryParent, v) && v.vt == VT_UNKNOWN && v.punkVal) {
+            ITfDocumentMgr* parent = nullptr;
+            if (SUCCEEDED(v.punkVal->QueryInterface(IID_ITfDocumentMgr, reinterpret_cast<void**>(&parent))) &&
+                parent && parent != dm) {
+                ITfContext* top = nullptr;
+                if (SUCCEEDED(parent->GetTop(&top)) && top) {
+                    if (!isTransitory(top)) target = top;
+                    else top->Release();
+                }
+            }
+            if (parent) parent->Release();
+        } else if (!compartmentFlag(dm, kCompartmentTsfEmulated, 0x1)) {
+            target = ctx;
+            ctx->AddRef();
+        }
+        VariantClear(&v);
+    } else {
+        target = ctx;
+        ctx->AddRef();
+    }
+    ctx->Release();
+    dm->Release();
+    return target;
+}
+
+void TextService::onTextToolRequest(unsigned tool, uint32_t request) {
+    dropTextToolPending();
+    // The hotkey's T never reaches us (RegisterHotKey eats it): without this, releasing
+    // Ctrl+Shift after Ctrl+Shift+T would look like a clean Ctrl+Shift Việt/Anh switch.
+    chord_.disarm();
+    if (config::secureMode()) return postToolReply(request, TextToolStatus::Refused);
+    TextToolStatus why;
+    ITfContext* target = textToolContext(why);
+    if (!target) {
+        config::log(why == TextToolStatus::Fallback ? "text tool: no TSF selection here -> app clipboard fallback"
+                                                    : "text tool: read-only field");
+        return postToolReply(request, why);
+    }
+    if (composition_) {  // a word in progress: finish it as is before touching the text
+        session_.reset();
+        endCompositionAsync();
+    }
+    tool_.request = request;
+    tool_.tool = tool;
+    tool_.ctx = target;  // owns the reference
+    Ref<TextService> self(this);
+    Ref<ITfContext> c(target);
+    const HRESULT hr = RunEditSession(target, clientId_, TF_ES_ASYNCDONTCARE | TF_ES_READ,
+                                      [self, c, request](TfEditCookie ec) -> HRESULT {
+                                          TextService* s = self.get();
+                                          if (s->tool_.request != request) return S_OK;
+                                          s->tool_.status = s->readToolSelection(c.get(), ec);
+                                          if (s->toolWnd_) PostMessageW(s->toolWnd_, kMsgToolRead, 0, 0);
+                                          return S_OK;
+                                      });
+    if (FAILED(hr)) {
+        config::log("text tool: the app refused a read session -> app clipboard fallback");
+        dropTextToolPending();
+        postToolReply(request, TextToolStatus::Fallback);
+    }
+}
+
+// In the read session: 0 = selection read into tool_ (range kept), else a TextToolStatus.
+int TextService::readToolSelection(ITfContext* ctx, TfEditCookie ec) {
+    int scopes[32];
+    const UINT n = inputScopesAtSelection(ctx, ec, scopes, 32);
+    for (UINT i = 0; i < n; ++i)
+        if (isSecretInputScope(scopes[i])) return static_cast<int>(TextToolStatus::Refused);
+    TF_SELECTION sel;
+    ULONG fetched = 0;
+    if (FAILED(ctx->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &fetched)) || fetched != 1 || !sel.range)
+        return static_cast<int>(TextToolStatus::Fallback);
+    BOOL empty = TRUE;
+    sel.range->IsEmpty(ec, &empty);
+    std::u16string text;
+    int status = 0;
+    // A readable store that says "nothing selected" is believed: Ctrl+C there would copy
+    // something else (VS Code copies the whole line).
+    if (empty) status = static_cast<int>(TextToolStatus::Failed);
+    else if (!rangeText(sel.range, ec, kTextToolMaxLength, text)) status = static_cast<int>(TextToolStatus::Failed);
+    else if (text.empty()) status = static_cast<int>(TextToolStatus::Fallback);  // embedded objects only
+    if (status == 0) {
+        tool_.range = sel.range;  // keep the reference
+        tool_.text = std::move(text);
+    } else {
+        sel.range->Release();
+    }
+    return status;
+}
+
+void TextService::sendTextToolSelection() {
+    const uint32_t request = tool_.request;
+    if (!request) return;
+    if (tool_.status != 0) {
+        const auto st = static_cast<TextToolStatus>(tool_.status);
+        config::log(st == TextToolStatus::Refused ? "text tool: password field -> refused"
+                    : st == TextToolStatus::Fallback ? "text tool: selection unreadable -> app clipboard fallback"
+                                                     : "text tool: nothing selected / too long");
+        dropTextToolPending();
+        return postToolReply(request, st);
+    }
+    HWND app = FindWindowW(kAppWindowClass, nullptr);
+    if (!app) return dropTextToolPending();
+    std::vector<uint8_t> b = packTextToolData(request, tool_.tool, tool_.text);
+    COPYDATASTRUCT cds;
+    cds.dwData = kCopySelection;
+    cds.cbData = static_cast<DWORD>(b.size());
+    cds.lpData = b.data();
+    DWORD_PTR r = 0;
+    if (!SendMessageTimeoutW(app, WM_COPYDATA, reinterpret_cast<WPARAM>(toolWnd_), reinterpret_cast<LPARAM>(&cds),
+                             SMTO_ABORTIFHUNG, 1000, &r) ||
+        !r) {
+        config::log("text tool: VietTelex.exe did not take the selection");
+        dropTextToolPending();
+    }
+    // else: wait for kCopyResult (or a newer request / focus change drops it)
+}
+
+void TextService::applyTextToolResult() {
+    if (!tool_.request || !tool_.ctx || !tool_.range) return;
+    const uint32_t request = tool_.request;
+    session_.reset();  // the text around the caret is about to change under the engine
+    Ref<TextService> self(this);
+    Ref<ITfContext> c(tool_.ctx);
+    Ref<ITfRange> range(tool_.range);
+    const std::u16string orig = tool_.text, result = tool_.result;
+    const HRESULT hr = RunEditSession(
+        tool_.ctx, clientId_, TF_ES_ASYNCDONTCARE | TF_ES_READWRITE,
+        [self, c, range, orig, result, request](TfEditCookie ec) -> HRESULT {
+            TextToolStatus st = TextToolStatus::Failed;
+            TF_SELECTION sel;
+            ULONG fetched = 0;
+            if (SUCCEEDED(c->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &fetched)) && fetched == 1 && sel.range) {
+                LONG a = 1, b = 1;
+                std::u16string now;
+                // Replace only what was read: the selection must still be exactly that range
+                // with exactly that text (the user may have typed or clicked meanwhile).
+                if (SUCCEEDED(sel.range->CompareStart(ec, range.get(), TF_ANCHOR_START, &a)) &&
+                    SUCCEEDED(sel.range->CompareEnd(ec, range.get(), TF_ANCHOR_END, &b)) && a == 0 && b == 0 &&
+                    rangeText(range.get(), ec, kTextToolMaxLength, now) && now == orig &&
+                    SUCCEEDED(range->SetText(ec, 0, reinterpret_cast<const WCHAR*>(result.data()),
+                                             static_cast<LONG>(result.size())))) {
+                    range->Collapse(ec, TF_ANCHOR_END);  // caret after the new text (= macOS insertText)
+                    TF_SELECTION ts;
+                    ts.range = range.get();
+                    ts.style.ase = TF_AE_NONE;
+                    ts.style.fInterimChar = FALSE;
+                    c->SetSelection(ec, 1, &ts);
+                    st = TextToolStatus::Replaced;
+                }
+                sel.range->Release();
+            }
+            self->session_.reset();
+            if (self->tool_.request == request) self->dropTextToolPending();
+            config::log(st == TextToolStatus::Replaced ? "text tool: selection replaced"
+                                                       : "text tool: selection changed -> not replaced");
+            postToolReply(request, st);
+            return S_OK;
+        });
+    if (FAILED(hr)) {
+        config::log("text tool: the app refused a write session");
+        if (tool_.request == request) dropTextToolPending();
+        postToolReply(request, TextToolStatus::Failed);
+    }
 }
 
 }  // namespace vtx::tip

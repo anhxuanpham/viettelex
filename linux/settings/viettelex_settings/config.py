@@ -35,6 +35,13 @@ DEFAULTS = {
         "toggle_hotkey": "Ctrl+space",
         "per_app_state": True,
         "default_vietnamese": True,
+        # Ngôn ngữ giao diện app cài đặt + nhãn menu bộ gõ. Mặc định LUÔN tiếng Việt —
+        # không theo locale của máy (quy ước chung các bản VietTelex).
+        "ui_language": "vi",
+        # Menu bộ gõ → "Công cụ…" (Thêm dấu, HOA, thường, Hoa Đầu Từ, Hoa đầu câu, Xoá dấu).
+        "text_tools_menu": True,
+        # Phím tắt "Thêm dấu cho vùng chọn"; "" = tắt (mặc định).
+        "add_tones_hotkey": "",
     },
     "app_modes": {},
 }
@@ -43,6 +50,7 @@ SECTION_ORDER = ["typing", "general", "app_modes"]
 APP_MODES = ("preedit", "surrounding", "direct", "off")
 INPUT_METHODS = ("telex", "vni")
 DISPLAY_MODES = ("preedit", "surrounding")
+UI_LANGUAGES = ("vi", "en")
 
 
 def config_dir():
@@ -264,6 +272,10 @@ def normalize(data):
         t["input_method"] = "telex"
     if g["display_mode"] not in DISPLAY_MODES:
         g["display_mode"] = "preedit"
+    if g["ui_language"] not in UI_LANGUAGES:
+        g["ui_language"] = "vi"
+    if g["add_tones_hotkey"] and normalize_hotkey(g["add_tones_hotkey"]) is None:
+        g["add_tones_hotkey"] = ""
     out["app_modes"] = {k: v for k, v in out["app_modes"].items()
                         if isinstance(v, str) and v in APP_MODES and k.strip()}
     return out
@@ -363,3 +375,16 @@ def normalize_hotkey(text):
     if canon == ["Super"] and key == "space":
         return None       # GNOME dùng Super+Space — hợp đồng cấm
     return "+".join(canon + [key])
+
+
+def action_hotkey_error(value, toggle_hotkey):
+    """Phím tắt công cụ (Thêm dấu): None = dùng được / "" (tắt); "modifier" = thiếu
+    Ctrl/Alt/Super (Shift+chữ là gõ chữ hoa); "toggle" = trùng phím chuyển Việt/Anh."""
+    if not value:
+        return None
+    mods = value.split("+")[:-1]
+    if not any(m in ("Ctrl", "Alt", "Super") for m in mods):
+        return "modifier"
+    if toggle_hotkey and normalize_hotkey(toggle_hotkey) == value:
+        return "toggle"
+    return None

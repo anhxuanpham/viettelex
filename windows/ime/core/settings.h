@@ -41,6 +41,12 @@ struct Settings {
     bool debugLogging = false;
     bool showTrayIcon = false;        // tray icon off: the taskbar input indicator shows V/E
                                       // already; Start menu -> VietTelex opens Settings
+    // Công cụ văn bản (macOS textToolsInMenu / addTonesHotkey): the tray menu's "Công cụ
+    // văn bản" submenu, and the global Thêm dấu hotkey (app/core/text_action_logic.h
+    // choices, default "off"). VietTelex.exe only: addTonesHotkey is registry-only (not in
+    // the TIP snapshot, not compared by operator==).
+    bool textToolsInMenu = true;
+    std::string addTonesHotkey = "off";
     // Data
     std::map<std::u16string, std::u16string> shortcuts;   // gõ tắt
     std::map<std::string, AppMode> appModes;              // user override, key = lowercase exe

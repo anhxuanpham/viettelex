@@ -39,9 +39,13 @@ enum SwipeEnglish {
     }
 
     static let lexicon: Lexicon = {
+        #if VIETTELEX_CLI   // công cụ văn bản Linux (linux/engine-capi: viettelex-text-tool)
+        let url = VTDataFile.url("enlexicon.bin")
+        #else
         final class BundleToken {}
-        guard let url = Bundle(for: BundleToken.self).url(forResource: "enlexicon", withExtension: "bin"),
-              let d = try? Data(contentsOf: url, options: .alwaysMapped) else { return .empty }
+        let url = Bundle(for: BundleToken.self).url(forResource: "enlexicon", withExtension: "bin")
+        #endif
+        guard let url, let d = try? Data(contentsOf: url, options: .alwaysMapped) else { return .empty }
         return parse(d) ?? .empty
     }()
 

@@ -8,6 +8,10 @@
 // GNOME Wayland both are generic ("gnome-shell"/"default": one shared context for every
 // app), so the focused app is read from gnome-shell over the session bus instead
 // (viettelex::GnomeAppMonitor).
+// Text tools ("Công cụ…" property menu + the optional Thêm dấu hotkey) run the helper
+// viettelex-text-tool off the main thread (viettelex::TextToolRunner) and commit the result
+// over the selection. Labels follow Settings::uiLanguage; the InputMode icon/symbol follow
+// Việt/Anh (Vᴛ / E, like the macOS menu bar).
 
 #include "engine.h"
 
@@ -16,10 +20,13 @@
 #include "viettelex/gnome_monitor.h"
 #include "viettelex/session.h"
 #include "viettelex/settings.h"
+#include "viettelex/text_tools.h"
 #include "viettelex/watcher.h"
 
 #include <glib-unix.h>
 
+#include <chrono>
+#include <functional>
 #include <memory>
 #include <set>
 #include <string>
@@ -36,6 +43,14 @@ struct VtIBusEngine {
     gboolean focused;
     IBusPropList *props;
     IBusProperty *modeProp;
+    IBusProperty *settingsProp;
+    IBusProperty *toolsProp;       // PROP_TYPE_MENU "Công cụ…"
+    IBusPropList *toolsList;
+    IBusProperty *toolProps[viettelex::kTextToolCount];
+    // Text tool result that arrived while unfocused (the panel menu took focus): committed
+    // on the next focus-in if still fresh.
+    std::string *pendingResult;
+    gint64 pendingUntil;        // g_get_monotonic_time() µs
     gboolean password;
     guint purpose, hints;       // last set_content_type
     gboolean rememberState;     // AppPolicy.rememberState of the current field
@@ -59,6 +74,7 @@ struct Globals {
     std::unique_ptr<vt::AppStateStore> appState;
     std::set<VtIBusEngine *> engines;
     std::unique_ptr<vt::GnomeAppMonitor> gnome;  // GNOME Wayland only
+    std::unique_ptr<vt::TextToolRunner> runner;
 };
 Globals &G() {
     static Globals g;
@@ -66,6 +82,11 @@ Globals &G() {
 }
 
 const vt::Settings &settings() { return G().watcher->settings(); }
+
+bool english() { return vt::isEnglishUi(settings().uiLanguage); }
+std::string tr(const char *vi) { return vt::uiText(vi, english()); }
+// IBusText owns a copy of the string.
+IBusText *text(const std::string &s) { return ibus_text_new_from_string(s.c_str()); }
 
 constexpr guint kBackSpaceKeycode = 14;  // evdev KEY_BACKSPACE (IBus keycodes are X keycode − 8)
 
@@ -146,11 +167,25 @@ private:
 
 void updateModeProp(VtIBusEngine *self) {
     bool vi = self->session->vietnamese();
-    IBusText *label = ibus_text_new_from_static_string(vi ? "Tiếng Việt" : "English");
-    ibus_property_set_label(self->modeProp, label);
-    ibus_property_set_symbol(self->modeProp, ibus_text_new_from_static_string(vi ? "VI" : "EN"));
+    ibus_property_set_label(self->modeProp, text(tr(vi ? "Tiếng Việt" : "English")));
+    // GNOME Shell shows the InputMode symbol as the indicator text; ibus-ui-gtk3 (and
+    // icon-capable panels) show its icon: Vᴛ / E like the macOS menu bar.
+    ibus_property_set_symbol(self->modeProp, ibus_text_new_from_static_string(vi ? "VT" : "E"));
+    ibus_property_set_icon(self->modeProp, vi ? "viettelex" : "viettelex-off");
     ibus_property_set_state(self->modeProp, vi ? PROP_STATE_CHECKED : PROP_STATE_UNCHECKED);
     ibus_engine_update_property(IBUS_ENGINE(self), self->modeProp);
+}
+
+// Labels in the UI language + visibility of "Công cụ…" (text_tools_menu, helper installed).
+void refreshPropLabels(VtIBusEngine *self) {
+    ibus_property_set_tooltip(self->modeProp, text(tr("Chuyển Việt/Anh (Ctrl+Space)")));
+    ibus_property_set_label(self->settingsProp, text(tr("Cài đặt…")));
+    ibus_property_set_tooltip(self->settingsProp, text(tr("Mở VietTelex Settings")));
+    ibus_property_set_label(self->toolsProp, text(tr("Công cụ…")));
+    ibus_property_set_tooltip(self->toolsProp, text(tr("Công cụ văn bản cho chữ đang bôi đen")));
+    ibus_property_set_visible(self->toolsProp, settings().textToolsMenu && vt::textToolAvailable());
+    for (int i = 0; i < vt::kTextToolCount; ++i)
+        ibus_property_set_label(self->toolProps[i], text(vt::textToolLabel(vt::textToolAt(i), english())));
 }
 
 void onToggled(VtIBusEngine *self, bool vi) {
@@ -192,7 +227,80 @@ void applySettingsToAll() {
     for (auto *e : G().engines) {
         e->session->applySettings(s);
         refreshFieldFlags(e);
+        refreshPropLabels(e);
+        if (e->focused) {
+            // Re-register: panels rebuild the menu (labels, "Công cụ…" shown/hidden).
+            ibus_engine_register_properties(IBUS_ENGINE(e), e->props);
+            updateModeProp(e);
+        }
     }
+}
+
+// MARK: - text tools (Công cụ…) — see linux/common/include/viettelex/text_tools.h
+
+void commitToolResult(VtIBusEngine *self, const std::string &result) {
+    IBusClient client(IBUS_ENGINE(self));
+    self->session->finish(client, true);
+    // Typing over the selection replaces it (GTK, Qt, Chromium, LibreOffice…).
+    ibus_engine_commit_text(IBUS_ENGINE(self), ibus_text_new_from_string(result.c_str()));
+    self->session->focusIn();  // the text around the caret changed: forget the old word context
+}
+
+void commitPendingResult(VtIBusEngine *self) {
+    if (self->pendingResult->empty()) return;
+    std::string r;
+    r.swap(*self->pendingResult);
+    if (g_get_monotonic_time() <= self->pendingUntil) commitToolResult(self, r);
+}
+
+void runTextTool(VtIBusEngine *self, vt::TextTool tool) {
+    IBusEngine *engine = IBUS_ENGINE(self);
+    // Password / private fields: never read them. Terminals: typing over a selection
+    // replaces nothing there — the result would land at the prompt.
+    if (self->password || (self->hints & IBUS_INPUT_HINT_PRIVATE) || self->purpose == IBUS_INPUT_PURPOSE_TERMINAL ||
+        vt::isTerminalApp(*self->appId) || !G().runner || G().runner->busy())
+        return;
+    IBusClient client(engine);
+    self->session->finish(client, true);
+    vt::TextToolRunner::Source source;
+    if ((engine->client_capabilities & IBUS_CAP_SURROUNDING_TEXT) && self->surroundingProven) {
+        // The app reports its text: its selection is authoritative (none = nothing to do).
+        IBusText *t = nullptr;
+        guint cursor = 0, anchor = 0;
+        ibus_engine_get_surrounding_text(engine, &t, &cursor, &anchor);
+        const gchar *s = t ? ibus_text_get_text(t) : nullptr;
+        std::string sel;
+        if (!s || !vt::selectionFromSurrounding(s, cursor, anchor, sel)) return;
+        source = [sel](std::string &out) {
+            out = sel;
+            return true;
+        };
+    } else {
+        source = [](std::string &out) { return vt::readPrimarySelection(out); };
+    }
+    G().runner->start(tool, std::move(source), [self](bool changed, const std::string &, const std::string &result) {
+        try {
+            // The engine may have been destroyed while the helper ran.
+            if (!changed || !G().engines.count(self)) return;
+            if (self->focused) {
+                commitToolResult(self, result);
+            } else {
+                *self->pendingResult = result;
+                self->pendingUntil = g_get_monotonic_time() + 3 * G_USEC_PER_SEC;
+            }
+        } catch (...) {
+        }
+    });
+}
+
+gboolean runOnMain(gpointer data) {
+    auto *f = static_cast<std::function<void()> *>(data);
+    try {
+        (*f)();
+    } catch (...) {
+    }
+    delete f;
+    return G_SOURCE_REMOVE;
 }
 
 gboolean onSettingsFd(gint, GIOCondition, gpointer) {
@@ -239,6 +347,11 @@ gboolean processKeyEvent(IBusEngine *engine, guint keyval, guint keycode, guint 
         if (state & IBUS_CONTROL_MASK) ev.mods |= vt::VT_MOD_CTRL;
         if (state & IBUS_MOD1_MASK) ev.mods |= vt::VT_MOD_ALT;
         if (state & (IBUS_SUPER_MASK | IBUS_MOD4_MASK)) ev.mods |= vt::VT_MOD_SUPER;
+        if (self->session->isAddTonesHotkey(ev)) {
+            // Consumed even when nothing is selected: the chord belongs to this tool.
+            runTextTool(self, vt::TextTool::AddTones);
+            return TRUE;
+        }
         IBusClient client(engine);
         return self->session->processKey(ev, client) ? TRUE : FALSE;
     } catch (...) {
@@ -262,8 +375,10 @@ void focusCommon(VtIBusEngine *self) {
         ibus_engine_get_surrounding_text(IBUS_ENGINE(self), &text, &cursor, &anchor);
     }
     self->session->focusIn();
+    refreshPropLabels(self);
     ibus_engine_register_properties(IBUS_ENGINE(self), self->props);
     updateModeProp(self);
+    commitPendingResult(self);
 }
 
 void focusIn(IBusEngine *engine) {
@@ -363,6 +478,12 @@ void propertyActivate(IBusEngine *engine, const gchar *name, guint state) {
         onToggled(self, self->session->vietnamese());
     } else if (n == "Settings") {
         g_spawn_command_line_async("viettelex-settings", nullptr);
+    } else if (n.rfind("Tool.", 0) == 0) {
+        vt::TextTool tool = vt::TextTool::AddTones;
+        try {
+            if (vt::textToolFromId(n.substr(5), tool)) runTextTool(self, tool);
+        } catch (...) {
+        }
     }
 }
 
@@ -377,6 +498,8 @@ void dispose(GObject *obj) {
     self->clientId = nullptr;
     delete self->clientName;
     self->clientName = nullptr;
+    delete self->pendingResult;
+    self->pendingResult = nullptr;
     g_clear_object(&self->props);
     G_OBJECT_CLASS(vt_ibus_engine_parent_class)->dispose(obj);
 }
@@ -413,6 +536,8 @@ static void vt_ibus_engine_init(VtIBusEngine *self) {
     self->purpose = IBUS_INPUT_PURPOSE_FREE_FORM;
     self->hints = 0;
     self->rememberState = TRUE;
+    self->pendingResult = new std::string();
+    self->pendingUntil = 0;
     self->session->applySettings(settings());
     self->session->onToggle = [self](bool vi) { onToggled(self, vi); };
 
@@ -423,11 +548,26 @@ static void vt_ibus_engine_init(VtIBusEngine *self) {
                                        ibus_text_new_from_static_string("Chuyển Việt/Anh (Ctrl+Space)"), TRUE,
                                        TRUE, PROP_STATE_CHECKED, nullptr);
     ibus_prop_list_append(self->props, self->modeProp);
-    ibus_prop_list_append(self->props,
-                          ibus_property_new("Settings", PROP_TYPE_NORMAL,
-                                            ibus_text_new_from_static_string("Cài đặt…"), "preferences-system",
-                                            ibus_text_new_from_static_string("Mở VietTelex Settings"), TRUE,
-                                            TRUE, PROP_STATE_UNCHECKED, nullptr));
+    // "Công cụ…" → the six text tools (like macOS: VietTelex menu → Công cụ…).
+    self->toolsList = ibus_prop_list_new();
+    for (int i = 0; i < vt::kTextToolCount; ++i) {
+        vt::TextTool tool = vt::textToolAt(i);
+        std::string key = std::string("Tool.") + vt::textToolId(tool);
+        self->toolProps[i] = ibus_property_new(key.c_str(), PROP_TYPE_NORMAL,
+                                               text(vt::textToolLabel(tool, false)), nullptr, nullptr, TRUE, TRUE,
+                                               PROP_STATE_UNCHECKED, nullptr);
+        ibus_prop_list_append(self->toolsList, self->toolProps[i]);
+    }
+    self->toolsProp = ibus_property_new("Tools", PROP_TYPE_MENU, ibus_text_new_from_static_string("Công cụ…"),
+                                        "edit-select-all", nullptr, TRUE, TRUE, PROP_STATE_UNCHECKED,
+                                        self->toolsList);
+    ibus_prop_list_append(self->props, self->toolsProp);
+    self->settingsProp = ibus_property_new("Settings", PROP_TYPE_NORMAL,
+                                           ibus_text_new_from_static_string("Cài đặt…"), "preferences-system",
+                                           ibus_text_new_from_static_string("Mở VietTelex Settings"), TRUE, TRUE,
+                                           PROP_STATE_UNCHECKED, nullptr);
+    ibus_prop_list_append(self->props, self->settingsProp);
+    refreshPropLabels(self);
     G().engines.insert(self);
 }
 
@@ -436,6 +576,9 @@ void vt_ibus_globals_init() {
     G().appState = std::make_unique<vt::AppStateStore>(vt::appStatePath());
     G().appState->load();
     if (G().watcher->fd() >= 0) g_unix_fd_add(G().watcher->fd(), G_IO_IN, onSettingsFd, nullptr);
+    G().runner = std::make_unique<vt::TextToolRunner>(
+        [](std::function<void()> f) { g_main_context_invoke(nullptr, runOnMain, new std::function<void()>(std::move(f))); });
+
     // Started now (not at first focus) so the focus changes since login are seen.
     if (vt::gnome::isGnomeWaylandSession()) {
         G().gnome = std::make_unique<vt::GnomeAppMonitor>();
