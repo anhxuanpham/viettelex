@@ -499,6 +499,7 @@ struct PhimPage: View {
     /// Ô phóng to chữ khi bấm phím — mặc định BẬT (KeyboardView.keyPreviewKey).
     @AppStorage("keyPreviewEnabled", store: featureDefaults) private var keyPreview = true
     @AppStorage("hapticFeedback", store: featureDefaults) private var hapticFeedback = false
+    @AppStorage("hapticStrength", store: featureDefaults) private var hapticStrength = 45
 
     private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
@@ -536,6 +537,19 @@ struct PhimPage: View {
                 settingToggle(L("Phóng to chữ khi bấm"), L("Ô chữ lớn nổi trên phím vừa chạm. Tắt cho gọn, nhẹ máy."), isOn: $keyPreview)
                 settingToggle(L("Rung phím"), L("Rung nhẹ mỗi lần chạm phím."), isOn: $hapticFeedback)
                 if hapticFeedback {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(L("Độ mạnh rung"))
+                            Spacer()
+                            Text("\(hapticStrength)%").foregroundStyle(.secondary).monospacedDigit()
+                        }
+                        Slider(value: Binding(get: { Double(hapticStrength) },
+                                              set: { hapticStrength = Int($0.rounded()) }),
+                               in: 10...100, step: 5) {
+                            Text(L("Độ mạnh rung"))
+                        } minimumValueLabel: { Text(L("Nhẹ")).font(.caption) }
+                          maximumValueLabel: { Text(L("Mạnh")).font(.caption) }
+                    }
                     FullAccessNotice(reason: L("Rung phím"))
                 }
             } header: { Text(L("Phản hồi khi chạm")) }

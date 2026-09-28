@@ -3,6 +3,8 @@
 // globe/space/return. Metrics follow Apple's stock layout; the pixel-perfect
 // fidelity pass (balloons, exact colors per appearance, iPad) is M2.
 import UIKit
+import AudioToolbox
+import CoreHaptics
 
 final class KeyboardView: UIView, UIInputViewAudioFeedback {
 
@@ -2574,24 +2576,18 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     // Rung: iOS vô hiệu UIFeedbackGenerator trong keyboard extension khi
     // không có Full Access — controller chỉ bật cờ khi setting ON + hasFullAccess.
     nonisolated(unsafe) static var hapticsEnabled = false
-    /// iOS 17.5+: generator phải GẮN VIEW đang hiện (init(style:view:)) — bản không view
-    /// (static, tạo trước khi extension có cửa sổ) im lặng trong keyboard extension:
-    /// "bật rung + Full Access mà không rung" (Hữu Đông / Phil 28/09/2026). View gắn ở
-    /// `attachHaptics(to:)` mỗi lần bàn phím hiện; chưa gắn thì dùng bản cũ.
-    nonisolated(unsafe) private static var haptic = UIImpactFeedbackGenerator(style: .light)
-    static func attachHaptics(to view: UIView) {
-        if #available(iOS 17.5, *) {
-            haptic = UIImpactFeedbackGenerator(style: .light, view: view)
-        }
-        if hapticsEnabled { haptic.prepare() }
-    }
     private static func feedback() {
         UIDevice.current.playInputClick()
-        if hapticsEnabled {
-            if #available(iOS 17.5, *) { haptic.impactOccurred(intensity: 1, at: .zero) }
-            else { haptic.impactOccurred() }
-            haptic.prepare()   // giữ Taptic Engine sẵn sàng cho phím kế — không trễ rung
-        }
+        if hapticsEnabled { impact() }
+    }
+    /// Rung một nhịp (Core Haptics, độ mạnh theo cài đặt). UIImpactFeedbackGenerator IM LẶNG trong keyboard extension trên
+    /// iOS 27 dù đủ setting + Full Access (đo trên iPhone Phil 28/09/2026: App Group có
+    /// hapticFeedback=1, kbFullAccess=1 mà không rung) — extension không phải app
+    /// "active" nên UIKit bỏ qua. Dùng system sound 1519 (Peek, Taptic nhẹ) — không
+    /// phụ thuộc trạng thái app, không phát tiếng.
+    private static func impact() {
+        if KeyHaptics.shared.play() { return }
+        AudioServicesPlaySystemSound(1519)   // dự phòng: Core Haptics không chạy được
     }
     static func clickLetter() { feedback() }
     static func clickDelete() { feedback() }
@@ -2599,9 +2595,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// Đổi ngôn ngữ bằng vuốt phím cách: chỉ rung nhẹ (theo công tắc Rung phím).
     static func flickFeedback() {
         guard hapticsEnabled else { return }
-        if #available(iOS 17.5, *) { haptic.impactOccurred(intensity: 1, at: .zero) }
-        else { haptic.impactOccurred() }
-        haptic.prepare()
+        impact()
     }
 
     private func letterButton(_ s: String) -> UIView {
@@ -4114,4 +4108,50 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         letterKeys.first { $0.base == s }.map { convert($0.button.bounds, from: $0.button) }
     }
     #endif
+}
+
+
+/// Rung phím bằng Core Haptics — chỉnh được độ mạnh (system sound 1519 hơi mạnh, Phil
+/// 28/09). Engine dựng lười lần rung đầu, dừng khi iOS dừng; lỗi ⇒ trả false để dùng 1519.
+final class KeyHaptics {
+    static let shared = KeyHaptics()
+    /// Độ mạnh 10…100 % từ thanh trượt (Phil 28/09: 45 = "vừa"; system sound 1519 ≈ mạnh).
+    private(set) var intensity: Float = 0.45
+    var sharpness: Float = 0.6
+    static func intensity(forPercent p: Int) -> Float { Float(max(10, min(100, p))) / 100 }
+    func setStrength(_ percent: Int) {
+        let v = Self.intensity(forPercent: percent)
+        if v != intensity { intensity = v; player = nil }   // pattern dựng lại lần rung sau
+    }
+    private var engine: CHHapticEngine?
+    private var player: CHHapticPatternPlayer?
+    private var broken = false
+    private var loggedFailure = false
+
+    func play() -> Bool {
+        guard !broken, CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return false }
+        do {
+            if engine == nil {
+                let e = try CHHapticEngine()
+                e.isAutoShutdownEnabled = true
+                e.stoppedHandler = { [weak self] _ in self?.player = nil }
+                e.resetHandler = { [weak self] in self?.player = nil; try? self?.engine?.start() }
+                engine = e
+            }
+            try engine?.start()
+            if player == nil {
+                let ev = CHHapticEvent(eventType: .hapticTransient, parameters: [
+                    CHHapticEventParameter(parameterID: .hapticIntensity, value: intensity),
+                    CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpness),
+                ], relativeTime: 0)
+                player = try engine?.makePlayer(with: CHHapticPattern(events: [ev], parameters: []))
+            }
+            try player?.start(atTime: CHHapticTimeImmediate)
+            return true
+        } catch {
+            if !loggedFailure { loggedFailure = true; TouchLog.write("haptics: Core Haptics lỗi \(error) → dùng 1519") }
+            broken = true
+            return false
+        }
+    }
 }
