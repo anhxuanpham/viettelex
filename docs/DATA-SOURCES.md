@@ -379,12 +379,12 @@ layout iPhone), tập kiểm thử, top-1 đường tự nhiên / đều:
 
 | tập (test) | trước | sau |
 |---|---|---|
-| câu Việt thuần (n = 1 184) | 84,1 / 87,6 | 84,0 / 87,5 |
+| câu Việt thuần (n = 1 184) | 84,2 / 87,4 | 84,1 / 87,3 |
 | **câu Anh thuần** (n = 3 160) | 86,3 / 89,0 | **91,8 / 94,4** |
 | — từ đầu câu 2–3 của đoạn Anh (n = 311) | 61,8 / 63,5 | **95,2 / 99,0** |
 | — từ Anh sau từ Anh trong câu | 90,6 / 93,4 | 93,0 / 95,6 |
-| câu trộn, cả câu (n = 2 164) | 82,5 / 86,7 | 83,4 / 87,3 |
-| — từ Anh ngay sau từ Việt | 77,3 / 81,8 | 77,8 / 81,8 |
+| câu trộn, cả câu (n = 2 164) | 82,6 / 86,7 | 83,5 / 87,2 |
+| — từ Anh ngay sau từ Việt | 77,8 / 81,8 | 78,3 / 81,8 |
 | — từ Việt ngay sau từ Anh | 71,0 / 73,1 | 70,4 / 71,0 |
 | — từ Anh sau từ Anh | 90,5 / 93,7 | 92,4 / 95,2 |
 | từ rời: nét thật giữ lại / giả tự nhiên / giả đều | 0,780 / 0,875 / 0,903 | y hệt |
