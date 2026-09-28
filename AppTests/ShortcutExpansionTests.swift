@@ -10,7 +10,7 @@ import TelexCore
 final class ShortcutExpansionTests: XCTestCase {
 
     private let table = ShortcutTable([
-        "ko": "không", "đc": "được", "mn": "mọi người", "->": "→", "k2": "không hai",
+        "ko": "không", "đc": "được", "mn": "mọi người", "->": "→", "/shop": "cửa hàng", "k2": "không hai",
         "h": "giờ", "HN": "Hà Nội", "sig": "Thân mến,\nPhil", "j": "gì", "√√": "căn",
         ":D": "😀", "1tr": "một triệu",
     ])
@@ -240,6 +240,14 @@ final class ShortcutExpansionTests: XCTestCase {
         XCTAssertEqual(typed("ddc "), "được ")
         XCTAssertEqual(typed("dc "), "dc ")
         XCTAssertEqual(typed("sig "), "Thân mến,\nPhil ")     // nhiều dòng
+    }
+
+    /// Khoá có tiền tố dấu câu (fork vtx "/shop"): cả cụm trước con trỏ khớp khoá ký hiệu.
+    func testPunctuationPrefixKey() {
+        XCTAssertEqual(typed("/shop "), "cửa hàng ")
+        XCTAssertEqual(typed("xem /shop "), "xem cửa hàng ")
+        XCTAssertEqual(typed("a/shop "), "a/shop ")          // dính chữ trước ⇒ không nở
+        XCTAssertEqual(typed("/h "), "/h ")                  // #87 vẫn giữ
     }
 
     func testNotOnNonTriggerOrGlued() {
