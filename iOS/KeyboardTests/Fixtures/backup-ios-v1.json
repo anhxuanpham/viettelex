@@ -44,6 +44,7 @@
     "liveSpellCheck" : true,
     "longPressNumbers" : true,
     "longPressSymbols" : false,
+    "mathResults" : true,
     "modernTone" : true,
     "numberChips" : true,
     "numberRow" : true,

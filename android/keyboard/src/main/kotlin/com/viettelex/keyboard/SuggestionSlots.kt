@@ -14,7 +14,8 @@ package com.viettelex.keyboard
  *     ([BarLayout.Chips]) thắng thẻ Dán ([BarLayout.PasteCard]); cả hai thay cả bar.
  *  3. **"Thêm dấu"** ([SuggestionSet.ADD_TONES_TOKEN]) — slot đầu, nhường clipboard.
  *  4. **Chip số** — luôn slot GIỮA; nội dung slot giữa dời sang slot 3 (trừ khi slot 3 là
- *     vùng emoji).
+ *     vùng emoji). **Kết quả phép tính** "…=" ([MathResults]) — slot ĐẦU như bàn phím
+ *     gốc, mọi chip khác dời phải một ô.
  *  5. **Chữ** — nguyên văn / ứng viên (chip gõ tắt nằm ở ứng viên chính) / emoji, hoặc từ
  *     kế tiếp (bigram, email/TLD, biến thể gõ vuốt).
  */
@@ -76,6 +77,11 @@ object SuggestionSlots {
         set.number?.let { n ->
             slots[2] = slots[1]
             slots[1] = BarChip(n, SuggestionSet.NUMBER_TOKEN)
+        }
+        // 4. kết quả phép tính: slot đầu; còn lại dời phải.
+        set.math?.let { m ->
+            slots[2] = slots[1]; slots[1] = slots[0]
+            slots[0] = BarChip(m, SuggestionSet.MATH_TOKEN)
         }
         if (emojis.isNotEmpty()) slots[2] = null
         return BarLayout.Slots(slots.toList(), emojis)

@@ -60,6 +60,8 @@ object Keys {
     const val ADD_TONES_CHIP = "addTonesChip"
     /** Chip số (đọc số thành chữ / tiền / máy tính nhanh) — mặc định BẬT; tắt ⇒ không đọc context sau chữ số. */
     const val NUMBER_CHIPS = "numberChips"
+    /** "Hiện kết quả phép tính" (Bool, mặc định BẬT) — chỉ đọc context ngay sau phím "=". */
+    const val MATH_RESULTS = "mathResults"
     const val FILTER_SENSITIVE = "filterSensitive"
     const val TEMPLATES_ENABLED = "templatesEnabled"
     const val SHOW_SPACE_LOGO = "showSpaceLogo"

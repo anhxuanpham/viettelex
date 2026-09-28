@@ -69,6 +69,10 @@ struct FieldTraits: Equatable {
         FieldPolicy.passthrough(keyboardType: keyboardType, contentType: contentType)
     }
 
+    /// Chip kết quả phép tính (MathResults): không ở ô mật khẩu / URL / email / username /
+    /// OTP (ô literal); ô số vẫn có.
+    var allowsMathResults: Bool { !passthrough && !secure }
+
     /// Ô cho phép thanh gợi ý (stock tắt ở ô mật khẩu / autocorrection = .no).
     var allowsSuggestions: Bool { autocorrection != .no && !secure }
 

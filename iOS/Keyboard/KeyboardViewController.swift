@@ -73,6 +73,15 @@ final class KeyboardViewController: UIInputViewController {
     /// Thay thế văn bản + tên danh bạ của người dùng (requestSupplementaryLexicon, nạp một
     /// lần mỗi lần hiện khi tự sửa bật) — coi là từ hợp lệ, không sửa.
     private var lexiconWords: Set<String> = []
+    /// UILexicon nạp MỘT lần mỗi phiên controller (tự sửa + Thay thế văn bản iOS dùng chung).
+    private lazy var supplementaryLexicon = SupplementaryLexiconCache { [weak self] done in
+        guard let self else { return }
+        self.requestSupplementaryLexicon { lex in
+            done(lex.entries.prefix(5000).map { (input: $0.userInput, text: $0.documentText) })
+        }
+    }
+    /// Thay thế văn bản iOS làm gõ tắt (cache theo phiên).
+    private lazy var systemReplacements = SystemTextReplacementLoader(cache: supplementaryLexicon)
     /// Biên nhận học của từ vừa chốt — hoàn tác tự sửa rút lại đúng lượt học từ đã sửa.
     private var lastLearned: Learned?
     /// Vài từ tiếng Anh vừa vuốt ra (chữ thường) — ngữ cảnh ngôn ngữ cho cú vuốt kế
@@ -140,6 +149,8 @@ final class KeyboardViewController: UIInputViewController {
     var debugKeyboard: KeyboardView { keyboard }
     /// Test: gửi thẳng một phím vào handle() (dấu câu, ⌫…) như KeyboardView gửi.
     func debugHandle(_ key: KeyboardView.Key) { handle(key) }
+    /// Test: chạm một ô thanh gợi ý với payload này.
+    func debugAcceptSuggestion(_ item: String) { acceptSuggestion(item) }
     #endif
 
     #if DEBUG
@@ -185,12 +196,15 @@ final class KeyboardViewController: UIInputViewController {
         autoCorrectSetting = settings.autoCorrect && !settings.vniMode
         wordTouches.removeAll(); wordTouchesOk = false; pendingTouch = nil
         if autoCorrectSetting { loadSupplementaryLexicon() }
+        loadSystemTextReplacements(settings)
         // Tắt ⇒ router không gọi prior (không closure, không cấp phát ở vùng biên phím).
         keyboard.letterPrior = smartTouchSetting ? { [weak self] in self?.smartTouchPrior() } : nil
         if smartTouchSetting { TelexKeyPrior.warmUpInBackground() }
         if !swipeSetting { swipe = nil }              // tắt ⇒ bỏ template (RAM)
         addTonesSetting = settings.addTonesChip && PlusGate.isUnlocked(.sentenceDiacritics)
         numberChipsSetting = settings.numberChips
+        mathResultsSetting = settings.mathResults
+        mathArmed = false; mathChip = nil
         emojiSuggestSetting = settings.emojiSuggest
         pasteButtonSetting = settings.pasteButton
         spaceFlickSetting = settings.spaceSwipeLanguage
@@ -816,6 +830,12 @@ final class KeyboardViewController: UIInputViewController {
         } else {
             lastKeyWasEmailTrigger = false
         }
+        // Kết quả phép tính: chỉ ngay sau "=" (ô mật khẩu/URL/email: không).
+        if case .text("=") = key, mathResultsSetting, fieldTraits?.allowsMathResults != false {
+            mathArmed = true
+        } else {
+            mathArmed = false
+        }
         // updateAutoShift đọc documentContextBeforeInput (XPC) → cùng khối
         // async với suggestions, coalesce theo generation: gõ nhanh chỉ tính
         // cho phím cuối, ký tự không bao giờ chờ. Sound đã phát ở touch-down.
@@ -899,18 +919,31 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     /// Thay thế văn bản (Cài đặt → Bàn phím) + tên danh bạ: không cần Toàn quyền truy cập;
-    /// iOS trả bất đồng bộ — nạp một lần mỗi lần hiện, chỉ khi tự sửa bật.
+    /// iOS trả bất đồng bộ — nạp một lần mỗi phiên, chỉ khi tự sửa bật.
     private func loadSupplementaryLexicon() {
-        requestSupplementaryLexicon { [weak self] lex in
+        guard lexiconWords.isEmpty else { return }
+        supplementaryLexicon.get { [weak self] pairs in
             var words: Set<String> = []
-            for e in lex.entries.prefix(5000) {
-                for s in [e.userInput, e.documentText] {
+            for e in pairs {
+                for s in [e.input, e.text] {
                     for w in s.lowercased().split(whereSeparator: { !$0.isLetter }) where w.count >= 2 {
                         words.insert(String(w))
                     }
                 }
             }
-            DispatchQueue.main.async { self?.lexiconWords = words }
+            self?.lexiconWords = words
+        }
+    }
+
+    /// Thay thế văn bản iOS làm gõ tắt (SystemTextReplacement): bất đồng bộ, ngoài đường
+    /// hiện bàn phím; gộp vào bridge hiện tại khi có. Ghi snapshot cho app (cần Toàn quyền).
+    private func loadSystemTextReplacements(_ settings: KeyboardSettings) {
+        systemReplacements.load(settings: settings, bridge: { [weak self] in self?.bridge }) { [weak self] entries in
+            guard let self else { return }
+            TouchLog.write("system text replacement: \(entries.count)")
+            if self.hasFullAccess {
+                SystemTextReplacement.writeSnapshot(.init(entries), to: UserDefaultsProvider.shared)
+            }
         }
     }
 
@@ -924,6 +957,8 @@ final class KeyboardViewController: UIInputViewController {
     /// Công tắc phụ của thanh gợi ý (KeyboardSettings) — đọc mỗi lần hiện.
     private var addTonesSetting = false
     private var numberChipsSetting = true
+    /// "Hiện kết quả phép tính" (KeyboardSettings.mathResults).
+    private var mathResultsSetting = true
     private var emojiSuggestSetting = true
     private var pasteButtonSetting = true
     /// Đang giữ phím cách di con trỏ (KeyboardView.onTrackpad) — xem trackpadChanged.
@@ -942,6 +977,11 @@ final class KeyboardViewController: UIInputViewController {
     private var numberSpaces = 99
     /// Chip số đang hiện (đuôi cần thay + chữ chèn) — payload KeyboardView.numberToken.
     private var numberChip: NumberChip?
+    /// Phím vừa gõ là "=" (công tắc bật, ô cho phép) — chỉ khi đó mới đọc context tìm
+    /// kết quả phép tính (MathResults); phím khác ⇒ 0 việc.
+    private var mathArmed = false
+    /// Chip kết quả phép tính đang hiện — payload KeyboardView.mathToken.
+    private var mathChip: NumberChip?
     /// (raw đã chốt, dạng có dấu) khi auto-restore ghi đè — backspace ngay sau đó
     /// mở lại lối thoát: slot literal hiện dạng có dấu để 1 tap đổi từ.
     private var restoreUndo: (raw: String, composed: String)?
@@ -1189,7 +1229,7 @@ final class KeyboardViewController: UIInputViewController {
         guard suggestionsActive, keyboard?.isBarCollapsed != true else { return }
         let composed = bridge.composedWord
         var set = KeyboardView.SuggestionSet()
-        numberChip = nil
+        numberChip = nil; mathChip = nil
         // Ngay sau vuốt: phương án khác (biến thể dấu + dạng không dấu hạng 2/3) —
         // chỉ khi từ vuốt còn mở và chưa bị sửa.
         if let s = swipeSuggest {
@@ -1285,6 +1325,7 @@ final class KeyboardViewController: UIInputViewController {
             set.nextWords = padWords(Array(top), need: 3)
         }
         set.number = refreshNumberChip()
+        set.math = refreshMathChip()
         if composed.isEmpty, pasteOffer() {
             // Nút Dán tắt: vẫn ghi lịch sử + chip tách số (thuộc Lịch sử clipboard).
             set.paste = pasteButtonSetting; set.pasteIsImage = pasteIsImage
@@ -1325,6 +1366,15 @@ final class KeyboardViewController: UIInputViewController {
         // tới khi gõ số / ký hiệu mới (trước đây: sau ⌫ mọi phím chữ tới 2 dấu cách).
         if numberChip == nil, !NumberChips.digitNearCaret(before) { numberSpaces = 99 }
         return numberChip?.display
+    }
+
+    /// Chip kết quả phép tính (MathResults) — chỉ đọc context khi phím vừa gõ là "=".
+    /// Đọc lại mỗi lượt (không cache) ⇒ con trỏ dời đi chỗ khác thì chip tự mất.
+    private func refreshMathChip() -> String? {
+        mathChip = nil
+        guard mathArmed, let before = textDocumentProxy.documentContextBeforeInput else { return nil }
+        mathChip = MathResults.chip(before: before)
+        return mathChip?.display
     }
 
     /// Phần main của gợi ý khi đang gõ dở: pool (VNSuggest) + fix đã tính nền.
@@ -1376,6 +1426,7 @@ final class KeyboardViewController: UIInputViewController {
             if set.word == nil { set.word = slip } else { set.word2 = slip }
         }
         set.number = refreshNumberChip()
+        set.math = refreshMathChip()
         // thử cụm 2 từ trước ("hoàn thành", "sinh nhật") rồi mới tới từ đơn.
         // Emoji KHÔNG bị lọc nhạy cảm (user 2026-07-24: gõ "cứt"/"shit"
         // phải ra 💩) — filter chỉ chặn gợi ý TỪ, emoji là cách nói giảm.
@@ -1487,6 +1538,10 @@ final class KeyboardViewController: UIInputViewController {
             acceptNumberChip()
             return
         }
+        if item == KeyboardView.mathToken {
+            acceptMathChip()
+            return
+        }
         // Undo auto-restore: caret đang đứng ngay sau từ raw đã chốt (space vừa
         // bị backspace) → thay cả từ raw bằng dạng có dấu + space.
         if undoOfferActive, let u = restoreUndo, item == u.composed,
@@ -1562,6 +1617,30 @@ extension KeyboardViewController {
         lastWord = nil; lastWord2 = nil
         restoreUndo = nil; undoOfferActive = false
         numberSpaces = 0            // kết quả mới cũng là số → chip kế trong chuỗi (tiền → chữ)
+    }
+}
+
+extension KeyboardViewController {
+    /// Chạm chip kết quả phép tính: chèn kết quả sau "=" — tính lại từ context lúc chạm,
+    /// khác chip đang hiện (con trỏ đã dời / chữ đã đổi) thì bỏ.
+    fileprivate func acceptMathChip() {
+        defer {
+            KeyboardView.clickModifier()
+            updateAutoShift()
+            updateSuggestions()
+        }
+        guard let c = mathChip else { return }
+        mathChip = nil; mathArmed = false
+        let before = textDocumentProxy.documentContextBeforeInput ?? ""
+        guard MathResults.chip(before: before) == c else {
+            TouchLog.write("failsafe: math chip context mismatch → skip")
+            return
+        }
+        textDocumentProxy.insertText(c.insert)
+        bridge.reset()
+        lastWord = nil; lastWord2 = nil
+        restoreUndo = nil; undoOfferActive = false
+        numberSpaces = 0            // kết quả là số → chip số (đọc chữ) có thể theo sau
     }
 }
 

@@ -41,6 +41,12 @@ class SuggestionSlotsTests {
         assertEquals("a|$N|b", payloads(SuggestionSet(nextWords = listOf("a", "b", "c"), number = "x")))
     }
 
+    @Test fun mathChipFirst() {
+        val m = SuggestionSet.MATH_TOKEN
+        assertEquals("$m|a|b", payloads(SuggestionSet(nextWords = listOf("a", "b", "c"), math = "36")))
+        assertEquals("$m|b|a", payloads(SuggestionSet(nextWords = listOf("a", "b", "c"), math = "36"), middle = true))
+    }
+
     @Test fun undoBeatsEverything() {
         val u = BarChip("↩︎ Khôi phục", "restore")
         val busy = SuggestionSet(nextWords = listOf("a", "b"), paste = true, clipChips = listOf(otp), number = "x",

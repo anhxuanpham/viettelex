@@ -152,14 +152,14 @@ có seed) vẫn được gợi ý theo ngữ cảnh.
   Chuyển sang vnlm.bin (28/09/2026, lưới lại trên tập dev): slot1 0.830, 3 slot 0.939, từ kế
   tiếp 0.270 — ngang bảng cũ (±0.1 điểm).
 
-### 8. `NumberChips` — đọc số, định dạng tiền, máy tính nhanh
+### 8. `NumberChips` — đọc số, định dạng tiền (kết quả phép tính: mục 8b)
 
 Hàm thuần `NumberChips.chip(before:)` (Swift) ≡ `NumberChips.chip(before)` (Kotlin),
 cùng kết quả trên fixture chung `KeyboardTests/Fixtures/number-chips.txt`. Không bao
 giờ tự thay: chip chỉ hiện, chạm mới thay đúng đuôi đã tính (kiểm lại đuôi context
 trước khi xoá — lệch thì bỏ, không xoá mù).
 
-- **Chọn chip** (1 chip / lượt): `…=` → kết quả phép tính, chèn sau dấu `=`;
+- **Chọn chip** (1 chip / lượt; `…=` không — thuộc `MathResults`):
   số + `k/nghìn/ngàn`, `tr/triệu`, `tỷ/tỉ/ty` (liền hoặc cách: `50k`, `1tr2`,
   `1.2tr`, `2 tỷ`) → `1.200.000 ₫`; số chưa phân nhóm + `đ`/`₫` (≥4 chữ số) →
   `1.250.000đ` (giữ ký hiệu); số đã định dạng + `đ`/`₫`, hoặc + `đồng`/`vnd` → chữ +
@@ -176,12 +176,29 @@ trước khi xoá — lệch thì bỏ, không xoá mù).
   chỉ `,`: 1 lần = thập phân, ≥2 = phân nhóm; chỉ `.`: ≥2 = phân nhóm, 1 lần = phân
   nhóm khi sau nó đúng 3 chữ số và phần nguyên 1–3 chữ số không mở đầu 0
   (`1.250` = 1250), còn lại thập phân kiểu Anh (`1.5`).
-- **Máy tính**: `+ - * x × / ÷ : ( ) %`, có/không khoảng trắng; `A ± B%` = A ± A·B/100
-  (như máy tính điện thoại), còn lại `B%` = B/100. Kết quả kiểu Việt (thập phân `,`),
-  kiểu Anh nếu biểu thức dùng `.` thập phân hoặc `,` phân nhóm; phân nhóm nghìn chỉ
-  khi biểu thức có phân nhóm; ≤12 chữ số có nghĩa; chia 0 / |kết quả| ≥ 10^15 → không chip.
 - **Chi phí**: chỉ đọc `documentContextBeforeInput` khi token hiện tại hoặc ngay
   trước có chữ số/phép tính (đếm dấu cách kể từ chữ số cuối ≤1).
+
+### 8b. `MathResults` — "Hiện kết quả phép tính" (như Math Results của bàn phím gốc)
+
+Công tắc `mathResults` (mặc định BẬT, trang Gợi ý & từ điển, có trong sao lưu). Hàm thuần
+`MathResults.chip(before:)` (Swift) ≡ `MathResults.chip(before)` (Kotlin), fixture chung
+`KeyboardTests/Fixtures/math-results.txt`. Chip ở **slot đầu**, mọi chip khác dời phải;
+chạm = chèn kết quả sau `=` (tính lại từ context lúc chạm — khác thì bỏ).
+
+- **Khi nào**: CHỈ ngay sau phím `=` (phím khác ⇒ không đọc context, 0 chi phí; công tắc
+  tắt ⇒ 0 việc). Không ở ô mật khẩu / URL / email / username / OTP; ô số vẫn có (Android:
+  ô số không có thanh gợi ý nên không hiện).
+- **Phép tính**: `+ - − * × / ÷ : ^ ( ) %`, trừ một ngôi, có/không khoảng trắng; `x`/`X`
+  là nhân chỉ khi đứng giữa hai số (`12x3`, `(1+2)x3`); `^` kết hợp phải, cao hơn trừ một
+  ngôi (`-2^2` = -4); `A ± B%` = A ± A·B/100, còn lại `B%` = B/100. Không biến/hàm.
+  Biểu thức ≤64 ký tự; dính liền sau chữ cái (`abc12*3=`) → không chip.
+- **Số**: quy tắc phân cách của `NumberChips` ở trên (`1,5` = 1.5; `1.000` / `1.000.000`
+  = nhóm nghìn; `1,000,000` = nhóm nghìn kiểu Anh).
+- **Kết quả**: nguyên nếu tròn, không thì ≤6 chữ số lẻ (≤12 chữ số có nghĩa), bỏ 0 cuối;
+  dấu thập phân theo người gõ (`.` nếu biểu thức dùng `.` thập phân hoặc `,` nhóm nghìn,
+  còn lại `,`); phân nhóm nghìn chỉ khi biểu thức có. Chia 0 / |kết quả| ≥ 10^15 / vô hạn /
+  NaN / khác 0 mà tròn thành 0 → không chip.
 
 ### 9. `ClipDetect` — chip tách số từ clipboard (Clipboard nâng cao, Plus)
 

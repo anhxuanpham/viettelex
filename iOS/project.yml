@@ -143,6 +143,7 @@ targets:
       - Keyboard/SuggestionSupport.swift
       - Keyboard/SuggestionSlots.swift
       - Keyboard/NumberChips.swift
+      - Keyboard/MathResults.swift
       - Keyboard/VNSuggest.swift
       - Keyboard/VNLexicon2.swift
       - Keyboard/EmojiSuggest.swift

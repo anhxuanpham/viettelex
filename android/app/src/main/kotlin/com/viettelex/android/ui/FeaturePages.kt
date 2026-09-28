@@ -90,7 +90,8 @@ internal data class FeatureSearchEntry(val viTitle: String, val keywords: String
             FeatureSearchEntry("Chọn phím thông minh", "chạm trượt smart touch thử nghiệm experimental", FeaturePage.ChinhTa), // l10n-key
             FeatureSearchEntry("Tự sửa từ gõ sai", "autocorrect sửa lỗi thử nghiệm experimental", FeaturePage.ChinhTa), // l10n-key
             FeatureSearchEntry("Thanh gợi ý", "suggestion học từ", FeaturePage.GoiY), // l10n-key
-            FeatureSearchEntry("Chip số", "số tiền tính phép tính number", FeaturePage.GoiY), // l10n-key
+            FeatureSearchEntry("Chip số", "số tiền đọc số number", FeaturePage.GoiY), // l10n-key
+            FeatureSearchEntry("Hiện kết quả phép tính", "tính toán máy tính bằng math calculator", FeaturePage.GoiY), // l10n-key
             FeatureSearchEntry("Chip “Thêm dấu”", "thêm dấu câu không dấu plus", FeaturePage.GoiY), // l10n-key
             FeatureSearchEntry("Lọc từ nhạy cảm", "tục chửi filter", FeaturePage.GoiY), // l10n-key
             FeatureSearchEntry("Từ điển cá nhân", "dictionary tên riêng thuật ngữ", FeaturePage.GoiY), // l10n-key
@@ -378,7 +379,9 @@ private fun GoiYPage(onBack: () -> Unit) {
     VTSection(header = tr("Thanh gợi ý")) {
         BoolToggle(Keys.SHOW_SUGGESTIONS, Prefs.D.showSuggestions, tr("Thanh gợi ý"), tr("Gợi ý từ + emoji, tự học từ bạn hay dùng (chỉ trên máy)."))
         RowDivider()
-        BoolToggle(Keys.NUMBER_CHIPS, Prefs.D.numberChips, tr("Chip số"), tr("Đọc số thành chữ, định dạng tiền, tính nhanh (12*3 → 36)."))
+        BoolToggle(Keys.NUMBER_CHIPS, Prefs.D.numberChips, tr("Chip số"), tr("Đọc số thành chữ, định dạng tiền (1tr2 → 1.200.000 ₫)."))
+        RowDivider()
+        BoolToggle(Keys.MATH_RESULTS, Prefs.D.mathResults, tr("Hiện kết quả phép tính"), tr("Gõ phép tính rồi dấu = (12*3=) → kết quả hiện ở đầu thanh gợi ý, chạm để chèn."))
         RowDivider()
         BoolToggle(Keys.ADD_TONES_CHIP, Prefs.D.addTonesChip, tr("Chip “Thêm dấu”"),
             tr("Gõ không dấu cả câu (hom nay troi dep), gõ dấu cách → chip “Thêm dấu” hiện ở đầu thanh gợi ý, chạm để thành “hôm nay trời đẹp”; chạm “Hoàn tác” để trả lại. Tắt mặc định cho nhẹ máy."))

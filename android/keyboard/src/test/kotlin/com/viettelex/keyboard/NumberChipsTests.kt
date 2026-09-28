@@ -22,8 +22,6 @@ class NumberChipsTests {
             when (c[0]) {
                 "spell" -> assertEquals("spell ${c[1]}", c[2], NumberChips.spell(c[1]))
                 "spellLe" -> assertEquals("spellLe ${c[1]}", c[2], NumberChips.spell(c[1], le = true))
-                "calc" -> assertEquals("calc ${c[1]}", c[2],
-                    NumberChips.evaluate(c[1])?.let(NumberChips::formatResult) ?: "-")
                 "chip" -> {
                     val chip = NumberChips.chip(c[1])
                     if (c[2] == "-") assertNull("chip «${c[1]}» phải null", chip)

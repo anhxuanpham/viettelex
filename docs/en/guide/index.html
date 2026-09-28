@@ -345,6 +345,7 @@ sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
         <li data-os="ios android macos"><kbd>⌫</kbd> right after an expansion restores what you typed.</li>
         <li data-os="macos"><kbd>⌥</kbd><kbd>↩</kbd> adds a line break inside an expansion. <span class="tag t-mac p">macOS</span></li>
         <li data-os="ios android macos windows">No expansion right after a digit or <code>/ # @</code> (5h, /h3)<span data-os="ios android macos">, or in password, email and URL fields</span>.</li>
+        <li data-os="ios"><b>Dùng Thay thế văn bản của iOS</b> (use iOS Text Replacement) <span class="tag t-ios p">iOS</span>, on by default: entries from Settings → General → Keyboard → Text Replacement expand like shortcuts; read-only (edit them in iOS Settings), and VietTelex's own table wins on a clash. Android has no equivalent list readable by third-party keyboards.</li>
         <li data-os="ios android">The table starts empty; <b>Thêm bộ gợi ý</b> adds: ko, dc, đc, vs, mn, trc, cty, bsi, stk, -&gt; (→).</li>
         <li>Import/export YAML <code>key: expansion</code> — the same format on Mac, iPhone, Android, Windows and Linux.<span data-os="macos windows linux"> Import also accepts JSON and plain <code>key:value</code> text.</span></li>
       </ul>
@@ -361,7 +362,8 @@ sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
         <li><b>Word suggestions</b> that learn the words you use (stored on-device only). <b>Personal dictionary</b> (Từ điển cá nhân): view, search, delete learned words, add names and terms. <b>Sensitive-word filter</b> never proactively suggests profanity.</li>
         <li><b>Mistap suggestions</b> (Kiểu Gõ tab): <code>nbjeeuf</code> → nhiều, <code>ohims</code> → phím — shown on the bar, tap to replace.</li>
         <li><b>Emoji suggestions</b> matching the current word (yêu → ❤️).</li>
-        <li><b>Number chips</b>: after typing a number — spell it out in words, format as money, quick maths (<code>2+3</code> → 5, <code>12*3</code> → 36).</li>
+        <li><b>Number chips</b>: after typing a number — spell it out in words, format as money (<code>1tr2</code> → 1.200.000 ₫).</li>
+        <li><b>Show maths results</b>: type a sum followed by <code>=</code> (<code>12*3=</code>, <code>1.5+2=</code>) → the result appears first in the suggestion bar; tap to insert it after the <code>=</code>.</li>
         <li><b>Paste button</b>: right after you copy something, the bar shows a Paste card.<span data-os="ios"> <span class="tag t-ios p">iOS</span> needs Full Access; to stop iOS asking every time: Settings → VietTelex → Paste from Other Apps → Allow.</span></li>
         <li><b>“Thêm dấu” chip</b> <span class="tag t-plus">Plus</span> (off by default): after a sentence typed without tones, one tap adds them all — <code>hom nay troi dep</code> → hôm nay trời đẹp. Turn it on in Features → Suggestions &amp; dictionary (or right on the VietTelex Plus screen); type the sentence without tones, press space, and the “Thêm dấu” chip appears at the start of the suggestion bar — tap it to add tones, tap “Hoàn tác” (Undo) to revert.</li>
       </ul>

@@ -103,7 +103,8 @@ struct FeatureSearchEntry: Identifiable {
             .init(viTitle: LK("Tự sửa từ gõ sai"), keywords: "autocorrect sửa lỗi thử nghiệm", page: .chinhTa),
             .init(viTitle: LK("Thanh gợi ý"), keywords: "suggestion học từ", page: .goiY),
             .init(viTitle: LK("Gợi ý emoji"), keywords: "emoji biểu tượng", page: .goiY),
-            .init(viTitle: LK("Chip số"), keywords: "số tiền tính phép tính number", page: .goiY),
+            .init(viTitle: LK("Chip số"), keywords: "số tiền đọc số number", page: .goiY),
+            .init(viTitle: LK("Hiện kết quả phép tính"), keywords: "tính toán máy tính bằng math calculator", page: .goiY),
             .init(viTitle: LK("Nút Dán"), keywords: "paste dán clipboard", page: .goiY),
             .init(viTitle: LK("Lọc từ nhạy cảm"), keywords: "tục chửi filter", page: .goiY),
             .init(viTitle: LK("Từ điển cá nhân"), keywords: "dictionary tên riêng thuật ngữ", page: .goiY),
@@ -395,6 +396,7 @@ struct GoiYPage: View {
     @AppStorage("filterSensitive", store: featureDefaults) private var filterSensitive = true
     @AppStorage("emojiSuggest", store: featureDefaults) private var emojiSuggest = true
     @AppStorage("numberChips", store: featureDefaults) private var numberChips = true
+    @AppStorage("mathResults", store: featureDefaults) private var mathResults = true
     @AppStorage("pasteButton", store: featureDefaults) private var pasteButton = true
     @AppStorage("addTonesChip", store: featureDefaults) private var addTonesChip = false
 
@@ -405,7 +407,8 @@ struct GoiYPage: View {
                 settingToggle(L("Thanh gợi ý"), L("Gợi ý từ + emoji, tự học từ bạn hay dùng (chỉ trên máy)."), isOn: $showSuggestions)
                 if showSuggestions {
                     settingToggle(L("Gợi ý emoji"), L("Emoji hợp với từ đang gõ (yêu → ❤️)."), isOn: $emojiSuggest)
-                    settingToggle(L("Chip số"), L("Đọc số thành chữ, định dạng tiền, tính nhanh (2+3 → 5)."), isOn: $numberChips)
+                    settingToggle(L("Chip số"), L("Đọc số thành chữ, định dạng tiền (1tr2 → 1.200.000 ₫)."), isOn: $numberChips)
+                    settingToggle(L("Hiện kết quả phép tính"), L("Gõ phép tính rồi dấu = (12*3=) → kết quả hiện ở đầu thanh gợi ý, chạm để chèn."), isOn: $mathResults)
                     settingToggle(L("Nút Dán"), L("Vừa copy xong thì hiện nút Dán (cần Toàn quyền)."), isOn: $pasteButton)
                     if PlusGate.isUnlocked(.sentenceDiacritics) {
                         settingToggle(L("Chip “Thêm dấu”"), L("Gõ không dấu cả câu (hom nay troi dep), gõ dấu cách → chip “Thêm dấu” hiện ở đầu thanh gợi ý, chạm để thành “hôm nay trời đẹp”; chạm “Hoàn tác” để trả lại. Tắt mặc định cho nhẹ máy."), isOn: $addTonesChip)
