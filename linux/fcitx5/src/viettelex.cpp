@@ -362,6 +362,11 @@ public:
     }
 
 private:
+#if defined(VT_HAVE_FCITX_CLIPBOARD)
+    // Declared before its first use: the loader's return type is deduced (auto).
+    FCITX_ADDON_DEPENDENCY_LOADER(clipboard, instance_->addonManager());
+#endif
+
     void ensureAppState(VietTelexState *st) {
         if (st->stateLoaded) return;
         st->stateLoaded = true;
@@ -481,27 +486,36 @@ private:
         st->session.finish(client, true);
         vt::TextToolRunner::Source source;
         const auto &sur = ic->surroundingText();
-        if (caps.test(fcitx::CapabilityFlag::SurroundingText) && sur.isValid()) {
-            // The app reports its text: its selection is authoritative (none = nothing to do).
-            std::string sel = sur.selectedText();
-            if (sel.empty()) return;
-            source = [sel](std::string &out) {
-                out = sel;
-                return true;
-            };
-        } else {
-            std::string primary;
+        std::string primary;
 #if defined(VT_HAVE_FCITX_CLIPBOARD)
-            if (auto *clip = clipboard()) primary = clip->call<fcitx::IClipboard::primary>(ic);
+        if (auto *clip = clipboard()) primary = clip->call<fcitx::IClipboard::primary>(ic);
 #endif
-            if (!primary.empty()) {
-                source = [primary](std::string &out) {
-                    out = primary;
+        if (caps.test(fcitx::CapabilityFlag::SurroundingText) && sur.isValid()) {
+            // The app reports its text: its selection is authoritative.
+            std::string sel = sur.selectedText();
+            if (!sel.empty()) {
+                source = [sel](std::string &out) {
+                    out = sel;
                     return true;
                 };
             } else {
-                source = [](std::string &out) { return vt::readPrimarySelection(out); };
+                // No selection reported — GTK3 never reports one (no anchor): PRIMARY, but
+                // only when it touches the caret, else nothing to do.
+                source = [text = sur.text(), cursor = sur.cursor(), primary](std::string &out) {
+                    std::string p = primary;
+                    if (p.empty() && !vt::readPrimarySelection(p)) return false;
+                    if (!vt::primaryAdjacentToCursor(text, cursor, p)) return false;
+                    out = std::move(p);
+                    return true;
+                };
             }
+        } else if (!primary.empty()) {
+            source = [primary](std::string &out) {
+                out = primary;
+                return true;
+            };
+        } else {
+            source = [](std::string &out) { return vt::readPrimarySelection(out); };
         }
         auto ref = ic->watch();
         runner_.start(tool, std::move(source),
@@ -582,9 +596,6 @@ private:
     fcitx::EventDispatcher dispatcher_;               // declared before gnome_: outlives it
     std::unique_ptr<vt::GnomeAppMonitor> gnome_;
     vt::TextToolRunner runner_;                       // after dispatcher_: destroyed before it
-#if defined(VT_HAVE_FCITX_CLIPBOARD)
-    FCITX_ADDON_DEPENDENCY_LOADER(clipboard, instance_->addonManager());
-#endif
 };
 
 VietTelexState::VietTelexState(VietTelexEngine *engine, fcitx::InputContext *ic_) : ic(ic_) {

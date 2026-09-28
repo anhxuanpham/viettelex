@@ -300,6 +300,14 @@ bool selectionFromSurrounding(const std::string &text, unsigned cursor, unsigned
     return !out.empty();
 }
 
+bool primaryAdjacentToCursor(const std::string &text, unsigned cursor, const std::string &primary) {
+    if (primary.empty() || cursor > utf8Chars(text)) return false;
+    size_t at = byteOffset(text, cursor);
+    const size_t n = primary.size();
+    if (at >= n && text.compare(at - n, n, primary) == 0) return true;
+    return text.size() - at >= n && text.compare(at, n, primary) == 0;
+}
+
 bool readPrimarySelection(std::string &out, int timeoutMs) {
     out.clear();
     std::vector<std::vector<std::string>> cmds;

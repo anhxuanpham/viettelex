@@ -99,7 +99,6 @@ Build-Profiles: <!pkg.viettelex.noengine>
 Depends: ${shlibs:Depends}, ${misc:Depends}, libviettelex-core (= ${binary:Version}), ibus
 Recommends: viettelex-settings,
             viettelex-text-tools (= ${binary:Version}),
-
             ibus-gtk3,
             ibus-gtk4
 Description: VietTelex Vietnamese input method - IBus engine

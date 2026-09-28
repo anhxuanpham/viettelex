@@ -39,10 +39,25 @@ if(NOT VT_CORE_LIB)
        "${VT_REPO_ROOT}/TelexCore/Sources/TelexCore/*.swift"
        "${CMAKE_CURRENT_SOURCE_DIR}/engine-capi/Sources/TelexCoreC/*.swift"
        "${CMAKE_CURRENT_SOURCE_DIR}/engine-capi/Sources/TextToolCLI/*.swift")
+  # viettelex-text-tool links FoundationEssentials statically. The default SwiftPM backend
+  # (swiftbuild, Swift ≥ 6.3) only autolinks the directly imported module, not the static
+  # archives it depends on → name them (a group: they reference each other). Archives only
+  # contribute the members something needs, so libtelexcore is unaffected.
+  set(VT_SWIFT_STATIC_LINK "")
+  get_filename_component(_vt_swift_real "${SWIFT_EXECUTABLE}" REALPATH)
+  get_filename_component(_vt_swift_bin "${_vt_swift_real}" DIRECTORY)
+  if(EXISTS "${_vt_swift_bin}/../lib/swift_static/linux/lib_FoundationCollections.a")
+    foreach(_vt_l IN ITEMS FoundationEssentials _FoundationCollections _FoundationCShims swiftSynchronization)
+      if(EXISTS "${_vt_swift_bin}/../lib/swift_static/linux/lib${_vt_l}.a")
+        list(APPEND VT_SWIFT_STATIC_LINK -Xlinker "-l${_vt_l}")
+      endif()
+    endforeach()
+    set(VT_SWIFT_STATIC_LINK -Xlinker --start-group ${VT_SWIFT_STATIC_LINK} -Xlinker --end-group)
+  endif()
   add_custom_command(
     OUTPUT "${VT_CORE_LIB}" "${VT_SWIFT_SCRATCH}/release/viettelex-text-tool"
     COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/engine-capi/scripts/check-engine-links.sh"
-    COMMAND "${SWIFT_EXECUTABLE}" build -c release --static-swift-stdlib
+    COMMAND "${SWIFT_EXECUTABLE}" build -c release --static-swift-stdlib ${VT_SWIFT_STATIC_LINK}
             --package-path "${CMAKE_CURRENT_SOURCE_DIR}/engine-capi"
             --scratch-path "${VT_SWIFT_SCRATCH}"
     DEPENDS ${VT_ENGINE_SOURCES} "${CMAKE_CURRENT_SOURCE_DIR}/engine-capi/Package.swift"

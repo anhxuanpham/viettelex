@@ -51,6 +51,13 @@ bool runTextTool(TextTool t, const std::string &in, std::string &out, int timeou
 // False when there is no selection or the offsets are out of range.
 bool selectionFromSurrounding(const std::string &text, unsigned cursor, unsigned anchor, std::string &out);
 
+// GTK3 clients (Firefox, Chromium, GTK3 apps — gtk_im_context_set_surrounding has no anchor)
+// report surrounding text with anchor == cursor even while text is selected. The PRIMARY
+// selection is then taken as the selection only when it sits right against the caret (a
+// selection always ends at the caret): text before the caret ends with it, or text after
+// the caret starts with it. A stale PRIMARY from elsewhere is ignored.
+bool primaryAdjacentToCursor(const std::string &text, unsigned cursor, const std::string &primary);
+
 // PRIMARY selection (the highlighted text) through wl-paste --primary (Wayland) or
 // xclip / xsel (X11) — only when such a tool is on PATH. Blocking: worker thread only.
 bool readPrimarySelection(std::string &out, int timeoutMs = 700);

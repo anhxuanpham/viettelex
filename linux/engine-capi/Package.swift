@@ -12,11 +12,16 @@
 // viettelex-text-tool — text tools for the selection (Thêm dấu, HOA, thường, …), run by
 // the frontends as a CHILD PROCESS like macOS `VietTelex --add-tones`. Sources/TextToolCLI
 // symlinks the shared iOS/Keyboard files (TextTools, AddTones + lexicon/LM — the same ones
-// the macOS target compiles, see project.yml) and depends on the TelexCore package itself
-// (AddTones/SwipeEnglish `import TelexCore`). It uses Foundation, which stays out of the
-// engine .so and out of the IM processes.
+// the macOS target compiles, see project.yml). AddTones/SwipeEnglish `import TelexCore`: the
+// TelexCore package on macOS, the Foundation-free TelexCoreEngine on Linux (module alias).
+// On Linux it links FoundationEssentials only (no CoreFoundation/ICU), which stays out of
+// the engine .so and out of the IM processes.
 //
-// Build (Linux):  swift build -c release --static-swift-stdlib
+// Build (Linux):  swift build -c release --static-swift-stdlib   (normally via linux/CMakeLists.txt,
+//   which also names FoundationEssentials' static deps for the linker — Swift ≥ 6.3 swiftbuild
+//   does not autolink them: -Xlinker --start-group -Xlinker -lFoundationEssentials
+//   -Xlinker -l_FoundationCollections -Xlinker -l_FoundationCShims -Xlinker -lswiftSynchronization
+//   -Xlinker --end-group)
 //   → .build/release/libtelexcore.so   (C header: include/telexcore.h)
 //   → .build/release/viettelex-text-tool
 import PackageDescription
@@ -49,9 +54,21 @@ let package = Package(
         ),
         .executableTarget(
             name: "TextToolCLI",
-            dependencies: [.product(name: "TelexCore", package: "TelexCore")],
+            dependencies: [
+                .product(name: "TelexCore", package: "TelexCore", condition: .when(platforms: [.macOS])),
+                .target(name: "TelexCoreEngine", condition: .when(platforms: [.linux])),
+            ],
             path: "Sources/TextToolCLI",
-            swiftSettings: [.define("VIETTELEX_CLI")],
+            swiftSettings: [
+                .define("VIETTELEX_CLI"),
+                // Linux: `import TelexCore` = bản engine không Foundation (TelexCoreEngine) và
+                // `import Foundation` = FoundationEssentials — Foundation đầy đủ kéo CoreFoundation
+                // + dữ liệu ICU (~45 MB) vào file chạy tĩnh (57 MB → 13 MB sau strip). Ba API
+                // NSString còn thiếu: LinuxShims.swift.
+                .unsafeFlags(["-module-alias", "TelexCore=TelexCoreEngine",
+                              "-module-alias", "Foundation=FoundationEssentials"],
+                             .when(platforms: [.linux])),
+            ],
             linkerSettings: [
                 // Debian hardening (lintian hardening-no-relro / bindnow).
                 .unsafeFlags(["-Xlinker", "-z", "-Xlinker", "relro", "-Xlinker", "-z", "-Xlinker", "now"],

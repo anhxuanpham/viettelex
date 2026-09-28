@@ -400,6 +400,16 @@ void testTextToolNamesAndSelection() {
     CHECK_EQ(sel, std::string("học"));
     CHECK(!selectionFromSurrounding("Tôi đi học", 3, 3, sel));
     CHECK(!selectionFromSurrounding("abc", 1, 9, sel));
+
+    // GTK3: no anchor in surrounding text → PRIMARY only when it touches the caret.
+    CHECK(primaryAdjacentToCursor("toi di hoc", 10, "toi di hoc"));   // select all, caret at end
+    CHECK(primaryAdjacentToCursor("toi di hoc", 0, "toi di hoc"));    // caret at start
+    CHECK(primaryAdjacentToCursor("Tôi đi học", 3, "Tôi"));           // characters, not bytes
+    CHECK(primaryAdjacentToCursor("Tôi đi học", 7, "học"));
+    CHECK(!primaryAdjacentToCursor("Tôi đi học", 7, "đi"));           // not against the caret
+    CHECK(!primaryAdjacentToCursor("toi di hoc", 10, "khac"));        // stale PRIMARY
+    CHECK(!primaryAdjacentToCursor("toi di hoc", 10, ""));
+    CHECK(!primaryAdjacentToCursor("abc", 9, "abc"));                 // bad offset
 }
 
 // Runs the real viettelex-text-tool when ctest points at it (VIETTELEX_TEXT_TOOL).
