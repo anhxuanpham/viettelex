@@ -2574,11 +2574,22 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     // Rung: iOS vô hiệu UIFeedbackGenerator trong keyboard extension khi
     // không có Full Access — controller chỉ bật cờ khi setting ON + hasFullAccess.
     nonisolated(unsafe) static var hapticsEnabled = false
-    private static let haptic = UIImpactFeedbackGenerator(style: .light)
+    /// iOS 17.5+: generator phải GẮN VIEW đang hiện (init(style:view:)) — bản không view
+    /// (static, tạo trước khi extension có cửa sổ) im lặng trong keyboard extension:
+    /// "bật rung + Full Access mà không rung" (Hữu Đông / Phil 28/09/2026). View gắn ở
+    /// `attachHaptics(to:)` mỗi lần bàn phím hiện; chưa gắn thì dùng bản cũ.
+    nonisolated(unsafe) private static var haptic = UIImpactFeedbackGenerator(style: .light)
+    static func attachHaptics(to view: UIView) {
+        if #available(iOS 17.5, *) {
+            haptic = UIImpactFeedbackGenerator(style: .light, view: view)
+        }
+        if hapticsEnabled { haptic.prepare() }
+    }
     private static func feedback() {
         UIDevice.current.playInputClick()
         if hapticsEnabled {
-            haptic.impactOccurred()
+            if #available(iOS 17.5, *) { haptic.impactOccurred(intensity: 1, at: .zero) }
+            else { haptic.impactOccurred() }
             haptic.prepare()   // giữ Taptic Engine sẵn sàng cho phím kế — không trễ rung
         }
     }
@@ -2588,7 +2599,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// Đổi ngôn ngữ bằng vuốt phím cách: chỉ rung nhẹ (theo công tắc Rung phím).
     static func flickFeedback() {
         guard hapticsEnabled else { return }
-        haptic.impactOccurred()
+        if #available(iOS 17.5, *) { haptic.impactOccurred(intensity: 1, at: .zero) }
+        else { haptic.impactOccurred() }
         haptic.prepare()
     }
 

@@ -212,6 +212,7 @@ final class KeyboardViewController: UIInputViewController {
         // Rung phím: cần cả toggle trong app LẪN Toàn quyền Truy cập (iOS
         // vô hiệu haptics trong extension không có Full Access).
         KeyboardView.hapticsEnabled = settings.hapticFeedback && hasFullAccess
+        KeyboardView.attachHaptics(to: keyboard)
         // Báo trạng thái Full Access cho app chứa (ẩn banner nhắc cấp quyền).
         // Không Full Access thì iOS chặn GHI App Group → cờ giữ nguyên/vắng,
         // banner vẫn hiện — đúng ý.
