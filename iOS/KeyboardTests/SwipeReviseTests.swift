@@ -90,12 +90,14 @@ final class SwipeReviseTests: XCTestCase {
         var rec: SwipeTyping.Revisable?
         var committed: [String] = []
         var last: SwipeTyping.Outcome?
+        var englishWords: Set<String> = []
 
         init(_ layout: SwipeLayout) { s.setLayout(layout, prepare: false) }
 
         @discardableResult
         func swipe(_ word: String, _ layout: SwipeLayout, sim: inout SwipeSim, sigma: Double = 0,
-                   case sc: SwipeCase = .lower, revise: Bool = true) -> SwipeTyping.Outcome? {
+                   case sc: SwipeCase = .lower, revise: Bool = true, english: Bool = false,
+                   natural: Bool = false) -> SwipeTyping.Outcome? {
             let f = SwipeTyping.fold(word)
             b.letter(sc == .lower ? f.first! : Character(f.prefix(1).uppercased()), proxy: p)
             s.begin(bridge: b, proxy: p)
@@ -107,9 +109,16 @@ final class SwipeReviseTests: XCTestCase {
                     && b.composedWord == r.word ? r : nil
             } : nil
             rec = nil
-            let path = sigma == 0 ? sim.path(f, layout, sigma: 0, jitter: 0) : sim.path(f, layout, sigma: sigma)
-            let out = s.finish(path, case: sc, contextWords: [], prev: prev, prev2: prev2,
+            let path = natural ? sim.natural(f, layout)
+                : sigma == 0 ? sim.path(f, layout, sigma: 0, jitter: 0) : sim.path(f, layout, sigma: sigma)
+            // ngôn ngữ theo 2 từ trước (từ Anh vừa vuốt mang nhãn) — như KeyboardViewController
+            let prior: SwipeEnglishPrior? = english ? SwipeLangContext.prior(
+                prev1: SwipeLangContext.classify(prev, swipedEnglish: prev.map { englishWords.contains($0) } ?? false),
+                prev2: SwipeLangContext.classify(prev2, swipedEnglish: prev2.map { englishWords.contains($0) } ?? false))
+                : nil
+            let out = s.finish(path, case: sc, contextWords: [], prev: prev, prev2: prev2, english: prior,
                                previous: previous, bridge: b, proxy: p)
+            if let out, out.english { englishWords.insert(out.word) }
             if let c = out?.committed { committed.append(c.word) }
             if let out, !out.scored.isEmpty, b.isSwipeWordOpen {
                 rec = SwipeTyping.Revisable(word: out.word, scored: out.scored, sc: sc)
@@ -117,6 +126,34 @@ final class SwipeReviseTests: XCTestCase {
             last = out
             return out
         }
+    }
+
+    /// Báo lỗi người dùng 28/09/2026: vuốt "ví dụ như thế này" không ra từ nào đúng. Trước: "vì dù
+    /// như thế này" cả với đường sạch. Sửa chung cặp + ứng viên rộng ⇒ đúng; "the" sau từ Việt
+    /// ra "thế". Song sinh SwipeReviseTests.kt phraseViDuNhuTheNay (bật vuốt tiếng Anh).
+    func testPhraseViDuNhuTheNay() {
+        let words = "ví dụ như thế này".split(separator: " ").map(String.init)
+        let f = Flow(layout)
+        var sim = SwipeSim(seed: 1)
+        for w in words { f.swipe(w, layout, sim: &sim, english: true) }
+        f.b.boundary(" ", proxy: f.p)
+        XCTAssertEqual(f.p.text.trimmingCharacters(in: .whitespaces), words.joined(separator: " "))
+        // đường "tự nhiên" (nhịp + lố như nét thật), 30 lần
+        var nsim = SwipeSim(seed: 77)
+        var ok = 0, theEn = 0
+        for _ in 0..<30 {
+            let g = Flow(layout)
+            for w in words { g.swipe(w, layout, sim: &nsim, english: true, natural: true) }
+            g.b.boundary(" ", proxy: g.p)
+            let got = g.p.text.split(separator: " ").map(String.init)
+            ok += zip(got, words).filter { $0 == $1 }.count
+            if got.count > 3 && got[2] == "như" && got[3] == "the" { theEn += 1 }   // sau "như" đúng
+        }
+        let n = 30 * words.count
+        print(String(format: "REVISE câu \"ví dụ như thế này\" iOS (đường tự nhiên ×30, bật EN): đúng %.3f từ, the Anh (sau \"như\") %d",
+                     Double(ok) / Double(n), theEn))
+        XCTAssertGreaterThanOrEqual(Double(ok), Double(n) * 0.7)
+        XCTAssertEqual(theEn, 0)
     }
 
     func testNextSwipeRevisesPrevious() {
@@ -293,7 +330,8 @@ final class SwipeReviseTests: XCTestCase {
         XCTAssertLessThanOrEqual(rev.broke * 5, rev.fixed)
     }
 
-    /// Cùng tập đo với Kotlin (offset % 3 == 0). Android JVM 27/09/2026: 0.809 → 0.855.
+    /// Cùng tập đo với Kotlin (offset % 3 == 0). Android JVM 27/09/2026: 0.809 → 0.855; 28/09 (sửa
+    /// chung cặp + nhịp): 0.809 → 0.913, iOS 0.780 → 0.882.
     func testHeldoutRevisionGain() throws {
         try SlowTests.require()
         let test = try heldout().enumerated().filter { $0.offset % 3 == 0 }.map(\.element)

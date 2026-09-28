@@ -77,6 +77,112 @@ struct SwipeSim {
         p.add(x: Float(cx[m - 1]), y: Float(cy[m - 1]), t: t, force: true)
         return p
     }
+
+    /// Đường vuốt "TỰ NHIÊN" — song sinh SwipeSim.natural (Kotlin), hiệu chỉnh theo nét thật (45
+    /// nét iPhone, 28/09/2026, docs/DATA-SOURCES.md "Nét vuốt thật"): lấy mẫu 60 Hz, giữ ngón
+    /// ~50–120 ms ở phím đầu, tốc độ đỉnh ~20–40 phím/s trên đoạn thẳng và CHẬM lại ở phím định
+    /// đi qua (có khi dừng), điểm đầu hơi lùi sau phím đầu, điểm cuối LỐ quá phím cuối theo hướng
+    /// nét (trôi chậm trước khi nhấc tay, trung vị ~0.45 phím).
+    mutating func natural(_ word: String, _ layout: SwipeLayout, sigma: Double = 0.2, speed: Double = 1,
+                          overshoot: Double = 0.4) -> SwipePath {
+        let w = Double(layout.keyWidth)
+        let keys = Array(Self.collapse(word))
+        let m = keys.count
+        var p = SwipePath(minDistance: layout.keyWidth / 5)
+        var cx = [Double](repeating: 0, count: m), cy = cx
+        for (i, ch) in keys.enumerated() {
+            let c = layout.center(of: ch)!
+            cx[i] = Double(c.x) + gauss() * sigma * w
+            cy[i] = Double(c.y) + gauss() * sigma * w
+        }
+        if m == 1 {
+            for i in 0..<6 {
+                p.add(x: Float(cx[0] + gauss() * 0.03 * w), y: Float(cy[0] + gauss() * 0.03 * w), t: Double(i) / 60)
+            }
+            return p
+        }
+        // điểm đầu: lùi sau phím đầu theo hướng nét + lệch ngang
+        var dx = cx[1] - cx[0], dy = cy[1] - cy[0]
+        var dn = max(1e-6, hypot(dx, dy))
+        dx /= dn; dy /= dn
+        let a0 = (gauss() * 0.22 - 0.15) * w, b0 = gauss() * 0.25 * w
+        var px = [cx[0] + dx * a0 - dy * b0], py = [cy[0] + dy * a0 + dx * b0]
+        for i in 1..<m { px.append(cx[i]); py.append(cy[i]) }
+        // điểm cuối: lố theo hướng nét cuối (trôi chậm) + lệch ngang
+        dx = cx[m - 1] - cx[m - 2]; dy = cy[m - 1] - cy[m - 2]; dn = max(1e-6, hypot(dx, dy))
+        dx /= dn; dy /= dn
+        let o = max(-0.2, overshoot + gauss() * 0.4) * w, b1 = gauss() * 0.3 * w
+        let drift = o > 0.1 * w
+        let lift = -0.15 * w   // nhấc tay hơi trượt lên (nét thật: dy cuối trung bình −0.4 phím)
+        if drift { px.append(cx[m - 1] + dx * o - dy * b1); py.append(cy[m - 1] + dy * o + dx * b1 + lift) }
+        else { px[m - 1] = cx[m - 1] + dx * o - dy * b1; py[m - 1] = cy[m - 1] + dy * o + dx * b1 + lift }
+        // hình học: Catmull-Rom dày (0.05 phím) → độ dài cung s (phím)
+        var gx = [px[0]], gy = [py[0]], gs = [0.0]
+        let q = px.count
+        var via = [Double](repeating: 0, count: q)
+        for sg in 0..<(q - 1) {
+            let i0 = max(sg - 1, 0), i1 = sg, i2 = sg + 1, i3 = min(sg + 2, q - 1)
+            let n = max(2, Int(ceil(hypot(px[i2] - px[i1], py[i2] - py[i1]) / (0.05 * w))))
+            for j in 1...n {
+                let u = Double(j) / Double(n)
+                let x = Self.catmull(px[i0], px[i1], px[i2], px[i3], u)
+                let y = Self.catmull(py[i0], py[i1], py[i2], py[i3], u)
+                gs.append(gs.last! + hypot(x - gx.last!, y - gy.last!) / w); gx.append(x); gy.append(y)
+            }
+            via[sg + 1] = gs.last!
+        }
+        let total = gs.last!
+        // tốc độ (phím/s): đỉnh vPeak, trũng ρ ở phím đi qua, đầu/cuối chậm
+        let vPeak = 30 * speed * exp(gauss() * 0.2)
+        var rho = [Double](repeating: 0, count: q)
+        for k in 0..<q { rho[k] = 0.05 + uniform() * 0.6 }
+        rho[0] = 0.12; rho[m - 1] = 0.15
+        let vDrift = 3 + uniform() * 5
+        let ramp = 0.9
+        func v(_ s: Double) -> Double {
+            var g = 1.0
+            for k in 0..<m {
+                let gk = rho[k] + (1 - rho[k]) * min(1, abs(s - via[k]) / ramp)
+                if gk < g { g = gk }
+            }
+            var vv = vPeak * g
+            if drift && s > via[m - 1] { vv = min(vv, vDrift) }
+            return max(1, vv)
+        }
+        // dừng: giữ ngón ở phím đầu; đôi khi dừng ở phím giữa / phím cuối
+        var pause = [Double](repeating: 0, count: q)
+        pause[0] = 0.02 + uniform() * 0.06
+        if m > 2 { for k in 1..<(m - 1) where uniform() < 0.35 { pause[k] = 0.02 + uniform() * 0.08 } }
+        if uniform() < 0.5 { pause[m - 1] = 0.02 + uniform() * 0.06 }
+        let dt = 1.0 / 60
+        var t = 0.0, s = 0.0, gi = 0, nextVia = 0
+        let jit = 0.025 * w
+        func at(_ s: Double) -> (Double, Double) {
+            while gi < gs.count - 2 && gs[gi + 1] < s { gi += 1 }
+            let seg = gs[gi + 1] - gs[gi]
+            let u = seg > 0 ? min(1, max(0, (s - gs[gi]) / seg)) : 0
+            return (gx[gi] + (gx[gi + 1] - gx[gi]) * u, gy[gi] + (gy[gi + 1] - gy[gi]) * u)
+        }
+        p.add(x: Float(px[0]), y: Float(py[0]), t: 0)
+        while s < total {
+            if nextVia < m && s >= via[nextVia] {
+                var hold = pause[nextVia]
+                while hold > 0 {
+                    t += dt; hold -= dt
+                    let (x, y) = at(s)
+                    p.add(x: Float(x + gauss() * 0.3 * jit), y: Float(y + gauss() * 0.3 * jit), t: t)
+                }
+                nextVia += 1
+                continue
+            }
+            let v1 = v(s), v2 = v(s + v1 * dt * 0.5)
+            s = min(total, s + v2 * dt); t += dt
+            let (x, y) = at(s)
+            p.add(x: Float(x + gauss() * jit), y: Float(y + gauss() * jit), t: t)
+        }
+        p.add(x: Float(px[q - 1]), y: Float(py[q - 1]), t: t + dt, force: true)
+        return p
+    }
 }
 
 final class SwipeDecoderTests: XCTestCase {
@@ -252,6 +358,84 @@ final class SwipeDecoderTests: XCTestCase {
         }
     }
 
+    // MARK: NHỊP (thời gian điểm vuốt) — lỗi nét thật 28/09/2026 (song sinh Kotlin)
+
+    private var legacyParams: SwipeDecoder.Params {
+        var p = SwipeDecoder.Params(); p.speedWeight = 0; p.dwellWeight = 0; p.overshoot = 0; return p
+    }
+
+    /// Điểm dừng của `glide`: toạ độ (đơn vị phím, gốc = tâm `at`), tốc độ đi tới (phím/s), giữ (s).
+    private struct Stop {
+        var at: Character; var dx: Float = 0; var dy: Float = 0; var speed: Float = 25; var hold: Double = 0
+    }
+
+    /// Đường vuốt tuyến tính qua `stops`, lấy mẫu 60 Hz, qua SwipePath.
+    private func glide(_ stops: [Stop]) -> SwipePath {
+        let w = layout.keyWidth
+        var p = SwipePath(minDistance: w / 5)
+        var t = 0.0
+        func xy(_ s: Stop) -> (Float, Float) {
+            let c = layout.center(of: s.at)!; return (c.x + s.dx * w, c.y + s.dy * w)
+        }
+        var (x, y) = xy(stops[0])
+        p.add(x: x, y: y, t: t)
+        for (k, s) in stops.enumerated() {
+            if k > 0 {
+                let (tx, ty) = xy(s)
+                let d = hypot(Double(tx - x), Double(ty - y)) / Double(w)
+                let n = max(1, Int(ceil(d / Double(s.speed) * 60)))
+                for j in 1...n {
+                    t += 1.0 / 60
+                    p.add(x: x + (tx - x) * Float(j) / Float(n), y: y + (ty - y) * Float(j) / Float(n), t: t)
+                }
+                x = tx; y = ty
+            }
+            t += s.hold
+        }
+        p.add(x: x, y: y, t: t, force: true)
+        return p
+    }
+
+    /// "đấy" ×3 trên iPhone ra "đâu": tới y rồi TRÔI chậm sang u trước khi nhấc tay.
+    func testSlowDriftPastLastKeyIsOvershoot() {
+        let p = glide([Stop(at: "d", hold: 0.08), Stop(at: "a", hold: 0.1), Stop(at: "y", dy: 0.1, speed: 22),
+                       Stop(at: "y", dx: 0.65, dy: -0.15, speed: 3)])
+        XCTAssertEqual(decoder().decode(p, topK: 3).first?.folded, "day")
+        // cùng đường nhưng không có thời gian (đường đều) ⇒ hành vi cũ
+        let old = SwipeDecoder(params: legacyParams); old.setLayout(layout)
+        XCTAssertEqual(old.decode(p, topK: 3), decoder().decode(xs: p.xs, ys: p.ys, count: p.count, topK: 3))
+    }
+
+    /// "cũng" ra "chung": lướt NHANH qua h trên đường c→u rồi dừng ở u — h không phải phím định đi.
+    func testFastPassThroughKeyIsNotInserted() {
+        let p = glide([Stop(at: "c", hold: 0.08), Stop(at: "h", speed: 38), Stop(at: "u", speed: 30, hold: 0.1),
+                       Stop(at: "n", speed: 20, hold: 0.06), Stop(at: "g", speed: 15, hold: 0.1)])
+        XCTAssertEqual(decoder().decode(p, topK: 3).first?.folded, "cung")
+        // dừng ở h ⇒ chung (phím có chủ đích)
+        let q = glide([Stop(at: "c", hold: 0.08), Stop(at: "h", speed: 20, hold: 0.1), Stop(at: "u", speed: 20, hold: 0.1),
+                       Stop(at: "n", speed: 20, hold: 0.06), Stop(at: "g", speed: 15, hold: 0.1)])
+        XCTAssertEqual(decoder().decode(q, topK: 3).first?.folded, "chung")
+    }
+
+    /// Đường "tự nhiên" (nhịp + lố như nét thật): nhịp phải tăng rõ top-1, đường đều không tụt.
+    func testTimingHelpsNaturalPaths() {
+        let words = corpus(300)
+        let d = decoder(), old = SwipeDecoder(params: legacyParams); old.setLayout(layout)
+        func acc(_ dec: SwipeDecoder, _ natural: Bool) -> Double {
+            var sim = SwipeSim(seed: 404)
+            var ok = 0
+            for w in words {
+                let p = natural ? sim.natural(w, layout) : sim.path(w, layout)
+                if dec.decode(p, topK: 3).first?.folded == w { ok += 1 }
+            }
+            return Double(ok) / Double(words.count)
+        }
+        let n0 = acc(old, true), n1 = acc(d, true), o0 = acc(old, false), o1 = acc(d, false)
+        print(String(format: "SWIPE nhịp: đường tự nhiên top1 %.3f → %.3f | đường đều %.3f → %.3f", n0, n1, o0, o1))
+        XCTAssertGreaterThanOrEqual(n1, n0 + 0.04)
+        XCTAssertGreaterThanOrEqual(o1, o0 - 0.01)
+    }
+
     func testContextReranks() {
         let d = decoder()
         var sim = SwipeSim(seed: 3)
@@ -320,6 +504,50 @@ final class SwipeDecoderTests: XCTestCase {
         print(String(format: "SWIPE benchmark iOS: dựng template %.1f ms, decode %.3f ms/đường (SHARK2 trần %.3f), RAM template %d B",
                      build, per, perPlain, d.templateBytes))
         XCTAssertLessThan(per, 20)   // Debug -Onone trên simulator; Release nhanh hơn nhiều
+        // nhịp (28/09/2026): đường tự nhiên CÓ thời gian, so với cùng decoder tắt nhịp
+        let old = SwipeDecoder(params: legacyParams); old.setLayout(layout); old.prepare()
+        var nsim = SwipeSim(seed: 12)
+        let nat = corpus(200).map { nsim.natural($0, layout) }
+        var tn: [Double] = [], to: [Double] = []
+        for p in nat { _ = d.decode(p, topK: 5); _ = old.decode(p, topK: 5) }
+        for _ in 0..<5 {
+            var t = CFAbsoluteTimeGetCurrent()
+            for p in nat { _ = d.decode(p, topK: 5) }
+            tn.append((CFAbsoluteTimeGetCurrent() - t) * 1000 / Double(nat.count))
+            t = CFAbsoluteTimeGetCurrent()
+            for p in nat { _ = old.decode(p, topK: 5) }
+            to.append((CFAbsoluteTimeGetCurrent() - t) * 1000 / Double(nat.count))
+        }
+        let mn = tn.sorted()[2], mo = to.sorted()[2]
+        print(String(format: "SWIPE benchmark nhịp iOS: %.4f ms/đường (tắt nhịp %.4f, %+.1f%%)", mn, mo, (mn / mo - 1) * 100))
+        XCTAssertLessThanOrEqual(mn, mo * 1.2 + 0.02)
+    }
+
+    /// Parity phần NHỊP: đường "tự nhiên" x,y,ms (Fixtures/swipe-paths-timed.txt, sinh bởi Kotlin).
+    func testTimedFixtureParityWithKotlin() throws {
+        let url = try XCTUnwrap(Bundle(for: SwipeDecoderTests.self)
+            .url(forResource: "swipe-paths-timed", withExtension: "txt"))
+        let text = try String(contentsOf: url, encoding: .utf8)
+        let d = decoder()
+        var n = 0, same = 0, right = 0
+        var diffs: [String] = []
+        for line in text.split(separator: "\n") where !line.hasPrefix("#") && !line.isEmpty {
+            let cols = line.split(separator: "\t")
+            let pts = cols[3].split(separator: ";").map { $0.split(separator: ",") }
+            let xs = pts.map { Float(String($0[0]))! }, ys = pts.map { Float(String($0[1]))! }
+            let ts = pts.map { Double(String($0[2]))! / 1000 }
+            let prior: SwipeEnglishPrior? = cols[1] == "vi" ? SwipeLangContext.defaultPrior
+                : cols[1] == "en" ? SwipeLangContext.englishPrior : nil
+            n += 1
+            guard let r = d.decode(xs: xs, ys: ys, count: xs.count, topK: 3, context: nil, english: prior,
+                                   englishContext: nil, ts: ts).first else { continue }
+            let got = (r.lang == .en ? "en:" : "vi:") + r.folded
+            if got == String(cols[2]) { same += 1 } else { diffs.append("\(cols[0]): \(got) ≠ \(cols[2])") }
+            if r.folded == String(cols[0]) { right += 1 }
+        }
+        XCTAssertGreaterThanOrEqual(n, 190)
+        XCTAssertEqual(same, n, "lệch Kotlin: \(diffs)")
+        XCTAssertGreaterThanOrEqual(Double(right), Double(n) * 0.8)
     }
 
     /// Fixture sinh bởi bản Kotlin (SWIPE_WRITE_FIXTURE=1): top-1 hai bản phải trùng khít.

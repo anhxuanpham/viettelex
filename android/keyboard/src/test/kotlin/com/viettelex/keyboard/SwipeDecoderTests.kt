@@ -76,6 +76,112 @@ class SwipeSim(seed: Long) {
         return p
     }
 
+    /**
+     * Đường vuốt "TỰ NHIÊN" — hiệu chỉnh theo nét thật (45 nét iPhone từ Luyện vuốt, 28/09/2026,
+     * docs/DATA-SOURCES.md "Nét vuốt thật"): lấy mẫu 60 Hz, giữ ngón ~50–120 ms ở phím đầu,
+     * tốc độ đỉnh ~20–40 phím/s trên đoạn thẳng và CHẬM lại ở phím định đi qua (có khi dừng),
+     * điểm đầu hơi lùi sau phím đầu, điểm cuối LỐ quá phím cuối theo hướng nét (trôi chậm
+     * trước khi nhấc tay, trung vị ~0.45 phím). Toạ độ cùng hệ layout; t giây.
+     */
+    fun natural(word: String, layout: SwipeLayout, sigma: Double = 0.2, speed: Double = 1.0,
+                overshoot: Double = 0.4): SwipePath {
+        val w = layout.keyWidth.toDouble()
+        val keys = collapse(word)
+        val m = keys.length
+        val p = SwipePath(minDistance = layout.keyWidth / 5f)
+        val cx = DoubleArray(m); val cy = DoubleArray(m)
+        for ((i, ch) in keys.withIndex()) {
+            val c = layout.center(ch)!!
+            cx[i] = c.first + gauss() * sigma * w
+            cy[i] = c.second + gauss() * sigma * w
+        }
+        if (m == 1) {
+            repeat(6) { p.add((cx[0] + gauss() * 0.03 * w).toFloat(), (cy[0] + gauss() * 0.03 * w).toFloat(), it / 60.0) }
+            return p
+        }
+        // điểm đầu: lùi sau phím đầu theo hướng nét + lệch ngang
+        var dx = cx[1] - cx[0]; var dy = cy[1] - cy[0]; var dn = max(1e-6, hypot(dx, dy))
+        dx /= dn; dy /= dn
+        val a0 = (gauss() * 0.22 - 0.15) * w; val b0 = gauss() * 0.25 * w
+        val px = ArrayList<Double>(); val py = ArrayList<Double>()
+        px.add(cx[0] + dx * a0 - dy * b0); py.add(cy[0] + dy * a0 + dx * b0)
+        for (i in 1 until m) { px.add(cx[i]); py.add(cy[i]) }
+        // điểm cuối: lố theo hướng nét cuối (trôi chậm) + lệch ngang
+        dx = cx[m - 1] - cx[m - 2]; dy = cy[m - 1] - cy[m - 2]; dn = max(1e-6, hypot(dx, dy))
+        dx /= dn; dy /= dn
+        val o = max(-0.2, overshoot + gauss() * 0.4) * w; val b1 = gauss() * 0.3 * w
+        val drift = o > 0.1 * w
+        val lift = -0.15 * w   // nhấc tay hơi trượt lên (nét thật: dy cuối trung bình −0.4 phím)
+        if (drift) { px.add(cx[m - 1] + dx * o - dy * b1); py.add(cy[m - 1] + dy * o + dx * b1 + lift) }
+        else { px[m - 1] = cx[m - 1] + dx * o - dy * b1; py[m - 1] = cy[m - 1] + dy * o + dx * b1 + lift }
+        // hình học: Catmull-Rom dày (0.05 phím) → độ dài cung s (phím)
+        val gx = ArrayList<Double>(); val gy = ArrayList<Double>(); val gs = ArrayList<Double>()
+        val via = DoubleArray(px.size)
+        val q = px.size
+        gx.add(px[0]); gy.add(py[0]); gs.add(0.0)
+        for (sg in 0 until q - 1) {
+            val i0 = max(sg - 1, 0); val i1 = sg; val i2 = sg + 1; val i3 = minOf(sg + 2, q - 1)
+            val n = max(2, ceil(hypot(px[i2] - px[i1], py[i2] - py[i1]) / (0.05 * w)).toInt())
+            for (j in 1..n) {
+                val u = j.toDouble() / n
+                val x = catmull(px[i0], px[i1], px[i2], px[i3], u); val y = catmull(py[i0], py[i1], py[i2], py[i3], u)
+                gs.add(gs.last() + hypot(x - gx.last(), y - gy.last()) / w); gx.add(x); gy.add(y)
+            }
+            via[sg + 1] = gs.last()
+        }
+        val total = gs.last()
+        // tốc độ (phím/s): đỉnh vPeak, trũng ρ ở phím đi qua (ρ nhỏ = chậm hẳn), đầu/cuối chậm
+        val vPeak = 30.0 * speed * kotlin.math.exp(gauss() * 0.2)
+        val rho = DoubleArray(q) { 0.05 + uniform() * 0.6 }
+        rho[0] = 0.12; rho[m - 1] = 0.15
+        val vDrift = 3.0 + uniform() * 5.0
+        val ramp = 0.9
+        fun v(s: Double): Double {
+            var g = 1.0
+            for (k in 0 until m) {
+                val d = kotlin.math.abs(s - via[k])
+                val gk = rho[k] + (1 - rho[k]) * kotlin.math.min(1.0, d / ramp)
+                if (gk < g) g = gk
+            }
+            var vv = vPeak * g
+            if (drift && s > via[m - 1]) vv = kotlin.math.min(vv, vDrift)
+            return max(1.0, vv)
+        }
+        // dừng: giữ ngón ở phím đầu; đôi khi dừng ở phím giữa / phím cuối
+        val pause = DoubleArray(q)
+        pause[0] = 0.02 + uniform() * 0.06
+        for (k in 1 until m - 1) if (uniform() < 0.35) pause[k] = 0.02 + uniform() * 0.08
+        if (uniform() < 0.5) pause[m - 1] = 0.02 + uniform() * 0.06
+        val dt = 1 / 60.0
+        var t = 0.0; var s = 0.0; var gi = 0; var nextVia = 0
+        val jit = 0.025 * w
+        fun at(s: Double): Pair<Double, Double> {
+            while (gi < gs.size - 2 && gs[gi + 1] < s) gi++
+            val seg = gs[gi + 1] - gs[gi]
+            val u = if (seg > 0) ((s - gs[gi]) / seg).coerceIn(0.0, 1.0) else 0.0
+            return (gx[gi] + (gx[gi + 1] - gx[gi]) * u) to (gy[gi] + (gy[gi + 1] - gy[gi]) * u)
+        }
+        p.add(px[0].toFloat(), py[0].toFloat(), 0.0)
+        while (s < total) {
+            if (nextVia < m && s >= via[nextVia]) {
+                var hold = pause[nextVia]
+                while (hold > 0) {
+                    t += dt; hold -= dt
+                    val (x, y) = at(s)
+                    p.add((x + gauss() * 0.3 * jit).toFloat(), (y + gauss() * 0.3 * jit).toFloat(), t)
+                }
+                nextVia++
+                continue
+            }
+            val v1 = v(s); val v2 = v(s + v1 * dt * 0.5)
+            s = kotlin.math.min(total, s + v2 * dt); t += dt
+            val (x, y) = at(s)
+            p.add((x + gauss() * jit).toFloat(), (y + gauss() * jit).toFloat(), t)
+        }
+        p.add(px[q - 1].toFloat(), py[q - 1].toFloat(), t + dt, force = true)
+        return p
+    }
+
     companion object {
         fun collapse(s: String): String {
             val b = StringBuilder()
@@ -249,6 +355,81 @@ class SwipeDecoderTests {
         }
     }
 
+    // ---- NHỊP (thời gian điểm vuốt) — lỗi nét thật 28/09/2026 ----
+
+    private val legacy = SwipeDecoder.Params(speedWeight = 0f, dwellWeight = 0f, overshoot = 0f)
+
+    /** Điểm dừng của [glide]: toạ độ (đơn vị phím, gốc = tâm [at]), tốc độ đi tới (phím/s), giữ (s). */
+    private data class Stop(val at: Char, val dx: Float = 0f, val dy: Float = 0f, val speed: Float = 25f,
+                            val hold: Double = 0.0)
+
+    /** Đường vuốt tuyến tính qua [stops], lấy mẫu 60 Hz (như SwiftUI/MotionEvent), qua SwipePath. */
+    private fun glide(vararg stops: Stop): SwipePath {
+        val w = layout.keyWidth
+        val p = SwipePath(minDistance = w / 5f)
+        var t = 0.0
+        fun xy(s: Stop): Pair<Float, Float> { val c = layout.center(s.at)!!; return (c.first + s.dx * w) to (c.second + s.dy * w) }
+        var (x, y) = xy(stops[0])
+        p.add(x, y, t)
+        for ((k, s) in stops.withIndex()) {
+            if (k > 0) {
+                val (tx, ty) = xy(s)
+                val d = hypot((tx - x).toDouble(), (ty - y).toDouble()) / w
+                val n = max(1, ceil(d / s.speed * 60).toInt())
+                for (j in 1..n) {
+                    t += 1 / 60.0
+                    p.add(x + (tx - x) * j / n, y + (ty - y) * j / n, t)
+                }
+                x = tx; y = ty
+            }
+            t += s.hold
+        }
+        p.add(x, y, t, force = true)
+        return p
+    }
+
+    /** "đấy" ×3 trên iPhone ra "đâu": tới y rồi TRÔI chậm sang u trước khi nhấc tay. */
+    @Test fun slowDriftPastLastKeyIsOvershoot() {
+        val p = glide(Stop('d', hold = 0.08), Stop('a', hold = 0.1), Stop('y', dy = 0.1f, speed = 22f),
+            Stop('y', dx = 0.65f, dy = -0.15f, speed = 3f))
+        assertEquals("day", decoder().decode(p, 3).first().folded)
+        // cùng đường nhưng không có thời gian (đường đều) ⇒ hành vi cũ
+        assertEquals(SwipeDecoder(legacy).also { it.setLayout(layout) }.decode(p, 3),
+            decoder().decode(p.xs, p.ys, p.count, 3))
+    }
+
+    /**
+     * "cũng" ra "chung": lướt NHANH qua h trên đường thẳng c→u rồi dừng ở u — h không phải phím
+     * định đi (nét thật: tốc độ tại phím lướt qua ≈ 2× trung bình, phím định đi ≈ 0.8×).
+     */
+    @Test fun fastPassThroughKeyIsNotInserted() {
+        val p = glide(Stop('c', hold = 0.08), Stop('h', speed = 38f), Stop('u', speed = 30f, hold = 0.1),
+            Stop('n', speed = 20f, hold = 0.06), Stop('g', speed = 15f, hold = 0.1))
+        assertEquals("cung", decoder().decode(p, 3).first().folded)
+        // dừng ở h ⇒ chung (phím có chủ đích)
+        val q = glide(Stop('c', hold = 0.08), Stop('h', speed = 20f, hold = 0.1), Stop('u', speed = 20f, hold = 0.1),
+            Stop('n', speed = 20f, hold = 0.06), Stop('g', speed = 15f, hold = 0.1))
+        assertEquals("chung", decoder().decode(q, 3).first().folded)
+    }
+
+    /** Đường "tự nhiên" (nhịp + lố như nét thật): nhịp phải tăng rõ top-1, đường đều không tụt. */
+    @Test fun timingHelpsNaturalPaths() {
+        val words = corpus(300)
+        val d = decoder(); val old = SwipeDecoder(legacy).also { it.setLayout(layout) }
+        fun acc(dec: SwipeDecoder, natural: Boolean): Double {
+            val sim = SwipeSim(404)
+            return words.count { w ->
+                val p = if (natural) sim.natural(w, layout) else sim.path(w, layout)
+                dec.decode(p, 3).firstOrNull()?.folded == w
+            }.toDouble() / words.size
+        }
+        val (n0, n1) = acc(old, true) to acc(d, true)
+        val (o0, o1) = acc(old, false) to acc(d, false)
+        println(String.format(Locale.ROOT, "SWIPE nhịp: đường tự nhiên top1 %.3f → %.3f | đường đều %.3f → %.3f", n0, n1, o0, o1))
+        assertTrue("tự nhiên $n0 → $n1", n1 >= n0 + 0.04)
+        assertTrue("đều $o0 → $o1", o1 >= o0 - 0.01)
+    }
+
     @Test fun contextReranks() {
         val d = decoder()
         val p = SwipeSim(3).path("cho", layout, sigma = 0.0, jitter = 0.0)
@@ -307,9 +488,84 @@ class SwipeDecoderTests {
         println(String.format(Locale.ROOT, "SWIPE benchmark JVM: dựng template %.1f ms, decode %.3f ms/đường " +
             "(SHARK2 trần %.3f), RAM template %d B", build, per, perPlain, d.templateBytes))
         assertTrue("decode $per ms", per < 5.0)
+        // nhịp (28/09/2026): đường tự nhiên CÓ thời gian, so với cùng decoder tắt nhịp — xen kẽ
+        // nhiều vòng, lấy trung vị (máy dev dao động)
+        val old = SwipeDecoder(legacy).also { it.setLayout(layout); it.prepare() }
+        val nsim = SwipeSim(12)
+        val nat = corpus(200).map { nsim.natural(it, layout) }
+        repeat(5) { for (p in nat) { d.decode(p, 5); old.decode(p, 5) } }
+        val tn = ArrayList<Double>(); val to = ArrayList<Double>()
+        repeat(9) {
+            var t = System.nanoTime(); for (p in nat) d.decode(p, 5); tn.add((System.nanoTime() - t) / 1e6 / nat.size)
+            t = System.nanoTime(); for (p in nat) old.decode(p, 5); to.add((System.nanoTime() - t) / 1e6 / nat.size)
+        }
+        val mn = tn.sorted()[4]; val mo = to.sorted()[4]
+        println(String.format(Locale.ROOT, "SWIPE benchmark nhịp: %.4f ms/đường (tắt nhịp %.4f, %+.1f%%)", mn, mo, (mn / mo - 1) * 100))
+        assertTrue("nhịp chậm quá: $mn vs $mo ms", mn <= mo * 1.2 + 0.01)
     }
 
     // ---- Fixture parity Swift ↔ Kotlin ----
+
+    private fun timedFixtureFile(): File =
+        listOf("../../iOS", "../iOS", "iOS").map { File(it, "KeyboardTests/Fixtures/swipe-paths-timed.txt") }
+            .firstOrNull { it.parentFile.exists() } ?: error("không thấy iOS/KeyboardTests/Fixtures")
+
+    private fun timedPrior(tag: String): SwipeEnglishPrior? = when (tag) {
+        "vi" -> SwipeLangContext.DEFAULT
+        "en" -> SwipeLangContext.ENGLISH
+        else -> null
+    }
+
+    /**
+     * Parity phần NHỊP (thời gian điểm): đường "tự nhiên" x,y,t(ms). Ghi lại:
+     * SWIPE_WRITE_FIXTURE=1 ./gradlew :keyboard:test --tests '*SwipeDecoderTests.timedFixtureParity'.
+     */
+    @Test fun timedFixtureParity() {
+        val d = decoder()
+        val file = timedFixtureFile()
+        if (System.getenv("SWIPE_WRITE_FIXTURE") == "1") {
+            val sim = SwipeSim(2028)
+            val sb = StringBuilder("# swipe-paths-timed v1 — layout qwerty(keyWidth 40, rowHeight 54), SwipeSim.natural. " +
+                "Sinh bởi SwipeDecoderTests.kt (SWIPE_WRITE_FIXTURE=1). word<TAB>prior none|vi|en<TAB>top1 lang:word<TAB>x,y,ms;…\n")
+            val en = SwipeEnglish.lexicon.let { e -> e.words.indices.sortedByDescending { e.freq[it] }.map { e.words[it] } }
+                .filter { it.length >= 3 }.take(30)
+            val cases = corpus(120).map { it to "none" } + corpus(160).drop(120).map { it to "vi" } +
+                listOf("day", "lay", "thay", "vi", "cung", "hoi", "trai", "the", "nay", "du", "nhu").map { it to "vi" } +
+                en.map { it to "en" }
+            for ((w, tag) in cases) {
+                val p = sim.natural(w, layout)
+                val xs = FloatArray(p.count) { String.format(Locale.ROOT, "%.2f", p.xs[it]).toFloat() }
+                val ys = FloatArray(p.count) { String.format(Locale.ROOT, "%.2f", p.ys[it]).toFloat() }
+                val ms = (0 until p.count).map { String.format(Locale.ROOT, "%.1f", (p.ts[it] - p.ts[0]) * 1000) }
+                val ts = DoubleArray(p.count) { ms[it].toDouble() / 1000.0 }
+                val top = d.decode(xs, ys, p.count, 3, null, timedPrior(tag), null, ts).first()
+                sb.append(w).append('\t').append(tag).append('\t')
+                    .append(if (top.lang == SwipeLang.EN) "en:" else "vi:").append(top.folded).append('\t')
+                for (i in 0 until p.count) {
+                    if (i > 0) sb.append(';')
+                    sb.append(String.format(Locale.ROOT, "%.2f,%.2f,", xs[i], ys[i])).append(ms[i])
+                }
+                sb.append('\n')
+            }
+            file.writeText(sb.toString())
+        }
+        var n = 0; var same = 0; var right = 0
+        for (line in file.readLines()) {
+            if (line.startsWith("#") || line.isBlank()) continue
+            val (w, tag, top, pts) = line.split('\t')
+            val pp = pts.split(';').map { it.split(',') }
+            val xs = FloatArray(pp.size) { pp[it][0].toFloat() }
+            val ys = FloatArray(pp.size) { pp[it][1].toFloat() }
+            val ts = DoubleArray(pp.size) { pp[it][2].toDouble() / 1000.0 }
+            n++
+            val r = d.decode(xs, ys, xs.size, 3, null, timedPrior(tag), null, ts).first()
+            if ((if (r.lang == SwipeLang.EN) "en:" else "vi:") + r.folded == top) same++
+            if (r.folded == w) right++
+        }
+        assertTrue(n >= 190)
+        assertEquals("top-1 khớp fixture", n, same)
+        assertTrue("đúng $right/$n", right >= n * 0.8)
+    }
 
     private fun fixtureFile(): File =
         listOf("../../iOS", "../iOS", "iOS").map { File(it, "KeyboardTests/Fixtures/swipe-paths.txt") }

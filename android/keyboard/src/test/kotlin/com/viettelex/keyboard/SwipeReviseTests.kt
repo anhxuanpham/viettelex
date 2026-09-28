@@ -90,6 +90,71 @@ class SwipeReviseTests {
         assertTrue(SwipeRevise.scored(en, null, 2.5f).isEmpty())
     }
 
+    /**
+     * Vuốt CẢ CÂU từng từ như bàn phím (KeyboardSession.resolveSwipe): ngữ cảnh trái = từ đã hiện,
+     * bật vuốt tiếng Anh (ngôn ngữ theo 2 từ trước), sửa chung cặp với cú vuốt trước. [old] = cách
+     * trước 28/09/2026 (sửa theo top-1 từ kế, ứng viên 3 dạng × 4 dấu).
+     */
+    private fun phrase(d: SwipeDecoder, words: List<String>, old: Boolean = false, path: (String) -> SwipePath): List<String> {
+        val pw = if (old) 4 else SwipeRevise.POOL_WORDS; val pm = if (old) 8 else SwipeRevise.MAX_CANDIDATES
+        val out = ArrayList<String>(); val eng = HashSet<Int>()
+        var pending: List<SwipeWord> = emptyList()
+        for ((i, word) in words.withIndex()) {
+            val p1 = out.getOrNull(i - 1); val p2 = out.getOrNull(i - 2)
+            val prior = SwipeLangContext.prior(SwipeLangContext.classify(p1, (i - 1) in eng),
+                SwipeLangContext.classify(p2, (i - 2) in eng))
+            val ctx = SwipeSuggest.context(null, p1, p2, prior)
+            val cands = d.decode(path(SwipeSuggest.fold(word)), SwipeSuggest.TOP_K, ctx.folded, ctx.english, ctx.englishWord)
+            var c = SwipeSuggest.choose(cands, ctx.word, lambdaFreq = ctx.lambdaFreq)
+            var sc = if (c == null || c.english) emptyList() else SwipeRevise.scored(cands, ctx.word, ctx.lambdaFreq, pw, pm)
+            val new = if (c == null || c.english || p1 == null || pending.isEmpty()) null
+                else if (old) SwipeRevise.revise(pending, p1, p2, c.word)
+                else SwipeRevise.revise(pending, p1, p2, SwipeRevise.nextPool(cands, ctx.word, ctx.lambdaFreq))
+            if (new != null) {
+                out[i - 1] = new
+                val nctx = SwipeSuggest.context(null, new, p2, prior)
+                val re = SwipeRevise.rerank(cands, ctx.word, ctx.lambdaFreq, nctx.word, nctx.lambdaFreq)
+                val r = SwipeSuggest.choose(re, nctx.word, lambdaFreq = nctx.lambdaFreq)
+                if (r != null) { c = r; sc = if (r.english) emptyList() else SwipeRevise.scored(re, nctx.word, nctx.lambdaFreq, pw, pm) }
+            }
+            if (c?.english == true) eng.add(i)
+            pending = sc
+            out.add(c?.word ?: "")
+        }
+        return out
+    }
+
+    /**
+     * Báo lỗi người dùng 28/09/2026: vuốt "ví dụ như thế này" không ra từ nào đúng. Trước: "vì dù
+     * như thế này" cả với đường sạch (ví không nằm trong ứng viên, dụ kém sau "vì"). Sửa chung cặp
+     * + ứng viên rộng ⇒ đúng; "the" sau từ Việt ra "thế" (không phải the tiếng Anh).
+     */
+    @Test fun phraseViDuNhuTheNay() {
+        val words = "ví dụ như thế này".split(' ')
+        val d = decoder()
+        val clean = { w: String -> SwipeSim(1).path(w, layout, sigma = 0.0, jitter = 0.0) }
+        assertEquals(words, phrase(d, words, path = clean))
+        val legacy = SwipeDecoder(SwipeDecoder.Params(speedWeight = 0f, dwellWeight = 0f, overshoot = 0f)).also { it.setLayout(layout) }
+        assertEquals("vì dù như thế này", phrase(legacy, words, old = true, path = clean).joinToString(" "))
+        // đường "tự nhiên" (nhịp + lố như nét thật), 30 lần — cùng đường cho cách cũ/mới
+        fun run(dec: SwipeDecoder, old: Boolean): Pair<Int, Int> {
+            val sim = SwipeSim(77)
+            var ok = 0; var theEn = 0
+            repeat(30) {
+                val r = phrase(dec, words, old) { w -> sim.natural(w, layout) }
+                ok += words.indices.count { r[it] == words[it] }
+                if (r[2] == "như" && r[3] == "the") theEn++   // sau "như" đúng
+            }
+            return ok to theEn
+        }
+        val n = 30 * words.size
+        val (ok0, en0) = run(legacy, true); val (ok1, en1) = run(d, false)
+        println(String.format(Locale.ROOT, "REVISE câu \"ví dụ như thế này\" (đường tự nhiên ×30, bật EN): đúng %.3f → %.3f từ, the Anh (sau \"như\") %d → %d",
+            ok0.toDouble() / n, ok1.toDouble() / n, en0, en1))
+        assertTrue("đúng $ok0 → $ok1 /$n", ok1 >= n * 0.7 && ok1 >= ok0 + n / 10)
+        assertEquals(0, en1)
+    }
+
     /** Vuốt thật (đường giả sạch) trong câu: từ kế sửa được từ trước. */
     @Test fun sentenceRevision() {
         val d = decoder()
@@ -115,7 +180,7 @@ class SwipeReviseTests {
      */
     private fun simulate(d: SwipeDecoder, words: List<String>, revise: Boolean, sim: SwipeSim,
                          sigma: Double = 0.25, margin: Float = SwipeRevise.MARGIN,
-                         weight: Float = SwipeRevise.RIGHT_WEIGHT): Pair<List<String>, List<String>> {
+                         weight: Float = SwipeRevise.JOINT_WEIGHT, joint: Boolean = true): Pair<List<String>, List<String>> {
         val out = ArrayList<String>()
         val before = ArrayList<String>()
         var pending: List<SwipeWord> = emptyList()
@@ -128,7 +193,10 @@ class SwipeReviseTests {
             var got = c?.word ?: ""
             var sc = if (c == null) emptyList() else SwipeRevise.scored(cands, ctx.word, ctx.lambdaFreq)
             if (revise && p1 != null && pending.isNotEmpty() && got.isNotEmpty()) {
-                SwipeRevise.revise(pending, p1, p2, got, margin = margin, weight = weight)?.let {
+                // như KeyboardSession: sửa chung cặp với ứng viên rộng của cú vuốt này
+                (if (joint) SwipeRevise.revise(pending, p1, p2, SwipeRevise.nextPool(cands, ctx.word, ctx.lambdaFreq),
+                    margin = margin, weight = weight)
+                else SwipeRevise.revise(pending, p1, p2, got, margin = margin, weight = weight))?.let {
                     out[i - 1] = it
                     val nctx = SwipeSuggest.context(null, it, p2)
                     val re = SwipeRevise.rerank(cands, ctx.word, ctx.lambdaFreq, nctx.word, nctx.lambdaFreq)
@@ -150,12 +218,12 @@ class SwipeReviseTests {
     }
 
     private fun measure(chains: List<List<String>>, revise: Boolean, margin: Float = SwipeRevise.MARGIN,
-                        weight: Float = SwipeRevise.RIGHT_WEIGHT): Acc {
+                        weight: Float = SwipeRevise.JOINT_WEIGHT, joint: Boolean = true): Acc {
         val d = decoder()
         val sim = SwipeSim(2027)
         var n = 0; var ok = 0; var fixed = 0; var broke = 0; var revised = 0
         for (chain in chains) {
-            val (final, before) = simulate(d, chain, revise, sim, margin = margin, weight = weight)
+            val (final, before) = simulate(d, chain, revise, sim, margin = margin, weight = weight, joint = joint)
             for (i in chain.indices) {
                 n++
                 if (final[i] == chain[i]) ok++
@@ -177,12 +245,15 @@ class SwipeReviseTests {
         var t0 = System.nanoTime()
         val base = measure(test, false)
         val msBase = (System.nanoTime() - t0) / 1e6 / base.n
+        val chain = measure(test, true, weight = SwipeRevise.RIGHT_WEIGHT, joint = false)
         t0 = System.nanoTime()
         val rev = measure(test, true)
         val msRev = (System.nanoTime() - t0) / 1e6 / rev.n
-        println("REVISE heldout (tuần tự, σ0.25): trước ${base.fmt()} | sau ${rev.fmt()} | +%.2f điểm | %.3f → %.3f ms/vuốt".format(
+        println("REVISE heldout (tuần tự, σ0.25): trước ${base.fmt()} | sửa theo từ kế ${chain.fmt()} | sửa chung cặp ${rev.fmt()} | +%.2f điểm | %.3f → %.3f ms/vuốt".format(
             Locale.ROOT, (rev.rate() - base.rate()) * 100, msBase, msRev))
         assertTrue("sửa lại phải tăng top-1 ≥ 1 điểm", rev.rate() - base.rate() >= 0.01)
+        // sửa chung cặp (28/09/2026) phải hơn hẳn sửa theo top-1 từ kế
+        assertTrue("chung cặp ${rev.fmt()} vs theo từ kế ${chain.fmt()}", rev.rate() >= chain.rate() + 0.02)
         assertTrue("sửa sai (${rev.broke}) phải ít hơn nhiều sửa đúng (${rev.fixed})", rev.broke * 3 <= rev.fixed)
     }
 

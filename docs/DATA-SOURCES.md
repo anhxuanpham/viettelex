@@ -163,6 +163,69 @@ chỉ khi người dùng bật lưu; kho nằm trên máy (không sao lưu, khô
 (`viettelex-swipe-traces` v1, xem `SwipePractice.kt`). Đánh giá decoder trên file xuất:
 `Scripts/eval-swipe-traces.sh file.json` (top-1/top-3 hiện tại, lúc ghi, tách Việt/Anh).
 
+#### Phân tích 45 nét thật đầu tiên (iPhone, Luyện vuốt, 28/09/2026) — nhịp, lố, sửa chung cặp
+
+Nét thật (SwiftUI 60 Hz, lọc 1/5 phím) khác hẳn đường giả cũ (`SwipeSim.path`: tốc độ đều
+~21 phím/s, đầu/cuối đúng tâm):
+
+| đo | nét thật | `SwipeSim.path` (cũ) | `SwipeSim.natural` (mới) |
+|---|---|---|---|
+| lấy mẫu | 16,6 ms, có khoảng 60–180 ms (dừng) | 16,7 ms đều | 16,7 ms + dừng |
+| tốc độ (phím/s) p10/p50/p90 | 4 / 17 / 32 | ≈ 21 cố định | 4 / 20 / 34 |
+| tốc độ tại phím định đi (giữa) / phím lướt qua, ÷ trung bình | 0,78 / 1,97 | ≈ 1 / ≈ 1 | 0,93 / 1,97 |
+| thời gian trong bán kính 0,5 phím: phím định đi / lướt qua | 116 / 33 ms | — | 117 / 33 ms |
+| giữ ngón trước khi đi (dt điểm 2) | 83 ms | 17 ms | 83 ms |
+| lệch điểm đầu (theo hướng nét, + = về phím kế) | −0,16 ± 0,25 | 0 | −0,14 ± 0,25 |
+| **lố điểm cuối** theo hướng nét cuối, p10/p50/p90 | **−0,09 / +0,45 / +1,14** | 0 | −0,25 / +0,43 / +0,92 |
+| khoảng cách tâm phím giữa ↔ đường (trung vị) | 0,20 | ~0,2 | 0,17 |
+
+Tức là: người thật CHẬM ở phím định đi, lướt nhanh gấp đôi qua phím nằm giữa đường, và TRÔI
+chậm quá phím cuối trước khi nhấc tay (đấy → đâu, lấy → lâu, thay → thai). `SwipeSim.natural`
+(SwipeDecoderTests, Kotlin + Swift) mô phỏng các đặc điểm trên; đường cũ giữ cho ngưỡng hồi quy.
+
+Decoder (cả hai nền tảng, cùng hằng số; chỉ khi có thời gian điểm — đường không thời gian chấm y
+hệt cũ, fixture `swipe-paths.txt` không đổi; parity nhịp: `swipe-paths-timed.txt`):
+- **miễn lố cuối** (`overshoot` 1 phím): thành phần lệch THEO hướng nét cuối của template được
+  miễn ở ~15 % cuối đường, chỉ khi đuôi nét chậm (tốc độ tương đối đuôi ≤ 0,5 đủ, ≥ 0,8 tắt);
+- **phím lướt qua** (`speedWeight` 0,3, `speedRef` 1,3): mỗi phím giữa của ứng viên mà điểm đường
+  gần nó nhất có tốc độ tương đối r > 1,3 bị trừ 0,3·(r − 1,3) (cũng → chung, vì → vui);
+- **điểm dừng** (`dwellWeight` 3, r < 0,35, không sát 2 đầu) phải gần một phím của ứng viên.
+- Đã thử, KHÔNG giữ: tiền nghiệm dạng không dấu = tổng mọi dấu (hiện là âm tiết mạnh nhất —
+  vi = vì): +2 nét thật nửa dev nhưng −0,8…−1 điểm đường giả; miễn "hụt" ở điểm đầu (hội/gọi):
+  ±0; ưu tiên Việt mạnh hơn sau từ Việt (bias −1,2…−1,5): +0,1 điểm Việt nhưng −1,5…−5 điểm từ
+  Anh chen sau từ Việt — "như the" → "thế" đã đúng nhờ LM (test `phraseViDuNhuTheNay`).
+
+**Sửa chung cặp** (`SwipeRevise.revise(…, next: [SwipeWord])`, iOS `SwipeTyping.finish` + Android
+`KeyboardSession.resolveSwipe`): từ vuốt trước được chọn CÙNG ứng viên tốt nhất của cú vuốt này
+theo nó (trigram · 0,15 = trọng số LM trái, lề 0,1), ứng viên rộng hơn (từ trước 3 dạng × 8 dấu
+≤ 12, từ này ≤ 16). Báo lỗi "ví dụ như thế này" → trước: "vì dù như thế này" cả với đường sạch
+(ví không nằm trong 4 dấu đầu của "vi", dụ kém sau "vì").
+
+Chọn hằng số trên: nửa A nét thật (chỉ số chẵn) + đường giả dev (từ rời seed 1, câu giữ lại
+%12==0 / chuỗi dev của SwipeRevise); báo trên nửa B + tập kiểm thử (`SwipeTuneTests`, layout
+iPhone 36,8 pt). Trước = decoder cũ + sửa theo top-1 từ kế:
+
+| tập | trước | sau |
+|---|---|---|
+| nét thật nửa A (dev, 23) top-1 | 15 | 18 |
+| **nét thật nửa B (22, không dùng chỉnh)** top-1 | 15 | **18** |
+| nét thật cả 45: top-1 / top-3 | 0,667 / 0,933 | **0,800** / 0,911 |
+| — tiếng Việt / tiếng Anh top-1 | 0,606 / 0,833 | 0,788 / 0,833 |
+| từ rời test, đường tự nhiên top-1 / top-3 | 0,788 / 0,945 | **0,873** / 0,978 |
+| từ rời test, đường đều | 0,908 / 0,995 | 0,905 / 0,998 |
+| câu giữ lại test (LM, bật EN), tự nhiên top-1 / top-3 | 0,835 / 0,908 | **0,882** / 0,944 |
+| câu giữ lại test, đường đều | 0,915 / 0,964 | 0,914 / 0,964 |
+| vuốt tuần tự cả câu (SwipeRevise test, n = 4 631), đường đều | 0,858 | **0,914** |
+| — đường tự nhiên | 0,758 | **0,893** |
+| — đường tự nhiên, bật vuốt tiếng Anh | 0,742 | **0,889** |
+| "ví dụ như thế này" ×30 đường tự nhiên (JVM layout 40) | 0,527 | **0,740** |
+
+Còn sai trên nét thật: thay→thai, đấy→đâu (1/4), hội→gọi ×2, trai→tai, have→gave, chỉ→cu (nét
+trôi lên u), away/cũng nét vòng. Độ trễ decode (cùng đường tự nhiên, bật vs tắt nhịp): JVM +10 %,
+iOS Debug simulator +5 %; sửa chung cặp thêm ≤ 12 × 16 lần tra LM sau nhấc tay (~0,01 ms JVM).
+Chạy lại: `SWIPE_TUNE=1 SWIPE_TRACES=… SWIPE_CFGS='legacy;base' ./gradlew --offline
+:keyboard:test --tests '*SwipeTuneTests*' -i | grep TUNE` (xem đầu SwipeTuneTests.kt).
+
 ## enlexicon.bin — từ điển tiếng Anh cho gõ vuốt (giai đoạn 3)
 
 - File: `iOS/Keyboard/Resources/enlexicon.bin`, `android/app/src/main/assets/enlexicon.bin`

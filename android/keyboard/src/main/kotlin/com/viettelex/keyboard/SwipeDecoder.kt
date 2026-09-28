@@ -22,6 +22,9 @@ import kotlin.math.sqrt
  * dài; TẦNG 2 trên top-16: σ location thích nghi (nét cẩu thả ⇒ σ_L tới ×1.5), căn phím
  * đơn điệu vào đường 48 điểm, góc gắt của đường phải gần phím ứng viên. Lệch tay cá nhân
  * [SwipeDecoder.offsetX]/[SwipeDecoder.offsetY] học online bằng [SwipeDecoder.learnOffset].
+ * NHỊP (khi có thời gian điểm — SwipePath.ts): đuôi nét chậm ⇒ miễn phần LỐ theo hướng nét cuối
+ * (người thật trôi quá phím cuối ~0.45 phím trước khi nhấc tay); tầng 2 phạt phím giữa nằm trên
+ * đoạn lướt nhanh và đòi điểm DỪNG gần một phím. Không có thời gian ⇒ y hệt thuật toán cũ.
  * Mọi phép tính Float32 cùng thứ tự với bản Swift → cùng điểm trên cùng input.
  *
  * Bộ nhớ: lười — không đọc lexicon/dựng template tới lần decode đầu (hoặc [prepare]).
@@ -207,6 +210,26 @@ class SwipeDecoder(val params: Params = Params()) {
          */
         val adaptThreshold: Float = 0.13f,
         val adaptMax: Float = 1.5f,
+        /**
+         * NHỊP (cần thời gian điểm vuốt, tầng 2): tốc độ tương đối r = v / v trung bình tại
+         * 48 điểm. Mỗi phím GIỮA của ứng viên mà điểm đường gần nó nhất nằm trên đoạn nhanh
+         * (lướt qua) bị phạt w·max(0, r − [speedRef]); 0 = tắt. Hằng số nhịp/lố chỉnh trên nét
+         * thật + đường giả "tự nhiên" (docs/DATA-SOURCES.md "Nét vuốt thật").
+         */
+        val speedWeight: Float = 0.3f,
+        val speedRef: Float = 1.3f,
+        /** Điểm DỪNG (cực tiểu r < [dwellRatio], không sát 2 đầu) phải gần một phím: −w·Σ d². */
+        val dwellWeight: Float = 3f,
+        val dwellRatio: Float = 0.35f,
+        /**
+         * Lố đích ở đầu cuối: thành phần lệch THEO hướng nét cuối của template (đi quá phím
+         * cuối trước khi nhấc tay) được miễn tới [overshoot] phím ở điểm cuối (giảm dần về
+         * 0 hết đoạn [Params.endSpan]); 0 = tắt.
+         */
+        val overshoot: Float = 1f,
+        /** Cổng miễn lố theo tốc độ tương đối đuôi r: r ≤ [tailSlow] ⇒ đủ, r ≥ [tailFast] ⇒ tắt. */
+        val tailSlow: Float = 0.5f,
+        val tailFast: Float = 0.8f,
         /** Học lệch tay cá nhân ([learnOffset]): tốc độ EMA, trần mỗi lần (phím). */
         val offsetRate: Float = 0.05f,
         val offsetCap: Float = 0.5f,
@@ -229,6 +252,12 @@ class SwipeDecoder(val params: Params = Params()) {
     private var topIdx = IntArray(0)
     private var topDl = FloatArray(0)
     private var tplLen = FloatArray(0)
+    /** Hướng đơn vị nét cuối của template (phím áp chót → phím cuối); 0 nếu 1 phím. */
+    private var tplDX = FloatArray(0)
+    private var tplDY = FloatArray(0)
+    /** Độ sâu miễn lố [0, 1] theo điểm (1 ở điểm cuối), từ [ovFrom]. */
+    private val ovDepth: FloatArray
+    private val ovFrom: Int
     // tầng 2 + học lệch
     private val mx: FloatArray
     private val my: FloatArray
@@ -236,6 +265,17 @@ class SwipeDecoder(val params: Params = Params()) {
     private val back: IntArray
     private val corners: IntArray
     private var cornerCount = 0
+    // nhịp (tầng 2): thời gian + tốc độ tương đối tại mx/my, điểm dừng, phạt tốc độ
+    private val mt: FloatArray
+    private val spd: FloatArray
+    private val spdPen: FloatArray
+    private val dwells: IntArray
+    private var dwellCount = 0
+    private var speedOn = false
+    /** Phạt tốc độ của ứng viên vừa [alignCost]. */
+    private var alignSpeed = 0f
+    /** Hệ số miễn lố của lần decode này ([tailGate]). */
+    private var ovScale = 0f
     private val rkx = FloatArray(32)
     private val rky = FloatArray(32)
     private var bx = FloatArray(0)
@@ -270,11 +310,20 @@ class SwipeDecoder(val params: Params = Params()) {
             s += alpha[i]
         }
         alphaSum = s
+        ovDepth = FloatArray(n)
+        var from = n
+        for (i in 0 until n) {
+            val dep = 1f - (n - 1 - i).toFloat() / (n.toFloat() * params.endSpan)
+            ovDepth[i] = max(0f, dep)
+            if (ovDepth[i] > 0f && from == n) from = i
+        }
+        ovFrom = from
         ux = FloatArray(n); uy = FloatArray(n); sx = FloatArray(n); sy = FloatArray(n)
         erx = FloatArray(n); ery = FloatArray(n)
         val m2 = max(2, params.rescorePoints)
         mx = FloatArray(m2); my = FloatArray(m2); dp = FloatArray(32 * m2); back = IntArray(32 * m2)
         corners = IntArray(m2)
+        mt = FloatArray(m2); spd = FloatArray(m2); spdPen = FloatArray(m2); dwells = IntArray(m2)
         cosCorner = kotlin.math.cos(params.cornerDegrees.toDouble() * Math.PI / 180.0).toFloat()
     }
 
@@ -282,7 +331,7 @@ class SwipeDecoder(val params: Params = Params()) {
     fun setLayout(l: SwipeLayout) {
         if (l == layout) return
         layout = l
-        tpl = FloatArray(0); tplCX = tpl; tplCY = tpl; tplScale = tpl; tplLen = tpl
+        tpl = FloatArray(0); tplCX = tpl; tplCY = tpl; tplScale = tpl; tplLen = tpl; tplDX = tpl; tplDY = tpl
         tplValid = BooleanArray(0)
     }
 
@@ -293,13 +342,15 @@ class SwipeDecoder(val params: Params = Params()) {
     }
 
     val templateBytes: Int
-        get() = tpl.size * 4 + (tplCX.size + tplCY.size + tplScale.size + tplLen.size) * 4 + tplValid.size
+        get() = tpl.size * 4 + (tplCX.size + tplCY.size + tplScale.size + tplLen.size + tplDX.size + tplDY.size) * 4 +
+            tplValid.size
 
     private fun buildTemplates(l: SwipeLayout) {
         val forms = SwipeLexicon.forms
         val n = params.points; val fc = forms.count
         tpl = FloatArray(fc * n * 2)
         tplCX = FloatArray(fc); tplCY = FloatArray(fc); tplScale = FloatArray(fc); tplLen = FloatArray(fc)
+        tplDX = FloatArray(fc); tplDY = FloatArray(fc)
         tplValid = BooleanArray(fc)
         val kx = FloatArray(32); val ky = FloatArray(32)
         val rx = FloatArray(n); val ry = FloatArray(n)
@@ -323,18 +374,21 @@ class SwipeDecoder(val params: Params = Params()) {
             shapeFrame(rx, ry, n, l.keyWidth, frame)
             tplCX[f] = frame[0]; tplCY[f] = frame[1]; tplScale[f] = frame[2]
             tplLen[f] = keyPathLength(kx, ky, m, l.keyWidth)
+            endDirection(kx, ky, m, frame)
+            tplDX[f] = frame[0]; tplDY[f] = frame[1]
             tplValid[f] = true
         }
     }
 
     /** Giải mã → top-K dạng không dấu (điểm giảm dần); [context] cộng điểm ngữ cảnh. */
     fun decode(path: SwipePath, topK: Int = 5, context: ((String) -> Float)? = null): List<SwipeCandidate> =
-        decodeCore(path.xs, path.ys, path.count, topK, context, null, null)
+        decodeCore(path.xs, path.ys, path.ts, path.count, topK, context, null, null)
 
+    /** [ts] = thời gian điểm (giây, tuỳ gốc) — null ⇒ không dùng nhịp (điểm như đường đều). */
     fun decode(
         xs: FloatArray, ys: FloatArray, count: Int, topK: Int = 5,
-        context: ((String) -> Float)? = null,
-    ): List<SwipeCandidate> = decodeCore(xs, ys, count, topK, context, null, null)
+        context: ((String) -> Float)? = null, ts: DoubleArray? = null,
+    ): List<SwipeCandidate> = decodeCore(xs, ys, ts, count, topK, context, null, null)
 
     /**
      * Giai đoạn 3 — [english] != null: thêm từ tiếng Anh vào cùng không gian ứng viên
@@ -345,15 +399,15 @@ class SwipeDecoder(val params: Params = Params()) {
     fun decode(
         path: SwipePath, topK: Int, context: ((String) -> Float)?,
         english: SwipeEnglishPrior?, englishContext: ((String) -> Float)? = null,
-    ): List<SwipeCandidate> = decodeCore(path.xs, path.ys, path.count, topK, context, english, englishContext)
+    ): List<SwipeCandidate> = decodeCore(path.xs, path.ys, path.ts, path.count, topK, context, english, englishContext)
 
     fun decode(
         xs: FloatArray, ys: FloatArray, count: Int, topK: Int, context: ((String) -> Float)?,
-        english: SwipeEnglishPrior?, englishContext: ((String) -> Float)? = null,
-    ): List<SwipeCandidate> = decodeCore(xs, ys, count, topK, context, english, englishContext)
+        english: SwipeEnglishPrior?, englishContext: ((String) -> Float)? = null, ts: DoubleArray? = null,
+    ): List<SwipeCandidate> = decodeCore(xs, ys, ts, count, topK, context, english, englishContext)
 
     private fun decodeCore(
-        xs0: FloatArray, ys0: FloatArray, count: Int, topK: Int,
+        xs0: FloatArray, ys0: FloatArray, ts: DoubleArray?, count: Int, topK: Int,
         context: ((String) -> Float)?,
         english: SwipeEnglishPrior?,
         englishContext: ((String) -> Float)?,
@@ -381,6 +435,9 @@ class SwipeDecoder(val params: Params = Params()) {
         val lam = params.lambdaFreq
         val lw = params.lengthWeight
         val t = tpl; val a = alpha
+        ovScale = if (params.overshoot > 0f) tailGate(xs, ys, ts, count) else 0f
+        val ov = params.overshoot * w * ovScale
+        val ovStart = if (ov > 0f) ovFrom else n   // điểm i ≥ ovStart được miễn lố
 
         for (pass in 0 until 2) {
             val r = params.filterRadius * w * (if (pass == 0) 1f else 2f)
@@ -400,7 +457,16 @@ class SwipeDecoder(val params: Params = Params()) {
                     val tx = t[base + i * 2]; val ty = t[base + i * 2 + 1]
                     val ex = sx[i] - (tx - cx) * sc; val ey = sy[i] - (ty - cy) * sc
                     ds += sqrt(ex * ex + ey * ey)
-                    val lx = ux[i] - tx; val ly = uy[i] - ty
+                    var lx = ux[i] - tx; var ly = uy[i] - ty
+                    if (i >= ovStart) {
+                        // lố theo hướng nét cuối (tplDX/DY đơn vị) được miễn tới ov·độ sâu
+                        val ddx = tplDX[f]; val ddy = tplDY[f]
+                        val al = lx * ddx + ly * ddy
+                        if (al > 0f) {
+                            val cut = min(al, ov * ovDepth[i])
+                            lx -= cut * ddx; ly -= cut * ddy
+                        }
+                    }
                     val d = sqrt(lx * lx + ly * ly) - tunnelW
                     if (d > 0f) dl += a[i] * d
                 }
@@ -413,7 +479,7 @@ class SwipeDecoder(val params: Params = Params()) {
             if (en != null && english != null) scoreEnglish(en, english.bias, l, r2, m, fc, pathLen)
             if (filled >= topK) break
         }
-        if (params.rescorePool > 0 && filled > 0) rescore(xs, ys, count, l, invL, en, fc)
+        if (params.rescorePool > 0 && filled > 0) rescore(xs, ys, ts, count, l, invL, en, fc)
 
         val out = ArrayList<SwipeCandidate>(filled)
         for (k in 0 until filled) {
@@ -443,6 +509,8 @@ class SwipeDecoder(val params: Params = Params()) {
         val invL = 1f / (2f * params.sigmaLoc * params.sigmaLoc)
         val lam = params.lambdaFreq
         val a = alpha
+        val ov = params.overshoot * w * ovScale
+        val ovStart = if (ov > 0f) ovFrom else n
         for (k in 0 until 26) {
             val x = l.centers[k * 2]; val y = l.centers[k * 2 + 1]
             if (!x.isFinite()) { okFirst[k] = false; okLast[k] = false; continue }
@@ -469,6 +537,8 @@ class SwipeDecoder(val params: Params = Params()) {
                     }
                     if (!ok) continue
                     resample(ekx, eky, mk, n, erx, ery)
+                    endDirection(ekx, eky, mk, eframe)
+                    val ddx = eframe[0]; val ddy = eframe[1]
                     shapeFrame(erx, ery, n, w, eframe)
                     val cx = eframe[0]; val cy = eframe[1]; val sc = eframe[2]
                     var ds = 0f; var dl = 0f
@@ -476,7 +546,14 @@ class SwipeDecoder(val params: Params = Params()) {
                         val tx = erx[p]; val ty = ery[p]
                         val ex = sx[p] - (tx - cx) * sc; val ey = sy[p] - (ty - cy) * sc
                         ds += sqrt(ex * ex + ey * ey)
-                        val lx = ux[p] - tx; val ly = uy[p] - ty
+                        var lx = ux[p] - tx; var ly = uy[p] - ty
+                        if (p >= ovStart) {
+                            val al = lx * ddx + ly * ddy
+                            if (al > 0f) {
+                                val cut = min(al, ov * ovDepth[p])
+                                lx -= cut * ddx; ly -= cut * ddy
+                            }
+                        }
                         val d = sqrt(lx * lx + ly * ly) - tunnelW
                         if (d > 0f) dl += a[p] * d
                     }
@@ -537,7 +614,7 @@ class SwipeDecoder(val params: Params = Params()) {
      * Tầng 2 trên top-[filled]: σ location thích nghi (theo location tốt nhất), rồi trừ
      * chi phí căn phím + góc; xếp lại ổn định (bằng điểm giữ thứ tự cũ).
      */
-    private fun rescore(xs: FloatArray, ys: FloatArray, count: Int, l: SwipeLayout, invL: Float,
+    private fun rescore(xs: FloatArray, ys: FloatArray, ts: DoubleArray?, count: Int, l: SwipeLayout, invL: Float,
                         en: SwipeEnglish.Lexicon?, fc: Int) {
         val w = l.keyWidth
         if (params.adaptThreshold > 0f && params.adaptMax > 1f) {
@@ -552,16 +629,26 @@ class SwipeDecoder(val params: Params = Params()) {
         }
         resample(xs, ys, count, mx.size, mx, my)
         detectCorners(w)
+        computeSpeed(xs, ys, ts, count)
         val t = params.rescoreTunnel * w
         for (k in 0 until filled) {
             val km = candidateKeys(topIdx[k], l, en, fc)
             if (km <= 0) continue
             var cost = 0f
-            if (params.alignWeight > 0f) cost += params.alignWeight * alignCost(km, t, w)
+            if (params.alignWeight > 0f || speedOn) {
+                val a = alignCost(km, t, w)
+                if (params.alignWeight > 0f) cost += params.alignWeight * a
+                cost += alignSpeed
+            }
             if (params.cornerWeight > 0f && cornerCount > 0) {
                 var c = 0f
                 for (q in 0 until cornerCount) c += nearestKeyCost(mx[corners[q]], my[corners[q]], km, t, w)
                 cost += params.cornerWeight * c
+            }
+            if (dwellCount > 0) {
+                var c = 0f
+                for (q in 0 until dwellCount) c += nearestKeyCost(mx[dwells[q]], my[dwells[q]], km, t, w)
+                cost += params.dwellWeight * c
             }
             topScore[k] -= cost
         }
@@ -574,6 +661,75 @@ class SwipeDecoder(val params: Params = Params()) {
             }
             topScore[j] = s; topIdx[j] = id; topDl[j] = d
         }
+    }
+
+    /**
+     * Nhịp tầng 2: thời gian tại mx/my (nội suy theo độ dài như [resample]) → tốc độ tương đối
+     * spd[i] = v_i / v trung bình (sai phân trung tâm, kẹp ≤ 4), phạt tốc độ cho phím giữa
+     * (spdPen) và điểm dừng (dwells). Không có ts / thời lượng ≈ 0 ⇒ tắt ([speedOn] = false).
+     */
+    private fun computeSpeed(xs: FloatArray, ys: FloatArray, ts: DoubleArray?, count: Int) {
+        speedOn = false; dwellCount = 0
+        if (ts == null || count < 2 || (params.speedWeight <= 0f && params.dwellWeight <= 0f)) return
+        val m2 = mx.size
+        resampleTime(xs, ys, ts, count, m2, mt)
+        val total = mt[m2 - 1] - mt[0]
+        if (!(total > 1e-3f)) return
+        val unit = total / (m2 - 1).toFloat()
+        for (i in 0 until m2) {
+            val lo = if (i > 0) i - 1 else 0
+            val hi = if (i < m2 - 1) i + 1 else m2 - 1
+            val dt = mt[hi] - mt[lo]
+            val need = (hi - lo).toFloat() * unit
+            spd[i] = if (dt * 4f <= need) 4f else need / dt
+        }
+        speedOn = params.speedWeight > 0f
+        for (i in 0 until m2) {
+            val e = spd[i] - params.speedRef
+            spdPen[i] = if (e > 0f) params.speedWeight * e else 0f
+        }
+        if (params.dwellWeight <= 0f) return
+        val g = 2
+        for (i in g until m2 - g) {
+            val v = spd[i]
+            if (v >= params.dwellRatio || v > spd[i - 1] || v > spd[i + 1]) continue
+            if (dwellCount > 0 && i - dwells[dwellCount - 1] <= g) {
+                if (v < spd[dwells[dwellCount - 1]]) dwells[dwellCount - 1] = i
+            } else {
+                dwells[dwellCount++] = i
+            }
+        }
+    }
+
+    /**
+     * Đuôi nét CHẬM (trôi trước khi nhấc tay) ⇒ bật miễn lố: r = tốc độ tương đối trên
+     * [Params.endSpan] độ dài cuối; r ≤ [Params.tailSlow] ⇒ 1, r ≥ [Params.tailFast] ⇒ 0, tuyến
+     * tính giữa. Không có ts ⇒ 0.
+     */
+    private fun tailGate(xs: FloatArray, ys: FloatArray, ts: DoubleArray?, count: Int): Float {
+        if (ts == null || count < 2) return 0f
+        var total = 0f
+        for (j in 0 until count - 1) total += segmentLength(xs, ys, j)
+        val dur = (ts[count - 1] - ts[0]).toFloat()
+        if (!(total > 1e-4f) || !(dur > 1e-3f)) return 0f
+        val want = total * params.endSpan
+        var acc = 0f
+        var tail = 0f
+        for (q in 0 until count - 1) {
+            val j = count - 2 - q   // đoạn j: điểm j → j+1, từ cuối ngược lại
+            val seg = segmentLength(xs, ys, j)
+            val dt = (ts[j + 1] - ts[j]).toFloat()
+            if (acc + seg >= want) {
+                val u = if (seg > 0f) (want - acc) / seg else 0f
+                tail += dt * u
+                break
+            }
+            acc += seg; tail += dt
+        }
+        if (!(tail > 0f)) return 1f
+        val r = params.endSpan * dur / tail
+        val g = (params.tailFast - r) / (params.tailFast - params.tailSlow)
+        return if (g <= 0f) 0f else if (g >= 1f) 1f else g
     }
 
     /** Góc gắt trên đường resample tầng 2 (cos góc rẽ < cos[Params.cornerDegrees]). */
@@ -613,19 +769,31 @@ class SwipeDecoder(val params: Params = Params()) {
         return best * best
     }
 
-    /** Căn đơn điệu km phím (rkx/rky) vào mx/my: trung bình (d − tunnel)² nhỏ nhất (phím). */
+    /**
+     * Căn đơn điệu km phím (rkx/rky) vào mx/my: trung bình (d − tunnel)² nhỏ nhất (phím). Cùng
+     * vòng: [alignSpeed] = Σ spdPen tại điểm đường GẦN NHẤT mỗi phím giữa (phím nằm trên đoạn lướt
+     * nhanh ⇒ không phải phím định đi); lấy điểm gần nhất, không theo căn DP, để DP không "giấu"
+     * phím thừa vào chỗ dừng.
+     */
     private fun alignCost(km: Int, t: Float, w: Float): Float {
         val m2 = mx.size
+        val sp = speedOn
+        alignSpeed = 0f
         for (j in 0 until km) {
             var run = Float.MAX_VALUE
+            val mid = sp && j > 0 && j < km - 1
+            var bq = Float.MAX_VALUE; var bi = 0
             for (i in 0 until m2) {
                 val dx = mx[i] - rkx[j]; val dy = my[i] - rky[j]
-                var d = (sqrt(dx * dx + dy * dy) - t) / w
+                val q = dx * dx + dy * dy
+                if (mid && q < bq) { bq = q; bi = i }
+                var d = (sqrt(q) - t) / w
                 if (d < 0f) d = 0f
                 var prev = 0f
                 if (j > 0) { val v = dp[(j - 1) * m2 + i]; if (v < run) run = v; prev = run }
                 dp[j * m2 + i] = d * d + prev
             }
+            if (mid) alignSpeed += spdPen[bi]
         }
         var best = Float.MAX_VALUE
         for (i in 0 until m2) { val v = dp[(km - 1) * m2 + i]; if (v < best) best = v }
@@ -725,6 +893,15 @@ class SwipeDecoder(val params: Params = Params()) {
             return out.sortedByDescending { it.score }.take(limit)
         }
 
+        /** out[0..1] = hướng đơn vị phím áp chót → phím cuối (0, 0 nếu < 2 phím / trùng). */
+        fun endDirection(kx: FloatArray, ky: FloatArray, m: Int, out: FloatArray) {
+            out[0] = 0f; out[1] = 0f
+            if (m < 2) return
+            val dx = kx[m - 1] - kx[m - 2]; val dy = ky[m - 1] - ky[m - 2]
+            val d = sqrt(dx * dx + dy * dy)
+            if (d > 0f) { out[0] = dx / d; out[1] = dy / d }
+        }
+
         /** Độ dài polyline (count điểm) theo đơn vị phím. */
         fun keyPathLength(xs: FloatArray, ys: FloatArray, count: Int, keyWidth: Float): Float {
             var s = 0f
@@ -773,6 +950,41 @@ class SwipeDecoder(val params: Params = Params()) {
                 oy[k] = ys[j] + (ys[j + 1] - ys[j]) * tt
             }
             ox[n - 1] = xs[count - 1]; oy[n - 1] = ys[count - 1]
+        }
+
+        /**
+         * Thời gian (giây, gốc = ts[0], Float) tại n điểm resample của [resample] — cùng vòng
+         * duyệt, nội suy tuyến tính trong đoạn.
+         */
+        fun resampleTime(xs: FloatArray, ys: FloatArray, ts: DoubleArray, count: Int, n: Int, ot: FloatArray) {
+            var total = 0f
+            if (count > 1) {
+                for (j in 0 until count - 1) {
+                    val dx = xs[j + 1] - xs[j]; val dy = ys[j + 1] - ys[j]
+                    total += sqrt(dx * dx + dy * dy)
+                }
+            }
+            val t0 = ts[0]
+            if (count == 1 || total <= 1e-4f) {
+                for (k in 0 until n) ot[k] = 0f
+                return
+            }
+            val step = total / (n - 1).toFloat()
+            ot[0] = 0f
+            var j = 0; var acc = 0f
+            var segLen = segmentLength(xs, ys, 0)
+            for (k in 1 until n - 1) {
+                val target = k.toFloat() * step
+                while (j < count - 2 && acc + segLen < target) {
+                    acc += segLen; j++
+                    segLen = segmentLength(xs, ys, j)
+                }
+                var tt = if (segLen > 0f) (target - acc) / segLen else 0f
+                if (tt < 0f) tt = 0f else if (tt > 1f) tt = 1f
+                val a = (ts[j] - t0).toFloat(); val b = (ts[j + 1] - t0).toFloat()
+                ot[k] = a + (b - a) * tt
+            }
+            ot[n - 1] = (ts[count - 1] - t0).toFloat()
         }
 
         private fun segmentLength(xs: FloatArray, ys: FloatArray, j: Int): Float {

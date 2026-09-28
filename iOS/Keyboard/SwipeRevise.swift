@@ -8,8 +8,10 @@
 // ≥ margin ⇒ thay. Chỉ từ Việt, chỉ từ vuốt liền trước, một lần. Caller lo fail-safe màn
 // hình (đuôi phải khớp đúng từ cũ). Từ kế cũng có thể GÕ BẰNG PHÍM (Typed/reviseTyped): chấm
 // lại lúc từ gõ được chốt (dấu cách/dấu câu), ngữ cảnh phải = từ đã chốt (chắc chắn), trọng
-// số/lề riêng. Chi phí: ≤ maxCandidates lần tra LM, chỉ sau một cú vuốt hoặc ở ranh giới từ
-// NGAY SAU từ vuốt — không ở đường phím chữ.
+// số/lề riêng. Từ kế là cú vuốt (chưa chắc) ⇒ sửa CHUNG cặp: ứng viên c của w1 chọn cùng
+// ứng viên tốt nhất của w2 theo c (`revise` với `nextPool`, jointWeight) — "vì dù" → "ví dụ".
+// Chi phí: ≤ maxCandidates·nextMaxCandidates lần tra LM, chỉ sau một cú vuốt hoặc ở ranh giới
+// từ NGAY SAU từ vuốt — không ở đường phím chữ.
 import Foundation
 
 enum SwipeRevise {
@@ -23,14 +25,21 @@ enum SwipeRevise {
     static let typedRightWeight: Float = 0.15
     static let typedMargin: Float = 0.3
     static let poolForms = 3
-    static let poolWords = 4
-    static let maxCandidates = 8
+    static let poolWords = 8
+    static let maxCandidates = 12
+    /// Sửa CHUNG hai từ (`revise` với danh sách từ kế): ứng viên của cú vuốt kế (rộng hơn — âm
+    /// tiết kém theo ngữ cảnh cũ có thể thắng theo ngữ cảnh mới: "dụ" sau "ví"), trọng số trigram
+    /// = trọng số LM trái của decoder (SwipeTyping.lmWeight) — chỉnh trên dev (SwipeTuneTests.kt).
+    static let nextPoolWords = 8
+    static let nextMaxCandidates = 16
+    static let jointWeight: Float = SwipeTyping.lmWeight
 
     /// Ứng viên tiếng Việt (chữ thường) của một cú vuốt + điểm tổng cùng thước decoder:
     /// điểm dạng − điểm bung tốt nhất của dạng (= phần hình học) + điểm bung của âm tiết.
     /// Rỗng khi top-1 là tiếng Anh.
     static func scored(_ cands: [SwipeCandidate], context: ((String) -> Float)?,
-                       lambdaFreq: Float) -> [SwipeWord] {
+                       lambdaFreq: Float, poolWords: Int = poolWords,
+                       maxCandidates: Int = maxCandidates) -> [SwipeWord] {
         guard let first = cands.first, first.lang == .vi else { return [] }
         var out: [(SwipeWord, Int)] = []
         for c in cands.prefix(poolForms) where c.lang == .vi {
@@ -41,6 +50,13 @@ enum SwipeRevise {
         }
         out.sort { $0.0.score != $1.0.score ? $0.0.score > $1.0.score : $0.1 < $1.1 }
         return out.prefix(maxCandidates).map { $0.0 }
+    }
+
+    /// Ứng viên có dấu (rộng) của cú vuốt kế cho `revise` chung hai từ.
+    static func nextPool(_ cands: [SwipeCandidate], context: ((String) -> Float)?,
+                         lambdaFreq: Float) -> [SwipeWord] {
+        scored(cands, context: context, lambdaFreq: lambdaFreq, poolWords: nextPoolWords,
+               maxCandidates: nextMaxCandidates)
     }
 
     /// Từ trước vừa được sửa ⇒ ngữ cảnh trái của cú vuốt này đổi: chấm lại ứng viên Việt =
@@ -64,7 +80,48 @@ enum SwipeRevise {
     static func rightScore(_ lm: SyllableLM, prev: Int, cand: Int, next: Int,
                            weight: Float = rightWeight) -> Float {
         guard let ctx = lm.context(prev2: prev, prev1: cand) else { return 0 }
-        return max(rightFloor, min(rightCap, weight * ctx.score(next)))
+        return clampRight(weight * ctx.score(next))
+    }
+
+    private static func clampRight(_ v: Float) -> Float { max(rightFloor, min(rightCap, v)) }
+
+    /// Sửa CHUNG hai từ (cặp tốt nhất): từ kế chưa chắc — `next` = ứng viên có dấu của cú vuốt
+    /// kế (`nextPool`, chấm với ngữ cảnh trái = `current`). Mỗi ứng viên c của từ trước được
+    /// điểm cũ + max theo c2 ∈ next của (điểm c2 + phải(c, c2) − phải(current, c2)) — c2 được
+    /// chọn lại theo c ("vì dù" → "ví dụ"). `next` một phần tử + weight rightWeight ⇒ y hệt
+    /// `revise` theo chuỗi.
+    static func revise(_ scored: [SwipeWord], current: String, prev: String?, next: [SwipeWord],
+                       lm: SyllableLM? = SyllableLM.shared, margin: Float = margin,
+                       weight: Float = jointWeight) -> String? {
+        guard let lm, scored.count >= 2, !next.isEmpty else { return nil }
+        let prevId = prev.flatMap { SyllableBigram.id(of: $0) } ?? -1
+        let curCtx = SyllableBigram.id(of: current).flatMap { lm.context(prev2: prevId, prev1: $0) }
+        let nextIds = next.map { SyllableBigram.id(of: $0.word) }
+        // điểm từ kế bỏ phần trigram theo từ đang hiện (cộng lại theo từng ứng viên c)
+        var base = [Float](repeating: 0, count: next.count)
+        for k in next.indices {
+            var v = next[k].score
+            if let curCtx, let id = nextIds[k] { v -= clampRight(weight * curCtx.score(id)) }
+            base[k] = v
+        }
+        var cur: Float?
+        var best: String?
+        var bestScore = -Float.infinity
+        for w in scored {
+            guard let id = SyllableBigram.id(of: w.word) else { continue }
+            let ctx = lm.context(prev2: prevId, prev1: id)
+            var nb = -Float.infinity
+            for k in next.indices {
+                var v = base[k]
+                if let ctx, let nid = nextIds[k] { v += clampRight(weight * ctx.score(nid)) }
+                if v > nb { nb = v }
+            }
+            let s = w.score + nb
+            if w.word == current { cur = s }
+            if s > bestScore { bestScore = s; best = w.word }
+        }
+        guard let cur, let best, best != current, bestScore - cur >= margin else { return nil }
+        return best
     }
 
     /// Từ thay cho `current` (chữ thường, có dấu) khi biết từ kế `next`; nil = giữ nguyên.

@@ -91,6 +91,7 @@
 		47D0834606BB8E66AB2213D1 /* ScrollEdgeEffectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBD24780DBDAEB07E6645C3E /* ScrollEdgeEffectTests.swift */; };
 		4934EAD525E4B9A0DFBE254F /* vnlm.bin in Resources */ = {isa = PBXBuildFile; fileRef = 6C7EDE7A95356B8F9043D32F /* vnlm.bin */; };
 		4C0088B0166B00B8536D2B75 /* swipe-paths.txt in Resources */ = {isa = PBXBuildFile; fileRef = E7BF9D54E0DFCE9D7395F598 /* swipe-paths.txt */; };
+		A2CEEACB594EB47AF40541A3 /* swipe-paths-timed.txt in Resources */ = {isa = PBXBuildFile; fileRef = A42C0808FA2107FC8B2A9D05 /* swipe-paths-timed.txt */; };
 		4E60808450DA80CBC7DEF891 /* ios-mau-cau.yml in Resources */ = {isa = PBXBuildFile; fileRef = E07A3B8533DF185DE4EC05F4 /* ios-mau-cau.yml */; };
 		4E871644F8FD8B5DEF5D18C5 /* CompositionSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22BDEAB6EAD0F1EA689B388A /* CompositionSync.swift */; };
 		4F177B14857E493A92E95B00 /* PlaneCacheLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EAFABBBF6544841D633BFD9 /* PlaneCacheLayoutTests.swift */; };
@@ -430,6 +431,7 @@
 		E5AE58D76A8127D641A2AF62 /* EngineBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineBridgeTests.swift; sourceTree = "<group>"; };
 		E5BA79FCDFB7209A8D1C65B0 /* SwipeTyping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipeTyping.swift; sourceTree = "<group>"; };
 		E7BF9D54E0DFCE9D7395F598 /* swipe-paths.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "swipe-paths.txt"; sourceTree = "<group>"; };
+		A42C0808FA2107FC8B2A9D05 /* swipe-paths-timed.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "swipe-paths-timed.txt"; sourceTree = "<group>"; };
 		E8E2E27B46842AE6F5EB0A74 /* SyncMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMerge.swift; sourceTree = "<group>"; };
 		EE4C2C271F18A006B9967589 /* SwipePractice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipePractice.swift; sourceTree = "<group>"; };
 		EE8993F83A60C653C26799EC /* NumberRowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NumberRowTests.swift; sourceTree = "<group>"; };
@@ -511,6 +513,7 @@
 				2B96A58C6EE35D288C488202 /* number-chips.txt */,
 				38966B5E3DF4C19B07287B0C /* swipe-paths-en.txt */,
 				E7BF9D54E0DFCE9D7395F598 /* swipe-paths.txt */,
+				A42C0808FA2107FC8B2A9D05 /* swipe-paths-timed.txt */,
 				5E8B28C264666A6160445981 /* swipe-traces-sample.json */,
 				8CCBF78039DA75E228D4CDC2 /* text-tools.txt */,
 			);
@@ -894,6 +897,7 @@
 				59C66E8A96CED913A07EA832 /* sample-shortcuts.yml in Resources */,
 				28C579703223D53D46A60F0D /* swipe-paths-en.txt in Resources */,
 				4C0088B0166B00B8536D2B75 /* swipe-paths.txt in Resources */,
+				A2CEEACB594EB47AF40541A3 /* swipe-paths-timed.txt in Resources */,
 				8230AC1E2000E3632E55037B /* swipe-traces-sample.json in Resources */,
 				03B12CE64D361D1987537103 /* text-tools.txt in Resources */,
 				BABFC784D2F53CDDE3DA3851 /* vnbigram.bin in Resources */,

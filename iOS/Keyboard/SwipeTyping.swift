@@ -332,8 +332,11 @@ final class SwipeTyping {
                                                         lambdaFreq: full.ctx.lambdaFreq)
         var revised: Revision?
         if let rec = previous, !r.english,
+           // sửa chung cặp (từ vuốt trước, cú vuốt này) — ứng viên từ kế rộng hơn scored
            let new = SwipeRevise.revise(rec.scored, current: rec.word.lowercased(), prev: prev2,
-                                        next: r.word.lowercased(), lm: lm) {
+                                        next: SwipeRevise.nextPool(full.cands, context: full.ctx.word,
+                                                                   lambdaFreq: full.ctx.lambdaFreq),
+                                        lm: lm) {
             let newCased = rec.sc.apply(new)
             if proxy.contextBeforeInput?.hasSuffix(rec.word) == true,
                bridge.replaceSwipeWord(with: newCased, accepted: false, proxy: proxy) {

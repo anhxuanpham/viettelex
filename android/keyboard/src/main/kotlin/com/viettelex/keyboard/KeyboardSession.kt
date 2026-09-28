@@ -647,7 +647,9 @@ class KeyboardSession(
         val rec = revisable
         if (rec == null || choice.english || swipeLiteral || !bridge.isComposing || bridge.composedWord != rec.word)
             return SwipeResolved(choice, scored, case)
-        val new = SwipeRevise.revise(rec.scored, rec.word.lowercase(), lastWord, choice.word.lowercase())
+        // sửa chung cặp (từ vuốt trước, cú vuốt này) — ứng viên từ kế rộng hơn scored
+        val new = SwipeRevise.revise(rec.scored, rec.word.lowercase(), lastWord,
+            SwipeRevise.nextPool(cands, ctx.word, ctx.lambdaFreq))
             ?: return SwipeResolved(choice, scored, case)
         val nctx = SwipeSuggest.context(langModel, new, lastWord, ctx.english)
         val re = SwipeRevise.rerank(cands, ctx.word, ctx.lambdaFreq, nctx.word, nctx.lambdaFreq)

@@ -24,7 +24,11 @@
 //     tần suất/ngữ cảnh hơn), căn phím template đơn điệu vào đường 48 điểm, mỗi góc gắt
 //     của đường phải gần một phím của ứng viên. Đo trên đường giả (dev/test tách,
 //     scratchpad harness): +0.4…+4.4 điểm top-1 trong câu, lớn nhất khi lệch đầu/cuối;
-//   • lệch tay cá nhân `offsetX/offsetY` học online bằng `learnOffset` (EMA).
+//   • lệch tay cá nhân `offsetX/offsetY` học online bằng `learnOffset` (EMA);
+//   • NHỊP (khi có thời gian điểm — SwipePath.ts): đuôi nét chậm ⇒ miễn phần LỐ theo hướng
+//     nét cuối (người thật trôi quá phím cuối ~0.45 phím trước khi nhấc tay); tầng 2 phạt phím
+//     giữa nằm trên đoạn lướt nhanh và đòi điểm DỪNG gần một phím. Không có thời gian ⇒ y hệt
+//     thuật toán cũ. Đo trên nét thật: docs/DATA-SOURCES.md "Nét vuốt thật".
 // Hằng số tinh chỉnh bằng đường vuốt giả (σ nhiễu 0.25 phím) trên 500 âm tiết
 // phổ biến — xem SwipeDecoderTests. Mọi phép tính Float32 cùng thứ tự với bản
 // Kotlin để hai nền tảng ra cùng điểm (không dùng exp/log trong vòng chấm).
@@ -185,6 +189,22 @@ final class SwipeDecoder {
         /// nhân tới `adaptMax` — tin tần suất/ngữ cảnh hơn (kiểu SHARK2 nới σ theo tốc độ).
         var adaptThreshold: Float = 0.13
         var adaptMax: Float = 1.5
+        /// NHỊP (cần thời gian điểm vuốt, tầng 2): tốc độ tương đối r = v / v trung bình tại 48
+        /// điểm. Mỗi phím GIỮA của ứng viên mà điểm đường gần nó nhất nằm trên đoạn nhanh (lướt
+        /// qua) bị phạt w·max(0, r − speedRef); 0 = tắt. Hằng số nhịp/lố chỉnh trên nét thật +
+        /// đường giả "tự nhiên" (docs/DATA-SOURCES.md "Nét vuốt thật").
+        var speedWeight: Float = 0.3
+        var speedRef: Float = 1.3
+        /// Điểm DỪNG (cực tiểu r < dwellRatio, không sát 2 đầu) phải gần một phím: −w·Σ d².
+        var dwellWeight: Float = 3
+        var dwellRatio: Float = 0.35
+        /// Lố đích ở đầu cuối: thành phần lệch THEO hướng nét cuối của template (đi quá phím cuối
+        /// trước khi nhấc tay) được miễn tới `overshoot` phím ở điểm cuối (giảm dần về 0 hết đoạn
+        /// endSpan); chỉ khi đuôi nét chậm (`tailGate`). 0 = tắt.
+        var overshoot: Float = 1
+        /// Cổng miễn lố theo tốc độ tương đối đuôi r: r ≤ tailSlow ⇒ đủ, r ≥ tailFast ⇒ tắt.
+        var tailSlow: Float = 0.5
+        var tailFast: Float = 0.8
         /// Học lệch tay cá nhân (`learnOffset`): tốc độ EMA, trần mỗi lần (phím).
         var offsetRate: Float = 0.05
         var offsetCap: Float = 0.5
@@ -203,6 +223,19 @@ final class SwipeDecoder {
     private var ux: [Float], uy: [Float], sx: [Float], sy: [Float]
     private var topScore: [Float] = [], topIdx: [Int] = [], topDl: [Float] = []
     private var tplLen: [Float] = []
+    /// Hướng đơn vị nét cuối của template (phím áp chót → phím cuối); 0 nếu 1 phím.
+    private var tplDX: [Float] = [], tplDY: [Float] = []
+    /// Độ sâu miễn lố [0, 1] theo điểm (1 ở điểm cuối), từ `ovFrom`.
+    private let ovDepth: [Float]
+    private let ovFrom: Int
+    /// Hệ số miễn lố của lần decode này (`tailGate`).
+    private var ovScale: Float = 0
+    // nhịp (tầng 2): thời gian + tốc độ tương đối tại mx/my, điểm dừng, phạt tốc độ
+    private var mt: [Float], spd: [Float], spdPen: [Float], dwells: [Int]
+    private var dwellCount = 0
+    private var speedOn = false
+    /// Phạt tốc độ của ứng viên vừa `alignCost`.
+    private var alignSpeed: Float = 0
     // tầng 2 + học lệch
     private var mx: [Float], my: [Float], dp: [Float], back: [Int], corners: [Int]
     private var cornerCount = 0
@@ -228,12 +261,21 @@ final class SwipeDecoder {
             s += a[i]
         }
         alpha = a; alphaSum = s
+        var dep = [Float](repeating: 0, count: n)
+        var from = n
+        for i in 0..<n {
+            dep[i] = max(0, 1 - Float(n - 1 - i) / (Float(n) * params.endSpan))
+            if dep[i] > 0 && from == n { from = i }
+        }
+        ovDepth = dep; ovFrom = from
         ux = [Float](repeating: 0, count: n); uy = ux; sx = ux; sy = ux
         erx = ux; ery = ux
         let m2 = max(2, params.rescorePoints)
         mx = [Float](repeating: 0, count: m2); my = mx
         dp = [Float](repeating: 0, count: 32 * m2); back = [Int](repeating: 0, count: 32 * m2)
         corners = [Int](repeating: 0, count: m2)
+        mt = [Float](repeating: 0, count: m2); spd = mt; spdPen = mt
+        dwells = [Int](repeating: 0, count: m2)
         cosCorner = Float(cos(Double(params.cornerDegrees) * Double.pi / 180))
     }
 
@@ -242,6 +284,7 @@ final class SwipeDecoder {
         guard l != layout else { return }
         layout = l
         tpl = []; tplCX = []; tplCY = []; tplScale = []; tplLen = []; tplValid = []
+        tplDX = []; tplDY = []
     }
 
     /// Dựng template ngay (gọi ở background khi bàn phím hiện để lần vuốt
@@ -253,7 +296,8 @@ final class SwipeDecoder {
 
     /// Byte RAM template hiện giữ (test ngân sách bộ nhớ).
     var templateBytes: Int {
-        tpl.count * 4 + (tplCX.count + tplCY.count + tplScale.count + tplLen.count) * 4 + tplValid.count
+        tpl.count * 4 + (tplCX.count + tplCY.count + tplScale.count + tplLen.count + tplDX.count
+                         + tplDY.count) * 4 + tplValid.count
     }
 
     private func buildTemplates(_ l: SwipeLayout) {
@@ -261,7 +305,7 @@ final class SwipeDecoder {
         let n = params.points, fc = forms.count
         tpl = [Float](repeating: 0, count: fc * n * 2)
         tplCX = [Float](repeating: 0, count: fc)
-        tplCY = tplCX; tplScale = tplCX; tplLen = tplCX
+        tplCY = tplCX; tplScale = tplCX; tplLen = tplCX; tplDX = tplCX; tplDY = tplCX
         tplValid = [Bool](repeating: false, count: fc)
         var kx = [Float](repeating: 0, count: 32), ky = kx
         var rx = [Float](repeating: 0, count: n), ry = rx
@@ -285,6 +329,7 @@ final class SwipeDecoder {
             let (cx, cy, sc) = Self.shapeFrame(rx, ry, n, l.keyWidth)
             tplCX[f] = cx; tplCY[f] = cy; tplScale[f] = sc
             tplLen[f] = Self.keyPathLength(kx, ky, m, l.keyWidth)
+            (tplDX[f], tplDY[f]) = Self.endDirection(kx, ky, m)
             tplValid[f] = true
         }
     }
@@ -302,26 +347,29 @@ final class SwipeDecoder {
     /// `context`.)
     func decode(_ path: SwipePath, topK: Int = 5,
                 context: ((String) -> Float)? = nil) -> [SwipeCandidate] {
-        decode(xs: path.xs, ys: path.ys, count: path.count, topK: topK, context: context)
+        decode(xs: path.xs, ys: path.ys, count: path.count, topK: topK, context: context, english: nil,
+               englishContext: nil, ts: path.ts)
     }
 
     func decode(_ path: SwipePath, topK: Int = 5, context: ((String) -> Float)? = nil,
                 english: SwipeEnglishPrior?,
                 englishContext: ((String) -> Float)? = nil) -> [SwipeCandidate] {
         decode(xs: path.xs, ys: path.ys, count: path.count, topK: topK, context: context,
-               english: english, englishContext: englishContext)
+               english: english, englishContext: englishContext, ts: path.ts)
     }
 
+    /// `ts` = thời gian điểm (giây, tuỳ gốc) — nil ⇒ không dùng nhịp (điểm như đường đều).
     func decode(xs: [Float], ys: [Float], count: Int, topK: Int = 5,
-                context: ((String) -> Float)? = nil) -> [SwipeCandidate] {
+                context: ((String) -> Float)? = nil, ts: [Double]? = nil) -> [SwipeCandidate] {
         decode(xs: xs, ys: ys, count: count, topK: topK, context: context, english: nil,
-               englishContext: nil)
+               englishContext: nil, ts: ts)
     }
 
     func decode(xs xs0: [Float], ys ys0: [Float], count: Int, topK: Int = 5,
                 context: ((String) -> Float)? = nil,
                 english: SwipeEnglishPrior?,
-                englishContext: ((String) -> Float)? = nil) -> [SwipeCandidate] {
+                englishContext: ((String) -> Float)? = nil,
+                ts: [Double]? = nil) -> [SwipeCandidate] {
         guard count > 0, topK > 0, let l = layout else { return [] }
         if tpl.isEmpty { buildTemplates(l) }
         let forms = SwipeLexicon.forms
@@ -347,7 +395,13 @@ final class SwipeDecoder {
         let invL = 1 / (2 * params.sigmaLoc * params.sigmaLoc)
         let lam = params.lambdaFreq
         let lw = params.lengthWeight
+        ovScale = params.overshoot > 0 ? tailGate(xs, ys, ts, count) : 0
+        let ov = params.overshoot * w * ovScale
+        let ovStart = ov > 0 ? ovFrom : n   // điểm i ≥ ovStart được miễn lố
 
+        tplDX.withUnsafeBufferPointer { DX in
+        tplDY.withUnsafeBufferPointer { DY in
+        ovDepth.withUnsafeBufferPointer { OD in
         tplLen.withUnsafeBufferPointer { TL in
         tpl.withUnsafeBufferPointer { T in
         ux.withUnsafeBufferPointer { UX in
@@ -371,11 +425,20 @@ final class SwipeDecoder {
                     if dx * dx + dy * dy > r2 { continue }
                     let cx = tplCX[f], cy = tplCY[f], sc = tplScale[f]
                     var ds: Float = 0, dl: Float = 0
+                    let ddx = DX[f], ddy = DY[f]
                     for i in 0..<n {
                         let tx = T[base + i * 2], ty = T[base + i * 2 + 1]
                         let ex = SX[i] - (tx - cx) * sc, ey = SY[i] - (ty - cy) * sc
                         ds += (ex * ex + ey * ey).squareRoot()
-                        let lx = UX[i] - tx, ly = UY[i] - ty
+                        var lx = UX[i] - tx, ly = UY[i] - ty
+                        if i >= ovStart {
+                            // lố theo hướng nét cuối (tplDX/DY đơn vị) được miễn tới ov·độ sâu
+                            let al = lx * ddx + ly * ddy
+                            if al > 0 {
+                                let cut = min(al, ov * OD[i])
+                                lx -= cut * ddx; ly -= cut * ddy
+                            }
+                        }
                         let d = (lx * lx + ly * ly).squareRoot() - tunnelW
                         if d > 0 { dl += A[i] * d }
                     }
@@ -392,9 +455,9 @@ final class SwipeDecoder {
                 }
                 if filled >= topK { break }
             }
-        }}}}}}}}}}
+        }}}}}}}}}}}}}
         if params.rescorePool > 0 && filled > 0 {
-            rescore(xs, ys, count, l, invL, en, fc, filled)
+            rescore(xs, ys, ts, count, l, invL, en, fc, filled)
         }
 
         var out: [SwipeCandidate] = []
@@ -438,6 +501,8 @@ final class SwipeDecoder {
         let invS = 1 / (2 * params.sigmaShape * params.sigmaShape)
         let invL = 1 / (2 * params.sigmaLoc * params.sigmaLoc)
         let lam = params.lambdaFreq
+        let ov = params.overshoot * w * ovScale
+        let ovStart = ov > 0 ? ovFrom : n, od = ovDepth
         // buffer cục bộ (tránh kiểm tra độc quyền truy cập property mỗi phần tử)
         var kx = ekx, ky = eky, rx = erx, ry = ery
         var okFirst = [Bool](repeating: false, count: 26), okLast = okFirst
@@ -465,13 +530,21 @@ final class SwipeDecoder {
                     }
                     guard ok else { continue }
                     Self.resample(kx, ky, mk, n, &rx, &ry)
+                    let (ddx, ddy) = Self.endDirection(kx, ky, mk)
                     let (cx, cy, sc) = Self.shapeFrame(rx, ry, n, w)
                     var ds: Float = 0, dl: Float = 0
                     for p in 0..<n {
                         let tx = rx[p], ty = ry[p]
                         let ex = SX[p] - (tx - cx) * sc, ey = SY[p] - (ty - cy) * sc
                         ds += (ex * ex + ey * ey).squareRoot()
-                        let lx = UX[p] - tx, ly = UY[p] - ty
+                        var lx = UX[p] - tx, ly = UY[p] - ty
+                        if p >= ovStart {
+                            let al = lx * ddx + ly * ddy
+                            if al > 0 {
+                                let cut = min(al, ov * od[p])
+                                lx -= cut * ddx; ly -= cut * ddy
+                            }
+                        }
                         let d = (lx * lx + ly * ly).squareRoot() - tunnelW
                         if d > 0 { dl += A[p] * d }
                     }
@@ -556,7 +629,7 @@ final class SwipeDecoder {
 
     /// Tầng 2 trên top-`filled`: σ location thích nghi (theo location tốt nhất), rồi trừ
     /// chi phí căn phím + góc; xếp lại ổn định (bằng điểm giữ thứ tự cũ).
-    private func rescore(_ xs: [Float], _ ys: [Float], _ count: Int, _ l: SwipeLayout,
+    private func rescore(_ xs: [Float], _ ys: [Float], _ ts: [Double]?, _ count: Int, _ l: SwipeLayout,
                          _ invL: Float, _ en: SwipeEnglish.Lexicon?, _ fc: Int, _ filled: Int) {
         let w = l.keyWidth
         if params.adaptThreshold > 0 && params.adaptMax > 1 {
@@ -571,18 +644,30 @@ final class SwipeDecoder {
         }
         Self.resample(xs, ys, count, mx.count, &mx, &my)
         detectCorners(w)
+        computeSpeed(xs, ys, ts, count)
         let t = params.rescoreTunnel * w
         for k in 0..<filled {
             let km = candidateKeys(topIdx[k], l, en, fc)
             guard km > 0 else { continue }
             var cost: Float = 0
-            if params.alignWeight > 0 { cost += params.alignWeight * alignCost(km, t, w) }
+            if params.alignWeight > 0 || speedOn {
+                let a = alignCost(km, t, w)
+                if params.alignWeight > 0 { cost += params.alignWeight * a }
+                cost += alignSpeed
+            }
             if params.cornerWeight > 0 && cornerCount > 0 {
                 var c: Float = 0
                 for q in 0..<cornerCount {
                     c += nearestKeyCost(mx[corners[q]], my[corners[q]], km, t, w)
                 }
                 cost += params.cornerWeight * c
+            }
+            if dwellCount > 0 {
+                var c: Float = 0
+                for q in 0..<dwellCount {
+                    c += nearestKeyCost(mx[dwells[q]], my[dwells[q]], km, t, w)
+                }
+                cost += params.dwellWeight * c
             }
             topScore[k] -= cost
         }
@@ -598,6 +683,69 @@ final class SwipeDecoder {
                 topScore[j] = s; topIdx[j] = id; topDl[j] = d
             }
         }
+    }
+
+    /// Nhịp tầng 2: thời gian tại mx/my (nội suy theo độ dài như `resample`) → tốc độ tương đối
+    /// spd[i] = v_i / v trung bình (sai phân trung tâm, kẹp ≤ 4), phạt tốc độ cho phím giữa
+    /// (spdPen) và điểm dừng (dwells). Không có ts / thời lượng ≈ 0 ⇒ tắt (speedOn = false).
+    private func computeSpeed(_ xs: [Float], _ ys: [Float], _ ts: [Double]?, _ count: Int) {
+        speedOn = false; dwellCount = 0
+        guard let ts, count >= 2, params.speedWeight > 0 || params.dwellWeight > 0 else { return }
+        let m2 = mx.count
+        Self.resampleTime(xs, ys, ts, count, m2, &mt)
+        let total = mt[m2 - 1] - mt[0]
+        guard total > 1e-3 else { return }
+        let unit = total / Float(m2 - 1)
+        for i in 0..<m2 {
+            let lo = i > 0 ? i - 1 : 0
+            let hi = i < m2 - 1 ? i + 1 : m2 - 1
+            let dt = mt[hi] - mt[lo]
+            let need = Float(hi - lo) * unit
+            spd[i] = dt * 4 <= need ? 4 : need / dt
+        }
+        speedOn = params.speedWeight > 0
+        for i in 0..<m2 {
+            let e = spd[i] - params.speedRef
+            spdPen[i] = e > 0 ? params.speedWeight * e : 0
+        }
+        guard params.dwellWeight > 0 else { return }
+        let g = 2
+        for i in g..<(m2 - g) {
+            let v = spd[i]
+            if v >= params.dwellRatio || v > spd[i - 1] || v > spd[i + 1] { continue }
+            if dwellCount > 0 && i - dwells[dwellCount - 1] <= g {
+                if v < spd[dwells[dwellCount - 1]] { dwells[dwellCount - 1] = i }
+            } else {
+                dwells[dwellCount] = i; dwellCount += 1
+            }
+        }
+    }
+
+    /// Đuôi nét CHẬM (trôi trước khi nhấc tay) ⇒ bật miễn lố: r = tốc độ tương đối trên endSpan
+    /// độ dài cuối; r ≤ tailSlow ⇒ 1, r ≥ tailFast ⇒ 0, tuyến tính giữa. Không có ts ⇒ 0.
+    private func tailGate(_ xs: [Float], _ ys: [Float], _ ts: [Double]?, _ count: Int) -> Float {
+        guard let ts, count >= 2 else { return 0 }
+        var total: Float = 0
+        for j in 0..<(count - 1) { total += Self.segmentLength(xs, ys, j) }
+        let dur = Float(ts[count - 1] - ts[0])
+        guard total > 1e-4, dur > 1e-3 else { return 0 }
+        let want = total * params.endSpan
+        var acc: Float = 0, tail: Float = 0
+        for q in 0..<(count - 1) {
+            let j = count - 2 - q   // đoạn j: điểm j → j+1, từ cuối ngược lại
+            let seg = Self.segmentLength(xs, ys, j)
+            let dt = Float(ts[j + 1] - ts[j])
+            if acc + seg >= want {
+                let u: Float = seg > 0 ? (want - acc) / seg : 0
+                tail += dt * u
+                break
+            }
+            acc += seg; tail += dt
+        }
+        guard tail > 0 else { return 1 }
+        let r = params.endSpan * dur / tail
+        let g = (params.tailFast - r) / (params.tailFast - params.tailSlow)
+        return g <= 0 ? 0 : (g >= 1 ? 1 : g)
     }
 
     /// Góc gắt trên đường resample tầng 2 (cos góc rẽ < cos `cornerDegrees`).
@@ -639,29 +787,42 @@ final class SwipeDecoder {
     }
 
     /// Căn đơn điệu km phím (rkx/rky) vào mx/my: trung bình (d − tunnel)² nhỏ nhất (phím).
+    /// Cùng vòng: `alignSpeed` = Σ spdPen tại điểm đường GẦN NHẤT mỗi phím giữa (phím nằm trên đoạn
+    /// lướt nhanh ⇒ không phải phím định đi); lấy điểm gần nhất, không theo căn DP, để DP không
+    /// "giấu" phím thừa vào chỗ dừng.
     private func alignCost(_ km: Int, _ t: Float, _ w: Float) -> Float {
         let m2 = mx.count
+        let sp = speedOn
+        var speed: Float = 0
         // con trỏ thô: vòng nóng nhất tầng 2 (16 ứng viên × km × 48)
-        return mx.withUnsafeBufferPointer { MX in
+        let r = spdPen.withUnsafeBufferPointer { SP in
+        mx.withUnsafeBufferPointer { MX in
         my.withUnsafeBufferPointer { MY in
         rkx.withUnsafeBufferPointer { KX in
         rky.withUnsafeBufferPointer { KY in
-        dp.withUnsafeMutableBufferPointer { DP in
+        dp.withUnsafeMutableBufferPointer { DP -> Float in
             for j in 0..<km {
                 var run = Float.greatestFiniteMagnitude
+                let mid = sp && j > 0 && j < km - 1
+                var bq = Float.greatestFiniteMagnitude, bi = 0
                 for i in 0..<m2 {
                     let dx = MX[i] - KX[j], dy = MY[i] - KY[j]
-                    var d = ((dx * dx + dy * dy).squareRoot() - t) / w
+                    let q = dx * dx + dy * dy
+                    if mid && q < bq { bq = q; bi = i }
+                    var d = (q.squareRoot() - t) / w
                     if d < 0 { d = 0 }
                     var prev: Float = 0
                     if j > 0 { let v = DP[(j - 1) * m2 + i]; if v < run { run = v }; prev = run }
                     DP[j * m2 + i] = d * d + prev
                 }
+                if mid { speed += SP[bi] }
             }
             var best = Float.greatestFiniteMagnitude
             for i in 0..<m2 { let v = DP[(km - 1) * m2 + i]; if v < best { best = v } }
             return best / Float(km)
-        }}}}}
+        }}}}}}
+        alignSpeed = speed
+        return r
     }
 
     /// Đường trừ lệch tay (`offsetX`/`offsetY`); không lệch ⇒ chính mảng gốc.
@@ -720,6 +881,14 @@ final class SwipeDecoder {
     @discardableResult
     func learnOffset(_ path: SwipePath, folded: String) -> Bool {
         learnOffset(xs: path.xs, ys: path.ys, count: path.count, folded: folded)
+    }
+
+    /// Hướng đơn vị phím áp chót → phím cuối ((0, 0) nếu < 2 phím / trùng).
+    static func endDirection(_ kx: [Float], _ ky: [Float], _ m: Int) -> (Float, Float) {
+        guard m >= 2 else { return (0, 0) }
+        let dx = kx[m - 1] - kx[m - 2], dy = ky[m - 1] - ky[m - 2]
+        let d = (dx * dx + dy * dy).squareRoot()
+        return d > 0 ? (dx / d, dy / d) : (0, 0)
     }
 
     /// Độ dài polyline (count điểm) theo đơn vị phím.
@@ -789,6 +958,40 @@ final class SwipeDecoder {
             oy[k] = ys[j] + (ys[j + 1] - ys[j]) * t
         }
         ox[n - 1] = xs[count - 1]; oy[n - 1] = ys[count - 1]
+    }
+
+    /// Thời gian (giây, gốc = ts[0], Float) tại n điểm resample của `resample` — cùng vòng
+    /// duyệt, nội suy tuyến tính trong đoạn.
+    static func resampleTime(_ xs: [Float], _ ys: [Float], _ ts: [Double], _ count: Int, _ n: Int,
+                             _ ot: inout [Float]) {
+        var total: Float = 0
+        if count > 1 {
+            for j in 0..<(count - 1) {
+                let dx = xs[j + 1] - xs[j], dy = ys[j + 1] - ys[j]
+                total += (dx * dx + dy * dy).squareRoot()
+            }
+        }
+        let t0 = ts[0]
+        if count == 1 || total <= 1e-4 {
+            for k in 0..<n { ot[k] = 0 }
+            return
+        }
+        let step = total / Float(n - 1)
+        ot[0] = 0
+        var j = 0, acc: Float = 0
+        var segLen = segmentLength(xs, ys, 0)
+        for k in 1..<(n - 1) {
+            let target = Float(k) * step
+            while j < count - 2 && acc + segLen < target {
+                acc += segLen; j += 1
+                segLen = segmentLength(xs, ys, j)
+            }
+            var t: Float = segLen > 0 ? (target - acc) / segLen : 0
+            if t < 0 { t = 0 } else if t > 1 { t = 1 }
+            let a = Float(ts[j] - t0), b = Float(ts[j + 1] - t0)
+            ot[k] = a + (b - a) * t
+        }
+        ot[n - 1] = Float(ts[count - 1] - t0)
     }
 
     private static func segmentLength(_ xs: [Float], _ ys: [Float], _ j: Int) -> Float {

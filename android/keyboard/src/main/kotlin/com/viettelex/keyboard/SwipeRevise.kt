@@ -10,10 +10,14 @@ package com.viettelex.keyboard
  * thắng từ đang hiện ≥ [MARGIN] ⇒ thay. Chỉ từ Việt (LM là của âm tiết Việt), chỉ từ vuốt
  * liền trước, một lần. Caller lo fail-safe màn hình (đuôi phải khớp đúng từ cũ).
  *
+ * Từ kế là cú vuốt (chưa chắc) ⇒ sửa CHUNG cặp: ứng viên c của w1 được chọn cùng ứng viên
+ * tốt nhất của w2 theo c ([revise] với danh sách [nextPool], trọng số [JOINT_WEIGHT]) — "vì dù"
+ * → "ví dụ" dù "dụ" không đứng đầu sau "vì".
+ *
  * Từ kế cũng có thể GÕ BẰNG PHÍM ([Typed]/[reviseTyped]): chấm lại lúc từ gõ được chốt
  * (dấu cách/dấu câu), ngữ cảnh phải = từ đã chốt (chắc chắn) với trọng số/lề riêng.
  *
- * Chi phí: ≤ [MAX_CANDIDATES] lần tra LM O(log n), chỉ sau một cú vuốt hoặc ở ranh giới từ
+ * Chi phí: ≤ [MAX_CANDIDATES]·[NEXT_MAX_CANDIDATES] lần tra LM O(log n), chỉ sau một cú vuốt hoặc ở ranh giới từ
  * NGAY SAU từ vuốt — không ở đường phím chữ.
  */
 object SwipeRevise {
@@ -29,27 +33,40 @@ object SwipeRevise {
     const val TYPED_RIGHT_WEIGHT = 0.15f
     const val TYPED_MARGIN = 0.3f
     const val POOL_FORMS = 3
-    const val POOL_WORDS = 4
-    const val MAX_CANDIDATES = 8
+    const val POOL_WORDS = 8
+    const val MAX_CANDIDATES = 12
+    /**
+     * Sửa CHUNG hai từ ([revise] với danh sách từ kế): ứng viên của cú vuốt kế (rộng hơn — âm
+     * tiết kém theo ngữ cảnh cũ có thể thắng theo ngữ cảnh mới: "dụ" sau "ví"), trọng số trigram
+     * = trọng số LM trái của decoder ([SwipeSuggest.LM_WEIGHT]) — chỉnh trên dev (SwipeTuneTests).
+     */
+    const val NEXT_POOL_WORDS = 8
+    const val NEXT_MAX_CANDIDATES = 16
+    const val JOINT_WEIGHT = SwipeSuggest.LM_WEIGHT
 
     /**
      * Ứng viên tiếng Việt (chữ thường) của một cú vuốt + điểm tổng cùng thước decoder:
      * điểm dạng − điểm bung tốt nhất của dạng (= phần hình học) + điểm bung của âm tiết.
      * Rỗng khi top-1 là tiếng Anh. [wordCtx]/[lambdaFreq] = đúng cái đã dùng để chọn từ.
      */
-    fun scored(cands: List<SwipeCandidate>, wordCtx: ((String) -> Float)?, lambdaFreq: Float): List<SwipeWord> {
+    fun scored(cands: List<SwipeCandidate>, wordCtx: ((String) -> Float)?, lambdaFreq: Float,
+               poolWords: Int = POOL_WORDS, maxCandidates: Int = MAX_CANDIDATES): List<SwipeWord> {
         if (cands.isEmpty() || cands[0].lang != SwipeLang.VI) return emptyList()
         val out = ArrayList<SwipeWord>()
         for (c in cands.take(POOL_FORMS)) {
             if (c.lang != SwipeLang.VI) continue
-            val ex = SwipeDecoder.expand(c.folded, POOL_WORDS, lambdaFreq, wordCtx)
+            val ex = SwipeDecoder.expand(c.folded, poolWords, lambdaFreq, wordCtx)
             if (ex.isEmpty()) continue
             val geom = c.score - ex[0].score
             for (w in ex) out.add(SwipeWord(w.word, geom + w.score))
         }
         // ổn định: bằng điểm giữ thứ tự decoder
-        return out.sortedByDescending { it.score }.take(MAX_CANDIDATES)
+        return out.sortedByDescending { it.score }.take(maxCandidates)
     }
+
+    /** Ứng viên có dấu (rộng) của cú vuốt kế cho [revise] chung hai từ. */
+    fun nextPool(cands: List<SwipeCandidate>, wordCtx: ((String) -> Float)?, lambdaFreq: Float): List<SwipeWord> =
+        scored(cands, wordCtx, lambdaFreq, NEXT_POOL_WORDS, NEXT_MAX_CANDIDATES)
 
     /**
      * Từ trước vừa được sửa ⇒ ngữ cảnh trái của cú vuốt này đổi: chấm lại ứng viên Việt =
@@ -69,7 +86,48 @@ object SwipeRevise {
     /** Điểm phải: trigram s([next] | [prev], c) có trọng số, kẹp. 0 nếu thiếu dữ liệu. */
     fun rightScore(lm: SyllableLM, prevId: Int, candId: Int, nextId: Int, weight: Float = RIGHT_WEIGHT): Float {
         val s = lm.context(prevId, candId)?.score(nextId) ?: return 0f
-        return maxOf(RIGHT_FLOOR, minOf(RIGHT_CAP, weight * s))
+        return clampRight(weight * s)
+    }
+
+    private fun clampRight(v: Float): Float = maxOf(RIGHT_FLOOR, minOf(RIGHT_CAP, v))
+
+    /**
+     * Sửa CHUNG hai từ (cặp tốt nhất): từ kế chưa chắc — [next] = ứng viên có dấu của cú vuốt
+     * kế ([scored] của nó, chấm với ngữ cảnh trái = [current]). Mỗi ứng viên c của từ trước được
+     * điểm cũ + max theo c2 ∈ [next] của (điểm c2 + phải(c, c2) − phải([current], c2)) — c2 được
+     * chọn lại theo c ("vì dù" → "ví dụ"). [next] một phần tử + weight [RIGHT_WEIGHT] ⇒ y hệt
+     * [revise] theo chuỗi. [next] thường = [nextPool] của cú vuốt kế.
+     */
+    fun revise(scored: List<SwipeWord>, current: String, prev: String?, next: List<SwipeWord>,
+               lm: SyllableLM? = SyllableLM.shared, margin: Float = MARGIN,
+               weight: Float = JOINT_WEIGHT): String? {
+        if (lm == null || scored.size < 2 || next.isEmpty()) return null
+        val prevId = if (prev == null) -1 else SyllableBigram.idOf(prev)
+        val curId = SyllableBigram.idOf(current)
+        val nextIds = IntArray(next.size) { SyllableBigram.idOf(next[it].word) }
+        val curCtx = if (curId < 0) null else lm.context(prevId, curId)
+        // điểm từ kế bỏ phần trigram theo từ đang hiện (cộng lại theo từng ứng viên c)
+        val base = FloatArray(next.size) {
+            next[it].score - (if (curCtx == null || nextIds[it] < 0) 0f else clampRight(weight * curCtx.score(nextIds[it])))
+        }
+        var cur = Float.NaN
+        var best: String? = null
+        var bestScore = Float.NEGATIVE_INFINITY
+        for (w in scored) {
+            val id = SyllableBigram.idOf(w.word)
+            if (id < 0) continue
+            val ctx = lm.context(prevId, id)
+            var nb = Float.NEGATIVE_INFINITY
+            for (k in next.indices) {
+                val v = base[k] + if (ctx == null || nextIds[k] < 0) 0f else clampRight(weight * ctx.score(nextIds[k]))
+                if (v > nb) nb = v
+            }
+            val s = w.score + nb
+            if (w.word == current) cur = s
+            if (s > bestScore) { bestScore = s; best = w.word }
+        }
+        if (cur.isNaN() || best == null || best == current) return null
+        return if (bestScore - cur >= margin) best else null
     }
 
     /**
