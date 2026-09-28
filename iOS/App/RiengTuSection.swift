@@ -11,7 +11,7 @@ struct RiengTuSection: View {
     var body: some View {
         Section {
             toggle(L("Lịch sử clipboard"),
-                   L("Nút clipboard trên thanh gợi ý mở 20 mục vừa copy; ghim để giữ lâu. Mục không ghim tự xoá sau 1 giờ (mật khẩu/OTP: 2 phút). Chỉ lưu trên máy."),
+                   L("Nút clipboard trên thanh gợi ý mở 20 mục vừa copy; ghim để giữ lâu. Mục không ghim tự xoá sau 1 giờ (mật khẩu/OTP: 2 phút). Chỉ lưu trên máy. Plus: vừa copy STK/SĐT/OTP → chip “Dán …” hiện trên thanh gợi ý."),
                    isOn: $clipboardHistory)
             if clipboardHistory {
                 FullAccessNotice(reason: L("Lịch sử clipboard"))

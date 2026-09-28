@@ -363,7 +363,7 @@ sudo apt install viettelex-fcitx5   # hoặc: sudo apt install viettelex-ibus</p
         <li><b>Gợi ý emoji</b> hợp với từ đang gõ (yêu → ❤️).</li>
         <li><b>Chip số</b>: sau khi gõ số — đọc số thành chữ, định dạng tiền, tính nhanh phép tính (<code>2+3</code> → 5, <code>12*3</code> → 36).</li>
         <li><b>Nút Dán</b>: vừa copy xong thì thanh gợi ý hiện thẻ Dán.<span data-os="ios"> <span class="tag t-ios p">iOS</span> cần Toàn quyền truy cập; để iOS khỏi hỏi mỗi lần: Cài đặt → VietTelex → Dán từ ứng dụng khác → Cho phép.</span></li>
-        <li><b>Chip “Thêm dấu”</b> <span class="tag t-plus">Plus</span> (mặc định tắt): gõ xong một câu không dấu, một chạm thêm dấu cả câu — <code>hom nay troi dep</code> → hôm nay trời đẹp.</li>
+        <li><b>Chip “Thêm dấu”</b> <span class="tag t-plus">Plus</span> (mặc định tắt): gõ xong một câu không dấu, một chạm thêm dấu cả câu — <code>hom nay troi dep</code> → hôm nay trời đẹp. Bật ở Tính Năng → Gợi ý &amp; từ điển (hoặc ngay trên màn VietTelex Plus); gõ câu không dấu, gõ dấu cách, chip “Thêm dấu” hiện ở đầu thanh gợi ý — chạm để thêm dấu, chạm “Hoàn tác” để trả lại.</li>
       </ul>
     </div>
   </div>
@@ -577,7 +577,15 @@ sudo apt install viettelex-fcitx5   # hoặc: sudo apt install viettelex-ibus</p
         <li data-os="macos"><b>macOS</b>: quyền <b>Trợ năng</b> cần cho gõ trong Terminal/Chrome (cơ chế Tap), phím tắt chuyển bộ gõ và phím tắt Thêm dấu. Không thu thập dữ liệu.</li>
         <li data-os="windows"><b>Windows</b>: không thu thập dữ liệu; chỉ kết nối mạng khi bạn bấm Kiểm tra cập nhật hoặc bật tự kiểm tra.</li>
         <li data-os="linux"><b>Linux</b>: không thu thập dữ liệu; chỉ kết nối mạng khi bạn bấm Kiểm tra cập nhật.</li>
-        <li data-os="ios android"><b>VietTelex Plus</b> (mua một lần): theme cao cấp &amp; ảnh nền, thêm dấu cả câu, clipboard nâng cao, đồng bộ iCloud, công cụ văn bản, huy hiệu cảm ơn. Toàn bộ phần gõ luôn miễn phí; hiện mọi tính năng Plus đang mở miễn phí cho tất cả.</li>
+        <li data-os="ios android"><b>VietTelex Plus</b> (mua một lần): theme cao cấp &amp; ảnh nền, thêm dấu cả câu, clipboard nâng cao, đồng bộ iCloud, công cụ văn bản, huy hiệu cảm ơn. Toàn bộ phần gõ luôn miễn phí; hiện mọi tính năng Plus đang mở miễn phí cho tất cả. Cách dùng từng tính năng (cũng ghi ngay trên màn Plus):
+          <ul>
+            <li><b>Thêm dấu cả câu</b>: bật chip “Thêm dấu” (Tính Năng → Gợi ý &amp; từ điển, hoặc công tắc trên màn Plus; mua/khôi phục xong app sẽ hỏi bật). Gõ không dấu cả câu, gõ dấu cách, chạm chip “Thêm dấu” ở đầu thanh gợi ý.</li>
+            <li><b>Theme cao cấp &amp; ảnh nền</b>: Tính Năng → Giao diện.</li>
+            <li><b>Clipboard nâng cao</b>: bật Lịch sử clipboard (Tính Năng → Riêng tư &amp; clipboard), chạm nút clipboard trên thanh gợi ý; vừa copy STK/SĐT/OTP → chip “Dán …” hiện trên thanh gợi ý.</li>
+            <li><b>Công cụ văn bản</b>: chạm ☰ trên thanh gợi ý → chip “Aa Công cụ văn bản” đầu lưới mẫu câu<span data-os="android"> (Android: cả hàng cuối bảng sửa văn bản)</span>.</li>
+            <li data-os="ios"><b>Đồng bộ iCloud</b>: Tính Năng → Sao lưu &amp; đồng bộ → bật Đồng bộ iCloud.</li>
+          </ul>
+        </li>
         <li data-os="macos windows linux">Bản máy tính miễn phí và mã nguồn mở (MIT).</li>
       </ul>
       <p style="margin-top:12px">Gặp lỗi hoặc muốn góp ý? <a href="https://github.com/ptrinh/viettelex/issues">Báo trên GitHub</a> · Mới học gõ? <a href="../learn/">Học gõ Telex</a>.</p>

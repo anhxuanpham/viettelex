@@ -45,6 +45,22 @@ enum class PlusFeature(val viTitle: String, val viDetail: String) {
     /** Hiển thị theo ngôn ngữ giao diện ([L10n]). */
     val title: String get() = tr(viTitle)
     val detail: String get() = tr(viDetail)
+
+    /**
+     * "Cách dùng" một dòng trên màn Plus — chỉ ĐÚNG chỗ bật / lối vào (góp ý Hữu Đông
+     * 28/09/2026: mua Plus xong không biết "Thêm dấu cả câu" nằm đâu).
+     */
+    val howTo: String get() = when (this) {
+        PREMIUM_THEMES -> tr("Cách dùng: Tính Năng → Giao diện → chọn theme hoặc ảnh nền.")
+        SENTENCE_DIACRITICS -> tr("Cách dùng: gõ không dấu cả câu (hom nay troi dep), gõ dấu cách rồi chạm chip “Thêm dấu” ở đầu thanh gợi ý. Cần bật chip bên dưới.")
+        ADVANCED_CLIPBOARD -> tr("Cách dùng: bật Lịch sử clipboard (Tính Năng → Riêng tư & clipboard), chạm nút clipboard trên thanh gợi ý. Copy STK/SĐT/OTP → chip “Dán …” hiện trên thanh gợi ý.")
+        CLOUD_SYNC -> tr("Cách dùng: tự động qua Sao lưu của Android (Cài đặt hệ thống → Google → Sao lưu). Chuyển máy: Tính Năng → Sao lưu & đồng bộ → Xuất / nhập file.")
+        TEXT_TOOLS -> tr("Cách dùng: chạm ☰ trên thanh gợi ý → chip “Aa Công cụ văn bản”, hoặc hàng cuối bảng sửa văn bản (icon con trỏ trên thanh gợi ý).")
+        THANKS_BADGE -> tr("Tự hiện sau khi mua.")
+    }
+
+    /** Công tắc bật tính năng (mặc định TẮT) — màn Plus đặt công tắc ngay dưới dòng cách dùng. */
+    val settingKey: String? get() = if (this == SENTENCE_DIACRITICS) Keys.ADD_TONES_CHIP else null
 }
 
 /**

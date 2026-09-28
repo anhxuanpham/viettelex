@@ -164,4 +164,57 @@ class PlusControllerTest {
         assertEquals("69.000 ₫", c.state.value.plus?.price)
         assertEquals(listOf(PlusConfig.TIP_PRODUCT_IDS[0], PlusConfig.TIP_PRODUCT_IDS[2]), c.state.value.tips.map { it.id })
     }
+
+    // MARK: lời mời bật chip "Thêm dấu" sau khi mua (Hữu Đông 28/09/2026)
+
+    class FakeOnboarding(var chipOn: Boolean = false, var offered: Boolean = false) : PlusOnboarding {
+        override fun shouldOfferAddTones() = !chipOn && !offered
+        override fun markOffered() { offered = true }
+        override fun enableAddTones() { chipOn = true }
+    }
+
+    private fun makeWith(s: FakePlusStore, o: FakeOnboarding) =
+        PlusController(s, { flags += it }, false, CoroutineScope(Dispatchers.Unconfined), o)
+
+    @Test fun purchaseOffersAddTonesOnceWithoutChangingSetting() = runBlocking {
+        val o = FakeOnboarding()
+        val c = makeWith(FakePlusStore(), o)
+        c.handleUpdate(PurchaseUpdate.Purchases(listOf(plus("new"))))
+        assertTrue(c.state.value.offerAddTones)
+        assertFalse("chỉ hỏi, không tự bật", o.chipOn)
+        c.acceptAddTonesOffer()
+        assertFalse(c.state.value.offerAddTones)
+        assertTrue(o.chipOn)
+        o.chipOn = false                       // user tắt lại ⇒ không hỏi lần hai
+        val s2 = FakePlusStore().apply { owned = listOf(plus(ack = true)) }
+        val c2 = makeWith(s2, o)
+        c2.restore()
+        assertFalse(c2.state.value.offerAddTones)
+    }
+
+    @Test fun restoreOffersDeclineIsRemembered() = runBlocking {
+        val o = FakeOnboarding()
+        val s = FakePlusStore().apply { owned = listOf(plus(ack = true)) }
+        val c = makeWith(s, o)
+        c.restore()
+        assertTrue(c.state.value.offerAddTones)
+        c.dismissAddTonesOffer()
+        c.restore()
+        assertFalse(c.state.value.offerAddTones)
+        assertFalse(o.chipOn)
+    }
+
+    @Test fun noOfferForTipRefreshOrChipAlreadyOn() = runBlocking {
+        val o = FakeOnboarding()
+        val s = FakePlusStore().apply { owned = listOf(plus(ack = true)) }
+        val c = makeWith(s, o)
+        c.handleUpdate(PurchaseUpdate.Purchases(listOf(tip())))
+        c.refresh()                             // mở app: không hỏi
+        assertFalse(c.state.value.offerAddTones)
+        val on = FakeOnboarding(chipOn = true)
+        val c2 = makeWith(FakePlusStore(), on)
+        c2.handleUpdate(PurchaseUpdate.Purchases(listOf(plus("n2"))))
+        assertTrue(c2.state.value.purchased)
+        assertFalse(c2.state.value.offerAddTones)
+    }
 }

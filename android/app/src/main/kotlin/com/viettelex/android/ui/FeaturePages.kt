@@ -367,7 +367,7 @@ private fun GoiYPage(onBack: () -> Unit) {
         BoolToggle(Keys.NUMBER_CHIPS, Prefs.D.numberChips, tr("Chip số"), tr("Đọc số thành chữ, định dạng tiền, tính nhanh (12*3 → 36)."))
         RowDivider()
         BoolToggle(Keys.ADD_TONES_CHIP, Prefs.D.addTonesChip, tr("Chip “Thêm dấu”"),
-            tr("Câu vừa gõ không dấu → một chạm thêm dấu cả câu (hom nay troi dep → hôm nay trời đẹp). Tắt mặc định cho nhẹ máy."))
+            tr("Gõ không dấu cả câu (hom nay troi dep), gõ dấu cách → chip “Thêm dấu” hiện ở đầu thanh gợi ý, chạm để thành “hôm nay trời đẹp”; chạm “Hoàn tác” để trả lại. Tắt mặc định cho nhẹ máy."))
         RowDivider()
         BoolToggle(Keys.FILTER_SENSITIVE, Prefs.D.filterSensitive, tr("Lọc từ nhạy cảm"), tr("Không chủ động gợi ý từ tục — gõ tay vẫn bình thường."))
     }

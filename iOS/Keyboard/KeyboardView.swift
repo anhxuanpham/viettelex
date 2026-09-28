@@ -567,6 +567,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         applyBottomTrim()
         layoutSuggestionBar()
         layoutStripZones()
+        layoutOverlayPanel()
         loadWallpaperIfNeeded()
         logGeometryIfChanged()
         if pasteCard.superview != nil, !pasteCard.isHidden {   // xoay màn hình
@@ -624,6 +625,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         private(set) var cellFrames: [CGRect] = []
         private var laidOut: CGSize = .zero
         private var emojiCount = 0
+        /// Chip clipboard (1–3): CHIA ĐỀU bar như Android/Gboard; 0 = 3 ô cố định. Trước đây
+        /// [Dán SĐT…][Dán] nằm trong 2/3 ô, ô 3 trống ⇒ thanh gợi ý trông "ngắn 1 đoạn"
+        /// (Hữu Đông 28/09/2026).
+        private(set) var chipCount = 0
         /// Hit-area nở của slot (âm = rộng hơn bar): bar 20pt, nút ăn cả phần strip còn lại.
         var hitInsets: UIEdgeInsets = .zero
 
@@ -657,16 +662,34 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             laidOut = bounds.size
             let w = bounds.width / 3, h = bounds.height
             cellFrames = (0..<3).map { CGRect(x: CGFloat($0) * w, y: 0, width: w, height: h) }
+            layoutSlots()
+            layoutEmojis()
+        }
+
+        /// Chỉ chạy khi bề rộng bar / số chip đổi — mỗi phím không đụng frame.
+        func setChipCount(_ n: Int) {
+            let n = min(max(n, 0), 3)
+            guard n != chipCount else { return }
+            chipCount = n
+            layoutSlots()
+        }
+        private func layoutSlots() {
+            guard cellFrames.count == 3 else { return }
+            let n = chipCount > 0 ? chipCount : 3
+            let cw = bounds.width / CGFloat(n), h = bounds.height
             for (i, b) in slots.enumerated() {
-                b.frame = cellFrames[i].insetBy(dx: 3, dy: 0)
+                let cell = i < n ? CGRect(x: CGFloat(i) * cw, y: 0, width: cw, height: h) : cellFrames[i]
+                b.frame = cell.insetBy(dx: 3, dy: 0)
                 labels[i].frame = b.bounds
                 Self.fitShrink(labels[i])
             }
             for (i, d) in dividers.enumerated() {
-                d.frame = CGRect(x: cellFrames[i].maxX - 0.5, y: 4, width: 1, height: max(h - 8, 0))
+                let x = i + 1 < n ? CGFloat(i + 1) * cw : cellFrames[i].maxX
+                d.frame = CGRect(x: x - 0.5, y: 4, width: 1, height: max(h - 8, 0))
             }
-            layoutEmojis()
         }
+        /// Số vạch ngăn dùng được ở chế độ hiện tại (chip: giữa các chip).
+        var usableDividers: Int { chipCount > 0 ? chipCount - 1 : 2 }
 
         /// Emoji hiện chia đều ô 3 (như stack fillEqually cũ: 1 emoji = cả ô).
         func setEmojiCount(_ n: Int) {
@@ -840,12 +863,14 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         var texts: [(display: String, insert: String)?] = [nil, nil, nil]
         var emojis: [String] = []
         var pasteCardOn = false
+        var chipCount = 0
         switch SuggestionSlots.arrange(set) {
         case .slots(let s, let e):
             texts = s.map { $0.map { ($0.label, $0.payload) } }
             emojis = e
         case .chips(let c):
             for (i, x) in c.prefix(3).enumerated() { texts[i] = (x.label, x.payload) }
+            chipCount = min(c.count, 3)
         case .pasteCard:
             pasteCardOn = true
         case .pill(let u):
@@ -861,6 +886,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         if sig == lastSuggestionSig { return }
         lastSuggestionSig = sig
 
+        suggestionBar.setChipCount(chipCount)
         let ink = palette.barInk.ui
         let inkChanged = barInkApplied != ink
         barInkApplied = ink
@@ -894,7 +920,11 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         }
         // Vạch ngăn cố định: hiện khi bar có nội dung (ô trống vẫn giữ chỗ — như stock).
         let anyVisible = texts.contains { $0 != nil } || !emojis.isEmpty
-        for d in slotDividers where d.isHidden != (!anyVisible || pasteCardOn) { d.isHidden = !anyVisible || pasteCardOn }
+        let usable = suggestionBar.usableDividers
+        for (i, d) in slotDividers.enumerated() {
+            let hide = !anyVisible || pasteCardOn || i >= usable
+            if d.isHidden != hide { d.isHidden = hide }
+        }
         // Nút Dán kiểu iOS 27: MỘT ô rộng giữa bar, 2 dòng, thay cả 3 slot.
         setPasteCard(visible: pasteCardOn, image: set.pasteIsImage, ink: ink)
     }
@@ -927,6 +957,16 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         guard visible != clipboardButtonVisible else { return }
         clipboardButtonVisible = visible
         setNeedsLayout()   // bề rộng bar (layoutSuggestionBar)
+    }
+
+    /// Panel clipboard bám ĐÚNG vùng phím mỗi lượt layout. Trước đây chỉ đặt frame lúc mở
+    /// + autoresizing (cao cố định, neo đáy): bàn phím đổi chiều cao khi panel đang mở (xoay,
+    /// thu gọn ⌄, host cấp lại khung) ⇒ panel trồi lên đè dải gợi ý / hở hàng phím.
+    private func layoutOverlayPanel() {
+        guard let p = overlayPanel, p.superview === self else { return }
+        let f = rowsContainer.frame
+        if p.frame != f { p.frame = f }
+        bringSubviewToFront(p)
     }
 
     private func layoutClipboardExtras(stripOpen: Bool) {
@@ -3800,6 +3840,17 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         }
         let card = pasteCard.superview != nil && !pasteCard.isHidden ? pasteCard.frame : nil
         return (cells, divs, titles, card)
+    }
+    /// Test hook dải gợi ý: frame bar, nút 📋 (nil = ẩn/chưa tạo), chevron, ô slot.
+    /// `slots`/`dividers`: frame (toạ độ KeyboardView) các ô / vạch ngăn đang HIỆN.
+    func debugStripLayout() -> (bar: CGRect, clip: CGRect?, chevron: CGRect, cells: [CGRect],
+                                slots: [CGRect], dividers: [CGRect]) {
+        layoutIfNeeded()
+        let clip: CGRect? = clipZoneMade && !clipZone.isHidden ? clipZone.frame : nil
+        return (suggestionBar.frame, clip, chevronZone.frame,
+                suggestionBar.cellFrames.map { convert($0, from: suggestionBar) },
+                slotButtons.filter { !$0.isHidden }.map { convert($0.bounds, from: $0) },
+                slotDividers.filter { !$0.isHidden }.map { convert($0.bounds, from: $0) })
     }
     /// Test hook: mô phỏng rebuild (đổi plane / xoay) — đường từng đặt lại alpha bar.
     func debugRefreshChrome() { updateSuggestionChrome() }

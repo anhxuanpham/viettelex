@@ -15,7 +15,20 @@ data class PlusUiState(
     val busyProductId: String? = null,
     val restoring: Boolean = false,
     val message: String? = null,
+    /** Vừa mua / khôi phục Plus + chip "Thêm dấu" đang tắt ⇒ màn Plus hỏi có bật không (một lần). */
+    val offerAddTones: Boolean = false,
 )
+
+/**
+ * Mua / khôi phục Plus xong: mời bật chip "Thêm dấu" (tắt mặc định cho nhẹ máy) — MỘT lần,
+ * chỉ hỏi, không tự đổi cài đặt. App nối vào SharedPreferences; test dùng bản giả.
+ */
+interface PlusOnboarding {
+    /** Chưa hỏi lần nào và chip đang tắt. */
+    fun shouldOfferAddTones(): Boolean
+    fun markOffered()
+    fun enableAddTones()
+}
 
 /**
  * Logic mua Plus / ủng hộ trên nền [PlusStore]:
@@ -30,6 +43,7 @@ class PlusController(
     private val writeFlag: (Boolean) -> Unit,
     initialPurchased: Boolean,
     private val scope: CoroutineScope,
+    private val onboarding: PlusOnboarding? = null,
 ) {
     private val _state = MutableStateFlow(PlusUiState(purchased = initialPurchased))
     val state: StateFlow<PlusUiState> = _state
@@ -65,6 +79,7 @@ class PlusController(
             val ok = process(owned, thankTips = false)
             setPurchased(ok)
             msg(if (ok) tr("Đã khôi phục VietTelex Plus.") else tr("Không tìm thấy giao dịch Plus nào với tài khoản Google này."))
+            if (ok) offerOnboardingIfNeeded()
         } finally {
             _state.update { it.copy(restoring = false) }
         }
@@ -87,6 +102,7 @@ class PlusController(
                 if (process(u.list, thankTips = true)) {
                     setPurchased(true)
                     msg(tr("Đã mở khoá VietTelex Plus. Cảm ơn bạn!"))
+                    offerOnboardingIfNeeded()
                 } else if (u.list.any { it.state == StorePurchase.State.PENDING && PlusConfig.PLUS_PRODUCT_ID in it.productIds }) {
                     msg(tr("Giao dịch đang chờ thanh toán. Plus sẽ tự mở khi hoàn tất."))
                 }
@@ -98,6 +114,22 @@ class PlusController(
     }
 
     fun dismissMessage() = _state.update { it.copy(message = null) }
+
+    /** "Bật ngay" trong lời mời. */
+    fun acceptAddTonesOffer() {
+        onboarding?.enableAddTones()
+        _state.update { it.copy(offerAddTones = false) }
+    }
+
+    /** "Để sau" — không hỏi lại (đã đánh dấu lúc hiện). */
+    fun dismissAddTonesOffer() = _state.update { it.copy(offerAddTones = false) }
+
+    private fun offerOnboardingIfNeeded() {
+        val o = onboarding ?: return
+        if (!o.shouldOfferAddTones()) return
+        o.markOffered()
+        _state.update { it.copy(offerAddTones = true) }
+    }
 
     /** Acknowledge Plus / consume tip. Trả về: có Plus đã thanh toán không. */
     private suspend fun process(list: List<StorePurchase>, thankTips: Boolean): Boolean {

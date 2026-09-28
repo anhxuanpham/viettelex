@@ -45,6 +45,7 @@ class MainActivity : ComponentActivity() {
             writeFlag = { PlusPrefs.writePurchased(this, it) },
             initialPurchased = PlusGate.purchased,
             scope = lifecycleScope,
+            onboarding = PlusPrefs.onboarding(this),
         )
         handleDeepLink(intent)
         setContent {

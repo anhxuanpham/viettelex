@@ -1501,8 +1501,7 @@ extension KeyboardViewController {
         p.onDelete = { [weak self] t in self?.clip.remove(t); self?.reloadClipboardPanel() }
         p.onClearAll = { [weak self] in self?.clip.clearUnpinned(); self?.reloadClipboardPanel() }
         p.onClose = { [weak self] in self?.closeClipboardPanel() }
-        p.frame = keyboard.keyAreaFrame
-        p.autoresizingMask = [.flexibleWidth, .flexibleTopMargin]
+        p.frame = keyboard.keyAreaFrame   // KeyboardView.layoutOverlayPanel bám vùng phím mỗi lượt layout
         keyboard.addSubview(p)
         keyboard.overlayPanel = p
         clipPanel = p

@@ -363,7 +363,7 @@ sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
         <li><b>Emoji suggestions</b> matching the current word (yêu → ❤️).</li>
         <li><b>Number chips</b>: after typing a number — spell it out in words, format as money, quick maths (<code>2+3</code> → 5, <code>12*3</code> → 36).</li>
         <li><b>Paste button</b>: right after you copy something, the bar shows a Paste card.<span data-os="ios"> <span class="tag t-ios p">iOS</span> needs Full Access; to stop iOS asking every time: Settings → VietTelex → Paste from Other Apps → Allow.</span></li>
-        <li><b>“Thêm dấu” chip</b> <span class="tag t-plus">Plus</span> (off by default): after a sentence typed without tones, one tap adds them all — <code>hom nay troi dep</code> → hôm nay trời đẹp.</li>
+        <li><b>“Thêm dấu” chip</b> <span class="tag t-plus">Plus</span> (off by default): after a sentence typed without tones, one tap adds them all — <code>hom nay troi dep</code> → hôm nay trời đẹp. Turn it on in Features → Suggestions &amp; dictionary (or right on the VietTelex Plus screen); type the sentence without tones, press space, and the “Thêm dấu” chip appears at the start of the suggestion bar — tap it to add tones, tap “Hoàn tác” (Undo) to revert.</li>
       </ul>
     </div>
   </div>
@@ -577,7 +577,15 @@ sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
         <li data-os="macos"><b>macOS</b>: <b>Accessibility</b> is needed for typing in Terminal/Chrome (Tap mode), the switch hotkey and the add-tones hotkey. No data collection.</li>
         <li data-os="windows"><b>Windows</b>: no data collection; network is used only when you click Check for updates or turn on the automatic check.</li>
         <li data-os="linux"><b>Linux</b>: no data collection; network is used only when you click Check for updates.</li>
-        <li data-os="ios android"><b>VietTelex Plus</b> (one-time purchase): premium themes &amp; wallpaper, whole-sentence tones, advanced clipboard, iCloud sync, text tools, a thank-you badge. All typing features are free forever; right now every Plus feature is unlocked for everyone.</li>
+        <li data-os="ios android"><b>VietTelex Plus</b> (one-time purchase): premium themes &amp; wallpaper, whole-sentence tones, advanced clipboard, iCloud sync, text tools, a thank-you badge. All typing features are free forever; right now every Plus feature is unlocked for everyone. How to use each feature (also shown on the Plus screen):
+          <ul>
+            <li><b>Whole-sentence tones</b>: turn on the “Thêm dấu” chip (Features → Suggestions &amp; dictionary, or the switch on the Plus screen; after buying/restoring the app offers to turn it on). Type the sentence without tones, press space, tap the chip at the start of the suggestion bar.</li>
+            <li><b>Premium themes &amp; wallpaper</b>: Features → Appearance.</li>
+            <li><b>Advanced clipboard</b>: turn on Clipboard history (Features → Privacy &amp; clipboard), tap the clipboard button on the suggestion bar; copy an account/phone number or OTP → a “Dán …” chip appears on the suggestion bar.</li>
+            <li><b>Text tools</b>: tap ☰ on the suggestion bar → the “Aa” text-tools chip at the top of the snippet grid<span data-os="android"> (Android: also the last row of the text-editing panel)</span>.</li>
+            <li data-os="ios"><b>iCloud sync</b>: Features → Backup &amp; sync → turn on iCloud sync.</li>
+          </ul>
+        </li>
         <li data-os="macos windows linux">The desktop versions are free and open source (MIT).</li>
       </ul>
       <p style="margin-top:12px">Found a bug or have an idea? <a href="https://github.com/ptrinh/viettelex/issues">Report it on GitHub</a> · New to Telex? <a href="../../learn/">Learn Telex</a>.</p>

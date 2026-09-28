@@ -81,6 +81,24 @@ enum PlusFeature: String, CaseIterable, Identifiable {
         }
     }
 
+    /// "Cách dùng" một dòng trên màn Plus — chỉ ĐÚNG chỗ bật / lối vào (góp ý Hữu Đông
+    /// 28/09/2026: mua Plus xong không biết "Thêm dấu cả câu" nằm đâu).
+    var howTo: String {
+        switch self {
+        case .premiumThemes: return L("Cách dùng: Tính Năng → Giao diện → chọn theme hoặc ảnh nền.")
+        case .sentenceDiacritics: return L("Cách dùng: gõ không dấu cả câu (hom nay troi dep), gõ dấu cách rồi chạm chip “Thêm dấu” ở đầu thanh gợi ý. Cần bật chip bên dưới.")
+        case .advancedClipboard: return L("Cách dùng: bật Lịch sử clipboard (Tính Năng → Riêng tư & clipboard), chạm nút clipboard trên thanh gợi ý. Copy STK/SĐT/OTP → chip “Dán …” hiện trên thanh gợi ý.")
+        case .iCloudSync: return L("Cách dùng: Tính Năng → Sao lưu & đồng bộ → bật Đồng bộ iCloud.")
+        case .textTools: return L("Cách dùng: chạm ☰ trên thanh gợi ý → chip “Aa Công cụ văn bản” đầu lưới mẫu câu. Áp lên đoạn đang chọn hoặc câu trước con trỏ.")
+        case .thanksBadge: return L("Tự hiện sau khi mua.")
+        }
+    }
+
+    /// Công tắc App Group bật tính năng (mặc định TẮT) — màn Plus đặt công tắc ngay dưới.
+    var settingKey: String? {
+        self == .sentenceDiacritics ? PlusOnboarding.addTonesKey : nil
+    }
+
     var systemImage: String {
         switch self {
         case .premiumThemes: return "paintpalette"
@@ -91,4 +109,20 @@ enum PlusFeature: String, CaseIterable, Identifiable {
         case .thanksBadge: return "star"
         }
     }
+}
+
+/// Mua / khôi phục Plus xong: mời bật chip "Thêm dấu" (tắt mặc định cho nhẹ máy) — MỘT lần,
+/// chỉ hỏi, không tự đổi cài đặt. Hàm thuần + UserDefaults tiêm được để test.
+struct PlusOnboarding {
+    static let addTonesKey = "addTonesChip"
+    static let offeredKey = "plusAddTonesOffered"
+    let defaults: UserDefaults?
+
+    /// Chưa hỏi lần nào và chip đang tắt.
+    var shouldOfferAddTones: Bool {
+        guard let d = defaults else { return false }
+        return !d.bool(forKey: Self.addTonesKey) && !d.bool(forKey: Self.offeredKey)
+    }
+    func markOffered() { defaults?.set(true, forKey: Self.offeredKey) }
+    func enableAddTones() { defaults?.set(true, forKey: Self.addTonesKey) }
 }

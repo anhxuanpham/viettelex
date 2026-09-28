@@ -404,7 +404,7 @@ struct GoiYPage: View {
                     settingToggle(L("Chip số"), L("Đọc số thành chữ, định dạng tiền, tính nhanh (2+3 → 5)."), isOn: $numberChips)
                     settingToggle(L("Nút Dán"), L("Vừa copy xong thì hiện nút Dán (cần Toàn quyền)."), isOn: $pasteButton)
                     if PlusGate.isUnlocked(.sentenceDiacritics) {
-                        settingToggle(L("Chip “Thêm dấu”"), L("Câu vừa gõ không dấu → một chạm thêm dấu cả câu. Tắt mặc định cho nhẹ máy."), isOn: $addTonesChip)
+                        settingToggle(L("Chip “Thêm dấu”"), L("Gõ không dấu cả câu (hom nay troi dep), gõ dấu cách → chip “Thêm dấu” hiện ở đầu thanh gợi ý, chạm để thành “hôm nay trời đẹp”; chạm “Hoàn tác” để trả lại. Tắt mặc định cho nhẹ máy."), isOn: $addTonesChip)
                     }
                 }
                 settingToggle(L("Lọc từ nhạy cảm"), L("Không chủ động gợi ý từ tục — gõ tay vẫn bình thường."), isOn: $filterSensitive)
