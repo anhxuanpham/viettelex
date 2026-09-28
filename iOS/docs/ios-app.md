@@ -44,6 +44,7 @@ không nạp dữ liệu, không đọc context, không lên lịch việc mỗi
 | Gõ vuốt | `swipeTyping` | không template, không SwipeLexicon, không checkpoint engine mỗi phím (iPhone) |
 | Sửa lỗi chạm trượt / sửa dấu từ đã gõ / gõ tắt | `autoFixAdjacent` / `reEditWord` / `shortcutsEnabled` | không chạy fixer nền; không đọc context đầu từ; không tra bảng |
 | Lịch sử clipboard / theme–ảnh nền / rung / Debug log | `clipboardHistory` / theme / `hapticFeedback` / `debugTouchLog` | không đọc clipboard; không giải ảnh; không rung; không ghi log |
+| Âm thanh phím riêng | `keySound` (mặc định TẮT, cần Full Access) / `keySoundVolume` | không dựng AVAudioEngine; dùng `playInputClick` như cũ |
 
 Đo: `KeyboardBenchTests` (bộ chậm; `TEST_RUNNER_VT_BENCH_CONFIG=B|C|D`, `-O`) chạy controller
 thật + proxy giả; process extension thật đo bằng driver XCUITest + `footprint`. Simulator

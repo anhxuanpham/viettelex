@@ -24,6 +24,7 @@ final class BackupTests: XCTestCase {
         s["autoSpaceAfterPunct"] = .bool(true)
         s["keyboardTransparency"] = .int(40); s["keyLabelTransparency"] = .int(20)
         s["uiLanguage"] = .string("en")
+        s["keySound"] = .bool(true); s["keySoundVolume"] = .int(70)
         return BackupPayload(
             createdAt: iso.date(from: "2026-09-27T08:00:00Z"), platform: "ios", settings: s,
             shortcuts: ["ko": "không", "stk": "số tài khoản", "đc": "được"],

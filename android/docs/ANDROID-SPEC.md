@@ -281,6 +281,10 @@ Toàn bộ thuật toán, trọng số, ngưỡng, hợp đồng seed giữ nguy
 ## 8. Âm thanh & rung
 - Âm: `AudioManager.playSoundEffect(FX_KEYPRESS_*)` ở touch-down, tôn trọng cài đặt
   âm bàn phím của hệ thống.
+- "Âm thanh phím" (`keySound`, mặc định TẮT; `keySoundVolume` 0–100, mặc định 50): BẬT ⇒
+  SoundPool phát 3 click tổng hợp (`KeySoundSynth`: chữ / xoá / còn lại), KHÔNG kèm
+  playSoundEffect; im khi ringer ≠ NORMAL (Rung/Im lặng — như AOSP LatinIME, đọc lại ≤ 2 s/lần).
+  WAV tất định ghi 1 lần vào cacheDir; SoundPool dựng lúc hiện, nhả khi ẩn. TẮT ⇒ 0 chi phí.
 - Rung: toggle `hapticFeedback` (mặc định TẮT) ⇒ `performHapticFeedback(KEYBOARD_TAP)`.
   Android không cần Full Access ⇒ bật là chạy.
 

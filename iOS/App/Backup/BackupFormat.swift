@@ -50,6 +50,8 @@ enum BackupSettings {
         Spec(key: "showSpaceLogo", kind: .bool(true)),
         Spec(key: "hapticFeedback", kind: .bool(false)),
         Spec(key: "hapticStrength", kind: .int(45, 10...100)),
+        Spec(key: "keySound", kind: .bool(false)),
+        Spec(key: "keySoundVolume", kind: .int(50, 0...100)),
         Spec(key: "numberRow", kind: .bool(false)),
         Spec(key: "rowHeightAdjust", kind: .int(0, -10...10)),
         Spec(key: "shortcutsEnabled", kind: .bool(true)),

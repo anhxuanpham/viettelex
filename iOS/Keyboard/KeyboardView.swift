@@ -2576,8 +2576,25 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     // Rung: iOS vô hiệu UIFeedbackGenerator trong keyboard extension khi
     // không có Full Access — controller chỉ bật cờ khi setting ON + hasFullAccess.
     nonisolated(unsafe) static var hapticsEnabled = false
-    private static func feedback() {
-        UIDevice.current.playInputClick()
+    /// "Âm thanh phím" (setting keySound + Full Access): BẬT ⇒ tiếng riêng qua KeySound,
+    /// KHÔNG kèm playInputClick (không kêu đôi). TẮT ⇒ y như cũ (click hệ thống).
+    nonisolated(unsafe) static var customSoundEnabled = false
+    #if DEBUG
+    /// Test hook: đường âm lần bấm gần nhất — "system" | "custom:<loại>".
+    nonisolated(unsafe) static var debugLastClickRoute: String?
+    #endif
+    private static func feedback(_ kind: KeySoundKind) {
+        if customSoundEnabled {
+            KeySound.shared.play(kind)
+            #if DEBUG
+            debugLastClickRoute = "custom:\(kind)"
+            #endif
+        } else {
+            UIDevice.current.playInputClick()
+            #if DEBUG
+            debugLastClickRoute = "system"
+            #endif
+        }
         if hapticsEnabled { impact() }
     }
     /// Rung một nhịp (Core Haptics, độ mạnh theo cài đặt). UIImpactFeedbackGenerator IM LẶNG trong keyboard extension trên
@@ -2589,9 +2606,13 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         if KeyHaptics.shared.play() { return }
         AudioServicesPlaySystemSound(1519)   // dự phòng: Core Haptics không chạy được
     }
-    static func clickLetter() { feedback() }
-    static func clickDelete() { feedback() }
-    static func clickModifier() { feedback() }
+    static func clickLetter() { feedback(.letter) }
+    static func clickDelete() { feedback(.delete) }
+    static func clickModifier() { feedback(.modifier) }
+    /// Nấc vuốt ⌫ thêm/bớt một từ: chỉ âm (không rung), theo đường âm đang chọn.
+    static func clickWordStep() {
+        if customSoundEnabled { KeySound.shared.play(.delete) } else { UIDevice.current.playInputClick() }
+    }
     /// Đổi ngôn ngữ bằng vuốt phím cách: chỉ rung nhẹ (theo công tắc Rung phím).
     static func flickFeedback() {
         guard hapticsEnabled else { return }
@@ -2986,7 +3007,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let n = WordDelete.words(dragLeft: dragLeft, step: step, max: wordSwipe.maxWords)
         if n != wordSwipe.words {
             wordSwipe.words = n
-            UIDevice.current.playInputClick()
+            Self.clickWordStep()
         }
         showWordSwipePill(words: n)
     }
