@@ -75,12 +75,14 @@
   .btn { display: inline-block; padding: 14px 26px; border-radius: 12px; font-weight: 700; text-decoration: none; font-size: 1rem; }
   .btn-primary { background: var(--red-bright); color: #fff; box-shadow: 0 6px 20px rgba(194,39,39,.35); }
   .btn-primary:hover { background: #d63030; }
-  .store-badge { display: flex; flex-direction: column; justify-content: center; opacity: .9; }
+  .btn-ghost { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.28); color: #eef1f7; }
+  .btn-ghost:hover { border-color: var(--gold); color: #fff; }
+  .platforms { margin-top: 16px; font-size: .86rem; color: #9aa3b8; }
+  .platforms a { color: #c6ccdb; text-decoration: none; border-bottom: 1px dotted rgba(198,204,219,.5); }
+  .platforms a:hover { color: #fff; border-color: var(--gold); }
+  @media (max-width: 480px) { .cta-row .btn { flex: 1 1 100%; text-align: center; } }
   .btn-learn { background: rgba(212,169,74,.14); border: 1px solid rgba(212,169,74,.55); color: var(--gold, #d4a94a); }
   .btn-learn:hover { background: rgba(212,169,74,.24); }
-  .brew { display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.14); border-radius: 12px; padding: 12px 16px; font-family: var(--mono); font-size: .84rem; color: #d8dce8; cursor: pointer; }
-  .brew:hover { border-color: rgba(255,255,255,.3); }
-  .brew .copied { color: var(--gold); font-family: var(--sans); font-size: .78rem; }
   .demo-btn { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 26px auto 0; background: none; border: none; cursor: pointer; color: #e8ebf4; font-family: inherit; font-size: .95rem; font-weight: 700; letter-spacing: .04em; }
   .demo-btn .demo-play { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: rgba(212,169,74,.16); border: 2px solid var(--gold); color: var(--gold); font-size: 1.5rem; padding-left: 5px; transition: transform .15s ease, background .15s ease; }
   .demo-btn:hover .demo-play { transform: scale(1.08); background: rgba(212,169,74,.3); }
@@ -170,20 +172,11 @@
 
 
     <div class="cta-row">
-      <a class="btn btn-primary" id="dlBtn" href="https://github.com/ptrinh/viettelex/releases/latest" rel="noopener">⬇︎ Tải bản mới nhất (.pkg)</a>
-      <button class="brew" id="brewbtn" type="button" aria-label="Copy lệnh Homebrew">
-        <span>$ brew install --cask ptrinh/viettelex/viettelex</span>
-        <span class="copied" id="copied"></span>
-      </button>
-      <div class="store-badge" style="display:flex;flex-direction:column;gap:6px">
-        <a href="https://apps.apple.com/app/id6794425455" rel="noopener" style="font-size:.95rem;font-weight:700;color:#fff;text-decoration:none">📱 Bàn phím iOS — tải trên App Store ↗</a>
-        <a href="download/" style="font-size:.95rem;font-weight:700;color:#fff;text-decoration:none">💻 Linux · Windows · mọi nền tảng — trang tải →</a>
-      </div>
+      <a class="btn btn-primary" href="download/">⬇︎ Tải VietTelex</a>
+      <a class="btn btn-ghost" href="hdsd/">📖 Hướng dẫn sử dụng</a>
+      <a class="btn btn-learn" href="learn/">🎓 Học gõ Telex</a>
     </div>
-    <div class="cta-row" style="margin-top:26px">
-      <a class="btn btn-learn" href="learn/">🎓 Học gõ Telex — miễn phí, có trò chơi</a>
-      <a class="btn btn-learn" href="hdsd/">📖 Hướng dẫn sử dụng</a>
-    </div>
+    <p class="platforms">Miễn phí cho <a href="download/?os=ios">iPhone &amp; iPad</a> · <a href="download/?os=android">Android</a> · <a href="download/?os=macos">macOS</a> · <a href="download/?os=windows">Windows</a> · <a href="download/?os=linux">Linux</a></p>
 
     <div class="demo-modal" id="demoModal" role="dialog" aria-modal="true" aria-label="Video demo VietTelex">
       <div class="demo-modal-inner">
@@ -228,7 +221,7 @@
 <section id="install"><span id="huongdan"></span>
   <div class="wrap">
     <h2>Cài đặt trong một phút</h2>
-    <p class="lead">Chọn một cách cài: tải .pkg hoặc Homebrew. Cả hai dùng app đã ký và cài vào <code>~/Library/Input Methods/VietTelex.app</code>; đừng cài đồng thời vì hai trình quản lý sẽ cùng ghi/xoá app đó.</p>
+    <p class="lead">Chọn một cách cài: tải .pkg hoặc Homebrew. Cả hai dùng app đã ký và cài vào <code>~/Library/Input Methods/VietTelex.app</code>; đừng cài đồng thời vì hai trình quản lý sẽ cùng ghi/xoá app đó. iPhone, Android, Windows, Linux: xem <a href="download/">trang tải</a>.</p>
     <div class="steps">
       <div class="step"><strong>Cài qua một kênh</strong><p>Tải <a href="https://github.com/ptrinh/viettelex/releases/latest" rel="noopener" class="dl-direct">VietTelex-x.y.z.pkg</a> (đã được Apple ký &amp; xác thực notarize) rồi nhấp đúp. Hoặc chạy <code>brew install --cask ptrinh/viettelex/viettelex</code>. Khi đổi kênh, gỡ app khỏi kênh hiện tại trước.</p></div>
       <div class="step"><strong>Thêm bộ gõ</strong><p>System Settings → Keyboard → Input Sources → <b>Edit… / ＋</b> → Vietnamese → <b>ViệtTelex</b> → Add.</p>
@@ -346,12 +339,6 @@ let pi = 0;
     }
   })();
 })();
-document.getElementById("brewbtn").addEventListener("click", () => {
-  navigator.clipboard.writeText("brew install --cask ptrinh/viettelex/viettelex").then(() => {
-    document.getElementById("copied").textContent = "đã copy ✓";
-    setTimeout(() => document.getElementById("copied").textContent = "", 2000);
-  });
-});
 // Click-to-copy for any [data-copy] element (BTC address, …).
 document.querySelectorAll("[data-copy]").forEach((el) => {
   el.addEventListener("click", () => {
@@ -366,15 +353,12 @@ document.querySelectorAll("[data-copy]").forEach((el) => {
 });
 </script>
 <script>
-// The red button downloads the promoted-stable .pkg directly; the releases
-// page stays as fallback when stable.json can't be read.
+// The .pkg link in the install steps points at the promoted-stable build; the
+// releases page stays as fallback when stable.json can't be read.
 fetch('stable.json').then(function (r) { return r.json(); }).then(function (d) {
   if (!d.version) return;
   var url = 'https://github.com/ptrinh/viettelex/releases/download/v' + d.version +
             '/VietTelex-' + d.version + '.pkg';
-  var btn = document.getElementById('dlBtn');
-  btn.href = url;
-  btn.textContent = '⬇︎ Tải VietTelex ' + d.version + ' (.pkg)';
   document.querySelectorAll('.dl-direct').forEach(function (a) {
     a.href = url;
     a.textContent = 'VietTelex-' + d.version + '.pkg';

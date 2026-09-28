@@ -136,7 +136,7 @@ linux_install() {
 
   say "Kiểm tra kho VietTelex cho $OS_NAME ($SERIES, $ARCH)"
   if ! fetch "$APT_BASE/dists/$SERIES/InRelease" "$TMPD/InRelease" 2>/dev/null; then
-    die "chưa có bản cho $OS_NAME ($SERIES). Hỗ trợ: Ubuntu 22.04 (jammy), 24.04 (noble). Xem https://viettelex.com/download/"
+    die "chưa có bản cho $OS_NAME ($SERIES). Hỗ trợ: Ubuntu 22.04 (jammy), 24.04 (noble). Xem https://viettelex.com/download/?os=linux"
   fi
   fetch "$APT_BASE/viettelex-archive-keyring.gpg" "$TMPD/viettelex.gpg"
   # Khoá tải về phải ký đúng InRelease bằng khoá có vân tay ghim sẵn.
@@ -317,7 +317,7 @@ main() {
   case "$(uname -s)" in
     Linux)  if [ "$UNINSTALL" = 1 ]; then linux_uninstall; else linux_install; fi ;;
     Darwin) if [ "$UNINSTALL" = 1 ]; then mac_uninstall; else mac_install; fi ;;
-    *) die "chưa hỗ trợ $(uname -s). Windows: tải .msi tại https://viettelex.com/download/" ;;
+    *) die "chưa hỗ trợ $(uname -s). Windows: tải .msi tại https://viettelex.com/download/?os=windows" ;;
   esac
 }
 

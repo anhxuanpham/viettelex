@@ -37,7 +37,7 @@ https://github.com/user-attachments/assets/b07b7321-912f-4d81-a741-bcaa9a43f07d
 
 ## Cài đặt
 
-**Website:** [ptrinh.github.io/viettelex](https://ptrinh.github.io/viettelex/) · **Homebrew:** `brew install --cask ptrinh/viettelex/viettelex`
+**Tải cho mọi nền tảng:** [viettelex.com/download](https://viettelex.com/download/) (iPhone/iPad · [Android](https://viettelex.com/download/?os=android) · [macOS](https://viettelex.com/download/?os=macos) · [Windows](https://viettelex.com/download/?os=windows) · [Linux](https://viettelex.com/download/?os=linux)) · **Homebrew:** `brew install --cask ptrinh/viettelex/viettelex`
 
 Chọn **một** cách cài: Homebrew hoặc `.pkg`. Cả hai cài cùng app đã ký vào
 `~/Library/Input Methods/VietTelex.app`; không cài song song vì hai bộ quản lý sẽ
@@ -45,7 +45,7 @@ cùng ghi/xoá một app. Khi đổi từ Homebrew sang `.pkg`, chạy
 `brew uninstall --cask viettelex` trước. Khi đổi từ `.pkg` sang Homebrew, chuyển
 sang ABC, thoát VietTelex, xoá app ở đường dẫn trên rồi mới chạy lệnh Homebrew.
 
-1. Nếu chọn `.pkg`, tải **`VietTelex-x.y.z.pkg`** từ [Releases](https://github.com/ptrinh/viettelex/releases) (đã ký + notarized).
+1. Nếu chọn `.pkg`, tải **`VietTelex-x.y.z.pkg`** ở [trang tải](https://viettelex.com/download/?os=macos) hoặc [Releases](https://github.com/ptrinh/viettelex/releases) (đã ký + notarized).
 2. Double-click → làm theo hướng dẫn (tự cài vào thư mục user, đăng ký bộ gõ, mở sẵn System Settings → Keyboard).
 3. **Input Sources → Edit… / ＋ → Vietnamese → ViệtTelex → Add.**
 
