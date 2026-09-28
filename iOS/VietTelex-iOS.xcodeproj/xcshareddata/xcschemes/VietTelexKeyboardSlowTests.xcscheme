@@ -88,6 +88,9 @@
                   Identifier = "KeyboardBenchTests/testHotPathBench">
                </Test>
                <Test
+                  Identifier = "RamBreakdownTests/testComponentBreakdown">
+               </Test>
+               <Test
                   Identifier = "KeyboardThemeTests/testKeyboardDecodeMemoryFootprint">
                </Test>
                <Test

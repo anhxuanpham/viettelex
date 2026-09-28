@@ -1,0 +1,34 @@
+# Driver đo RAM process extension THẬT (iOS/docs/RAM-AUDIT.md). Sinh project ra thư mục
+# tạm: ram-audit.sh gọi `xcodegen generate --spec project.yml --project <tmp>`.
+name: RamDrv
+options:
+  bundleIdPrefix: com.viettelex.ramdrv
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    CODE_SIGN_STYLE: Automatic
+targets:
+  RamHost:
+    type: application
+    platform: iOS
+    sources: [Host]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.viettelex.ramdrv.host
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+  RamDriverUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [Driver]
+    dependencies:
+      - target: RamHost
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.viettelex.ramdrv.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: RamHost
