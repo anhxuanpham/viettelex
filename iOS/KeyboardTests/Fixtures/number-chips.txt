@@ -2,7 +2,6 @@
 # Hai bản NumberChips (Swift/Kotlin) phải cho đúng các kết quả này.
 #   spell|<số dạng chuẩn: -?chữsố(,chữsố)?>|<chữ, kiểu "linh">
 #   spellLe|<số>|<chữ, kiểu "lẻ">
-#   calc|<biểu thức, không có =>|<kết quả, hoặc - nếu không tính>
 #   chip|<văn bản trước con trỏ>|<display>|<replace>|<insert>     (hoặc chip|<ctx>|- = không có chip)
 # ␣ = một dấu cách (để thấy được dấu cách cuối dòng).
 spell|0|không
@@ -65,36 +64,6 @@ spell|1250000,75|một triệu hai trăm năm mươi nghìn phẩy bảy mươi 
 spellLe|105|một trăm lẻ năm
 spellLe|1000001|một triệu không trăm lẻ một
 spellLe|15|mười lăm
-calc|12*3|36
-calc|12 * 3|36
-calc|1250000/4|312500
-calc|1.250.000/4|312.500
-calc|1,250,000/4|312,500
-calc|10/4|2,5
-calc|1,5*2|3
-calc|1.5*2|3
-calc|1.5+1|2.5
-calc|0.1+0.2|0.3
-calc|2x3|6
-calc|2×3|6
-calc|10÷4|2,5
-calc|10:4|2,5
-calc|(2+3)*4|20
-calc|2+3*4|14
-calc|-5+2|-3
-calc|100-150|-50
-calc|200+10%|220
-calc|200-10%|180
-calc|200*10%|20
-calc|50%|0,5
-calc|10/3|3,3333333333
-calc|1.500*2|3.000
-calc|1/0|-
-calc|5|-
-calc|-5|-
-calc|2(3)|-
-calc|2+|-
-calc|((1+2)|-
 chip|1250000|Một triệu hai trăm năm mươi nghìn|1250000|Một triệu hai trăm năm mươi nghìn
 chip|giá 1250000|một triệu hai trăm năm mươi nghìn|1250000|một triệu hai trăm năm mươi nghìn
 chip|giá 1250000␣|một triệu hai trăm năm mươi nghìn|1250000␣|một triệu hai trăm năm mươi nghìn␣
@@ -135,11 +104,5 @@ chip|tỷ|-
 chip|12 5k|5.000 ₫|5k|5.000 ₫
 chip|lúc 10:30|-
 chip|giá 1.2345678tr|-
-chip|12*3=|36||36
-chip|x 12*3=|36||36
-chip|Tổng: 1250000/4=|312500||312500
-chip|năm 2024 12*3=|36||36
-chip|(1,5 + 2,5) x 2 =|8||8
-chip|200+10%=|220||220
-chip|5=|-
-chip|a=|-
+# "…=" thuộc MathResults (Fixtures/math-results.txt) — chip số không nhận.
+chip|12*3=|-

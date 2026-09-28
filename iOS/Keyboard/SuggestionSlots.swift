@@ -10,7 +10,8 @@
 //     thẻ Dán; cả hai thay cả bar.
 //  3. "Thêm dấu" (addTonesToken) — slot đầu, nhường clipboard.
 //  4. Chip số — luôn slot GIỮA; nội dung slot giữa dời sang slot 3 (trừ khi slot 3 là
-//     vùng emoji).
+//     vùng emoji). Kết quả phép tính "…=" (MathResults) — slot ĐẦU như bàn phím gốc,
+//     mọi chip khác dời phải một ô.
 //  5. Chữ — nguyên văn / ứng viên (chip gõ tắt nằm ở ứng viên chính) / emoji, hoặc từ kế
 //     tiếp (bigram, email/TLD, biến thể gõ vuốt).
 import Foundation
@@ -79,6 +80,10 @@ enum SuggestionSlots {
         if let n = set.number {
             slots[2] = slots[1]
             slots[1] = BarChip(label: n, payload: KeyboardView.numberToken)
+        }
+        // 4. kết quả phép tính: slot đầu; còn lại dời phải.
+        if let m = set.math {
+            slots = [BarChip(label: m, payload: KeyboardView.mathToken), slots[0], slots[1]]
         }
         if !emojis.isEmpty { slots[2] = nil }
         return .slots(slots, emojis: emojis)

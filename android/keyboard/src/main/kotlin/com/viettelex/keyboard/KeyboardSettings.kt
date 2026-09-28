@@ -23,6 +23,8 @@ data class KeyboardSettings(
     var addTonesChip: Boolean = false,
     /** Chip số trên thanh gợi ý — mặc định BẬT (chỉ đọc context ngay sau chữ số/phép tính). */
     var numberChips: Boolean = true,
+    /** "Hiện kết quả phép tính" (12*3= → chip 36 ở slot đầu) — mặc định BẬT; chỉ đọc context ngay sau "=". */
+    var mathResults: Boolean = true,
     /** Đi theo showSuggestions (không có toggle riêng). */
     var learnWords: Boolean = true,
     var filterSensitive: Boolean = true,
@@ -107,6 +109,7 @@ data class KeyboardSettings(
             s.filterSensitive = b(Keys.FILTER_SENSITIVE, s.filterSensitive)
             s.addTonesChip = b(Keys.ADD_TONES_CHIP, s.addTonesChip)
             s.numberChips = b(Keys.NUMBER_CHIPS, s.numberChips)
+            s.mathResults = b(Keys.MATH_RESULTS, s.mathResults)
             s.hapticFeedback = b(Keys.HAPTIC_FEEDBACK, s.hapticFeedback)
             s.hapticStrength = HapticStrength.clamp((get(Keys.HAPTIC_STRENGTH) as? Number)?.toInt() ?: HapticStrength.DEFAULT)
             s.keySound = b(Keys.KEY_SOUND, s.keySound)

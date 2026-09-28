@@ -22,11 +22,11 @@ class ImePerfBenchTest {
 
         /** C: mọi tính năng phụ (thêm sau baseline) TẮT. */
         fun lean() = KeyboardSettings(smartTouch = false, swipeTyping = false, shortcutsEnabled = false,
-            addTonesChip = false, numberChips = false)
+            addTonesChip = false, numberChips = false, mathResults = false)
 
         /** D: bật hết. */
         fun full() = KeyboardSettings(smartTouch = true, swipeTyping = true, swipeEnglish = true,
-            shortcutsEnabled = true, clipboardHistory = true, addTonesChip = true, numberChips = true,
+            shortcutsEnabled = true, clipboardHistory = true, addTonesChip = true, numberChips = true, mathResults = true,
             shortcuts = ShortcutTable(ShortcutFile.parse("ko: không\nvs: với\ndc: được\nbn: bao nhiêu\n")))
 
         /** Hàng phím chữ giả (QWERTY 10×3, phím 100×150) cho TouchTarget — chạm sát mép (ngoài lõi). */

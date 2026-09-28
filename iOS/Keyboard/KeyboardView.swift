@@ -593,13 +593,14 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         var restoreLabel: String? = nil // ô "Khôi phục" sau vuốt ⌫ xoá theo từ (slot đầu)
         var restorePayload: String? = nil // payload ô restoreLabel (nil = restoreToken; toolUndoToken = hoàn tác công cụ văn bản)
         var number: String? = nil       // chip số (NumberChips) — luôn ở slot GIỮA, payload numberToken
+        var math: String? = nil         // kết quả phép tính "…=" (MathResults) — slot ĐẦU, payload mathToken
         /// Chip tách số từ nội dung vừa copy ("Dán STK 0123…") — thay thẻ Dán.
         var clipChips: [(display: String, insert: String)] = []
         var actionLabel: String? = nil  // chip hành động slot đầu ("Thêm dấu" / "Hoàn tác")…
         var actionPayload: String? = nil // …và payload (addTonesToken / undoTonesToken)
         var isEmpty: Bool {
             literal == nil && word == nil && word2 == nil && emojis.isEmpty && nextWords.isEmpty
-                && number == nil
+                && number == nil && math == nil
         }
     }
 
@@ -847,6 +848,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     static let restoreToken = "\u{E000}restore"
     /// Payload chip số: controller giữ NumberChip (đuôi cần thay + chữ chèn).
     static let numberToken = "\u{E000}number"
+    /// Chip kết quả phép tính (MathResults) — controller giữ chữ cần chèn.
+    static let mathToken = "\u{E000}math"
     /// Payload ô "↩︎ Hoàn tác" sau khi áp công cụ văn bản.
     static let toolUndoToken = "\u{E000}toolUndo"
     /// Payload chip "Thêm dấu" / "Hoàn tác" (AddTones — chỉ khi người dùng bấm).

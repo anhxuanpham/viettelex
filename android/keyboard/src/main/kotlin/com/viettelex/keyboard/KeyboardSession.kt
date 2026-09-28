@@ -106,6 +106,8 @@ data class SuggestionSet(
     val pasteIsImage: Boolean = false,
     /** Chip số (NumberChips) — luôn ở slot GIỮA; chạm gửi [NUMBER_TOKEN]. */
     val number: String? = null,
+    /** Kết quả phép tính "…=" ([MathResults]) — slot ĐẦU; chạm gửi [MATH_TOKEN]. */
+    val math: String? = null,
     /** Chip tách số (OTP/SĐT/STK) từ nội dung vừa copy — thay thẻ Dán. */
     val clipChips: List<ClipChip> = emptyList(),
     /** Chip hành động ở slot trái khi chưa gõ ("Thêm dấu" / "↩︎ Hoàn tác") — payload [action]. */
@@ -113,10 +115,10 @@ data class SuggestionSet(
     val action: String? = null,
 ) {
     val isEmpty: Boolean get() = literal == null && word == null && word2 == null && emojis.isEmpty() &&
-        nextWords.isEmpty() && number == null
+        nextWords.isEmpty() && number == null && math == null
     /** So để bỏ vẽ lại khi không đổi. */
     fun signature(): String = listOf(literal, word, word2, emojis.joinToString("\u0002"),
-        nextWords.joinToString("\u0002"), paste.toString(), number,
+        nextWords.joinToString("\u0002"), paste.toString(), number, math,
         clipChips.joinToString("\u0002") { it.label + "\u0003" + it.value }, action, actionLabel).joinToString("\u0001")
 
     companion object {
@@ -125,6 +127,8 @@ data class SuggestionSet(
         const val PASTE_IMAGE_TOKEN = "pasteImage"
         /** Payload chạm chip số (session giữ NumberChip: đuôi cần thay + chữ chèn). */
         const val NUMBER_TOKEN = "\uE000number"
+        /** Payload chạm chip kết quả phép tính (session giữ chữ cần chèn). */
+        const val MATH_TOKEN = "\uE000math"
         /** Payload chip tách số clipboard: tiền tố + giá trị cần dán (không space, không học). */
         const val CLIP_CHIP_PREFIX = "\uE000clip:"
         /** Chip "Thêm dấu" / "Hoàn tác" (ký tự Private Use — không thể là từ thật). */
@@ -151,6 +155,7 @@ class SuggestJob internal constructor(
     /** Âm tiết liền trước (bigram tĩnh). */
     private val prev: String? = null,
     internal val number: String? = null,
+    internal val math: String? = null,
 ) {
     class Result(val pool: List<VNSuggest.Match>, val fix: String?, val pmi: FloatArray? = null,
                  /** Trượt vào phím thanh mà vẫn ra từ ("casn" → cân) — slot 3. */
@@ -225,6 +230,12 @@ class KeyboardSession(
     private var addTonesChip = false
     /** Công tắc chip số ([KeyboardSettings.numberChips]) — tắt ⇒ không đọc context sau chữ số. */
     private var numberChipsOn = true
+    /** "Hiện kết quả phép tính" ([KeyboardSettings.mathResults]) + ô cho phép (không mật khẩu/URL/email). */
+    private var mathOn = true
+    /** Phím vừa gõ là "=" — chỉ khi đó mới đọc context tìm kết quả phép tính; phím khác ⇒ 0 việc. */
+    private var mathArmed = false
+    /** Chip kết quả phép tính đang hiện — payload [SuggestionSet.MATH_TOKEN]. */
+    private var mathChip: NumberChip? = null
 
     /** Gõ vuốt bật cho ô hiện tại (IME quyết: setting + loại ô + TalkBack). */
     var swipeTypingActive = false
@@ -319,6 +330,8 @@ class KeyboardSession(
         tonesUndo = null; tonesDismissed = null; tonesCacheBefore = null; tonesCachePlan = null
         addTonesChip = settings.addTonesChip
         numberChipsOn = settings.numberChips
+        mathOn = settings.mathResults && !field.isSecure && !field.passthrough && !field.urlField
+        mathArmed = false; mathChip = null
         spaceFlickEnabled = settings.spaceSwipeLanguage
         language = KeyboardLanguage.VI
         autoSpaceOn = settings.autoSpaceAfterPunct && !field.isSecure && !field.passthrough && !field.urlField
@@ -489,6 +502,7 @@ class KeyboardSession(
 
     /** [touch]: điểm chạm của phím chữ (bàn phím cảm ứng) — cho tự sửa; null = không biết. */
     fun handle(key: Key, proxy: TextProxy, touch: AutoCorrect.Touch? = null): KeyOutcome {
+        mathArmed = false
         val t0 = if (TouchLog.enabled) System.nanoTime() else 0L
         val underLetter = autoSpaceUnderLetter
         val pendingSpace = autoSpacePunct
@@ -643,6 +657,8 @@ class KeyboardSession(
             is Key.Letter -> numberSpaces
             else -> 99
         }
+        // Kết quả phép tính: chỉ ngay sau "=".
+        mathArmed = mathOn && key is Key.Text && key.text == "="
         lastInsertWasSpace = key == Key.Space || key == Key.DoubleSpacePeriod
         lastKeyWasEmailTrigger = key is Key.Text && (key.text == "@" || key.text == ".")
         initialCapsPending = false
@@ -871,7 +887,7 @@ class KeyboardSession(
     /** Gọi sau debounce 30 ms (hoặc khi hiện bàn phím / selection đổi / bật bar). */
     fun requestSuggestions(proxy: TextProxy): SuggestionPlan {
         suggestReq++
-        numberChip = null
+        numberChip = null; mathChip = null
         if (!suggestionsActive || barCollapsed) return SuggestionPlan.Ready(null)
         swipeAlternatives?.let { alts ->
             val u = reviseUndo
@@ -895,7 +911,7 @@ class KeyboardSession(
         if (composed.isNotEmpty()) {
             val b = bridge
             return SuggestionPlan.Background(SuggestJob(suggestReq, generation, b, composed,
-                b.rawWord, b.predictedCommit, b.autoFixAdjacent, lastWord, refreshNumberChip(proxy)))
+                b.rawWord, b.predictedCommit, b.autoFixAdjacent, lastWord, refreshNumberChip(proxy), refreshMathChip(proxy)))
         }
         val prev = lastWord
         val next: List<String> = if (bridge.englishMode) {
@@ -915,23 +931,24 @@ class KeyboardSession(
             padWords(top, 3)
         }
         val number = refreshNumberChip(proxy)
+        val math = refreshMathChip(proxy)
         val paste = pasteOffer(proxy)
         // Chip tách STK/SĐT/OTP = Clipboard nâng cao (Plus; paywall tắt ⇒ mở cho mọi người).
         val chips = if (paste && !incognito && PlusGate.isUnlocked(PlusFeature.ADVANCED_CLIPBOARD)) clipChips() else emptyList()
         // "Hoàn tác" thêm dấu (vừa bấm) thắng thẻ Dán; "Thêm dấu" nhường thẻ Dán (StripView/SuggestionSlots).
         typedUndo?.let { u ->
-            return SuggestionPlan.Ready(SuggestionSet(nextWords = next, number = number,
+            return SuggestionPlan.Ready(SuggestionSet(nextWords = next, number = number, math = math,
                 actionLabel = "\u21A9\uFE0E ${u.edit.old}", action = SuggestionSet.UNDO_REVISE_TOKEN))
         }
         bridge.autoCorrectUndo?.let { (orig, _) ->
-            return SuggestionPlan.Ready(SuggestionSet(nextWords = next, number = number,
+            return SuggestionPlan.Ready(SuggestionSet(nextWords = next, number = number, math = math,
                 actionLabel = "\u21A9\uFE0E $orig", action = SuggestionSet.UNDO_AUTOCORRECT_TOKEN))
         }
         if (tonesUndo != null) return SuggestionPlan.Ready(SuggestionSet(literal = literal, nextWords = next,
-            number = number, actionLabel = UNDO_TONES_LABEL, action = SuggestionSet.UNDO_TONES_TOKEN))
+            number = number, math = math, actionLabel = UNDO_TONES_LABEL, action = SuggestionSet.UNDO_TONES_TOKEN))
         val offer = literal == null && !bridge.englishMode && addTonesPlan(proxy) != null
         return SuggestionPlan.Ready(SuggestionSet(literal = literal, nextWords = next, paste = paste,
-            number = number, clipChips = chips,
+            number = number, math = math, clipChips = chips,
             actionLabel = if (offer) ADD_TONES_LABEL else null, action = if (offer) SuggestionSet.ADD_TONES_TOKEN else null))
     }
 
@@ -944,12 +961,21 @@ class KeyboardSession(
         return numberChip?.display
     }
 
+    /** Chip kết quả phép tính — chỉ đọc context khi phím vừa gõ là "="; đọc lại mỗi lượt (con trỏ dời ⇒ mất). */
+    private fun refreshMathChip(proxy: TextProxy): String? {
+        mathChip = null
+        if (!mathArmed) return null
+        val before = proxy.contextBeforeInput() ?: return null
+        mathChip = MathResults.chip(before)
+        return mathChip?.display
+    }
+
     /** Áp kết quả nền; null nếu đã lỗi thời (phím mới / lượt mới / từ khác / bar tắt). */
     fun completeSuggestions(job: SuggestJob, result: SuggestJob.Result): SuggestionSet? {
         if (job.req != suggestReq || job.gen != generation || bridge !== job.bridge ||
             job.bridge.composedWord != job.composed || !suggestionsActive || barCollapsed) return null
         return composingSuggestions(job.composed, job.raw, job.predicted, result.pool, result.fix, result.pmi, result.slip)
-            .copy(number = job.number)
+            .copy(number = job.number, math = job.math)
     }
 
     /** Đồng bộ (test / debug): tính luôn trên thread gọi. */
@@ -1112,6 +1138,7 @@ class KeyboardSession(
             return
         }
         if (item == SuggestionSet.NUMBER_TOKEN) { acceptNumberChip(proxy); return }
+        if (item == SuggestionSet.MATH_TOKEN) { acceptMathChip(proxy); return }
         val sw = openSwipeWord()
         if (sw != null && item in swipeAlts) {
             // Chạm biến thể của từ vừa vuốt: thay từ, vẫn là composition mở (chưa học — học khi chốt).
@@ -1238,6 +1265,20 @@ class KeyboardSession(
         lastWord = null; lastWord2 = null
         clearUndo(); clearSwipe()
         numberSpaces = 0          // kết quả mới cũng là số → chip kế trong chuỗi (tiền → chữ)
+    }
+
+    /** Chạm chip kết quả phép tính: tính lại từ context lúc chạm — khác chip đang hiện thì bỏ. */
+    private fun acceptMathChip(proxy: TextProxy) {
+        val c = mathChip ?: return
+        mathChip = null; mathArmed = false
+        if (MathResults.chip(proxy.contextBeforeInput() ?: "") != c) {
+            TouchLog.write("failsafe: math chip context mismatch → skip"); return
+        }
+        proxy.insertText(c.insert)
+        bridge.reset()
+        lastWord = null; lastWord2 = null
+        clearUndo(); clearSwipe()
+        numberSpaces = 0
     }
 
     // MARK: thêm dấu cho câu không dấu (chỉ khi người dùng bấm chip — AddTones.kt)

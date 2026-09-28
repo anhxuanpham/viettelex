@@ -55,13 +55,13 @@ final class KeyboardBenchTests: XCTestCase {
         case "C":
             for k in ["showSuggestions", "smartTouch", "swipeTyping", "reEditWord", "autoFixAdjacent",
                       "contextualEnglish", "shortcutsEnabled", "templatesEnabled", "clipboardHistory",
-                      "numberChips", "emojiSuggest", "pasteButton", "addTonesChip", "hapticFeedback"] {
+                      "numberChips", "mathResults", "emojiSuggest", "pasteButton", "addTonesChip", "hapticFeedback"] {
                 d.set(false, forKey: k)
             }
         case "D":
             for k in ["showSuggestions", "smartTouch", "swipeTyping", "swipeEnglish", "reEditWord",
                       "autoFixAdjacent", "contextualEnglish", "shortcutsEnabled", "templatesEnabled",
-                      "clipboardHistory", "numberChips", "emojiSuggest", "pasteButton", "addTonesChip",
+                      "clipboardHistory", "numberChips", "mathResults", "emojiSuggest", "pasteButton", "addTonesChip",
                       "hapticFeedback", "numberRow", "teencode", "wallpaperEnabled"] {
                 d.set(true, forKey: k)
             }

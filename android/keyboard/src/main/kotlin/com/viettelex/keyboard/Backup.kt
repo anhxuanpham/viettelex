@@ -58,6 +58,7 @@ object BackupSettings {
         Spec(Keys.SHORTCUTS_ENABLED, SettingKind.Bool(true)),
         Spec(Keys.ADD_TONES_CHIP, SettingKind.Bool(false)),
         Spec(Keys.NUMBER_CHIPS, SettingKind.Bool(true)),
+        Spec(Keys.MATH_RESULTS, SettingKind.Bool(true)),
         Spec(Keys.SMART_TOUCH, SettingKind.Bool(true)),
         Spec(Keys.AUTO_CORRECT, SettingKind.Bool(false)),
         Spec(Keys.AUTO_CAPITALIZE, SettingKind.Bool(true)),

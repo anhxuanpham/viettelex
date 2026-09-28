@@ -1,6 +1,6 @@
-// NumberChips — chip số trên thanh gợi ý: đọc số thành chữ, định dạng tiền, máy tính
-// nhanh. Logic THUẦN (không UIKit/proxy) — bản Kotlin android NumberChips.kt phải cho
-// cùng kết quả trên fixture chung KeyboardTests/Fixtures/number-chips.txt.
+// NumberChips — chip số trên thanh gợi ý: đọc số thành chữ, định dạng tiền (kết quả
+// phép tính "…=" là MathResults.swift, công tắc riêng). Logic THUẦN (không UIKit/proxy)
+// — bản Kotlin android NumberChips.kt phải cho cùng kết quả trên fixture chung KeyboardTests/Fixtures/number-chips.txt.
 // Nguyên tắc: KHÔNG tự thay chữ — chỉ đề xuất chip; chạm mới áp dụng.
 //
 // Quy tắc (xem iOS/docs/IOS-SUGGESTIONS.md, tầng 7):
@@ -267,142 +267,10 @@ enum NumberChips {
         return symbol == "đ" ? body + "đ" : body + " " + symbol
     }
 
-    // MARK: - Máy tính nhanh
-
-    private enum Tok: Equatable { case num(Double), op(Character), lp, rp, pct }
-
-    struct Calc { let value: Double; let english: Bool; let grouped: Bool }
-
-    /// Biểu thức (không có "="). + - * x × / ÷ : ( ) %; số theo quy tắc phân cách.
-    /// "A ± B%" = A ± A·B/100 (như máy tính điện thoại); còn lại "B%" = B/100.
-    static func evaluate(_ expr: String) -> Calc? {
-        var toks: [Tok] = []
-        var english = false, grouped = false
-        let cs = Array(expr)
-        var i = 0
-        while i < cs.count {
-            let c = cs[i]
-            if c == " " { i += 1; continue }
-            if isDigit(c) {
-                var j = i
-                while j < cs.count, isDigit(cs[j]) || cs[j] == "." || cs[j] == "," { j += 1 }
-                guard let lit = parseNumber(String(cs[i..<j])),
-                      let v = Double((lit.value.int) + (lit.value.frac.isEmpty ? "" : "." + lit.value.frac))
-                else { return nil }
-                if lit.decSep == "." || lit.groupSep == "," { english = true }
-                if lit.groupSep != nil { grouped = true }
-                toks.append(.num(v)); i = j; continue
-            }
-            switch c {
-            case "+", "-", "\u{2212}": toks.append(.op(c == "+" ? "+" : "-"))
-            case "*", "x", "X", "×": toks.append(.op("*"))
-            case "/", "÷", ":": toks.append(.op("/"))
-            case "(": toks.append(.lp)
-            case ")": toks.append(.rp)
-            case "%": toks.append(.pct)
-            default: return nil
-            }
-            i += 1
-        }
-        // Phải có phép tính thật (không nhận "5" hay "-5" trơn).
-        let hasOp = toks.enumerated().contains { k, t in
-            if t == .pct { return true }
-            if case .op = t { return k > 0 }
-            return false
-        }
-        guard hasOp else { return nil }
-        var p = 0
-        func peek() -> Tok? { p < toks.count ? toks[p] : nil }
-        func primary(_ depth: Int) -> Double? {
-            guard depth < 32, let t = peek() else { return nil }
-            switch t {
-            case .num(let v): p += 1; return v
-            case .lp:
-                p += 1
-                guard let v = expression(depth + 1), peek() == .rp else { return nil }
-                p += 1; return v
-            default: return nil
-            }
-        }
-        func factor(_ depth: Int) -> (Double, Bool)? {
-            guard depth < 32 else { return nil }
-            if peek() == .op("-") { p += 1; return factor(depth + 1).map { (-$0.0, false) } }
-            if peek() == .op("+") { p += 1; return factor(depth + 1).map { ($0.0, false) } }
-            guard let v = primary(depth) else { return nil }
-            if peek() == .pct { p += 1; return (v / 100, true) }
-            return (v, false)
-        }
-        func term(_ depth: Int) -> (Double, Bool)? {
-            guard var (v, isPct) = factor(depth) else { return nil }
-            while let t = peek(), t == .op("*") || t == .op("/") {
-                p += 1
-                guard let (r, _) = factor(depth) else { return nil }
-                if t == .op("/") { guard r != 0 else { return nil }; v /= r } else { v *= r }
-                isPct = false
-            }
-            return (v, isPct)
-        }
-        func expression(_ depth: Int) -> Double? {
-            guard var (v, _) = term(depth) else { return nil }
-            while let t = peek(), t == .op("+") || t == .op("-") {
-                p += 1
-                guard var (r, isPct) = term(depth) else { return nil }
-                if isPct { r *= v }
-                v = t == .op("+") ? v + r : v - r
-            }
-            return v
-        }
-        guard let v = expression(0), p == toks.count, v.isFinite, abs(v) < 1e15 else { return nil }
-        return Calc(value: v, english: english, grouped: grouped)
-    }
-
-    /// Kết quả theo kiểu số của biểu thức: mặc định kiểu Việt (thập phân ","), kiểu Anh
-    /// nếu biểu thức dùng "." thập phân hoặc "," phân nhóm; phân nhóm nghìn chỉ khi biểu
-    /// thức có phân nhóm. Tối đa 12 chữ số có nghĩa (≤10 chữ số lẻ).
-    static func formatResult(_ c: Calc) -> String {
-        let a = abs(c.value)
-        let intDigits = a < 1 ? 1 : String(format: "%.0f", a.rounded(.down)).count
-        let decimals = max(0, min(10, 12 - intDigits))
-        var s = String(format: "%.\(decimals)f", a)
-        if s.contains(".") {
-            while s.last == "0" { s.removeLast() }
-            if s.last == "." { s.removeLast() }
-        }
-        let parts = s.split(separator: ".", omittingEmptySubsequences: false)
-        var intPart = String(parts[0])
-        if c.grouped { intPart = group(intPart, sep: c.english ? "," : ".") }
-        var out = intPart
-        if parts.count > 1 { out += (c.english ? "." : ",") + parts[1] }
-        if c.value < 0, out != "0" { out = "-" + out }
-        return out
-    }
-
-    private static let calcChars: Set<Character> = Set("0123456789.,+-\u{2212}*xX×/÷:()% ")
-
-    /// Chip máy tính cho context kết thúc bằng "=". Thử cả đuôi hợp lệ dài nhất lẫn các
-    /// đuôi sau khoảng trắng ("năm 2024 12*3=" → "12*3").
-    static func calcChip(before: String) -> NumberChip? {
-        guard before.hasSuffix("=") else { return nil }
-        let body = before.dropLast()
-        let scanned = String(body.reversed().prefix { calcChars.contains($0) }.reversed())
-        var candidates = [scanned]
-        for (k, ch) in scanned.enumerated() where ch == " " {
-            candidates.append(String(scanned.dropFirst(k + 1)))
-        }
-        for cand in candidates {
-            let e = cand.trimmingCharacters(in: .whitespaces)
-            guard let f = e.first, isDigit(f) || f == "(" || f == "-" || f == "\u{2212}",
-                  let c = evaluate(e) else { continue }
-            let r = formatResult(c)
-            return NumberChip(display: r, replace: "", insert: r)
-        }
-        return nil
-    }
-
     // MARK: - Chip chính
 
     /// Chip duy nhất cho thanh gợi ý từ văn bản trước con trỏ (nil = không có).
-    /// • "…=" → kết quả phép tính (chèn sau dấu =).
+    /// • "…=" → không (kết quả phép tính là tính năng riêng: MathResults, slot đầu).
     /// • số có k/tr/tỷ → định dạng tiền "1.200.000 ₫".
     /// • số + đ/₫ chưa phân nhóm (≥4 chữ số) → định dạng giữ ký hiệu ("1.250.000đ").
     /// • số + đ/₫ đã định dạng, hoặc + đồng/vnd → chữ + " đồng".
@@ -425,7 +293,7 @@ enum NumberChips {
     }
 
     static func chip(before: String, le: Bool = false) -> NumberChip? {
-        if before.hasSuffix("=") { return calcChip(before: before) }
+        if before.hasSuffix("=") { return nil }
         var ctx = Substring(before)
         let hadSpace = ctx.hasSuffix(" ")
         if hadSpace { ctx = ctx.dropLast() }

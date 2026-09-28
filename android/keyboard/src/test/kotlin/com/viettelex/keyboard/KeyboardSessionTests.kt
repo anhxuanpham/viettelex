@@ -367,12 +367,52 @@ class KeyboardSessionTests {
         assertFalse(s.bridge.isComposing)
     }
 
-    @Test fun testCalculatorChipInsertsAfterEquals() {
+    // MARK: kết quả phép tính (MathResults)
+
+    @Test fun testMathChipInsertsAfterEquals() {
         val s = session(traits = FieldTraits()); val p = MockProxy()
         s.typeMixed(p, "12*3=")
-        assertEquals("36", s.suggestionsNow(p)!!.number)
-        s.acceptSuggestion(SuggestionSet.NUMBER_TOKEN, p)
+        val set = s.suggestionsNow(p)!!
+        assertEquals("36", set.math)
+        assertNull(set.number)                                 // chip số không nhận "…="
+        s.acceptSuggestion(SuggestionSet.MATH_TOKEN, p)
         assertEquals("12*3=36", p.text)
+        assertNull(s.suggestionsNow(p)!!.math)
+    }
+
+    /** Chỉ ngay sau "=": phím khác ⇒ mất chip; gõ phép tính chưa có "=" không đọc context vì nó. */
+    @Test fun testMathChipOnlyRightAfterEquals() {
+        val s = session(traits = FieldTraits()); val p = MockProxy()
+        s.typeMixed(p, "(1+2)*3=")
+        assertEquals("9", s.suggestionsNow(p)!!.math)
+        s.typeMixed(p, "+")
+        assertNull(s.suggestionsNow(p)!!.math)
+        val on = session(traits = FieldTraits()); val pOn = MockProxy()
+        val off = session(KeyboardSettings(mathResults = false), FieldTraits()); val pOff = MockProxy()
+        on.typeMixed(pOn, "12*3"); off.typeMixed(pOff, "12*3")
+        pOn.contextReads = 0; pOff.contextReads = 0
+        on.suggestionsNow(pOn); off.suggestionsNow(pOff)
+        assertEquals(pOff.contextReads, pOn.contextReads)
+    }
+
+    @Test fun testMathChipSwitchAndFieldGate() {
+        val off = session(KeyboardSettings(mathResults = false), FieldTraits()); val p = MockProxy()
+        off.typeMixed(p, "12*3=")
+        assertNull(off.suggestionsNow(p)?.math)
+        val url = session(traits = FieldTraits(urlField = true)); val pu = MockProxy()
+        url.typeMixed(pu, "12*3=")
+        assertNull(url.suggestionsNow(pu)?.math)
+        assertTrue(KeyboardSettings().mathResults)
+        assertFalse(KeyboardSettings.load { if (it == Keys.MATH_RESULTS) false else null }.mathResults)
+    }
+
+    @Test fun testMathChipSkipsWhenTextChanged() {
+        val s = session(traits = FieldTraits()); val p = MockProxy()
+        s.typeMixed(p, "2+2=")
+        assertEquals("4", s.suggestionsNow(p)!!.math)
+        p.sb.append("5")                                       // host đổi chữ sau lượt gợi ý
+        s.acceptSuggestion(SuggestionSet.MATH_TOKEN, p)
+        assertEquals("2+2=5", p.text)
     }
 
     @Test fun testNumberChipGoneAfterNextWord() {

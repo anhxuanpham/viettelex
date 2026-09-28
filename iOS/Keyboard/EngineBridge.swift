@@ -81,6 +81,9 @@ struct KeyboardSettings {
     /// Chip số (đọc số thành chữ / định dạng tiền / máy tính) — mặc định BẬT; tắt ⇒ không
     /// đọc context sau chữ số.
     var numberChips = true
+    /// "Hiện kết quả phép tính": gõ "12*3=" → chip "36" ở slot đầu — mặc định BẬT; chỉ đọc
+    /// context ngay sau phím "=", tắt ⇒ không làm gì.
+    var mathResults = true
     /// Emoji trên thanh gợi ý khi đang gõ — mặc định BẬT; tắt ⇒ không tra bảng emoji mỗi phím.
     var emojiSuggest = true
     /// Nút "Dán" nội dung vừa copy trên thanh gợi ý — mặc định BẬT; tắt ⇒ không hỏi
@@ -131,6 +134,7 @@ struct KeyboardSettings {
         }
         let flags: [(String, WritableKeyPath<KeyboardSettings, Bool>)] = [
             ("addTonesChip", \.addTonesChip), ("numberChips", \.numberChips),
+            ("mathResults", \.mathResults),
             ("emojiSuggest", \.emojiSuggest), ("pasteButton", \.pasteButton),
             ("autoCapitalize", \.autoCapitalize), ("spaceSwipeLanguage", \.spaceSwipeLanguage),
             ("longPressNumbers", \.longPressNumbers), ("longPressSymbols", \.longPressSymbols),

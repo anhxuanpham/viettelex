@@ -1,4 +1,4 @@
-// NumberChipsTests — chip số (đọc chữ / định dạng tiền / máy tính nhanh) theo fixture chung
+// NumberChipsTests — chip số (đọc chữ / định dạng tiền; phép tính: MathResultsTests) theo fixture chung
 // Fixtures/number-chips.txt. Cùng bộ ca với android NumberChipsTests.kt.
 import XCTest
 
@@ -21,9 +21,6 @@ final class NumberChipsTests: XCTestCase {
                 XCTAssertEqual(NumberChips.spell(c[1]), c[2], "spell \(c[1])")
             case "spellLe":
                 XCTAssertEqual(NumberChips.spell(c[1], le: true), c[2], "spellLe \(c[1])")
-            case "calc":
-                let got = NumberChips.evaluate(c[1]).map(NumberChips.formatResult) ?? "-"
-                XCTAssertEqual(got, c[2], "calc \(c[1])")
             case "chip":
                 let chip = NumberChips.chip(before: c[1])
                 if c[2] == "-" {
