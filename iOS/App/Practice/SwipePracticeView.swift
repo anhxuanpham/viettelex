@@ -148,13 +148,20 @@ struct SwipePracticeView: View {
                                 .font(.footnote).foregroundStyle(.secondary)
                         }
                     }
-                    if m.stored > 0 {
-                        Button(L("Xuất JSON…")) {
-                            DispatchQueue.global(qos: .userInitiated).async {
-                                let u = SwipeTraceStore.exportFile()
-                                DispatchQueue.main.async { share = u.map(ShareItem.init) }
-                            }
+                    // Nút xuất LUÔN hiện (mờ khi chưa có nét) — trước đây ẩn tới khi có nét
+                    // nên người dùng không tìm thấy (Phil 28/09).
+                    Button(L("Xuất JSON…")) {
+                        DispatchQueue.global(qos: .userInitiated).async {
+                            let u = SwipeTraceStore.exportFile()
+                            DispatchQueue.main.async { share = u.map(ShareItem.init) }
                         }
+                    }
+                    .disabled(m.stored == 0)
+                    if m.stored == 0 {
+                        Text(L("Bật \"Lưu nét vuốt trên máy\" rồi vuốt vài từ để xuất được."))
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if m.stored > 0 {
                         Button(confirmDelete ? L("Chạm lần nữa để xoá %@ nét", m.stored) : L("Xoá nét đã lưu"),
                                role: .destructive) {
                             if confirmDelete { m.deleteAll() }
