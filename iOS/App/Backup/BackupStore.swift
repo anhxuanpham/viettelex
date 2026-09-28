@@ -1,6 +1,6 @@
 // BackupStore — nối BackupFormat/SyncMerge vào dữ liệu thật của iOS: UserDefaults
 // App Group "group.com.viettelex" (settings, userTemplates, shortcuts) + file
-// userlm.plist trong container (từ đã học). Tests truyền UserDefaults/URL riêng.
+// store từ đã học trong container (userlm.bin, qua UserLangModel.readPlain/writePlain). Tests truyền UserDefaults/URL riêng.
 import Foundation
 
 final class BackupStore: SyncLocal {
@@ -76,36 +76,27 @@ final class BackupStore: SyncLocal {
         defaults.set(items.map { ["label": $0.label, "text": $0.text] }, forKey: Self.templatesKey)
     }
 
-    // MARK: từ đã học (plist cùng layout UserLangModel)
+    // MARK: từ đã học (store của UserLangModel — nhị phân VTL2; plist cũ đọc được tới khi chuyển)
 
+    /// Đường dẫn gốc (tên cũ) — UserLangModel suy ra file thật (userlm.bin).
     private var learnedURL: URL? { containerURL?.appendingPathComponent(Self.learnedFile) }
 
     func learnedWords() -> LearnedWords? {
-        guard let url = learnedURL, let data = try? Data(contentsOf: url),
-              let d = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any],
-              let uni = d["uni"] as? [String: Int] else { return nil }
-        return LearnedWords(uni: uni,
-                            bi: d["bi"] as? [String: [String: Int]] ?? [:],
-                            tri: d["tri"] as? [String: [String: Int]] ?? [:],
-                            manual: d["manual"] as? [String] ?? [])
+        guard let url = learnedURL, let p = UserLangModel.readPlain(at: url) else { return nil }
+        return LearnedWords(uni: p.uni, bi: p.bi, tri: p.tri, manual: p.manual)
     }
 
     /// Gộp vào file hiện có (count lớn hơn). Bàn phím nạp lại file lần hiện kế tiếp.
     func mergeLearnedWords(_ lw: LearnedWords) {
         guard let url = learnedURL, !lw.isEmpty else { return }
-        var lastDecay = Date()
-        if let data = try? Data(contentsOf: url),
-           let d = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any],
-           let ld = d["lastDecay"] as? Date { lastDecay = ld }
+        let lastDecay = UserLangModel.readPlain(at: url)?.lastDecay ?? Date()
         let merged = (learnedWords() ?? LearnedWords()).merged(with: lw)
         // Từ thêm tay luôn có mặt trong uni (như keepManual của UserLangModel).
         var uni = merged.uni
         for m in merged.manual where uni[m.lowercased()] == nil { uni[m.lowercased()] = 1 }
-        var plist: [String: Any] = ["version": 3, "uni": uni, "bi": merged.bi,
-                                    "tri": merged.tri, "lastDecay": lastDecay]
-        if !merged.manual.isEmpty { plist["manual"] = merged.manual }
-        if let data = try? PropertyListSerialization.data(fromPropertyList: plist, format: .binary, options: 0) {
-            try? data.write(to: url, options: .atomic)
+        let p = UserLangModel.Plain(uni: uni, bi: merged.bi, tri: merged.tri,
+                                    manual: merged.manual, lastDecay: lastDecay)
+        if UserLangModel.writePlain(p, to: url) {
             // Bàn phím thấy mốc đổi ⇒ bỏ bảng trong RAM, nạp file vừa gộp (không ghi đè nó).
             defaults.set(Date().timeIntervalSince1970, forKey: "userlmResetAt")
         }

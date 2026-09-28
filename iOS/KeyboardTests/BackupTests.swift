@@ -223,15 +223,16 @@ final class BackupTests: XCTestCase {
                        LearnedWords(uni: ["a": 5, "b": 1, "c": 2], bi: ["a": ["b": 4, "c": 1]], tri: [:]))
     }
 
-    /// File plist ghi ra đọc lại được bằng đúng layout UserLangModel (uni/bi/tri + version + lastDecay).
-    func testLearnedPlistLayoutMatchesUserLangModel() throws {
+    /// File ghi ra là store nhị phân của UserLangModel (userlm.bin, VTL2), không còn plist.
+    func testLearnedFileLayoutMatchesUserLangModel() throws {
         let (s, dir) = makeStore()
         s.mergeLearnedWords(LearnedWords(uni: ["a": 1], bi: [:], tri: [:]))
-        let data = try Data(contentsOf: dir.appendingPathComponent("userlm.plist"))
-        let d = try XCTUnwrap(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
-        XCTAssertEqual(d["uni"] as? [String: Int], ["a": 1])
-        XCTAssertNotNil(d["lastDecay"] as? Date)
-        XCTAssertEqual(d["version"] as? Int, 3)
+        let bin = dir.appendingPathComponent("userlm.bin")
+        let data = try Data(contentsOf: bin)
+        XCTAssertEqual(Array(data.prefix(4)), Array("VTL2".utf8))
+        let d = try XCTUnwrap(UserLMCodec.decode(data))
+        XCTAssertEqual(d.tables.uniDict(), ["a": 1])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent("userlm.plist").path))
     }
 
     // MARK: LWW merge

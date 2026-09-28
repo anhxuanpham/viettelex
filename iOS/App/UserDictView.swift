@@ -1,6 +1,6 @@
 // Từ điển cá nhân: xem/tìm/xoá từ bàn phím đã học, thêm tay tên riêng/thuật ngữ.
 //
-// Dữ liệu: bàn phím ghi userlm.plist vào App Group (UserLangModel). iOS chỉ cho extension
+// Dữ liệu: bàn phím ghi userlm.bin (trước 09/2026: userlm.plist) vào App Group (UserLangModel). iOS chỉ cho extension
 // GHI App Group khi có "Cho phép Toàn quyền" — không có thì bàn phím vẫn học trong phiên
 // nhưng không lưu được, màn này trống (hiện nhắc). App mở cùng file bằng UserLangModel
 // (Keyboard/UserLangModel.swift biên dịch chung vào app), sửa, ghi đồng bộ, rồi đổi mốc
@@ -18,8 +18,7 @@ enum UserDictStore {
     static func eraseAll() {
         if let dir = FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: "group.com.viettelex") {
-            try? FileManager.default.removeItem(at: dir.appendingPathComponent("userlm.plist"))
-            try? FileManager.default.removeItem(at: dir.appendingPathComponent("userlm.json"))
+            UserLangModel.removeStore(at: dir.appendingPathComponent(UserLangModel.legacyFileName))
         }
         signalKeyboard()
     }

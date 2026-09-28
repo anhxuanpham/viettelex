@@ -468,7 +468,9 @@ final class UserLangModelSaveNowTests: XCTestCase {
         url = FileManager.default.temporaryDirectory
             .appendingPathComponent("userlm-\(UUID().uuidString).plist")
     }
-    override func tearDown() { try? FileManager.default.removeItem(at: url) }
+    override func tearDown() { UserLangModel.removeStore(at: url) }
+    /// File thật trên đĩa (userlm.bin — url là tên gốc .plist).
+    private var disk: URL { UserLangModel.compactURL(for: url) }
 
     private func loadedModel() -> UserLangModel {
         let m = UserLangModel(fileURL: url)
@@ -482,7 +484,7 @@ final class UserLangModelSaveNowTests: XCTestCase {
     private func waitForFile(_ check: @escaping (UserLangModel) -> Bool) -> Bool {
         let deadline = Date().addingTimeInterval(5)
         while Date() < deadline {
-            if FileManager.default.fileExists(atPath: url.path), check(loadedModel()) { return true }
+            if FileManager.default.fileExists(atPath: disk.path), check(loadedModel()) { return true }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
         return false
@@ -500,10 +502,10 @@ final class UserLangModelSaveNowTests: XCTestCase {
         m.record(word: "nam", after: nil, prev2: nil, weight: 3)
         m.saveNow()
         XCTAssertTrue(waitForFile { $0.count(of: "nam") == 3 })
-        try? FileManager.default.removeItem(at: url)
+        try? FileManager.default.removeItem(at: disk)
         m.saveNow()                       // không có gì đổi → không ghi lại
         RunLoop.current.run(until: Date().addingTimeInterval(0.3))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: disk.path))
     }
 
     func testSaveNowThenSaveKeepsNewestSnapshot() {

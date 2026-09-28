@@ -68,9 +68,10 @@ lại, heap/vòng < 30 KB, độ trễ), `RamFixTests` (emoji id, dropCaches, l�
 2. **Bảng emoji**: mỗi emoji KHÁC NHAU từng vẽ để lại ~8,5 KB trong cache glyph của CoreText,
    vĩnh viễn trong process (cảnh báo bộ nhớ, nhả font đều không nhả). Mở + lướt 6 trang:
    +22 MB (lúc mở) / +16 MB (sau khi rời). Lướt hết ~3.800 emoji trong process test: +108 MB. (§4)
-3. **Model cá nhân (UserLangModel)** là cấu trúc `[String: [String: Int]]` — ~1 KB/mục; 4.800 mục
-   giả lập ≈ +13 MB heap lúc học dồn (≈5 MB còn lại sau khi lưu). Người dùng lâu gần trần
-   (3.000/6.000/3.000) có thể tốn ~10 MB. (§5)
+3. **Model cá nhân (UserLangModel)** — ĐÃ SỬA 09/2026 (bảng gọn intern id + file nhị phân VTL2):
+   tại trần 3.000/6.000/3.000 còn ~0,3 MB (trước ~0,7–1,0 MB). Con số "+13 MB / ~1 KB/mục" cũ
+   phần lớn là DispatchWorkItem lưu-sau-5s mà mỗi record hẹn (24.000 record dồn trong <5 s) —
+   hiện vật của phép đo, không phải bảng. (§5)
 4. Dữ liệu mmap (`vnlm.bin`, `vnlexicon.bin`, `emoji.bin`, `futoswipe.bin`, `enlexicon.bin`) đúng
    thiết kế: **~0 dirty** (trang sạch 12–31 MB, jetsam không tính). FUTO (2,5 MB) nhả đúng khi ẩn.
 
@@ -114,7 +115,7 @@ phần tăng. Sắp theo mức ảnh hưởng thực tế:
 | 2 | **Cache glyph emoji màu (CoreText)** | ~8,5 KB / emoji khác nhau (mọi cỡ chữ) — 6 trang ≈ 15 MB, hết bảng ≈ 32 MB | ✗ suốt đời process |
 | 3 | Backing store CA của bảng emoji (ô UILabel) | +8 MB khi đang mở | ✓ khi rời |
 | 4 | Framework hệ thống (`__DATA` dirty, dyld, page table) | ~14 MB (sim) | ✗ cố định |
-| 5 | UserLangModel (model cá nhân) | ~1 KB/mục; +13 MB đỉnh khi học 4.800 mục, ~5 MB giữ lại | ✓ khi bỏ controller |
+| 5 | UserLangModel (model cá nhân) | ~0,3 MB tại trần (bảng gọn 09/2026; trước ~0,7–1,0 MB) | ✓ khi bỏ controller |
 | 6 | Ấm máy khi gõ (cache glyph chữ, layout, gợi ý) | +1 … +8 MB trong 200 phím đầu | một lần |
 | 7 | Âm phím riêng (AVAudioEngine + HAL) | +3–4 MB footprint | ✓ shutdown khi ẩn |
 | 8 | Ảnh nền (810×1080 @3x) | bitmap 3,4 MB, đỉnh giải mã +7 MB | ✓ |
@@ -178,13 +179,30 @@ phần dựng trong `viewDidLoad` ra hàm). Phải test: hiện → ẩn → hi�
 
 ## 5. UserLangModel
 
-`[String: Int]` + `[String: [String: Int]]` ×2 — mỗi cặp bigram tạo cả một Dictionary con.
-Giả lập 24.000 lần học (1.600 uni / 1.600 bi / 1.600 tri): +13 MB heap đỉnh, ~5 MB giữ lại sau
-lưu (phần còn lại là bản sao khi mã hoá plist + autorelease lúc học dồn). Đề xuất (ưu tiên 3,
-tiết kiệm ước 60–80 % = 3–8 MB với người dùng lâu, rủi ro trung bình — đụng định dạng file,
-đồng bộ iCloud, parity Android): intern từ thành id `Int32` (bảng từ), bi/tri thành
-`[UInt64: UInt16]` (cặp id đóng gói) hoặc mảng phẳng sắp xếp; lưu nhị phân thay plist để hết đỉnh
-khi mã hoá. Việc trước mắt, rủi ro thấp: `autoreleasepool` quanh vòng lưu/mã hoá.
+**Đã làm (09/2026)** — `UserLMTables` trong Keyboard/UserLangModel.swift: từ intern thành id
+`Int32` (`words` + `[String: Int32]`), uni = `[UInt32]` theo id, bi = `ContiguousArray<UInt64>` sắp
+`(next id<<32 | count)` theo prev id, tri = `[UInt64: Int32]` ((p2<<32|p1) → slot) + mảng như bi;
+compact id khi prune/decay/xoá từ. File `userlm.bin` VTL2 (little-endian, CRC32, chung layout
+Android) thay binary plist; plist cũ chuyển một lần (xoá chỉ sau khi bản mới ghi xong + đọc lại
+khớp). Ngữ nghĩa y hệt: `UserLMCompactTests` so từng đầu ra với `LegacyUserLangModel` (bản cũ
+giữ nguyên trong test) qua chuỗi thao tác ngẫu nhiên có chạm trần/decay/retract/xoá.
+
+Đo `UserLMCompactTests.testMeasureHeavyUser` (simulator, `SWIFT_OPTIMIZATION_LEVEL=-O`; RAM = phần
+heap nhả ra khi bỏ model):
+
+| | cũ (dict lồng) | mới (bảng gọn) |
+|---|---|---|
+| RAM, nạp từ file tại trần (2.990 / 5.990 / 2.990) | 1,04 MB | 0,31 MB |
+| RAM, phiên học dồn 40.000 từ (2.365 / 5.095 / 679) | 0,69 MB | 0,33 MB |
+| File | 207 KB (plist) | 115 KB |
+| Nạp (đọc + dựng bảng) | 12,4 ms | 1,0 ms |
+| Lưu (encode + ghi atomic) | 5,0 ms | 0,6 ms |
+| `nextWords` (đường gợi ý) | 22,6 µs | 3,5 µs |
+| `count(of:)` / `bigramCount` / `trigramCount` | 0,80 / 1,33 / 1,00 µs | 0,11 / 0,26 / 0,35 µs |
+
+Ghi chú đo: bản cũ nạp từ plist là NSDictionary bridge (tra chậm qua ObjC); số "+13 MB" trước
+đây lẫn cả chục MB block DispatchWorkItem đã huỷ nhưng chờ tới hạn 5 s (mỗi record hẹn một lần lưu)
+— máy thật gõ ~3 từ/s chỉ có vài block sống cùng lúc.
 
 ## 6. Các khoản nhỏ hơn (ưu tiên 4+)
 

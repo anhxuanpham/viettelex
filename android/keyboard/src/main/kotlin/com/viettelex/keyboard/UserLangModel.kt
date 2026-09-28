@@ -1,14 +1,14 @@
 package com.viettelex.keyboard
 
-import java.io.BufferedInputStream
-import java.io.BufferedOutputStream
+import java.io.ByteArrayInputStream
 import java.io.DataInputStream
-import java.io.DataOutputStream
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import java.util.zip.CRC32
 import kotlin.math.pow
 
 /**
@@ -16,9 +16,16 @@ import kotlin.math.pow
  * (prev → next → count) / tri ("p2␁p1" → next → count), shrinkage, learning-vs-
  * suggesting (từ lạ cần count ≥3), decay ×0.7/tuần, cap halve-when-full.
  *
+ * BẢNG GỌN (09/2026, android/docs/RAM-AUDIT.md — trước đây HashMap lồng, boxed, ~1 KB/mục): từ
+ * intern thành id Int ([UserLMTables]), uni là IntArray theo id, bi là "prev id → LongArray sắp
+ * (next id shl 32 | count)", tri là bảng băm mở (p2 shl 32 | p1) → slot → mảng như bi. Ngữ nghĩa
+ * (cap, decay, prune, retract, thứ tự gợi ý) y hệt bản cũ (property test so với LegacyUserLangModel).
+ *
  * THREADING: mọi đọc/ghi bảng trên MAIN thread (như iOS). Decode/encode/IO trên [io];
- * kết quả load trả về qua [main]. Persist binary `filesDir/userlm.bin`, ghi atomic
- * (file tạm + rename), coalesce 5 s sau record cuối.
+ * kết quả load trả về qua [main]. Persist `filesDir/userlm.bin` định dạng VTL2 (chung iOS —
+ * [UserLMCodec]), ghi atomic (file tạm + rename), coalesce 5 s sau record cuối. File v1 cũ
+ * (DataOutputStream "VTLM") được đọc và ghi lại thành VTL2 một lần (rename chỉ sau khi bản mới
+ * ghi xong và đọc lại khớp — hỏng giữa chừng thì bản cũ còn nguyên).
  *
  * PRIVACY: chỉ đếm tần suất.
  */
@@ -38,13 +45,8 @@ class UserLangModel(
     private val ownsIo = ioExecutor == null
     private var closed = false
 
-    private var uni = HashMap<String, Int>()
-    private var bi = HashMap<String, HashMap<String, Int>>()
-    private var tri = HashMap<String, HashMap<String, Int>>()
+    private var t = UserLMTables()
     private var lastDecay = clock()
-    private var biPairs = 0
-    private var triPairs = 0
-    private var uniTotal = 0
     /** Từ user tự thêm (màn Từ điển cá nhân): key lowercase → dạng hiển thị ("VietTelex"). */
     private var manual = LinkedHashMap<String, String>()
 
@@ -89,11 +91,12 @@ class UserLangModel(
         const val UNKNOWN_SUGGEST_THRESHOLD = 3
         const val PENDING_RECORD_CAP = 128
         const val SEP = "\u0001"
-        private const val MAGIC = 0x56544C4D // "VTLM"
-        private const val VERSION = 1
+        /** File v1 (trước 09/2026): DataOutputStream big-endian "VTLM". */
+        private const val LEGACY_MAGIC = 0x56544C4D // "VTLM"
+        private const val LEGACY_VERSION = 1
         private const val WEEK_MS = 7L * 86_400_000L
-        /** Đuôi tuỳ chọn sau bảng tri: danh sách từ thêm tay (bản cũ đọc bỏ qua đuôi). */
-        private const val MANUAL_MAGIC = 0x4D414E55 // "MANU"
+        /** Đuôi tuỳ chọn sau bảng tri của file v1: danh sách từ thêm tay. */
+        private const val LEGACY_MANUAL_MAGIC = 0x4D414E55 // "MANU"
         /** Count khởi điểm của từ thêm tay: ≥ ngưỡng gợi ý, xếp trên từ học 1-2 lần. */
         const val MANUAL_COUNT = 5
         const val MANUAL_MAX_LEN = 24
@@ -125,80 +128,88 @@ class UserLangModel(
             return sb.toString()
         }
 
-        private fun readTablesFile(f: File): Tables? {
+        /** File v1 cũ → bảng dict; null nếu không phải v1 / hỏng. */
+        internal fun readLegacyV1(bytes: ByteArray): Plain? = try {
+            DataInputStream(ByteArrayInputStream(bytes)).use { d ->
+                if (d.readInt() != LEGACY_MAGIC) return null
+                if (d.readInt() != LEGACY_VERSION) return null
+                val lastDecay = d.readLong()
+                val nu = d.readInt()
+                val uni = HashMap<String, Int>(nu * 2)
+                repeat(nu) { uni[d.readUTF()] = d.readInt() }
+                fun nested(): HashMap<String, Map<String, Int>> {
+                    val n = d.readInt()
+                    val m = HashMap<String, Map<String, Int>>(n * 2)
+                    repeat(n) {
+                        val k = d.readUTF(); val c = d.readInt()
+                        val inner = HashMap<String, Int>(c * 2)
+                        repeat(c) { inner[d.readUTF()] = d.readInt() }
+                        m[k] = inner
+                    }
+                    return m
+                }
+                val bi = nested(); val tri = nested()
+                // Đuôi tuỳ chọn: từ thêm tay (file cũ không có ⇒ EOF ⇒ rỗng).
+                val manual = ArrayList<String>()
+                try {
+                    if (d.readInt() == LEGACY_MANUAL_MAGIC) repeat(d.readInt()) { manual.add(d.readUTF()) }
+                } catch (_: java.io.EOFException) { }
+                Plain(LearnedWords(uni, bi, tri, manual), lastDecay)
+            }
+        } catch (e: Exception) { null }
+
+        /**
+         * Đọc store: VTL2, hoặc v1 cũ (khi đó [migrate] = ghi lại thành VTL2 — file cũ chỉ bị thay
+         * sau khi bản mới ghi xong và đọc lại khớp). null nếu vắng / hỏng.
+         */
+        private fun readTablesFile(f: File, migrate: Boolean): Loaded? {
             if (!f.exists()) return null
-            return try {
-                DataInputStream(BufferedInputStream(FileInputStream(f), 32 * 1024)).use { d ->
-                    if (d.readInt() != MAGIC) return null
-                    if (d.readInt() != VERSION) return null
-                    val lastDecay = d.readLong()
-                    val nu = d.readInt()
-                    val uni = HashMap<String, Int>(nu * 2)
-                    repeat(nu) { uni[d.readUTF()] = d.readInt() }
-                    fun nested(): HashMap<String, HashMap<String, Int>> {
-                        val n = d.readInt()
-                        val m = HashMap<String, HashMap<String, Int>>(n * 2)
-                        repeat(n) {
-                            val k = d.readUTF(); val c = d.readInt()
-                            val inner = HashMap<String, Int>(c * 2)
-                            repeat(c) { inner[d.readUTF()] = d.readInt() }
-                            m[k] = inner
-                        }
-                        return m
-                    }
-                    val bi = nested(); val tri = nested()
-                    // Đuôi tuỳ chọn: từ thêm tay (file cũ không có ⇒ EOF ⇒ rỗng).
-                    val manual = LinkedHashMap<String, String>()
-                    try {
-                        if (d.readInt() == MANUAL_MAGIC) {
-                            repeat(d.readInt()) { val disp = d.readUTF(); manual[disp.lowercase()] = disp }
-                        }
-                    } catch (_: java.io.EOFException) { }
-                    Tables(uni, bi, tri, lastDecay, manual)
-                }
-            } catch (e: Exception) { null }
+            val bytes = try { f.readBytes() } catch (_: Exception) { return null }
+            UserLMCodec.decode(bytes)?.let { return it }
+            val old = readLegacyV1(bytes) ?: return null
+            val tables = UserLMTables.fromMaps(old.learned.uni, old.learned.bi, old.learned.tri)
+            if (migrate) writeVerified(UserLMCodec.encode(tables, old.lastDecay, old.learned.manual), f)
+            return Loaded(tables, old.lastDecay, old.learned.manual)
         }
 
-        private fun writeFile(uni: Map<String, Int>, bi: Map<String, Map<String, Int>>,
-                              tri: Map<String, Map<String, Int>>, lastDecay: Long, f: File,
-                              manual: Collection<String> = emptyList()) {
+        /** Ghi atomic: file tạm → (tuỳ chọn) đọc lại so từng byte → rename. false = file cũ nguyên vẹn. */
+        private fun writeVerified(bytes: ByteArray, f: File, verify: Boolean = true): Boolean {
             val tmp = File(f.parentFile, f.name + ".tmp")
-            try {
-                DataOutputStream(BufferedOutputStream(FileOutputStream(tmp), 32 * 1024)).use { d ->
-                    d.writeInt(MAGIC); d.writeInt(VERSION); d.writeLong(lastDecay)
-                    d.writeInt(uni.size)
-                    for ((k, v) in uni) { d.writeUTF(k); d.writeInt(v) }
-                    for (m in listOf(bi, tri)) {
-                        d.writeInt(m.size)
-                        for ((k, inner) in m) {
-                            d.writeUTF(k); d.writeInt(inner.size)
-                            for ((w, c) in inner) { d.writeUTF(w); d.writeInt(c) }
-                        }
-                    }
-                    if (manual.isNotEmpty()) {
-                        d.writeInt(MANUAL_MAGIC); d.writeInt(manual.size)
-                        for (m in manual) d.writeUTF(m)
-                    }
-                }
-                if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
-            } catch (_: Exception) { tmp.delete() }
+            return try {
+                FileOutputStream(tmp).use { it.write(bytes); if (verify) it.fd.sync() }
+                if (verify && !tmp.readBytes().contentEquals(bytes)) { tmp.delete(); return false }
+                if (!tmp.renameTo(f)) { f.delete(); if (!tmp.renameTo(f)) { tmp.delete(); return false } }
+                true
+            } catch (_: Exception) { tmp.delete(); false }
         }
 
-        /** Sao lưu: đọc userlm.bin thành [LearnedWords]; null nếu vắng/hỏng. */
+        /** Sao lưu: đọc userlm.bin thành [LearnedWords]; null nếu vắng/hỏng. Không ghi gì. */
         fun readLearned(f: File): LearnedWords? =
-            readTablesFile(f)?.let { LearnedWords(it.uni, it.bi, it.tri, it.manual.values.toList()) }
+            readTablesFile(f, migrate = false)?.let { LearnedWords(it.t.uniMap(), it.t.biMap(), it.t.triMap(), it.manual) }
 
         /**
          * Nhập sao lưu: gộp [lw] vào file (count lớn hơn, giữ lastDecay). Gọi TRƯỚC khi
          * báo IME nạp lại ([reloadAfterExternalErase] qua pref userlmResetAt).
          */
         fun mergeLearnedIntoFile(lw: LearnedWords, f: File, now: Long = System.currentTimeMillis()) {
-            val cur = readTablesFile(f)
-            val merged = (cur?.let { LearnedWords(it.uni, it.bi, it.tri, it.manual.values.toList()) }
+            val cur = readTablesFile(f, migrate = false)
+            val merged = (cur?.let { LearnedWords(it.t.uniMap(), it.t.biMap(), it.t.triMap(), it.manual) }
                 ?: LearnedWords()).merged(lw)
             // Từ thêm tay luôn có mặt trong uni (như keepManual của model).
             val uni = HashMap(merged.uni).apply { for (m in merged.manual) merge(m.lowercase(), 1) { a, _ -> a } }
-            writeFile(uni, merged.bi, merged.tri, cur?.lastDecay ?: now, f, merged.manual)
+            val tables = UserLMTables.fromMaps(uni, merged.bi, merged.tri)
+            writeVerified(UserLMCodec.encode(tables, cur?.lastDecay ?: now, merged.manual), f)
+        }
+
+        /** Test/công cụ: ghi thẳng một store từ dict (VTL2). */
+        internal fun writePlain(p: Plain, f: File): Boolean {
+            val tables = UserLMTables.fromMaps(p.learned.uni, p.learned.bi, p.learned.tri)
+            return writeVerified(UserLMCodec.encode(tables, p.lastDecay, p.learned.manual), f)
+        }
+
+        /** Test/công cụ: đọc store thành dict (không ghi gì). */
+        internal fun readPlain(f: File): Plain? = readTablesFile(f, migrate = false)?.let {
+            Plain(LearnedWords(it.t.uniMap(), it.t.biMap(), it.t.triMap(), it.manual), it.lastDecay)
         }
 
         /** Từ "học được": chữ cái thuần, ≤12, không chuỗi lặp ≥3 ("heeeyyy"). */
@@ -218,6 +229,11 @@ class UserLangModel(
         }
     }
 
+    /** Dạng dict của store (ranh giới sao lưu / test). */
+    internal data class Plain(val learned: LearnedWords, val lastDecay: Long)
+
+    internal class Loaded(val t: UserLMTables, val lastDecay: Long, val manual: List<String>)
+
     init {
         if (file != null) loadAsync(file) else isLoaded = true
     }
@@ -226,37 +242,27 @@ class UserLangModel(
         if (closed) return
         val gen = loadGeneration
         io.execute {
-            val t = readTables(f)
+            val t = readTablesFile(f, migrate = true)
             main.post { if (loadGeneration == gen) finishLoad(t) }
         }
     }
 
-    private class Tables(val uni: HashMap<String, Int>, val bi: HashMap<String, HashMap<String, Int>>,
-                         val tri: HashMap<String, HashMap<String, Int>>, val lastDecay: Long,
-                         val manual: LinkedHashMap<String, String>)
-
-    private fun finishLoad(t: Tables?) {
-        if (t != null) {
-            uni = t.uni; bi = t.bi; tri = t.tri; lastDecay = t.lastDecay; manual = t.manual
+    private fun finishLoad(l: Loaded?) {
+        if (l != null) {
+            t = l.t; lastDecay = l.lastDecay
+            manual = LinkedHashMap<String, String>().apply { for (d in l.manual) this[d.lowercase()] = d }
             keepManual()
-            recount()
         }
         isLoaded = true
         topCache = null
         val seed = pendingSeed
-        if (uni.isEmpty() && seed != null) applySeed(seed())
+        if (t.uniN == 0 && seed != null) applySeed(seed())
         pendingSeed = null
         val queued = pendingRecords.toList()
         pendingRecords.clear()
         for (r in queued) r.replayed = record(r.word, r.prev1, r.prev2, r.weight)
         decayIfDue()
         onReady?.invoke()
-    }
-
-    private fun recount() {
-        biPairs = bi.values.sumOf { it.size }
-        triPairs = tri.values.sumOf { it.size }
-        uniTotal = uni.values.sum()
     }
 
     // MARK: học
@@ -269,26 +275,25 @@ class UserLangModel(
             pendingRecords.add(pr)
             return Learned(null, null, null, weight, pr)
         }
-        if (!learnable(word)) return null
+        if (weight <= 0 || !learnable(word)) return null
         val w = word.lowercase()
-        uni[w] = (uni[w] ?: 0) + weight
-        uniTotal += weight
+        val wid = t.intern(w)
+        t.setUni(wid, t.uni(wid) + weight)
         bumpTop(w)
         var biKey: String? = null
         var triKey: String? = null
         val p1 = after?.lowercase()
         if (p1 != null && learnable(p1)) {
-            val b = bi.getOrPut(p1) { HashMap() }
-            if (b[w] == null) biPairs++
-            b[w] = (b[w] ?: 0) + weight
+            val pid = t.intern(p1)
+            t.addBi(pid, wid, weight)
             biKey = p1
             val p2 = prev2?.lowercase()
-            if (p2 != null && learnable(p2) && (bi[p2]?.get(p1) ?: 0) >= 2) {
-                val k = p2 + SEP + p1
-                val t = tri.getOrPut(k) { HashMap() }
-                if (t[w] == null) triPairs++
-                t[w] = (t[w] ?: 0) + weight
-                triKey = k
+            if (p2 != null && learnable(p2)) {
+                val p2id = t.id(p2)
+                if (p2id >= 0 && t.biCount(p2id, pid) >= 2) {
+                    t.addTri(UserLMTables.ctx(p2id, pid), wid, weight)
+                    triKey = p2 + SEP + p1
+                }
             }
         }
         pruneIfNeeded()
@@ -303,24 +308,21 @@ class UserLangModel(
             return
         }
         val w = l.word ?: return
-        val had = uni[w] ?: return
-        val dec = minOf(had, l.weight)
-        if (had <= l.weight) uni.remove(w) else uni[w] = had - l.weight
-        uniTotal -= dec
+        val wid = t.id(w)
+        if (wid < 0) return
+        val had = t.uni(wid)
+        if (had <= 0) return
+        t.setUni(wid, if (had <= l.weight) 0 else had - l.weight)
         topCache = null
-        l.prev1?.let { k -> if (decNested(bi, k, w, l.weight)) biPairs-- }
-        l.triKey?.let { k -> if (decNested(tri, k, w, l.weight)) triPairs-- }
+        l.prev1?.let { k -> val pid = t.id(k); if (pid >= 0) t.decBi(pid, wid, l.weight) }
+        l.triKey?.let { k ->
+            val parts = k.split(SEP)
+            if (parts.size == 2) {
+                val a = t.id(parts[0]); val b = t.id(parts[1])
+                if (a >= 0 && b >= 0) t.decTri(UserLMTables.ctx(a, b), wid, l.weight)
+            }
+        }
         scheduleSave()
-    }
-
-    /** Trừ [m][[k]][[w]]; true nếu mục bị bỏ hẳn. */
-    private fun decNested(m: HashMap<String, HashMap<String, Int>>, k: String, w: String, by: Int): Boolean {
-        val inner = m[k] ?: return false
-        val c = inner[w] ?: return false
-        if (c > by) { inner[w] = c - by; return false }
-        inner.remove(w)
-        if (inner.isEmpty()) m.remove(k)
-        return true
     }
 
     private fun cachedKnown(w: String): Boolean {
@@ -332,7 +334,7 @@ class UserLangModel(
     }
 
     private fun suggestable(w: String) =
-        cachedKnown(w) || w in manual || (uni[w] ?: 0) >= UNKNOWN_SUGGEST_THRESHOLD
+        cachedKnown(w) || w in manual || t.uni(w) >= UNKNOWN_SUGGEST_THRESHOLD
 
     // MARK: từ điển cá nhân (màn quản lý trong app)
 
@@ -345,11 +347,15 @@ class UserLangModel(
      */
     fun entries(query: String = ""): List<Entry> {
         val q = fold(query.trim())
-        return uni.entries.asSequence()
-            .filter { q.isEmpty() || fold(it.key).contains(q) }
-            .map { (k, c) -> Entry(manual[k] ?: k, c, k in manual) }
-            .sortedWith(compareByDescending<Entry> { it.count }.thenBy { it.word.lowercase() })
-            .toList()
+        val out = ArrayList<Entry>()
+        for (i in 0 until t.nWords) {
+            val c = t.uniC[i]
+            if (c <= 0) continue
+            val k = t.word(i)
+            if (q.isNotEmpty() && !fold(k).contains(q)) continue
+            out.add(Entry(manual[k] ?: k, c, k in manual))
+        }
+        return out.sortedWith(compareByDescending<Entry> { it.count }.thenBy { it.word.lowercase() })
     }
 
     val isManualEmpty: Boolean get() = manual.isEmpty()
@@ -361,24 +367,10 @@ class UserLangModel(
     fun removeWord(word: String): Boolean {
         val w = word.lowercase()
         var changed = manual.remove(w) != null
-        uni.remove(w)?.let { changed = true }
-        if (bi.remove(w) != null) changed = true
-        val biIt = bi.entries.iterator()
-        while (biIt.hasNext()) {
-            val e = biIt.next()
-            if (e.value.remove(w) != null) changed = true
-            if (e.value.isEmpty()) biIt.remove()
-        }
-        val triIt = tri.entries.iterator()
-        while (triIt.hasNext()) {
-            val e = triIt.next()
-            val parts = e.key.split(SEP)
-            if (w in parts) { triIt.remove(); changed = true; continue }
-            if (e.value.remove(w) != null) changed = true
-            if (e.value.isEmpty()) triIt.remove()
-        }
+        val id = t.id(w)
+        if (id >= 0 && t.removeWord(id)) changed = true
         if (!changed) return false
-        recount()
+        t.compact()
         topCache = null
         knownCache.remove(w)
         scheduleSave()
@@ -394,8 +386,8 @@ class UserLangModel(
         val display = normalizeManual(raw) ?: return false
         val w = display.lowercase()
         manual[w] = display
-        val had = uni[w] ?: 0
-        if (had < MANUAL_COUNT) { uni[w] = MANUAL_COUNT; uniTotal += MANUAL_COUNT - had }
+        val id = t.intern(w)
+        if (t.uni(id) < MANUAL_COUNT) t.setUni(id, MANUAL_COUNT)
         topCache = null
         scheduleSave()
         return true
@@ -410,13 +402,13 @@ class UserLangModel(
         val f = fold(prefix)
         return manual.entries.asSequence()
             .filter { (k, d) -> d != prefix && fold(k).startsWith(f) }
-            .sortedByDescending { uni[it.key] ?: 0 }
+            .sortedByDescending { t.uni(it.key) }
             .map { it.value }.take(limit).toList()
     }
 
     /** Từ thêm tay luôn còn trong uni (decay/prune không được xoá). */
     private fun keepManual() {
-        for (k in manual.keys) if ((uni[k] ?: 0) < 1) uni[k] = 1
+        for (k in manual.keys) if (t.uni(k) < 1) t.setUni(t.intern(k), 1)
     }
 
     // MARK: gợi ý
@@ -424,10 +416,17 @@ class UserLangModel(
     /** Top từ hay dùng (ô trống). Cache tới khi uni đổi. */
     fun topWords(limit: Int): List<String> {
         topCache?.let { if (topCacheK >= limit) return it.take(limit) }
-        val sorted = uni.entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
+        // (count << 32 | id) — sắp giảm theo count, hoà theo khoá tăng dần
+        val ids = ArrayList<Int>(t.uniN)
+        for (i in 0 until t.nWords) if (t.uniC[i] > 0) ids.add(i)
+        val sorted = ids.sortedWith { a, b ->
+            val ca = t.uniC[a]; val cb = t.uniC[b]
+            if (ca != cb) cb.compareTo(ca) else t.word(a).compareTo(t.word(b))
+        }
         val out = ArrayList<String>(limit)
         val keys = ArrayList<String>(limit + 1)
-        for ((w, _) in sorted) {
+        for (i in sorted) {
+            val w = t.word(i)
             if (!suggestable(w)) continue
             out.add(manual[w] ?: w); keys.add(w)
             if (out.size >= limit) break
@@ -446,10 +445,10 @@ class UserLangModel(
         if (topCache == null) return
         val had = keys.remove(w)
         if (!suggestable(w)) { if (had) topCache = null; return }
-        val c = uni[w] ?: 0
+        val c = t.uni(w)
         var i = 0
         while (i < keys.size) {
-            val o = keys[i]; val oc = uni[o] ?: 0
+            val o = keys[i]; val oc = t.uni(o)
             if (oc < c || (oc == c && o > w)) break
             i++
         }
@@ -462,45 +461,82 @@ class UserLangModel(
     /** Từ kế tiếp sau (prev2, prev1): tri ⊕ bi ⊕ uni ⊕ seed với shrinkage. */
     fun nextWords(after: String, prev2: String? = null, limit: Int): List<String> {
         val p1 = after.lowercase()
-        val biBucket: Map<String, Int> = bi[p1] ?: emptyMap()
-        val triBucket: Map<String, Int> = prev2?.let { tri[it.lowercase() + SEP + p1] } ?: emptyMap()
+        val pid = t.id(p1)
+        var biB: LongArray? = null; var biN = 0
+        if (pid >= 0) { biB = t.biB[pid]; biN = t.biL[pid] }
+        var triB: LongArray? = null; var triN = 0
+        if (pid >= 0 && prev2 != null) {
+            val p2id = t.id(prev2.lowercase())
+            if (p2id >= 0) {
+                val s = t.triSlotOf(UserLMTables.ctx(p2id, pid))
+                if (s >= 0) { triB = t.triB[s]; triN = t.triL[s] }
+            }
+        }
         val seeds = seedNext[p1] ?: emptyList()
-        val biTotal = biBucket.values.sum()
-        val triTotal = triBucket.values.sum()
-        val uniT = maxOf(uniTotal, 1)
+        var biTotal = 0; var triTotal = 0
+        for (i in 0 until biN) biTotal += UserLMTables.cnt(biB!![i])
+        for (i in 0 until triN) triTotal += UserLMTables.cnt(triB!![i])
+        val uniT = maxOf(t.uniTotal, 1)
         val lamTri = triTotal.toDouble() / (triTotal + 2.0)
         val lamBi = biTotal.toDouble() / (biTotal + 4.0)
-        val cands = LinkedHashSet<String>()
-        cands.addAll(biBucket.keys); cands.addAll(triBucket.keys); cands.addAll(seeds)
-        fun score(w: String): Double {
-            val pTri = if (triTotal > 0) (triBucket[w] ?: 0).toDouble() / triTotal else 0.0
-            val pBi = if (biTotal > 0) (biBucket[w] ?: 0).toDouble() / biTotal else 0.0
-            val pUni = (uni[w] ?: 0).toDouble() / uniT
-            val i = seeds.indexOf(w)
-            val pSeed = if (i >= 0) 0.5.pow(i) else 0.0
+        // Ứng viên = bi ∪ tri (trộn hai mảng sắp theo id) ∪ seed; count lấy luôn khi trộn.
+        val cw = ArrayList<String>(biN + triN + seeds.size)
+        val cb = IntArray(biN + triN + seeds.size); val ct = IntArray(biN + triN + seeds.size)
+        var i = 0; var j = 0
+        while (i < biN || j < triN) {
+            val bn = if (i < biN) UserLMTables.nid(biB!![i]) else Int.MAX_VALUE
+            val tn = if (j < triN) UserLMTables.nid(triB!![j]) else Int.MAX_VALUE
+            val id = minOf(bn, tn)
+            val k = cw.size
+            if (bn == id) { cb[k] = UserLMTables.cnt(biB!![i]); i++ }
+            if (tn == id) { ct[k] = UserLMTables.cnt(triB!![j]); j++ }
+            cw.add(t.word(id))
+        }
+        for (s in seeds) if (s !in cw) cw.add(s)
+        fun score(k: Int): Double {
+            val w = cw[k]
+            val pTri = if (triTotal > 0) ct[k].toDouble() / triTotal else 0.0
+            val pBi = if (biTotal > 0) cb[k].toDouble() / biTotal else 0.0
+            val pUni = t.uni(w).toDouble() / uniT
+            val si = seeds.indexOf(w)
+            val pSeed = if (si >= 0) 0.5.pow(si) else 0.0
             return lamTri * pTri + lamBi * pBi + 0.1 * pUni + (1 - lamBi) * 0.9 * pSeed
         }
-        return cands.filter { suggestable(it) || it in seeds }
-            .map { it to score(it) }
+        return cw.indices.filter { suggestable(cw[it]) || cw[it] in seeds }
+            .map { cw[it] to score(it) }
             .sortedWith(compareByDescending<Pair<String, Double>> { it.second }.thenBy { it.first })
             .take(limit).map { manual[it.first] ?: it.first }
     }
 
     /** Điểm cá nhân của một từ. */
-    fun count(of: String): Int = uni[of] ?: uni[of.lowercase()] ?: 0
+    fun count(of: String): Int {
+        val c = t.uni(of)
+        return if (c > 0) c else t.uni(of.lowercase())
+    }
 
     /** Từ của người dùng: thêm tay, hoặc đã gõ đủ nhiều để được gợi ý — tự sửa không đụng. */
     fun isUserWord(w: String): Boolean {
         val k = w.lowercase()
-        return k in manual || (uni[k] ?: 0) >= UNKNOWN_SUGGEST_THRESHOLD
+        return k in manual || t.uni(k) >= UNKNOWN_SUGGEST_THRESHOLD
     }
 
     /** Số lần cặp (prev → word) đã gặp (bigram cá nhân + seed) — AddTones chấm lưới âm tiết. */
-    fun bigramCount(prev: String, word: String): Int = bi[prev.lowercase()]?.get(word) ?: 0
+    fun bigramCount(prev: String, word: String): Int {
+        val p = t.id(prev.lowercase()); if (p < 0) return 0
+        val w = t.id(word); if (w < 0) return 0
+        return t.biCount(p, w)
+    }
 
     /** Số lần bộ ba (prev2, prev → word) người dùng đã gõ (không có seed) — thanh gợi ý ưu tiên. */
-    fun trigramCount(prev2: String, prev: String, word: String): Int =
-        tri[prev2.lowercase() + SEP + prev.lowercase()]?.let { it[word] ?: it[word.lowercase()] } ?: 0
+    fun trigramCount(prev2: String, prev: String, word: String): Int {
+        val a = t.id(prev2.lowercase()); if (a < 0) return 0
+        val b = t.id(prev.lowercase()); if (b < 0) return 0
+        val s = t.triSlotOf(UserLMTables.ctx(a, b)); if (s < 0 || t.triL[s] == 0) return 0
+        val raw = t.id(word)
+        if (raw >= 0) { val c = t.triCount(s, raw); if (c > 0) return c }
+        val low = t.id(word.lowercase())
+        return if (low >= 0) t.triCount(s, low) else 0
+    }
 
     /**
      * Seed khi store trống. [seed] chỉ được gọi khi thật sự seed; đang chờ load thì
@@ -509,7 +545,7 @@ class UserLangModel(
     fun seedIfEmpty(seed: () -> SeedData.Seed = SeedData::load) {
         seedSource = seed
         if (!isLoaded) { pendingSeed = seed; return }
-        if (uni.isNotEmpty()) return
+        if (t.uniN != 0) return
         applySeed(seed())
     }
 
@@ -518,34 +554,23 @@ class UserLangModel(
         seedIfEmpty { SeedData.Seed(unigrams, bigrams) }
 
     private fun applySeed(s: SeedData.Seed) {
-        uni = HashMap(s.unigrams)
-        uniTotal = uni.values.sum()
-        for ((a, b, c) in s.bigrams) {
-            val m = bi.getOrPut(a) { HashMap() }
-            if (m[b] == null) biPairs++
-            m[b] = c
-        }
+        // uni đang rỗng (điều kiện gọi) — như `uni = HashMap(s.unigrams)` bản cũ.
+        for ((w, c) in s.unigrams) if (c > 0) t.setUni(t.intern(w), c)
+        for ((a, b, c) in s.bigrams) if (c > 0) t.setBi(t.intern(a), t.intern(b), c)
         topCache = null
         save()
     }
 
     // MARK: persistence
 
-    private fun readTables(f: File): Tables? = readTablesFile(f)
+    private class Snapshot(val t: UserLMTables, val lastDecay: Long, val manual: List<String>)
 
-    private class Snapshot(val uni: Map<String, Int>, val bi: Map<String, Map<String, Int>>,
-                           val tri: Map<String, Map<String, Int>>, val lastDecay: Long,
-                           val manual: List<String>)
-
-    private fun snapshot(): Snapshot {
-        // copy nông trên main (rẻ so với encode + IO) — nền encode bản copy
-        return Snapshot(HashMap(uni), bi.mapValuesTo(HashMap()) { HashMap(it.value) },
-            tri.mapValuesTo(HashMap()) { HashMap(it.value) }, lastDecay, manual.values.toList())
-    }
+    /** Bản sao sâu trên main (vài chục µs — chỉ copy mảng nguyên thuỷ), nền encode bản sao. */
+    private fun snapshot() = Snapshot(t.copy(), lastDecay, manual.values.toList())
 
     private fun write(s: Snapshot, f: File, gen: Int) {
         if (gen != loadGenerationSnapshot()) return   // đã bị erase/reload: không ghi đè
-        writeFile(s.uni, s.bi, s.tri, s.lastDecay, f, s.manual)
+        writeVerified(UserLMCodec.encode(s.t, s.lastDecay, s.manual), f, verify = false)
     }
 
     @Volatile private var volatileGen = 0
@@ -577,7 +602,7 @@ class UserLangModel(
 
     /**
      * Service IME bị huỷ (đổi bàn phím): ghi thay đổi đang chờ, bỏ bảng trong RAM (vỏ service
-     * cũ có thể bị framework giữ lâu — đừng kéo theo 0.2–1.5 MB bảng), dừng luồng IO sau khi
+     * cũ có thể bị framework giữ lâu — đừng kéo theo bảng), dừng luồng IO sau khi
      * ghi xong. Sau đó model không ghi/nạp nữa (không bao giờ ghi bảng rỗng đè file).
      */
     fun close() {
@@ -587,8 +612,7 @@ class UserLangModel(
         isLoaded = false
         loadGeneration++
         saveWork?.cancel(); saveWork = null
-        uni = HashMap(); bi = HashMap(); tri = HashMap(); manual = LinkedHashMap()
-        biPairs = 0; triPairs = 0; uniTotal = 0
+        t = UserLMTables(); manual = LinkedHashMap()
         pendingRecords.clear(); pendingSeed = null; seedSource = null
         topCache = null; topKeys = null
         knownCache.clear()
@@ -607,8 +631,7 @@ class UserLangModel(
         loadGeneration++
         volatileGen++
         saveWork?.cancel(); saveWork = null
-        uni = HashMap(); bi = HashMap(); tri = HashMap(); manual = LinkedHashMap()
-        biPairs = 0; triPairs = 0; uniTotal = 0
+        t = UserLMTables(); manual = LinkedHashMap()
         pendingRecords.clear(); pendingSeed = null
         topCache = null
         knownCache.clear()
@@ -638,16 +661,9 @@ class UserLangModel(
         val weeks = ((now - lastDecay) / WEEK_MS).toInt()
         if (weeks < 1) return
         val f = 0.7.pow(weeks)
-        fun decayMap(m: Map<String, Int>): HashMap<String, Int> {
-            val out = HashMap<String, Int>()
-            for ((k, c) in m) { val v = (c * f).toInt(); if (v > 0) out[k] = v }
-            return out
-        }
-        uni = decayMap(uni)
-        bi = nestedMap(bi) { decayMap(it) }
-        tri = nestedMap(tri) { decayMap(it) }
+        t.mapCounts(uni = true, bi = true, tri = true) { (it * f).toInt() }
         keepManual()
-        recount()
+        t.compact()
         lastDecay = now
         topCache = null
         save()
@@ -656,35 +672,520 @@ class UserLangModel(
     /** Test: giả lập lần decay cuối. */
     internal fun setLastDecayForTest(t: Long) { lastDecay = t }
 
-    private fun nestedMap(m: Map<String, HashMap<String, Int>>,
-                          f: (Map<String, Int>) -> HashMap<String, Int>): HashMap<String, HashMap<String, Int>> {
-        val out = HashMap<String, HashMap<String, Int>>()
-        for ((k, v) in m) { val d = f(v); if (d.isNotEmpty()) out[k] = d }
-        return out
-    }
-
-    private fun halve(m: Map<String, Int>): HashMap<String, Int> {
-        val out = HashMap<String, Int>()
-        for ((k, c) in m) if (c / 2 != 0) out[k] = c / 2
-        return out
-    }
-
     private fun pruneIfNeeded() {
-        if (uni.size > UNI_CAP) { uni = halve(uni); keepManual(); uniTotal = uni.values.sum(); topCache = null }
-        if (biPairs > BI_CAP) {
-            bi = nestedMap(bi) { halve(it) }
-            biPairs = bi.values.sumOf { it.size }
-        }
-        if (triPairs > TRI_CAP) {
-            tri = nestedMap(tri) { halve(it) }
-            triPairs = tri.values.sumOf { it.size }
-        }
+        val u = t.uniN > UNI_CAP; val b = t.biN > BI_CAP; val r = t.triN > TRI_CAP
+        if (!u && !b && !r) return
+        t.mapCounts(uni = u, bi = b, tri = r) { it / 2 }
+        if (u) { keepManual(); topCache = null }
+        t.compact()
     }
 
-    internal val uniSize: Int get() = uni.size
+    internal val uniSize: Int get() = t.uniN
+    internal val biPairCount: Int get() = t.biN
+    internal val triPairCount: Int get() = t.triN
+    internal val vocabSize: Int get() = t.nWords
+    /** Test/công cụ: bảng dạng dict (dựng lại mỗi lần gọi — không dùng trên đường gõ). */
+    internal fun uniMap(): Map<String, Int> = t.uniMap()
+    internal fun biMap(): Map<String, Map<String, Int>> = t.biMap()
+    internal fun triMap(): Map<String, Map<String, Int>> = t.triMap()
+    internal fun manualMap(): Map<String, String> = manual
 
     // seed bigrams tĩnh
     val seedNext: Map<String, List<String>> get() = SEED_NEXT
+}
+
+/**
+ * Bảng n-gram gọn: từ intern thành id Int (bảng băm mở [slots] → id + 1), count Int ≥ 1.
+ * - uni: [uniC][id] (0 = không có mục).
+ * - bi: [biB][prev id] = LongArray (next id shl 32 | count) sắp tăng theo next id, dài [biL].
+ * - tri: băm mở (p2 shl 32 | p1) → slot; [triB]/[triL] như bi. Slot rỗng giữ tới lần compact.
+ * Chỉ nguyên thuỷ — không boxing, không Node HashMap mỗi mục.
+ */
+internal class UserLMTables {
+    var words: Array<String?> = arrayOfNulls(16); private set
+    var nWords = 0; private set
+    private var slots = IntArray(32)
+    var uniC = IntArray(16); private set
+    var biB: Array<LongArray?> = arrayOfNulls(16); private set
+    var biL = IntArray(16); private set
+    private var tKeys = LongArray(16)
+    private var tVals = IntArray(16)          // slot + 1; 0 = trống
+    var triCtx = LongArray(8); private set
+    var triB: Array<LongArray?> = arrayOfNulls(8); private set
+    var triL = IntArray(8); private set
+    var nTri = 0; private set
+    var uniN = 0; private set
+    var biN = 0; private set
+    var triN = 0; private set
+    /** Σ uni — incremental. */
+    var uniTotal = 0; private set
+
+    companion object {
+        fun pack(id: Int, c: Int): Long = (id.toLong() shl 32) or (c.toLong() and 0xFFFFFFFFL)
+        fun nid(e: Long): Int = (e ushr 32).toInt()
+        fun cnt(e: Long): Int = e.toInt()
+        fun ctx(p2: Int, p1: Int): Long = pack(p2, p1)
+        private fun mix(h: Int): Int { val x = h * -0x61c88647; return x xor (x ushr 16) }
+        private fun mixL(k: Long): Int { val x = k * -0x61c8864680b583ebL; return (x xor (x ushr 29)).toInt() }
+        private fun clampAdd(a: Int, b: Int): Int = (a.toLong() + b).coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
+
+        /** Vị trí của [id] trong bucket (≥0) hoặc -(chỗ chèn)-1. */
+        fun search(b: LongArray?, len: Int, id: Int): Int {
+            if (b == null) return -1
+            var lo = 0; var hi = len
+            while (lo < hi) {
+                val m = (lo + hi) ushr 1
+                if (nid(b[m]) < id) lo = m + 1 else hi = m
+            }
+            return if (lo < len && nid(b[lo]) == id) lo else -lo - 1
+        }
+
+        /** Dựng từ dict kiểu cũ. Count ≤ 0 bị bỏ; khoá tri phải đúng dạng "p2␁p1". */
+        fun fromMaps(uni: Map<String, Int>, bi: Map<String, Map<String, Int>>,
+                     tri: Map<String, Map<String, Int>>): UserLMTables {
+            val t = UserLMTables()
+            for ((w, c) in uni) if (c > 0) t.setUni(t.intern(w), c)
+            for ((p, inner) in bi) for ((n, c) in inner) if (c > 0) t.setBi(t.intern(p), t.intern(n), c)
+            for ((k, inner) in tri) {
+                val parts = k.split(UserLangModel.SEP)
+                if (parts.size != 2) continue
+                for ((n, c) in inner) if (c > 0) {
+                    val a = t.intern(parts[0]); val b = t.intern(parts[1])
+                    t.setTri(ctx(a, b), t.intern(n), c)
+                }
+            }
+            return t
+        }
+    }
+
+    fun word(id: Int): String = words[id]!!
+
+    fun id(w: String): Int {
+        val mask = slots.size - 1
+        var i = mix(w.hashCode()) and mask
+        while (true) {
+            val s = slots[i]
+            if (s == 0) return -1
+            if (words[s - 1] == w) return s - 1
+            i = (i + 1) and mask
+        }
+    }
+
+    fun intern(w: String): Int {
+        val have = id(w)
+        if (have >= 0) return have
+        val id = nWords
+        if (id == words.size) {
+            val n = maxOf(16, id + (id shr 1))
+            words = words.copyOf(n); uniC = uniC.copyOf(n); biB = biB.copyOf(n); biL = biL.copyOf(n)
+        }
+        words[id] = w; nWords++
+        if (nWords * 2 > slots.size) rehashWords(slots.size * 2) else placeWord(id)
+        return id
+    }
+
+    private fun placeWord(id: Int) {
+        val mask = slots.size - 1
+        var i = mix(words[id]!!.hashCode()) and mask
+        while (slots[i] != 0) i = (i + 1) and mask
+        slots[i] = id + 1
+    }
+
+    private fun rehashWords(cap: Int) {
+        slots = IntArray(cap)
+        for (id in 0 until nWords) placeWord(id)
+    }
+
+    fun uni(id: Int): Int = uniC[id]
+    fun uni(w: String): Int { val i = id(w); return if (i < 0) 0 else uniC[i] }
+
+    fun setUni(id: Int, c: Int) {
+        val old = uniC[id]; val v = maxOf(c, 0)
+        if (old == 0 && v > 0) uniN++ else if (old > 0 && v == 0) uniN--
+        uniTotal += v - old
+        uniC[id] = v
+    }
+
+    fun biCount(p: Int, n: Int): Int {
+        val at = search(biB[p], biL[p], n)
+        return if (at >= 0) cnt(biB[p]!![at]) else 0
+    }
+
+    /** Cộng/gán vào bucket; trả về mảng (có thể đã nới) và báo mục mới qua [isNew]. */
+    private var isNew = false
+    private fun add(b0: LongArray?, len: Int, n: Int, by: Int, set: Boolean): LongArray {
+        val at = search(b0, len, n)
+        if (at >= 0) {
+            val b = b0!!
+            b[at] = pack(n, if (set) by else clampAdd(cnt(b[at]), by))
+            isNew = false
+            return b
+        }
+        val ins = -at - 1
+        var b = b0 ?: LongArray(2)
+        if (len == b.size) b = b.copyOf(maxOf(2, len + (len shr 1) + 1))
+        System.arraycopy(b, ins, b, ins + 1, len - ins)
+        b[ins] = pack(n, by)
+        isNew = true
+        return b
+    }
+
+    /** Trừ; trả về true nếu mục bị bỏ hẳn (bucket [b] dài [len]). */
+    private fun dec(b: LongArray?, len: Int, n: Int, by: Int): Boolean {
+        val at = search(b, len, n)
+        if (at < 0) return false
+        val c = cnt(b!![at])
+        if (c > by) { b[at] = pack(n, c - by); return false }
+        System.arraycopy(b, at + 1, b, at, len - at - 1)
+        return true
+    }
+
+    fun addBi(p: Int, n: Int, by: Int) {
+        biB[p] = add(biB[p], biL[p], n, by, set = false)
+        if (isNew) { biL[p]++; biN++ }
+    }
+    fun setBi(p: Int, n: Int, c: Int) {
+        biB[p] = add(biB[p], biL[p], n, c, set = true)
+        if (isNew) { biL[p]++; biN++ }
+    }
+    fun decBi(p: Int, n: Int, by: Int) {
+        if (dec(biB[p], biL[p], n, by)) { biL[p]--; biN-- }
+    }
+
+    /** Slot của ngữ cảnh tri, -1 nếu chưa có. */
+    fun triSlotOf(c: Long): Int {
+        val mask = tKeys.size - 1
+        var i = mixL(c) and mask
+        while (true) {
+            val v = tVals[i]
+            if (v == 0) return -1
+            if (tKeys[i] == c) return v - 1
+            i = (i + 1) and mask
+        }
+    }
+
+    private fun placeCtx(c: Long, slot: Int) {
+        val mask = tKeys.size - 1
+        var i = mixL(c) and mask
+        while (tVals[i] != 0) i = (i + 1) and mask
+        tKeys[i] = c; tVals[i] = slot + 1
+    }
+
+    private fun triSlot(c: Long): Int {
+        val s = triSlotOf(c)
+        if (s >= 0) return s
+        val slot = nTri
+        if (slot == triCtx.size) {
+            val n = maxOf(8, slot + (slot shr 1))
+            triCtx = triCtx.copyOf(n); triB = triB.copyOf(n); triL = triL.copyOf(n)
+        }
+        triCtx[slot] = c; nTri++
+        if (nTri * 2 > tKeys.size) {
+            tKeys = LongArray(tKeys.size * 2); tVals = IntArray(tVals.size * 2)
+            for (k in 0 until nTri) placeCtx(triCtx[k], k)
+        } else placeCtx(c, slot)
+        return slot
+    }
+
+    fun triCount(slot: Int, n: Int): Int {
+        val at = search(triB[slot], triL[slot], n)
+        return if (at >= 0) cnt(triB[slot]!![at]) else 0
+    }
+    fun addTri(c: Long, n: Int, by: Int) {
+        val s = triSlot(c)
+        triB[s] = add(triB[s], triL[s], n, by, set = false)
+        if (isNew) { triL[s]++; triN++ }
+    }
+    fun setTri(c: Long, n: Int, v: Int) {
+        val s = triSlot(c)
+        triB[s] = add(triB[s], triL[s], n, v, set = true)
+        if (isNew) { triL[s]++; triN++ }
+    }
+    fun decTri(c: Long, n: Int, by: Int) {
+        val s = triSlotOf(c)
+        if (s < 0) return
+        if (dec(triB[s], triL[s], n, by)) { triL[s]--; triN-- }
+    }
+
+    /** Bỏ [id] khỏi uni + mọi bi/tri có nó (trước hay sau). true nếu có gì bị xoá. */
+    fun removeWord(id: Int): Boolean {
+        var changed = false
+        if (uniC[id] > 0) { setUni(id, 0); changed = true }
+        if (biL[id] > 0) { biN -= biL[id]; biL[id] = 0; changed = true }
+        for (p in 0 until nWords) if (biL[p] > 0 && dec(biB[p], biL[p], id, Int.MAX_VALUE)) {
+            biL[p]--; biN--; changed = true
+        }
+        for (s in 0 until nTri) {
+            if (triL[s] == 0) continue
+            val c = triCtx[s]
+            if (nid(c) == id || cnt(c) == id) { triN -= triL[s]; triL[s] = 0; changed = true }
+            else if (dec(triB[s], triL[s], id, Int.MAX_VALUE)) { triL[s]--; triN--; changed = true }
+        }
+        return changed
+    }
+
+    /** Áp [f] lên mọi count của các bảng được chọn; count ≤ 0 bị bỏ. */
+    fun mapCounts(uni: Boolean, bi: Boolean, tri: Boolean, f: (Int) -> Int) {
+        if (uni) {
+            uniN = 0; uniTotal = 0
+            for (i in 0 until nWords) {
+                val c = uniC[i]; if (c <= 0) continue
+                val v = maxOf(f(c), 0)
+                uniC[i] = v
+                if (v > 0) { uniN++; uniTotal += v }
+            }
+        }
+        fun mapB(bs: Array<LongArray?>, ls: IntArray, n: Int): Int {
+            var total = 0
+            for (i in 0 until n) {
+                val b = bs[i] ?: continue
+                var k = 0
+                for (j in 0 until ls[i]) {
+                    val v = f(cnt(b[j]))
+                    if (v > 0) b[k++] = pack(nid(b[j]), v)
+                }
+                ls[i] = k; total += k
+            }
+            return total
+        }
+        if (bi) biN = mapB(biB, biL, nWords)
+        if (tri) triN = mapB(triB, triL, nTri)
+    }
+
+    /**
+     * Bỏ từ mồ côi (không còn ở uni/bi/tri) + slot tri rỗng, cấp lại id liền nhau (giữ thứ tự ⇒
+     * bucket vẫn sắp), thu gọn mảng về đúng cỡ. Chỉ chạy lúc prune/decay/xoá từ (hiếm).
+     */
+    fun compact() {
+        val live = BooleanArray(nWords)
+        for (i in 0 until nWords) if (uniC[i] > 0) live[i] = true
+        for (p in 0 until nWords) if (biL[p] > 0) {
+            live[p] = true
+            val b = biB[p]!!
+            for (j in 0 until biL[p]) live[nid(b[j])] = true
+        }
+        var liveTri = 0
+        for (s in 0 until nTri) if (triL[s] > 0) {
+            liveTri++
+            live[nid(triCtx[s])] = true; live[cnt(triCtx[s])] = true
+            val b = triB[s]!!
+            for (j in 0 until triL[s]) live[nid(b[j])] = true
+        }
+        val remap = IntArray(nWords) { -1 }
+        var nLive = 0
+        for (i in 0 until nWords) if (live[i]) remap[i] = nLive++
+        val n = maxOf(nLive, 1)
+        val nw = arrayOfNulls<String>(n); val nu = IntArray(n)
+        val nb = arrayOfNulls<LongArray>(n); val nl = IntArray(n)
+        fun re(b: LongArray, len: Int): LongArray = LongArray(len) { pack(remap[nid(b[it])], cnt(b[it])) }
+        for (i in 0 until nWords) {
+            val k = remap[i]; if (k < 0) continue
+            nw[k] = words[i]; nu[k] = uniC[i]
+            if (biL[i] > 0) { nb[k] = re(biB[i]!!, biL[i]); nl[k] = biL[i] }
+        }
+        val tn = maxOf(liveTri, 1)
+        val tc = LongArray(tn); val tb = arrayOfNulls<LongArray>(tn); val tl = IntArray(tn)
+        var ns = 0
+        for (s in 0 until nTri) if (triL[s] > 0) {
+            tc[ns] = pack(remap[nid(triCtx[s])], remap[cnt(triCtx[s])])
+            tb[ns] = re(triB[s]!!, triL[s]); tl[ns] = triL[s]; ns++
+        }
+        words = nw; uniC = nu; biB = nb; biL = nl; nWords = nLive
+        var cap = 32; while (cap < nLive * 2) cap = cap shl 1
+        rehashWords(cap)
+        triCtx = tc; triB = tb; triL = tl; nTri = ns
+        var tcap = 16; while (tcap < ns * 2) tcap = tcap shl 1
+        tKeys = LongArray(tcap); tVals = IntArray(tcap)
+        for (k in 0 until ns) placeCtx(tc[k], k)
+    }
+
+    /** Bản sao sâu (snapshot để lưu nền). */
+    fun copy(): UserLMTables {
+        val o = UserLMTables()
+        o.words = words.copyOf(nWords.coerceAtLeast(1)); o.nWords = nWords
+        o.slots = slots.copyOf()
+        o.uniC = uniC.copyOf(nWords.coerceAtLeast(1))
+        o.biB = Array(nWords.coerceAtLeast(1)) { if (it < nWords && biL[it] > 0) biB[it]!!.copyOf(biL[it]) else null }
+        o.biL = biL.copyOf(nWords.coerceAtLeast(1))
+        o.tKeys = tKeys.copyOf(); o.tVals = tVals.copyOf()
+        o.triCtx = triCtx.copyOf(nTri.coerceAtLeast(1)); o.nTri = nTri
+        o.triB = Array(nTri.coerceAtLeast(1)) { if (it < nTri && triL[it] > 0) triB[it]!!.copyOf(triL[it]) else null }
+        o.triL = triL.copyOf(nTri.coerceAtLeast(1))
+        o.uniN = uniN; o.biN = biN; o.triN = triN; o.uniTotal = uniTotal
+        return o
+    }
+
+    /** Dựng thẳng từ file đã kiểm ([UserLMCodec]) — bucket đã sắp, không trùng. */
+    internal fun loadRaw(ws: Array<String?>, n: Int, u: IntArray, bb: Array<LongArray?>, bl: IntArray,
+                         tc: LongArray, tb: Array<LongArray?>, tl: IntArray, nt: Int) {
+        words = ws; nWords = n; uniC = u; biB = bb; biL = bl
+        var cap = 32; while (cap < n * 2) cap = cap shl 1
+        rehashWords(cap)
+        triCtx = tc; triB = tb; triL = tl; nTri = nt
+        var tcap = 16; while (tcap < nt * 2) tcap = tcap shl 1
+        tKeys = LongArray(tcap); tVals = IntArray(tcap)
+        for (k in 0 until nt) placeCtx(tc[k], k)
+        uniN = 0; uniTotal = 0; biN = 0; triN = 0
+        for (i in 0 until n) if (u[i] > 0) { uniN++; uniTotal += u[i] }
+        for (i in 0 until n) biN += bl[i]
+        for (i in 0 until nt) triN += tl[i]
+    }
+
+    /** Có mục trùng khoá (từ) không — file hỏng. */
+    internal fun hasDuplicateWords(): Boolean {
+        val seen = HashSet<String>(nWords * 2)
+        for (i in 0 until nWords) if (!seen.add(words[i]!!)) return true
+        return false
+    }
+
+    fun uniMap(): Map<String, Int> {
+        val m = HashMap<String, Int>(uniN * 2)
+        for (i in 0 until nWords) if (uniC[i] > 0) m[words[i]!!] = uniC[i]
+        return m
+    }
+
+    private fun nested(b: LongArray, len: Int): Map<String, Int> {
+        val m = HashMap<String, Int>(len * 2)
+        for (j in 0 until len) m[words[nid(b[j])]!!] = cnt(b[j])
+        return m
+    }
+
+    fun biMap(): Map<String, Map<String, Int>> {
+        val m = HashMap<String, Map<String, Int>>()
+        for (p in 0 until nWords) if (biL[p] > 0) m[words[p]!!] = nested(biB[p]!!, biL[p])
+        return m
+    }
+
+    fun triMap(): Map<String, Map<String, Int>> {
+        val m = HashMap<String, Map<String, Int>>()
+        for (s in 0 until nTri) if (triL[s] > 0) {
+            val c = triCtx[s]
+            m[words[nid(c)]!! + UserLangModel.SEP + words[cnt(c)]!!] = nested(triB[s]!!, triL[s])
+        }
+        return m
+    }
+}
+
+/**
+ * Định dạng file VTL2 — CHUNG với iOS (iOS/Keyboard/UserLangModel.swift `UserLMCodec`), little-endian:
+ * ```
+ * "VTL2" | u16 version=1 | u16 flags=0 | i64 lastDecay (ms từ 1970)
+ * u32 nWords | nWords × (u16 len, UTF-8)          — id = thứ tự
+ * nWords × u32 uniCount                            — 0 = không có unigram
+ * u32 nBi  | nBi  × (u32 prev, u32 n, n × (u32 next, u32 count))
+ * u32 nTri | nTri × (u32 p2, u32 p1, u32 n, n × (u32 next, u32 count))
+ * u32 nManual | nManual × (u16 len, UTF-8)        — dạng hiển thị
+ * u32 CRC32 (IEEE, java.util.zip.CRC32) của mọi byte phía trước
+ * ```
+ * Đọc: sai magic/version/CRC, id ngoài tầm, count 0, bucket không tăng dần, từ/ngữ cảnh trùng ⇒ null.
+ */
+internal object UserLMCodec {
+    private val MAGIC = byteArrayOf('V'.code.toByte(), 'T'.code.toByte(), 'L'.code.toByte(), '2'.code.toByte())
+    private const val VERSION = 1
+
+    fun encode(t: UserLMTables, lastDecay: Long, manual: List<String>): ByteArray {
+        val wb = Array(t.nWords) { t.word(it).toByteArray(Charsets.UTF_8) }
+        val mb = manual.map { it.toByteArray(Charsets.UTF_8) }
+        var size = 16 + 4 + 4 * t.nWords + 4 + 4 + 4 + 4
+        for (b in wb) size += 2 + minOf(b.size, 0xFFFF)
+        var nb = 0; var nt = 0
+        for (p in 0 until t.nWords) if (t.biL[p] > 0) { nb++; size += 8 + 8 * t.biL[p] }
+        for (s in 0 until t.nTri) if (t.triL[s] > 0) { nt++; size += 12 + 8 * t.triL[s] }
+        for (b in mb) size += 2 + minOf(b.size, 0xFFFF)
+        val o = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN)
+        fun str(b: ByteArray) { val n = minOf(b.size, 0xFFFF); o.putShort(n.toShort()); o.put(b, 0, n) }
+        o.put(MAGIC); o.putShort(VERSION.toShort()); o.putShort(0); o.putLong(lastDecay)
+        o.putInt(t.nWords)
+        for (b in wb) str(b)
+        for (i in 0 until t.nWords) o.putInt(t.uniC[i])
+        o.putInt(nb)
+        for (p in 0 until t.nWords) if (t.biL[p] > 0) {
+            o.putInt(p); o.putInt(t.biL[p])
+            val b = t.biB[p]!!
+            for (j in 0 until t.biL[p]) { o.putInt(UserLMTables.nid(b[j])); o.putInt(UserLMTables.cnt(b[j])) }
+        }
+        o.putInt(nt)
+        for (s in 0 until t.nTri) if (t.triL[s] > 0) {
+            val c = t.triCtx[s]
+            o.putInt(UserLMTables.nid(c)); o.putInt(UserLMTables.cnt(c)); o.putInt(t.triL[s])
+            val b = t.triB[s]!!
+            for (j in 0 until t.triL[s]) { o.putInt(UserLMTables.nid(b[j])); o.putInt(UserLMTables.cnt(b[j])) }
+        }
+        o.putInt(mb.size)
+        for (b in mb) str(b)
+        val crc = CRC32().apply { update(o.array(), 0, o.position()) }.value
+        o.putInt(crc.toInt())
+        return o.array()
+    }
+
+    fun decode(bytes: ByteArray): UserLangModel.Loaded? {
+        if (bytes.size < 36) return null
+        for (i in 0 until 4) if (bytes[i] != MAGIC[i]) return null
+        val body = bytes.size - 4
+        val crc = CRC32().apply { update(bytes, 0, body) }.value.toInt()
+        val bb = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        if (bb.getInt(body) != crc) return null
+        bb.limit(body); bb.position(4)
+        return try {
+            if (bb.short.toInt() and 0xFFFF != VERSION) return null
+            bb.short
+            val lastDecay = bb.long
+            fun u32(): Int { val v = bb.int; if (v < 0) throw IllegalStateException(); return v }
+            fun str(): String {
+                val n = bb.short.toInt() and 0xFFFF
+                val s = String(bytes, bb.position(), n, Charsets.UTF_8)
+                bb.position(bb.position() + n)
+                return s
+            }
+            val nw = u32()
+            if (nw > body / 2) return null
+            val words = arrayOfNulls<String>(maxOf(nw, 1))
+            for (i in 0 until nw) words[i] = str()
+            val uni = IntArray(maxOf(nw, 1))
+            for (i in 0 until nw) uni[i] = u32()
+            fun bucket(): LongArray? {
+                val n = u32()
+                if (n == 0 || n > bb.remaining() / 8) return null
+                val b = LongArray(n)
+                var last = -1
+                for (j in 0 until n) {
+                    val id = u32(); val c = u32()
+                    if (id >= nw || c == 0 || id <= last) return null
+                    last = id
+                    b[j] = UserLMTables.pack(id, c)
+                }
+                return b
+            }
+            val biB = arrayOfNulls<LongArray>(maxOf(nw, 1)); val biL = IntArray(maxOf(nw, 1))
+            repeat(u32()) {
+                val p = u32()
+                if (p >= nw || biB[p] != null) return null
+                val b = bucket() ?: return null
+                biB[p] = b; biL[p] = b.size
+            }
+            val nt = u32()
+            if (nt > body / 12) return null
+            val tc = LongArray(maxOf(nt, 1)); val tb = arrayOfNulls<LongArray>(maxOf(nt, 1)); val tl = IntArray(maxOf(nt, 1))
+            val seen = HashSet<Long>(nt * 2)
+            for (s in 0 until nt) {
+                val a = u32(); val b = u32()
+                if (a >= nw || b >= nw) return null
+                val c = UserLMTables.pack(a, b)
+                if (!seen.add(c)) return null
+                val bk = bucket() ?: return null
+                tc[s] = c; tb[s] = bk; tl[s] = bk.size
+            }
+            val nm = u32()
+            if (nm > body / 2) return null
+            val manual = ArrayList<String>(nm)
+            repeat(nm) { manual.add(str()) }
+            if (bb.position() != body) return null
+            val t = UserLMTables()
+            t.loadRaw(words, nw, uni, biB, biL, tc, tb, tl, nt)
+            if (t.hasDuplicateWords()) return null
+            UserLangModel.Loaded(t, lastDecay, manual)
+        } catch (_: Exception) { null }
+    }
 }
 
 private val SEED_NEXT: Map<String, List<String>> = hashMapOf(

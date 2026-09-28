@@ -47,7 +47,7 @@ Mở app cài đặt (Compose, **cùng process**) rồi thoát: PSS IME 40.4 →
 |---|---|---|---|
 | FutoSwipeModel (fp16 → FloatArray + scratch) | **3.4 MB** | 2.8 MB | FUTO bật; nhả lúc ẩn ⇒ nạp lại mỗi lần hiện |
 | SwipeEnglish.lexicon (~25k String) | **1.4 MB** | 1.9 MB | vuốt tiếng Anh / gõ EN — `by lazy` trong object, **không bao giờ nhả** |
-| UserLangModel đầy cap (HashMap<String,Int>) | 1.5 MB | 14 MB | luôn (seed mới: 0.2 MB) |
+| UserLangModel đầy cap — bảng gọn 09/2026 (trước: HashMap lồng 1.25–1.5 MB) | **0.34 MB** | — | luôn (seed mới: <0.1 MB) |
 | TelexKeyPrior (chọn phím thông minh, **mặc định BẬT**) | 0.86 MB | **31 MB** | luôn; nhả ở onTrimMemory ⇒ dựng lại |
 | SwipeDecoder templates | 0.37 MB | 0.5 MB | gõ vuốt |
 | VNLexicon2 offsets / SwipeLexicon.forms / Emoji strings | 0.12 / 0.11 / 0.11 MB | < 3.3 MB | luôn / vuốt / emoji |
@@ -91,7 +91,7 @@ Kịch bản: 15 lần hiện/ẩn, 4 lần xoay, 3 lần đổi IME (Gboard ↔
 | 6 | **onTrimMemory gần như chết**: API 34+ không gửi `TRIM_MEMORY_RUNNING_*`; IME đang chọn ở procState 5 / oom_adj 100 nên cũng không nhận `BACKGROUND`. Thay bằng **hẹn giờ ẩn** (vd 30–60 s sau `onFinishInputView`, huỷ khi hiện lại): nhả FUTO, SwipeEnglish.lexicon, WallpaperBitmap, emoji category strings, ClipboardPane view, templatesCache. Giữ TelexKeyPrior (#1). | 2–7 MB lúc ẩn (tuỳ tính năng) | Thấp |
 | 7 | **SwipeEnglish.lexicon** (1.4 MB, không bao giờ nhả): đọc từ tại chỗ trên buffer mmap (so byte ASCII, không String) hoặc holder nhả được (#6). | −1.4 MB khi vuốt EN / gõ EN | TB |
 | 8 | **Cấp phát mỗi phím**: `composeTrial` dùng lại một `TelexEngine` scratch mỗi luồng (reset thay vì `TelexEngine()`); `autoShiftFor` duyệt ngược thay vì `trim` copy. | −3 KB/phím (~−45 % trên đường gợi ý) | Thấp (có test engine) |
-| 9 | UserLangModel: bảng HashMap<String, Int> boxing (~1.5 MB ở cap) + `snapshot()` copy toàn bảng mỗi lần lưu ⇒ bảng mở-địa-chỉ mảng nguyên thuỷ. | −~1 MB + bớt churn lúc lưu | TB–cao; để sau |
+| 9 | ✅ **ĐÃ LÀM 09/2026** — UserLangModel: từ intern thành id (băm mở IntArray), uni IntArray, bi/tri LongArray sắp `(id shl 32 or count)`, file VTL2 chung iOS (CRC32; v1 "VTLM" chuyển một lần). Đo `UserLMCompactTests.measureHeavyUser` (2.990/5.990/2.990): heap 1.25 → **0.34 MB**, file 148 → 115 KB, nạp 2.3 → 1.3 ms, lưu 3.4 → 0.8 ms, `nextWords` 2.1 → 1.8 µs, `count` 41 → 33 ns, `trigramCount` 187 → 87 ns, `bigramCount` 84 → 117 ns (hai lần tra băm tự viết thay vì HashMap lồng — vẫn ~0.1 µs). Snapshot lưu chỉ copy mảng nguyên thuỷ. | −~1 MB + bớt churn lúc lưu | xong (property test so bản cũ) |
 
 Không cần làm: không có Compose trong view IME (KeyboardView vẽ một canvas, EmojiPane vẽ trực tiếp — không view per emoji); không `largeHeap`; R8 minify + shrinkResources đã bật; SoundPool nhả khi ẩn, mẫu âm nhỏ; không có view leak khi xoay/hiện-ẩn.
 

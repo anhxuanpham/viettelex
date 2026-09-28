@@ -74,7 +74,7 @@ final class RamBreakdownTests: XCTestCase {
                 prev2 = prev; prev = w
             }
         }
-        print("RAMPART   (uni=\(lm!.uni.count) bi=\(lm!.bi.values.reduce(0) { $0 + $1.count }) tri=\(lm!.tri.values.reduce(0) { $0 + $1.count }))")
+        print("RAMPART   (uni=\(lm!.uniCount) bi=\(lm!.biPairCount) tri=\(lm!.triPairCount))")
         step("UserLangModel release", settle: 2.0) { lm = nil }
         try? FileManager.default.removeItem(at: url)
 

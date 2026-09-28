@@ -61,8 +61,11 @@ QuickType). Tự tắt ở field từ chối gợi ý (`isSecureTextEntry`,
 
 ### 2. `UserLangModel` — datastore cá nhân hóa
 
-- **Cấu trúc**: `uni [từ: count]`, `bi [prev → next → count]`,
-  `tri ["p2␁p1" → next → count]` (nested dict → lookup O(1), không scan).
+- **Cấu trúc** (logic): `uni [từ: count]`, `bi [prev → next → count]`,
+  `tri ["p2␁p1" → next → count]`. **Lưu trong RAM dạng gọn** (`UserLMTables`, 09/2026): từ
+  intern thành id, uni = mảng count theo id, bi = mảng sắp `(next id<<32 | count)` theo prev id,
+  tri = `[(p2<<32|p1): slot]` → mảng như bi. Lookup O(1)/O(log n), không scan; ngữ nghĩa y hệt
+  bản dict cũ (property test `UserLMCompactTests` so với `LegacyUserLangModel`).
   Cap 3000/6000/3000, quá trần thì chia đôi mọi count (từ hiếm rơi về 0).
 - **Học**: mỗi từ commit (+1; suggestion được bấm nhận +2 — tín hiệu mạnh
   hơn). Trigram chỉ ghi khi nền bigram (p2,p1) đã đạt count ≥2 — chống noise.
@@ -76,8 +79,11 @@ QuickType). Tự tắt ở field từ chối gợi ý (`isSecureTextEntry`,
   liệu cá nhân. Một lần gõ nhầm không đè nổi seed curated (có golden test).
 - **Decay**: mỗi ≥7 ngày, mọi count ×0.7^tuần lúc load (một timestamp toàn
   cục duy nhất — không lưu thời gian per-từ). Hồ sơ phản ánh thói quen gần đây.
-- **Persistence**: binary plist `App Group/userlm.plist`, ghi atomic,
-  coalesce 5s sau phím cuối + khi bàn phím đóng; có migrate từ format v1.
+- **Persistence**: nhị phân VTL2 `App Group/userlm.bin` (little-endian, CRC32, chung layout
+  Android), ghi atomic, coalesce 5s sau phím cuối + khi bàn phím đóng. Bản cũ `userlm.plist`
+  (và JSON v1) được chuyển một lần — plist chỉ bị xoá sau khi userlm.bin ghi xong và đọc lại
+  khớp; file hỏng (CRC) ⇒ dùng plist nếu còn, không thì rỗng. Sao lưu/Từ điển cá nhân đi qua
+  `UserLangModel.Plain` (dict) nên JSON sao lưu không đổi.
   SQLite trong App Group bị bác có chủ ý (anti-pattern iOS — corruption khi
   extension bị suspend).
 - **Ranking inline**: điểm ứng viên khi đang gõ dở =
@@ -259,7 +265,7 @@ dấu" ẩn); sau vuốt ⌫ trong lúc có chip số: iOS `[↩︎ Khôi phục
 | `showSuggestions` | true | Bật thanh gợi ý (bàn phím 246pt ↔ 216pt) |
 | `learnWords` | true | Cho phép học từ hay dùng |
 | `filterSensitive` | true | Lọc từ tục khỏi gợi ý |
-| nút **Xóa từ đã học** | — | Xóa `userlm.plist`; lần mở sau seed lại |
+| nút **Xóa từ đã học** | — | Xóa `userlm.bin` (+ `userlm.plist` cũ nếu còn); lần mở sau seed lại |
 
 ## Privacy
 

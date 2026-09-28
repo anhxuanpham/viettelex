@@ -80,20 +80,18 @@ final class UserDictionaryTests: XCTestCase {
         XCTAssertEqual(kbFile.count(of: "duyệt"), 3)
     }
 
-    func testManualWordSurvivesDecayAndPersistsInPlist() {
+    func testManualWordSurvivesDecayAndPersistsInStore() {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("userdict-\(UUID().uuidString).plist")
-        defer { try? FileManager.default.removeItem(at: url) }
+        defer { UserLangModel.removeStore(at: url) }
         let a = UserLangModel(fileURL: url, synchronous: true)
         a.addWord("Kubernetes")
         a.saveSync()
         // lastDecay = 20 tuần trước → mở lại: decay count về 0 nhưng từ thêm tay còn.
-        var plist = try! PropertyListSerialization.propertyList(
-            from: Data(contentsOf: url), options: [], format: nil) as! [String: Any]
-        XCTAssertEqual(plist["manual"] as? [String], ["Kubernetes"])
-        plist["lastDecay"] = Date().addingTimeInterval(-20 * 7 * 86400)
-        try! PropertyListSerialization.data(fromPropertyList: plist, format: .binary, options: 0)
-            .write(to: url)
+        var p = UserLangModel.readPlain(at: url)!
+        XCTAssertEqual(p.manual, ["Kubernetes"])
+        p.lastDecay = Date().addingTimeInterval(-20 * 7 * 86400)
+        XCTAssertTrue(UserLangModel.writePlain(p, to: url))
         let b = UserLangModel(fileURL: url, synchronous: true)
         XCTAssertGreaterThanOrEqual(b.count(of: "kubernetes"), 1)
         XCTAssertTrue(b.topWords(limit: 5).contains("Kubernetes"))
