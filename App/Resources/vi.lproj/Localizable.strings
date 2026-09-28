@@ -306,7 +306,9 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 "Select text in any app, then open the VietTelex menu → Tools… and pick (or press 1–6): add tones to unaccented text (toi di hoc → tôi đi học), UPPERCASE, lowercase, Title Case, Sentence case, remove tones." = "Bôi đen chữ ở app bất kỳ rồi mở menu VietTelex → Công cụ… và chọn (hoặc bấm 1–6): thêm dấu cho đoạn không dấu (toi di hoc → tôi đi học), HOA, thường, Hoa Đầu Từ, Hoa đầu câu, xoá dấu.";
 "Show text tools in the VietTelex menu" = "Hiện công cụ văn bản trong menu VietTelex";
 "Show maths results" = "Hiện kết quả phép tính";
-"Type a calculation followed by “=” (12*3=, 200+10%=) — the result shows next to the cursor; press Tab to insert it." = "Gõ phép tính rồi “=” (12*3=, 200+10%=) — kết quả hiện cạnh con trỏ, bấm Tab để chèn.";
+"Type a calculation followed by “=” (12*3=, 200+10%=) — the result shows next to the cursor; press Tab or Enter to insert it." = "Gõ phép tính rồi “=” (12*3=, 200+10%=) — kết quả hiện cạnh con trỏ, bấm Tab hoặc Enter để chèn.";
+"Number chips" = "Chip số";
+"Type an amount with k/tr/tỷ (50k, 1tr2, 2 tỷ) and a space — the money format (1.200.000 ₫) shows next to the cursor; press Tab to replace it." = "Gõ số tiền có k/tr/tỷ (50k, 1tr2, 2 tỷ) rồi dấu cách — dạng tiền (1.200.000 ₫) hiện cạnh con trỏ, bấm Tab để thay.";
 "Add-tones hotkey" = "Phím tắt Thêm dấu";
 "Off" = "Tắt";
 "Works in any app, even when another input source is active. Needs Accessibility permission (copies the selection, then pastes the result — your clipboard is restored)." = "Dùng được ở mọi app, kể cả khi đang dùng bộ gõ khác. Cần quyền Trợ năng (copy vùng chọn rồi dán kết quả — clipboard của bạn được trả lại).";

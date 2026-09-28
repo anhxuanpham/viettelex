@@ -42,9 +42,10 @@ final class MathHintTests: XCTestCase {
 
     /// Không có ô ⇒ Tab không bị giữ; dismiss khi không có gì là vô hại.
     func testTabNotConsumedWithoutHint() {
-        MathHint.shared.dismiss()
-        XCTAssertFalse(MathHint.shared.isShowing)
-        XCTAssertNil(MathHint.shared.consumeTab())
+        CaretHint.shared.dismiss()
+        XCTAssertFalse(CaretHint.shared.isShowing)
+        XCTAssertNil(CaretHint.shared.keyAction(keyCode: 48, plain: true))
+        XCTAssertNil(CaretHint.shared.take())
     }
 
     /// Công tắc lưu được và MathHint đọc lại cờ ngay (không phải khởi động lại).
@@ -52,8 +53,8 @@ final class MathHintTests: XCTestCase {
         let before = AppState.shared.mathResults
         defer { AppState.shared.mathResults = before }
         AppState.shared.mathResults = false
-        XCTAssertFalse(MathHint.shared.enabled)
+        XCTAssertFalse(CaretHint.shared.mathEnabled)
         AppState.shared.mathResults = true
-        XCTAssertTrue(MathHint.shared.enabled)
+        XCTAssertTrue(CaretHint.shared.mathEnabled)
     }
 }

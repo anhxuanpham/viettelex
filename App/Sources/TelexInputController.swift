@@ -45,6 +45,10 @@ final class TelexInputController: IMKInputController {
     /// khi thay, màn hình LUÔN được đọc lại (tryTokenShortcut). Reset ở mọi sự kiện có
     /// thể dời con trỏ.
     private var shortcutTail = ShortcutTail()
+    /// Cụm (shortcutTail.run) trước dấu cách gần nhất — chip số "2 tỷ" cần biết cụm số trước.
+    private var numberPrevRun = ""
+    /// Controller vừa activate (main) — CaretHint mượn client của nó để lấy firstRect cho ô nổi.
+    private(set) static weak var activeController: TelexInputController?
     /// ⌫ ngay sau khi nở gõ tắt → trả lại chữ đã gõ (một lần, chỉ in-place, verify màn
     /// hình). Bị tiêu thụ bởi BẤT KỲ phím thật nào tới sau.
     private var shortcutUndo: ShortcutUndo?
@@ -280,24 +284,29 @@ final class TelexInputController: IMKInputController {
         guard event.type == .keyDown,
               let client = sender as? IMKTextInput else { return false }
 
-        // Kết quả phép tính (MathHint): ô "= 36 ⇥ Tab" đang hiện ⇒ Tab chèn kết quả, phím
-        // khác chỉ tắt ô rồi xử lý như thường. Phím "=" ⇒ thử tính sau khi app nhận phím.
-        // Không hiện ô thì chỉ là một lần đọc cờ dưới khoá.
-        if MathHint.shared.isShowing {
-            if event.keyCode == kTab,
-               event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
-               let r = MathHint.shared.consumeTab() {
-                if !engine.isEmpty { endComposition(client) }
-                client.insertText(r, replacementRange: kNoRange)
-                shortcutTail.append(r)
-                logDecision("math hint: Tab → insert result")
+        // Gợi ý cạnh con trỏ (CaretHint — MathHint.swift): kết quả phép tính "= 36" / chip
+        // số "1.200.000 ₫" đang hiện (ô ứng viên hệ thống hoặc ô nổi) ⇒ Tab (phép tính:
+        // cả Enter) áp dụng, Esc tắt + nuốt, phím khác tắt rồi xử lý như thường. Không hiện
+        // gì thì chỉ là một lần đọc cờ dưới khoá.
+        if let act = CaretHint.shared.keyAction(
+            keyCode: Int(event.keyCode),
+            plain: event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty) {
+            switch act {
+            case .accept:
+                if let s = CaretHint.shared.take() {
+                    applyCaretSuggestion(s, client)
+                    return true
+                }
+            case .dismissConsume:
+                CaretHint.shared.dismiss()
                 return true
+            case .dismissPass:
+                CaretHint.shared.dismiss()
             }
-            MathHint.shared.dismiss()
         }
-        let mathTrigger = MathHint.shared.enabled
+        let mathTrigger = CaretHint.shared.mathEnabled
             && MathHintLogic.isTrigger(characters: event.characters, modifiers: event.modifierFlags)
-        defer { if mathTrigger { MathHint.shared.afterEquals(client: client) } }
+        defer { if mathTrigger { CaretHint.shared.afterEquals(client: client, controller: self) } }
 
         // Signpost the whole IMKit round trip; the end message names the strategy
         // that actually handled this key (see Instrumentation.swift).
@@ -823,6 +832,18 @@ final class TelexInputController: IMKInputController {
             let rewrote = boundary(client, suppressAutoRestore: boundaryChar.map(isBracket) ?? false,
                                    allowShortcuts: allow.word, allowTokenShortcuts: allow.token)
             wordGluedToDigit = Self.gluesShortcutToken(boundaryChar)   // #82 số, #87 / # @ . _ -
+            // Chip số (chỉ dạng tiền): dấu cách ngay sau cụm có chữ số ⇒ đọc màn hình MỘT lần
+            // sau khi dấu cách tới app. Chỉ app đã chứng minh in-place (thay chữ đã chốt bằng
+            // replacementRange an toàn) và không đang marked.
+            if inserted == " " {
+                let run = shortcutTail.run
+                if CaretHint.shared.numberEnabled,
+                   CaretHintLogic.numberWorthChecking(boundary: inserted, run: run, prevRun: numberPrevRun) {
+                    CaretHint.shared.afterNumberSpace(client: client, controller: self, keyStream: nil,
+                                                      canReplace: !markedNow && Self.replacesCommittedText(id))
+                }
+                numberPrevRun = run
+            }
             if let s = inserted { shortcutTail.append(s) } else { shortcutTail.reset() }
             if let x = expandedAtBoundary, !markedNow, !wasEdge {
                 // Một ký tự in được vừa theo sau nội dung nở ⇒ ⌫ kế tiếp được hoàn tác.
@@ -1861,10 +1882,64 @@ final class TelexInputController: IMKInputController {
         return true
     }
 
+    // MARK: - Gợi ý cạnh con trỏ (CaretHint)
+
+    /// Áp dụng gợi ý đã chọn (Tab/Enter/click). Phép tính: chèn kết quả sau "=". Chip số:
+    /// ĐỌC LẠI màn hình — chỉ thay khi chữ ngay trước con trỏ đúng là cụm số + dấu cách và
+    /// cụm đứng riêng (như gõ tắt ký hiệu); lệch ⇒ không đụng gì.
+    private func applyCaretSuggestion(_ s: CaretSuggestion, _ client: IMKTextInput) {
+        if !engine.isEmpty { endComposition(client) }
+        guard !s.replace.isEmpty else {
+            client.insertText(s.insert, replacementRange: kNoRange)
+            shortcutTail.append(s.insert)
+            logDecision("caret hint \(s.kind): insert")
+            return
+        }
+        let id = AppState.shared.currentBundleID
+        let sel = client.selectedRange()
+        guard Self.replacesCommittedText(id), sel.location != NSNotFound, sel.length == 0,
+              let window = ShortcutScreen.readWindow(caret: sel.location, text: s.replace),
+              let sub = client.attributedSubstring(from: window),
+              let range = ShortcutScreen.tokenRange(caret: sel.location, token: s.replace,
+                                                    window: sub.string, windowStart: window.location),
+              !(AppState.shared.manualMode(id) == .inPlace && range.location <= 1)
+        else {
+            DebugLog.log("caret hint \(s.kind) \(id ?? "?"): screen disagrees → skip")
+            return
+        }
+        engine.reset()
+        engine.noteExternalWord(english: false)
+        client.insertText(s.insert, replacementRange: range)
+        shortcutTail.reset()
+        shortcutTail.append(s.insert)
+        numberPrevRun = ""
+        logDecision("caret hint \(s.kind) \(id ?? "?"): -\(range.length) +\((s.insert as NSString).length)")
+    }
+
+    /// Ô ứng viên hệ thống hỏi danh sách (updateCandidates). Chỉ có khi CaretHint đang hiện.
+    override func candidates(_ sender: Any!) -> [Any]! {
+        CaretHint.shared.candidateStrings
+    }
+
+    /// Click vào ứng viên trong ô hệ thống.
+    override func candidateSelected(_ candidateString: NSAttributedString!) {
+        guard let client = client() as IMKTextInput?, let s = CaretHint.shared.take() else { return }
+        applyCaretSuggestion(s, client)
+    }
+
+    /// Client của controller đang active nếu nó thuộc app đang ở trước (MAIN) — để ô nổi
+    /// của đường tap lấy firstRect (thường đúng hơn AX ở Chromium/Electron).
+    static func activeClientForFrontApp() -> IMKTextInput? {
+        guard let c = activeController?.client() as IMKTextInput?,
+              let front = FrontmostApp.shared.bundleID, c.bundleIdentifier() == front else { return nil }
+        return c
+    }
+
     // MARK: - IMK lifecycle
 
     override func activateServer(_ sender: Any!) {
         super.activateServer(sender)
+        Self.activeController = self
         // Pin the layout Telex composes on BEFORE anything reads a key. Without this
         // the layout is whatever the previously selected input source happened to be
         // (ABC → QWERTY, Colemak → Colemak), so the same input method typed two
@@ -1988,6 +2063,8 @@ final class TelexInputController: IMKInputController {
 
     override func deactivateServer(_ sender: Any!) {
         dropComposition(cause: "deactivateServer")
+        CaretHint.shared.dismiss()
+        if Self.activeController === self { Self.activeController = nil }
         if let obs = resetObserver { NotificationCenter.default.removeObserver(obs); resetObserver = nil }
         // Input source switched away from VietTelex (or focus lost): the tap must not
         // transform keys, so the user really types English in terminals. BUT with

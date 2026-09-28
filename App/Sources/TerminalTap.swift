@@ -1260,21 +1260,79 @@ enum AXTextEdit {
         return str
     }
 
-    /// Screen rect of the caret (Cocoa coordinates, origin bottom-left) via
-    /// kAXBoundsForRangeParameterizedAttribute on a 0-length range; nil on any failure.
-    /// Used only to place the math-result hint (MathHint) — never on the key path.
-    static func caretScreenRect() -> NSRect? {
-        guard AXIsProcessTrusted(), let element = focusedElement(), let caret = readCaret() else { return nil }
-        var range = CFRange(location: caret, length: 0)
-        guard let rangeVal = AXValueCreate(.cfRange, &range) else { return nil }
-        var result: CFTypeRef?
-        guard AXUIElementCopyParameterizedAttributeValue(
-                element, kAXBoundsForRangeParameterizedAttribute as CFString, rangeVal, &result) == .success,
-              let v = result, CFGetTypeID(v) == AXValueGetTypeID()
-        else { return nil }
-        var r = CGRect.zero
-        guard AXValueGetValue(v as! AXValue, .cgRect, &r) else { return nil }
-        // AX uses top-left origin on the primary screen; flip to Cocoa.
+    /// Caret geometry of the focused element, for placing the caret hint (CaretHint in
+    /// MathHint.swift) — only right after "=" / a number + space, never per key. Each
+    /// accessor is a separate AX round trip (50ms timeout) so the caller stops at the
+    /// first source that works. All rects in Cocoa screen coordinates (bottom-left).
+    struct FocusGeometry {
+        let element: AXUIElement
+        let caret: Int?
+
+        /// Frame of the focused element (kAXPosition + kAXSize).
+        func fieldFrame() -> NSRect? {
+            var posRef: CFTypeRef?, sizeRef: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posRef) == .success,
+                  AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeRef) == .success,
+                  let pv = posRef, CFGetTypeID(pv) == AXValueGetTypeID(),
+                  let sv = sizeRef, CFGetTypeID(sv) == AXValueGetTypeID() else { return nil }
+            var p = CGPoint.zero, sz = CGSize.zero
+            guard AXValueGetValue(pv as! AXValue, .cgPoint, &p),
+                  AXValueGetValue(sv as! AXValue, .cgSize, &sz) else { return nil }
+            return AXTextEdit.flip(CGRect(origin: p, size: sz))
+        }
+
+        /// kAXBoundsForRange on the 0-length caret range.
+        func caretBounds() -> NSRect? {
+            guard let caret else { return nil }
+            return bounds(location: caret, length: 0)
+        }
+
+        /// kAXBoundsForRange on the character just before the caret (Chromium often
+        /// fails / returns the whole field for a 0-length range but answers this).
+        func previousCharBounds() -> NSRect? {
+            guard let caret, caret > 0 else { return nil }
+            return bounds(location: caret - 1, length: 1)
+        }
+
+        /// kAXInsertionPointLineNumber (0-based).
+        func insertionLine() -> Int? {
+            var ref: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(element, kAXInsertionPointLineNumberAttribute as CFString, &ref) == .success
+            else { return nil }
+            return ref as? Int
+        }
+
+        private func bounds(location: Int, length: Int) -> NSRect? {
+            var range = CFRange(location: location, length: length)
+            guard let rangeVal = AXValueCreate(.cfRange, &range) else { return nil }
+            var result: CFTypeRef?
+            guard AXUIElementCopyParameterizedAttributeValue(
+                    element, kAXBoundsForRangeParameterizedAttribute as CFString, rangeVal, &result) == .success,
+                  let v = result, CFGetTypeID(v) == AXValueGetTypeID()
+            else { return nil }
+            var r = CGRect.zero
+            guard AXValueGetValue(v as! AXValue, .cgRect, &r) else { return nil }
+            return AXTextEdit.flip(r)
+        }
+    }
+
+    /// nil when AX is untrusted or nothing is focused.
+    static func focusedGeometryReader() -> FocusGeometry? {
+        guard AXIsProcessTrusted(), let element = focusedElement() else { return nil }
+        var caret: Int?
+        var rangeRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success,
+           let rangeVal = rangeRef, CFGetTypeID(rangeVal) == AXValueGetTypeID() {
+            var selected = CFRange(location: 0, length: 0)
+            if AXValueGetValue(rangeVal as! AXValue, .cfRange, &selected), selected.length == 0 {
+                caret = selected.location
+            }
+        }
+        return FocusGeometry(element: element, caret: caret)
+    }
+
+    /// AX uses top-left origin on the primary screen; flip to Cocoa.
+    static func flip(_ r: CGRect) -> NSRect {
         let primaryH = NSScreen.screens.first?.frame.height ?? 0
         return NSRect(x: r.minX, y: primaryH - r.maxY, width: r.width, height: r.height)
     }
@@ -2205,6 +2263,8 @@ final class TerminalTapController {
     /// AX text). Cụm CHƯA NEO (sau click/đổi ô, đầu ô — #99) ⇒ chỉ nở khi AX đọc lại
     /// xác nhận (ShortcutMatch.findForTap). TAP-thread.
     private var shortcutTail = ShortcutTail()
+    /// Cụm trước dấu cách gần nhất (chip số "2 tỷ"). TAP-thread confined.
+    private var numberPrevRun = ""
     /// ⌫ ngay sau khi nở → trả lại chữ đã gõ (một lần). Phím thật nào tới cũng tiêu thụ.
     private var shortcutUndo: ShortcutUndo?
     /// emitBoundary vừa nở: (chữ trên màn hình trước khi nở, nội dung).
@@ -2538,6 +2598,10 @@ final class TerminalTapController {
         if type == .leftMouseDown || type == .rightMouseDown {
             engine.reset()
             shortcutTail.reset(); shortcutUndo = nil   // con trỏ đã dời
+            numberPrevRun = ""
+            // Click ngoài ô gợi ý ⇒ con trỏ dời: tắt gợi ý (Tab sau đó không được chèn vào
+            // chỗ khác). Click TRÊN ô ứng viên hệ thống thì để nó chọn (candidateSelected).
+            CaretHint.shared.dismissForClick(at: event.location)
             lastTapKeyWasBoundary = false   // click at a word's end re-arms re-edit
             lastTapKeyWasDigit = false
             chordRecognizer.disarm()        // click giữa lúc giữ chord = không phải toggle
@@ -2791,21 +2855,27 @@ final class TerminalTapController {
 
         let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
 
-        // Kết quả phép tính (MathHint): Tab khi ô "= 36 ⇥ Tab" đang hiện ⇒ chèn kết quả;
-        // phím khác chỉ tắt ô. Phím "=" (vị trí phím =, không Shift/⌘/⌃/⌥) ⇒ thử tính sau
-        // khi phím tới app (đọc AX, trên main). Không hiện ô ⇒ một lần đọc cờ dưới khoá.
+        // Gợi ý cạnh con trỏ (CaretHint — MathHint.swift), ô nổi của đường tap: Tab (phép
+        // tính: cả Enter) áp dụng, Esc tắt + nuốt, phím khác tắt rồi đi tiếp. Phím "="
+        // (vị trí phím =, không Shift/⌘/⌃/⌥) ⇒ thử tính sau khi phím tới app (đọc AX, trên
+        // main). Không hiện gì ⇒ một lần đọc cờ dưới khoá.
         let mathMods = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
-        if MathHint.shared.isShowing {
-            if keyCode == kVK_Tab, mathMods.isEmpty, let r = MathHint.shared.consumeTab() {
-                engine.reset()
-                SyntheticKeyboard.apply(backspaces: 0, insert: r, mode: emitMode)
-                shortcutTail.append(r)
+        if let act = CaretHint.shared.keyAction(keyCode: keyCode, plain: mathMods.isEmpty, panelOnly: true) {
+            switch act {
+            case .accept:
+                if let s = CaretHint.shared.take() {
+                    applyCaretSuggestionTap(s, id: id)
+                    return nil
+                }
+            case .dismissConsume:
+                CaretHint.shared.dismiss()
                 return nil
+            case .dismissPass:
+                CaretHint.shared.dismiss()
             }
-            MathHint.shared.dismiss()
         }
-        if keyCode == kVK_ANSI_Equal, mathMods.isEmpty, MathHint.shared.enabled {
-            MathHint.shared.afterEquals(client: nil)
+        if keyCode == kVK_ANSI_Equal, mathMods.isEmpty, CaretHint.shared.mathEnabled {
+            CaretHint.shared.afterEquals(client: nil, controller: nil)
         }
 
         if keyCode == kDelete {
@@ -2948,6 +3018,19 @@ final class TerminalTapController {
             let rewrote = emitBoundary(suppressAutoRestore: isBracketUnichar(ch.utf16.first ?? unit),
                                        allowShortcuts: allow.word, allowToken: allow.token)
             lastTapKeyWasDigit = TelexInputController.gluesShortcutToken(ch.asciiValue)   // #82 số, #87 / # @ . _ -
+            // Chip số (chỉ dạng tiền): dấu cách ngay sau cụm có chữ số ⇒ đọc màn hình (AX)
+            // một lần sau khi phím tới app; terminal không có AX ⇒ dựng từ dòng phím (cụm neo).
+            if boundaryText == " " {
+                let run = shortcutTail.run
+                if CaretHint.shared.numberEnabled,
+                   CaretHintLogic.numberWorthChecking(boundary: boundaryText, run: run, prevRun: numberPrevRun) {
+                    let stream = CaretHintLogic.keyStreamBefore(anchored: shortcutTail.anchored,
+                                                                prevRun: numberPrevRun, run: run)
+                    CaretHint.shared.afterNumberSpace(client: nil, controller: nil, keyStream: stream,
+                                                      canReplace: true)
+                }
+                numberPrevRun = run
+            }
             shortcutTail.append(boundaryText)
             if let x = tapExpanded, emitMode == .backspace {
                 shortcutUndo = ShortcutUndo.make(typed: x.typed, expansion: x.expansion, boundary: boundaryText)
@@ -3212,6 +3295,36 @@ final class TerminalTapController {
         }
         shortcutTail.append(word)
         return false
+    }
+
+    /// Áp dụng gợi ý cạnh con trỏ (tap). Phép tính: gõ thêm kết quả. Chip số: có AX thì
+    /// ĐỌC LẠI và chỉ thay khi chữ trước con trỏ đúng là cụm số + dấu cách, đứng riêng;
+    /// trình duyệt mà AX không đọc được ⇒ bỏ; terminal thuần ⇒ tin dòng phím (gợi ý dựng
+    /// từ chính các phím này, cụm đã neo). ⌫ theo KÝ TỰ như gõ tắt ký hiệu.
+    private func applyCaretSuggestionTap(_ s: CaretSuggestion, id: String?) {
+        engine.reset()
+        guard !s.replace.isEmpty else {
+            SyntheticKeyboard.apply(backspaces: 0, insert: s.insert, mode: emitMode)
+            shortcutTail.append(s.insert)
+            return
+        }
+        if let caret = AXTextEdit.readCaret() {
+            guard let window = ShortcutScreen.readWindow(caret: caret, text: s.replace),
+                  let text = AXTextEdit.readString(at: window.location, length: window.length),
+                  ShortcutScreen.tokenRange(caret: caret, token: s.replace, window: text,
+                                            windowStart: window.location) != nil else {
+                DebugLog.log("caret hint(tap) \(s.kind) \(id ?? "?"): screen disagrees → skip")
+                return
+            }
+        } else if AppState.shared.usesAxDetect(id) {
+            return
+        }
+        engine.noteExternalWord(english: false)
+        SyntheticKeyboard.apply(backspaces: s.replace.count, insert: s.insert, mode: emitMode)
+        shortcutTail.reset()
+        shortcutTail.append(s.insert)
+        numberPrevRun = ""
+        DebugLog.log("caret hint(tap) \(s.kind) \(id ?? "?"): bs=\(s.replace.count) ins=\(s.insert.count)")
     }
 
     /// ⌫ ngay sau khi nở (tap): xoá nội dung + ranh giới, gõ lại chữ đã gõ + ranh giới.

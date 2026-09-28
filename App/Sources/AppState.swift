@@ -1164,7 +1164,14 @@ final class AppState: @unchecked Sendable {
     /// Gõ phép tính rồi "=" ⇒ gợi ý kết quả, Tab để chèn (MathHint). Mặc định BẬT như iOS/Android.
     var mathResults: Bool {
         get { defaults.object(forKey: "mathResults") as? Bool ?? true }
-        set { defaults.set(newValue, forKey: "mathResults"); MathHint.shared.reloadSetting() }
+        set { defaults.set(newValue, forKey: "mathResults"); CaretHint.shared.reloadSetting() }
+    }
+
+    /// Chip số (chỉ dạng tiền): "1tr2␣" ⇒ gợi ý "1.200.000 ₫", Tab để thay (CaretHint).
+    /// Cùng khoá "numberChips" và mặc định BẬT như iOS/Android.
+    var numberChips: Bool {
+        get { defaults.object(forKey: "numberChips") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "numberChips"); CaretHint.shared.reloadSetting() }
     }
 
     /// Phím tắt Thêm dấu cho vùng chọn: "off" (mặc định) / TextActionHotkey.choices.

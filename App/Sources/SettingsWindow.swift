@@ -129,6 +129,7 @@ final class SettingsModel: ObservableObject {
     @Published var switchHotkey: String { didSet { AppState.shared.switchHotkey = switchHotkey } }
     @Published var textToolsInMenu: Bool { didSet { AppState.shared.textToolsInMenu = textToolsInMenu } }
     @Published var mathResults: Bool { didSet { AppState.shared.mathResults = mathResults } }
+    @Published var numberChips: Bool { didSet { AppState.shared.numberChips = numberChips } }
     @Published var addTonesHotkey: String {
         didSet {
             AppState.shared.addTonesHotkey = addTonesHotkey
@@ -218,6 +219,7 @@ final class SettingsModel: ObservableObject {
         switchHotkey = AppState.shared.switchHotkey
         textToolsInMenu = AppState.shared.textToolsInMenu
         mathResults = AppState.shared.mathResults
+        numberChips = AppState.shared.numberChips
         addTonesHotkey = AppState.shared.addTonesHotkey
         icloudSync = ICloudSync.shared.isEnabled
         menuIcon = AppState.shared.menuIcon
@@ -748,7 +750,10 @@ struct GeneralTab: View {
                 Text(model.loc("Works in any app, even when another input source is active. Needs Accessibility permission (copies the selection, then pastes the result — your clipboard is restored)."))
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle(model.loc("Show maths results"), isOn: $model.mathResults)
-                Text(model.loc("Type a calculation followed by “=” (12*3=, 200+10%=) — the result shows next to the cursor; press Tab to insert it."))
+                Text(model.loc("Type a calculation followed by “=” (12*3=, 200+10%=) — the result shows next to the cursor; press Tab or Enter to insert it."))
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle(model.loc("Number chips"), isOn: $model.numberChips)
+                Text(model.loc("Type an amount with k/tr/tỷ (50k, 1tr2, 2 tỷ) and a space — the money format (1.200.000 ₫) shows next to the cursor; press Tab to replace it."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section(header: Label(model.loc("iCloud sync"), systemImage: "icloud")) {
