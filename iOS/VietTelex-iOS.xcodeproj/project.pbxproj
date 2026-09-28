@@ -225,6 +225,7 @@
 		D45BA551FBF05D36CED8D449 /* SwipeLexicon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3994C0C17115101811283049 /* SwipeLexicon.swift */; };
 		D4DEA988483DB59F683B8407 /* EngineBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AE58D76A8127D641A2AF62 /* EngineBridgeTests.swift */; };
 		D652DD5E0514F42EB5E7989A /* ClipboardHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = C23B10293CBF99CC16B1E908 /* ClipboardHistory.swift */; };
+		D8E08CF801214FE998C0180C /* vnlm-parity.txt in Resources */ = {isa = PBXBuildFile; fileRef = DB52CD432640348306317A7C /* vnlm-parity.txt */; };
 		D902A388BD011F37220F5C53 /* SpaceLogo@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = DBA09810793F0754E1A9C3F7 /* SpaceLogo@3x.png */; };
 		D91D90FECDF9DD3D679E8618 /* SwipeEnglish.swift in Sources */ = {isa = PBXBuildFile; fileRef = E360BCC27ECE43C8DEB11CC7 /* SwipeEnglish.swift */; };
 		D97E377C61E596A589464160 /* KeyCommitQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D0B60123ABBD5FE60D9234A /* KeyCommitQueueTests.swift */; };
@@ -436,6 +437,7 @@
 		D4F06F2D8BF071889A8590BF /* add-tones.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "add-tones.txt"; sourceTree = "<group>"; };
 		D705942B9BA084047E7A7EF1 /* EmojiPlane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPlane.swift; sourceTree = "<group>"; };
 		D93CDC9D2CEA8A91A576B183 /* FeatureRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureRegressionTests.swift; sourceTree = "<group>"; };
+		DB52CD432640348306317A7C /* vnlm-parity.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "vnlm-parity.txt"; sourceTree = "<group>"; };
 		DB8B0DA94C5E17697D6DE9E7 /* AdjacentKeyFixerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdjacentKeyFixerTests.swift; sourceTree = "<group>"; };
 		DB94721D99CEB3A5D2CA8A8B /* SlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlowTests.swift; sourceTree = "<group>"; };
 		DBA09810793F0754E1A9C3F7 /* SpaceLogo@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "SpaceLogo@3x.png"; sourceTree = "<group>"; };
@@ -533,6 +535,7 @@
 				E7BF9D54E0DFCE9D7395F598 /* swipe-paths.txt */,
 				5E8B28C264666A6160445981 /* swipe-traces-sample.json */,
 				8CCBF78039DA75E228D4CDC2 /* text-tools.txt */,
+				DB52CD432640348306317A7C /* vnlm-parity.txt */,
 			);
 			path = Fixtures;
 			sourceTree = "<group>";
@@ -932,6 +935,7 @@
 				8230AC1E2000E3632E55037B /* swipe-traces-sample.json in Resources */,
 				03B12CE64D361D1987537103 /* text-tools.txt in Resources */,
 				BC7C55450CA36CBF6D0F8297 /* vnlexicon.bin in Resources */,
+				D8E08CF801214FE998C0180C /* vnlm-parity.txt in Resources */,
 				D4218E1F871AA9175218113F /* vnlm.bin in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

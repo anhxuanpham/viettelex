@@ -243,6 +243,7 @@ schemes:
             - SwipeEnglishTests/testBenchmarkWithEnglish
             - SyllableLMTests/testHeldoutAccuracy
             - SyllableLMTests/testHeldoutAccuracyWithEnglish
+            - SyllableLMTests/testLookupLatency
             - SwipeReviseTests/testHeldoutRevisionGain
             - SuggestBigramTests/testHeldoutNewUser
             - SuggestBigramTests/testHeldoutLearningUserNotHurt

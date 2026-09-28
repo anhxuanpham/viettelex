@@ -64,6 +64,9 @@
                   Identifier = "SyllableLMTests/testHeldoutAccuracyWithEnglish">
                </Test>
                <Test
+                  Identifier = "SyllableLMTests/testLookupLatency">
+               </Test>
+               <Test
                   Identifier = "SwipeReviseTests/testHeldoutRevisionGain">
                </Test>
                <Test
