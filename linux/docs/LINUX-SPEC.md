@@ -66,6 +66,13 @@ Linux không có "tap backspace" ổn định như macOS; hai cách chuẩn củ
   gõ"); IBus gửi `IBUS_ATTR_UNDERLINE_NONE` tường minh, Fcitx5 gửi `TextFormatFlag::NoFlag`. Ở
   Surrounding/Direct bỏ preedit hoàn toàn.
 - Mất focus / click chuột / đổi con trỏ → commit preedit (không nuốt chữ), reset engine.
+- **Có vùng chọn thì không với ngược** (sửa dấu từ cũ, ⌫ mở lại từ, gõ tắt / tự khôi phục ở
+  Surrounding): phím gõ như thường, app thay vùng chọn. GTK3 (Firefox, Chromium, app GTK3) gửi
+  surrounding không có anchor → kiểm thêm PRIMARY sát con trỏ (`InputContext::selectionAtCaret`,
+  `selectionAtCaret` trong text_tools). Chỉ hỏi ngay trước lần với ngược (hiếm), tối đa một lần
+  mỗi phím; gõ thường không tốn gì. Fcitx5: cache addon clipboard, trúng thì xác nhận bằng
+  `xclip`/`wl-paste` nếu có (cache giữ chữ cũ sau khi bỏ chọn); IBus: `xclip`/`wl-paste`/`xsel`
+  timeout 150 ms.
 
 ### 3.1 Direct cho terminal và gạch chân — kết quả đọc mã nguồn (26/09/2026)
 
@@ -161,11 +168,13 @@ Rủi ro còn lại: `IBUS_ENABLE_SYNC_MODE=1` (không mặc định) + gõ rấ
   `Session::isAddTonesHotkey`). Hợp đồng: `common/SETTINGS.md` §7.
 - Biến đổi = process con `viettelex-text-tool` (SwiftPM `engine-capi`, target `TextToolCLI`:
   SYMLINK tới `iOS/Keyboard/{TextTools,AddTones,SyllableLM,VNLexicon2,VNSuggest,SwipeLexicon,
-  SwipeEnglish}.swift` + package TelexCore; `#if VIETTELEX_CLI` chỉ đổi chỗ tìm dữ liệu).
+  SwipeEnglish}.swift` + engine; `#if VIETTELEX_CLI` đổi chỗ tìm dữ liệu + `SwipeLexicon.fold`).
   ctest `text_tool_fixtures` chạy fixture chung `iOS/KeyboardTests/Fixtures/{text-tools,
-  add-tones}.txt`. Có Foundation (static) — nằm ngoài `.so` engine và ngoài process IM.
+  add-tones}.txt`. Linux chỉ link FoundationEssentials static (`-module-alias
+  Foundation=FoundationEssentials`, 3 API NSString thiếu ở `LinuxShims.swift`; không
+  CoreFoundation/ICU: 57 → 13 MB) — nằm ngoài `.so` engine và ngoài process IM.
 - Lấy chữ: surrounding có vùng chọn → PRIMARY (addon clipboard Fcitx5 / `wl-paste`, `xclip`,
-  `xsel` nếu có). Thay: commit đè vùng chọn; không đụng clipboard. Chạy nền
+  `xsel` nếu có; app báo surrounding không vùng chọn — GTK3 — chỉ nhận PRIMARY sát con trỏ). Thay: commit đè vùng chọn; không đụng clipboard. Chạy nền
   (`TextToolRunner`), kết quả về main loop; mất focus (menu) → commit khi focus lại ≤ 3 s.
 - Icon khay theo Việt/Anh: Fcitx5 `subModeIconImpl` (`viettelex` / `viettelex-off`), IBus
   icon + symbol property InputMode (`VT` / `E`).

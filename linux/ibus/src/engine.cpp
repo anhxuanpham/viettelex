@@ -154,6 +154,18 @@ public:
         if (!read(text, cursor, anchor)) return false;
         return anchor != cursor;
     }
+    // Before a reach-back only (Session): the GTK3 IBus module (Firefox, Chromium, GTK3 apps)
+    // sends anchor == cursor even with text selected — then PRIMARY against the caret, read
+    // with a short timeout (rare: re-edit / ⌫ reopen / shortcut or auto-restore delete).
+    bool selectionAtCaret() override {
+        IBusText *text = nullptr;
+        guint cursor = 0, anchor = 0;
+        if (!read(text, cursor, anchor)) return false;
+        const gchar *s = ibus_text_get_text(text);
+        if (!s) return anchor != cursor;
+        return vt::selectionAtCaret(s, cursor, anchor,
+                                    [](std::string &p) { return vt::readPrimarySelection(p, 150); });
+    }
 
 private:
     bool read(IBusText *&text, guint &cursor, guint &anchor) {
@@ -264,17 +276,28 @@ void runTextTool(VtIBusEngine *self, vt::TextTool tool) {
     self->session->finish(client, true);
     vt::TextToolRunner::Source source;
     if ((engine->client_capabilities & IBUS_CAP_SURROUNDING_TEXT) && self->surroundingProven) {
-        // The app reports its text: its selection is authoritative (none = nothing to do).
+        // The app reports its text: its selection is authoritative.
         IBusText *t = nullptr;
         guint cursor = 0, anchor = 0;
         ibus_engine_get_surrounding_text(engine, &t, &cursor, &anchor);
         const gchar *s = t ? ibus_text_get_text(t) : nullptr;
+        if (!s) return;
         std::string sel;
-        if (!s || !vt::selectionFromSurrounding(s, cursor, anchor, sel)) return;
-        source = [sel](std::string &out) {
-            out = sel;
-            return true;
-        };
+        if (vt::selectionFromSurrounding(s, cursor, anchor, sel)) {
+            source = [sel](std::string &out) {
+                out = sel;
+                return true;
+            };
+        } else {
+            // No selection reported — GTK3 never reports one (no anchor): PRIMARY, but only
+            // when it touches the caret, else nothing to do.
+            source = [text = std::string(s), cursor](std::string &out) {
+                std::string p;
+                if (!vt::readPrimarySelection(p) || !vt::primaryAdjacentToCursor(text, cursor, p)) return false;
+                out = std::move(p);
+                return true;
+            };
+        }
     } else {
         source = [](std::string &out) { return vt::readPrimarySelection(out); };
     }

@@ -51,9 +51,26 @@ bool runTextTool(TextTool t, const std::string &in, std::string &out, int timeou
 // False when there is no selection or the offsets are out of range.
 bool selectionFromSurrounding(const std::string &text, unsigned cursor, unsigned anchor, std::string &out);
 
+// GTK3 clients (Firefox, Chromium, GTK3 apps — gtk_im_context_set_surrounding has no anchor)
+// report surrounding text with anchor == cursor even while text is selected. The PRIMARY
+// selection is then taken as the selection only when it sits right against the caret (a
+// selection always ends at the caret): text before the caret ends with it, or text after
+// the caret starts with it. A stale PRIMARY from elsewhere is ignored.
+bool primaryAdjacentToCursor(const std::string &text, unsigned cursor, const std::string &primary);
+
+// Is text selected at the caret? The decision behind InputContext::selectionAtCaret (asked
+// before re-edit / ⌫ reopen / shortcut or auto-restore deletes): anchor != cursor, else —
+// GTK3 reports no anchor — a PRIMARY selection against the caret. `readPrimary` is called
+// only in that second case (it may block briefly); false from it = no PRIMARY.
+bool selectionAtCaret(const std::string &text, unsigned cursor, unsigned anchor,
+                      const std::function<bool(std::string &)> &readPrimary);
+
 // PRIMARY selection (the highlighted text) through wl-paste --primary (Wayland) or
 // xclip / xsel (X11) — only when such a tool is on PATH. Blocking: worker thread only.
 bool readPrimarySelection(std::string &out, int timeoutMs = 700);
+// A tool readPrimarySelection can use is installed for this session (an empty read then
+// really means "nothing selected").
+bool primarySelectionToolAvailable();
 
 // Runs one job at a time on a worker thread and hands the result back on the IM's main
 // thread through `post` (Fcitx5 EventDispatcher / g_main_context_invoke).

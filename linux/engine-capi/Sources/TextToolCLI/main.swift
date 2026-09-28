@@ -14,9 +14,11 @@
 //
 // Dữ liệu (vnlexicon.bin, vnlm.bin, enlexicon.bin): $VIETTELEX_DATA_DIR, hoặc
 // <prefix>/share/viettelex suy từ vị trí file chạy, hoặc /usr/share/viettelex.
-import Foundation
+import Foundation   // Linux: = FoundationEssentials (xem LinuxShims.swift)
 #if canImport(Glibc)
 import Glibc
+#elseif canImport(Darwin)
+import Darwin
 #endif
 
 /// Trần độ dài vùng chọn (UTF-16) — như TextActionTransform.maxLength của macOS.
@@ -42,8 +44,32 @@ func apply(_ tool: Tool, _ text: String) -> String? {
 }
 
 func fail(_ msg: String, _ code: Int32 = 2) -> Never {
-    FileHandle.standardError.write(Data((msg + "\n").utf8))
+    writeAll(2, msg + "\n")
     exit(code)
+}
+
+/// Ghi hết `s` (UTF-8) ra fd (1 = stdout, 2 = stderr).
+func writeAll(_ fd: Int32, _ s: String) {
+    var bytes = Array(s.utf8)[...]
+    while !bytes.isEmpty {
+        let n = bytes.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
+        if n < 0 && errno == EINTR { continue }
+        guard n > 0 else { return }
+        bytes = bytes.dropFirst(n)
+    }
+}
+
+/// Đọc hết stdin.
+func readStdin() -> [UInt8] {
+    var data: [UInt8] = []
+    var buf = [UInt8](repeating: 0, count: 65536)
+    while true {
+        let n = buf.withUnsafeMutableBytes { read(0, $0.baseAddress, $0.count) }
+        if n < 0 && errno == EINTR { continue }
+        guard n > 0 else { break }
+        data.append(contentsOf: buf[0..<n])
+    }
+    return data
 }
 
 func readFixture(_ path: String) -> [Substring] {
@@ -96,7 +122,7 @@ if args.first == "--check-fixtures" {
 guard args.count == 1, let tool = Tool(rawValue: args[0]) else {
     fail("dùng: viettelex-text-tool <\(Tool.allCases.map(\.rawValue).joined(separator: "|"))> < vào > ra")
 }
-let input = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self)
+let input = String(decoding: readStdin(), as: UTF8.self)
 guard let out = apply(tool, input) else { exit(1) }
-FileHandle.standardOutput.write(Data(out.utf8))
+writeAll(1, out)
 exit(0)

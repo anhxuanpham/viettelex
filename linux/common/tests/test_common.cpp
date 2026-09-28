@@ -66,6 +66,13 @@ struct Mock : InputContext {
         return true;
     }
     bool hasSelection() override { return selection; }
+    // GTK3: the cheap check sees nothing, only the thorough one (PRIMARY at the caret) does.
+    bool primarySelection = false;
+    int thoroughAsks = 0;
+    bool selectionAtCaret() override {
+        ++thoroughAsks;
+        return selection || primarySelection;
+    }
     std::string screen() const { return doc + pre; }
 };
 
@@ -400,6 +407,34 @@ void testTextToolNamesAndSelection() {
     CHECK_EQ(sel, std::string("học"));
     CHECK(!selectionFromSurrounding("Tôi đi học", 3, 3, sel));
     CHECK(!selectionFromSurrounding("abc", 1, 9, sel));
+
+    // GTK3: no anchor in surrounding text → PRIMARY only when it touches the caret.
+    CHECK(primaryAdjacentToCursor("toi di hoc", 10, "toi di hoc"));   // select all, caret at end
+    CHECK(primaryAdjacentToCursor("toi di hoc", 0, "toi di hoc"));    // caret at start
+    CHECK(primaryAdjacentToCursor("Tôi đi học", 3, "Tôi"));           // characters, not bytes
+    CHECK(primaryAdjacentToCursor("Tôi đi học", 7, "học"));
+    CHECK(!primaryAdjacentToCursor("Tôi đi học", 7, "đi"));           // not against the caret
+    CHECK(!primaryAdjacentToCursor("toi di hoc", 10, "khac"));        // stale PRIMARY
+    CHECK(!primaryAdjacentToCursor("toi di hoc", 10, ""));
+    CHECK(!primaryAdjacentToCursor("abc", 9, "abc"));                 // bad offset
+
+    // selectionAtCaret: anchor first; PRIMARY read only when the anchor proves nothing.
+    int reads = 0;
+    auto primaryIs = [&reads](const std::string &v) {
+        return [&reads, v](std::string &out) {
+            ++reads;
+            out = v;
+            return !v.empty();
+        };
+    };
+    CHECK(selectionAtCaret("toi di hoc", 10, 0, primaryIs("")));
+    CHECK_EQ(reads, 0);
+    CHECK(selectionAtCaret("toi di hoc", 10, 10, primaryIs("toi di hoc")));  // GTK3 select all
+    CHECK(selectionAtCaret("toi di hoc", 10, 10, primaryIs("hoc")));
+    CHECK(!selectionAtCaret("toi di hoc", 10, 10, primaryIs("di")));   // PRIMARY elsewhere
+    CHECK(!selectionAtCaret("toi di hoc", 10, 10, primaryIs("")));     // no PRIMARY / no tool
+    CHECK(!selectionAtCaret("toi di hoc", 10, 10, {}));
+    CHECK_EQ(reads, 4);
 }
 
 // Runs the real viettelex-text-tool when ctest points at it (VIETTELEX_TEXT_TOOL).
@@ -696,6 +731,102 @@ void testSelectionBlocksDeleteAndReEdit() {
     before = m.deletes;
     type(s, m, "<");
     CHECK_EQ(m.deletes, before);
+}
+
+// GTK3 (no anchor in surrounding text): "toi di hoc" selected (Ctrl+A / mouse), then a tone
+// key. Only the thorough check (PRIMARY against the caret) sees the selection — every
+// reach-back must honour it, and it must only be asked right before one.
+void testGtk3SelectionBlocksReachBack() {
+    for (auto mode : {DisplayMode::Preedit, DisplayMode::Surrounding}) {
+        // re-edit: the key replaces the selection, "hoc" is not touched
+        Session s;
+        Mock m;
+        s.setDisplayMode(mode, m);
+        m.doc = "toi di hoc";
+        m.primarySelection = true;
+        type(s, m, ">x");
+        CHECK_EQ(m.deletes, 0);
+        CHECK_EQ(m.screen(), std::string("toi di hocx"));  // the app puts "x" over the selection
+        CHECK_EQ(m.thoroughAsks, 1);
+        // nothing selected: re-edit as usual
+        Session r;
+        Mock n;
+        r.setDisplayMode(mode, n);
+        n.doc = "toi di hoc";
+        type(r, n, ">j ");
+        CHECK_EQ(n.screen(), std::string("toi di học "));
+        CHECK_EQ(n.thoroughAsks, 1);
+        // re-edit not possible (no word before the caret): never asked
+        Session q;
+        Mock o;
+        q.setDisplayMode(mode, o);
+        o.doc = "toi ";
+        o.primarySelection = true;
+        type(q, o, ">x");
+        CHECK_EQ(o.thoroughAsks, 0);
+        // ⌫ reopen: "tháy" ␣, then a selection at the caret → the app's own ⌫
+        Session u;
+        Mock w;
+        u.setDisplayMode(mode, w);
+        type(u, w, "thays ");
+        w.primarySelection = true;
+        int before = w.deletes;
+        type(u, w, "<");
+        CHECK_EQ(w.deletes, before);
+        CHECK_EQ(w.screen(), std::string("tháy"));
+        // plain typing never asks (no per-key cost)
+        Session v;
+        Mock x;
+        v.setDisplayMode(mode, x);
+        type(v, x, "tieengs vieetj nam ");
+        CHECK_EQ(x.screen(), std::string("tiếng việt nam "));
+        CHECK_EQ(x.thoroughAsks, 0);
+    }
+    // Surrounding: shortcut expansion and auto-restore delete the word — not with a selection
+    Settings st;
+    auto t = std::make_shared<ShortcutTable>();
+    (*t)["ko"] = "không";
+    st.shortcuts = t;
+    {
+        Session s;
+        Mock m;
+        s.applySettings(st);
+        s.setDisplayMode(DisplayMode::Surrounding, m);
+        type(s, m, "ko");
+        m.primarySelection = true;
+        int before = m.deletes;
+        type(s, m, " ");
+        CHECK_EQ(m.deletes, before);
+        CHECK_EQ(m.doc, std::string("ko "));
+        CHECK_EQ(m.thoroughAsks, 1);
+        m.primarySelection = false;
+        type(s, m, "ko ");
+        CHECK_EQ(m.doc, std::string("ko không "));
+    }
+    {
+        Session s;
+        Mock m;
+        s.setDisplayMode(DisplayMode::Surrounding, m);
+        type(s, m, "google");
+        std::string typed = m.doc;
+        m.primarySelection = true;
+        int before = m.deletes;
+        type(s, m, " ");
+        CHECK_EQ(m.deletes, before);
+        CHECK_EQ(m.doc, typed + " ");
+        m.primarySelection = false;
+        type(s, m, "google ");
+        CHECK_EQ(m.doc, typed + " google ");
+    }
+    // Preedit: shortcuts / auto-restore commit, no reach-back → never asked
+    {
+        Session s;
+        Mock m;
+        s.applySettings(st);
+        type(s, m, "ko google ");
+        CHECK_EQ(m.doc, std::string("không google "));
+        CHECK_EQ(m.thoroughAsks, 0);
+    }
 }
 
 void testModeSwitchWaitsForWordEnd() {
@@ -1449,6 +1580,7 @@ int main() {
     testProvenUnknownAppAllowed();
     testTerminalStoreTypesVietnamese();
     testSelectionBlocksDeleteAndReEdit();
+    testGtk3SelectionBlocksReachBack();
     testForcedPreeditList();
     testModeSwitchWaitsForWordEnd();
     testMoreGenericIdsAndSnap();

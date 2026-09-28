@@ -29,6 +29,14 @@ public:
     // The client has a selection (or cannot tell): deleting "before the caret" would eat
     // the selection instead (URL bars select the whole URL / the autocompleted tail).
     virtual bool hasSelection() { return false; }
+    // Thorough check, asked ONLY right before reaching back into text already on screen
+    // (re-edit, ⌫ reopen, shortcut / auto-restore delete — rare, never per plain key): also
+    // catches selections the cheap check misses. GTK3 reports surrounding text without an
+    // anchor, so hasSelection() is always false there; frontends add the PRIMARY selection
+    // when it sits against the caret (selectionAtCaret in text_tools.h). May be slow-ish
+    // (in-process clipboard cache, or a short xclip / wl-paste read); the Session asks at
+    // most once per key event.
+    virtual bool selectionAtCaret() { return hasSelection(); }
     // Direct mode (terminals): erase `backspaces` characters before the caret with BackSpace
     // key events, then type `utf8` — all through the SAME ordered channel (forwarded key
     // events), so the app sees them in this order. The Session never reads anything back.
@@ -92,6 +100,9 @@ private:
     void showPreedit(InputContext &ic);
     void hidePreedit(InputContext &ic);
     bool isWordKey(uint32_t ch) const;
+    // ic.selectionAtCaret(), asked at most once per key event.
+    bool selectionAtCaret(InputContext &ic);
+    int selectionMemo_ = -1;  // -1 = not asked during this key event
     std::string composed() const;
     std::string raw() const;
 

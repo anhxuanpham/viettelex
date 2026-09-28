@@ -207,6 +207,11 @@ void Session::finish(InputContext &ic, bool commitPreedit) {
     applyPendingMode();
 }
 
+bool Session::selectionAtCaret(InputContext &ic) {
+    if (selectionMemo_ < 0) selectionMemo_ = ic.selectionAtCaret() ? 1 : 0;
+    return selectionMemo_ == 1;
+}
+
 bool Session::isWordKey(uint32_t ch) const {
     return isAsciiLetter(ch) || (vni_ && isDigit(ch)) || (bracketVowels_ && isBracketVowelKey(ch));
 }
@@ -221,11 +226,11 @@ void Session::endWord(InputContext &ic, bool suppressRestore, bool allowShortcut
     std::string word = composed();
     std::string rawWord = raw();
     size_t onScreen = utf8Chars(word);
-    if (allowShortcuts && shortcutsEnabled_ && !word.empty() && shortcuts_ &&
-        (mode_ != DisplayMode::Surrounding || !ic.hasSelection())) {
+    if (allowShortcuts && shortcutsEnabled_ && !word.empty() && shortcuts_) {
         auto it = shortcuts_->find(word);
         if (it == shortcuts_->end()) it = shortcuts_->find(rawWord);
-        if (it != shortcuts_->end()) {
+        // Surrounding deletes the word to expand it: never with a selection at the caret.
+        if (it != shortcuts_->end() && (mode_ != DisplayMode::Surrounding || !selectionAtCaret(ic))) {
             std::string expansion = it->second;
             vt_reset(e_);
             if (mode_ == DisplayMode::Preedit) {
@@ -237,11 +242,6 @@ void Session::endWord(InputContext &ic, bool suppressRestore, bool allowShortcut
             return;
         }
     }
-    // Surrounding + selection: a delete would hit the selection — leave the word as typed.
-    if (mode_ == DisplayMode::Surrounding && ic.hasSelection()) {
-        vt_reset(e_);
-        return;
-    }
     bool autoRestore = autoRestore_ && !suppressRestore;
     if (mode_ == DisplayMode::Preedit) {
         char buf[256];
@@ -252,6 +252,13 @@ void Session::endWord(InputContext &ic, bool suppressRestore, bool allowShortcut
     } else {
         vt_action a;
         vt_commit(e_, autoRestore, &a);
+        // Auto-restore deletes the word: with a selection at the caret the delete would hit
+        // the selection — leave the word as typed.
+        if (mode_ == DisplayMode::Surrounding && a.kind == VT_ACTION_REPLACE && a.backspaces > 0 &&
+            selectionAtCaret(ic)) {
+            vt_reset(e_);
+            return;
+        }
         if (a.kind == VT_ACTION_REPLACE)
             replace(ic, a.backspaces, std::string(a.insert, size_t(a.insert_len > 0 ? a.insert_len : 0)));
     }
@@ -261,6 +268,7 @@ bool Session::processKey(const KeyEvent &ev, InputContext &ic) {
     if (ev.forwarded) return false;  // our own forwarded key: the app must get it untouched
     if (ev.release) return false;
     if (ks::isModifierOnly(ev.keysym)) return false;
+    selectionMemo_ = -1;
     applyPendingMode();
 
     // Vi/En toggle hotkey (Ctrl+Space by default).
@@ -339,6 +347,9 @@ bool Session::isAddTonesHotkey(const KeyEvent &ev) const {
 bool Session::handleLetter(uint32_t ch, InputContext &ic) {
     // RE-EDIT: a diacritic-only key right where the caret landed after a move, directly
     // after a word on screen, adds the diacritic to that word ("toan" + s → "toán").
+    // Never with a selection at the caret (Ctrl+A / double-click, then a tone key): the key
+    // replaces the selection like any letter — the delete would eat the wrong text. Asked
+    // last, only when a word really sits before the caret.
     if (vt_is_empty(e_) && reEdit_ && surroundingEdits_ && caretMoved_ && isDiacriticOnlyKey(ch, vni_) &&
         !ic.hasSelection()) {
         std::string before;
@@ -351,7 +362,7 @@ bool Session::handleLetter(uint32_t ch, InputContext &ic) {
                 word.insert(0, c);
                 if (++n > 12) { tooLong = true; break; }
             }
-            if (!word.empty() && !tooLong && vt_seed(e_, word.c_str())) {
+            if (!word.empty() && !tooLong && !selectionAtCaret(ic) && vt_seed(e_, word.c_str())) {
                 if (mode_ == DisplayMode::Preedit) {
                     ic.deleteBeforeCursor(int(n));
                     preedit_.clear();
@@ -418,7 +429,8 @@ bool Session::handleBackspace(InputContext &ic) {
                 if (n > 0 && size_t(n) < sizeof buf) {
                     std::string word(buf, size_t(n)), last;
                     if (popChar(before, last) && before.size() >= word.size() &&
-                        before.compare(before.size() - word.size(), word.size(), word) == 0) {
+                        before.compare(before.size() - word.size(), word.size(), word) == 0 &&
+                        !selectionAtCaret(ic)) {
                         if (mode_ == DisplayMode::Surrounding) {
                             replaceBeforeCursor(ic, 1, std::string());
                         } else {

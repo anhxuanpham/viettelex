@@ -156,8 +156,10 @@ vùng chọn** (toi di hoc → tôi đi học), **HOA**, **thường**, **Hoa Đ
   (gói `viettelex-text-tools`, dữ liệu `/usr/share/viettelex/*.bin`) — cùng mã Swift với
   iOS/macOS (`linux/engine-capi/Sources/TextToolCLI`), dữ liệu không bao giờ nằm trong process
   bộ gõ. Thiếu gói → menu tự ẩn. Vùng chọn > 20.000 ký tự: bỏ qua.
-- Lấy chữ: surrounding text có vùng chọn (GTK, Qt, LibreOffice…) — app báo surrounding mà không
-  có vùng chọn thì không làm gì. App không báo surrounding: vùng chọn PRIMARY (Fcitx5: addon
+- Lấy chữ: surrounding text có vùng chọn (GTK4, Qt, LibreOffice…). App báo surrounding mà không
+  có vùng chọn (GTK3 — Firefox, Chromium, app GTK3 — không bao giờ báo vùng chọn): lấy vùng chọn
+  PRIMARY nhưng chỉ khi nó nằm sát con trỏ (chữ ngay trước/sau con trỏ trùng nó), không thì không
+  làm gì. App không báo surrounding: vùng chọn PRIMARY (Fcitx5: addon
   clipboard; IBus/dự phòng: `wl-paste --primary` / `xclip` / `xsel` nếu có sẵn — không phải
   phụ thuộc bắt buộc).
 - Thay: commit kết quả đè lên vùng chọn (gõ đè thay vùng chọn). **Không đụng clipboard** nên

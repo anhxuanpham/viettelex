@@ -60,7 +60,17 @@ enum SwipeLexicon {
 
     /// Bỏ dấu tiếng Việt (đ → d), chữ thường — khoá so với dạng không dấu của lexicon.
     static func fold(_ w: String) -> String {
+        #if VIETTELEX_CLI   // viettelex-text-tool Linux: FoundationEssentials, không có folding (ICU)
+        // = folding(.diacriticInsensitive) cho chữ Việt: tách dấu (NFD), bỏ dấu kết hợp (Mn).
+        var out = String.UnicodeScalarView()
+        for u in w.lowercased().replacingOccurrences(of: "đ", with: "d").decomposedStringWithCanonicalMapping
+            .unicodeScalars where u.properties.generalCategory != .nonspacingMark {
+            out.append(u)
+        }
+        return String(out).precomposedStringWithCanonicalMapping
+        #else
         w.lowercased().replacingOccurrences(of: "đ", with: "d")
             .folding(options: .diacriticInsensitive, locale: nil)
+        #endif
     }
 }

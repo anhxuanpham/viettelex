@@ -8,7 +8,7 @@
 | `libviettelex-core` | any | `usr/lib/<multiarch>/viettelex/libtelexcore.so` (engine Swift, static stdlib, thư mục riêng) |
 | `viettelex-fcitx5` | any | `usr/lib/<multiarch>/fcitx5/viettelex.so`, `usr/share/fcitx5/{addon,inputmethod}/viettelex.conf` |
 | `viettelex-ibus` | any | `usr/libexec/ibus-engine-viettelex`, `usr/share/ibus/component/viettelex.xml` |
-| `viettelex-text-tools` | any | `usr/lib/<multiarch>/viettelex/viettelex-text-tool` (công cụ văn bản, Swift + Foundation static — process con của frontend) + `usr/share/viettelex/{vnlexicon,vnlm,enlexicon}.bin`; Recommends của hai frontend |
+| `viettelex-text-tools` | any | `usr/lib/<multiarch>/viettelex/viettelex-text-tool` (công cụ văn bản, Swift + FoundationEssentials static, ~13 MB — process con của frontend) + `usr/share/viettelex/{vnlexicon,vnlm,enlexicon}.bin`; Recommends của hai frontend |
 
 
 Đường dẫn cài của engine/frontend là **hợp đồng với CMake ở `linux/CMakeLists.txt`**
