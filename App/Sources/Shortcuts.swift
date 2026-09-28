@@ -137,6 +137,19 @@ enum ShortcutMatch: Equatable {
         return nil
     }
 
+    /// Tap: tra ở ranh giới với cụm `tail`. Cụm đã neo ⇒ tin dòng phím như trước. Cụm
+    /// chưa neo (sau click / đổi ô — issue #99: "->" đầu ô Chrome/Lark phải gõ 2 lần)
+    /// ⇒ khoá ký hiệu chỉ nở khi `screenConfirms(token)` (AX đọc lại) nói có; khoá
+    /// chữ không đổi. `screenConfirms` chỉ được gọi khi cụm ĐÃ khớp một khoá.
+    static func findForTap(in table: ShortcutTable, composed: String, raw: String, tail: ShortcutTail,
+                           allowWord: Bool, allowToken: Bool,
+                           screenConfirms: (String) -> Bool) -> ShortcutMatch? {
+        let m = find(in: table, composed: composed, raw: raw, run: tail.run,
+                     allowWord: allowWord, allowToken: allowToken)
+        if case let .token(token, _)? = m, !tail.anchored, !screenConfirms(token) { return nil }
+        return m
+    }
+
     /// Ranh giới `boundary` (nil = Esc / phím không chèn ký tự) + từ có dính sau ký tự
     /// mở token (#82 số, #87 / # @ . _ -) ⇒ được tra khoá chữ / khoá ký hiệu không.
     /// Esc giữ hành vi cũ: khoá chữ có, khoá ký hiệu không.
@@ -230,6 +243,17 @@ enum ShortcutScreen {
                   Character(s).isWhitespace || Character(s).isNewline else { return nil }
         }
         return NSRange(location: start, length: t.count)
+    }
+
+    /// Tap (issue #99): cụm CHƯA NEO — gõ ngay sau click / đổi ô / đầu ô trống, tap
+    /// không thấy khoảng trắng nào trước cụm. Chỉ nở khi màn hình (AX, `read` = đọc
+    /// UTF-16 range của ô đang focus) xác nhận cụm nằm ngay trước con trỏ và đứng
+    /// riêng (đầu văn bản / sau khoảng trắng / xuống dòng). Không đọc được ⇒ false
+    /// (giữ hành vi cũ). Chỉ gọi khi cụm đã khớp một khoá — không đọc mỗi phím.
+    static func confirmsToken(_ token: String, caret: Int?, read: (NSRange) -> String?) -> Bool {
+        guard let caret, let window = readWindow(caret: caret, text: token),
+              let text = read(window) else { return false }
+        return tokenRange(caret: caret, token: token, window: text, windowStart: window.location) != nil
     }
 
     /// Range UTF-16 cần thay để hoàn tác `undo` nếu màn hình kết thúc ĐÚNG bằng nội

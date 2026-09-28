@@ -313,3 +313,5 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 "Same Apple ID as the VietTelex iOS app. Syncs Telex options and the shortcut table (not sentence templates or learned words). On first sync, values already in iCloud win." = "Cùng Apple ID với app VietTelex trên iOS. Đồng bộ tuỳ chọn Telex và bảng gõ tắt (không gồm mẫu câu, từ đã học). Lần đồng bộ đầu, giá trị đã có trên iCloud được giữ.";
 "Not available in this build (it isn’t signed with iCloud)." = "Bản này chưa hỗ trợ (chưa được ký kèm iCloud).";
 "This Mac isn’t signed in to iCloud." = "Máy Mac này chưa đăng nhập iCloud.";
+"%@ is still holding Secure Input after the password field" = "%@ vẫn giữ Secure Input sau ô mật khẩu";
+"The browser kept the keyboard lock after signing in (usually clears by itself in a few seconds). To clear it now: switch to another app and back (⌘Tab twice), or reload the page" = "Trình duyệt vẫn giữ khoá bàn phím sau khi đăng nhập (thường tự hết sau vài giây). Muốn gỡ ngay: chuyển sang app khác rồi quay lại (⌘Tab hai lần), hoặc tải lại trang";
