@@ -1,5 +1,10 @@
+#include <cstdio>
+#include <vector>
+
 #include "breaker.h"
 #include "test.h"
+#include "text_action_logic.h"
+#include "text_tool_ipc.h"
 #include "update_check.h"
 
 using namespace vtx;
@@ -549,4 +554,71 @@ TEST(windows_per_app_input_option) {
     CHECK(enableNeedsSettingsPage(PerAppInput::Off));
     CHECK(!enableNeedsSettingsPage(PerAppInput::On));
     CHECK(parseSwitchHotkey("win-space") == SwitchHotkey::WinSpace);
+}
+
+// ---- Công cụ văn bản (text_action_logic.h) ----------------------------------------------
+
+namespace {
+std::vector<uint8_t> readAll(const char* path) {
+    std::vector<uint8_t> b;
+    if (FILE* f = std::fopen(path, "rb")) {
+        uint8_t buf[65536];
+        size_t n;
+        while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) b.insert(b.end(), buf, buf + n);
+        std::fclose(f);
+    }
+    return b;
+}
+}  // namespace
+
+TEST(text_action_hotkey_choices) {
+    unsigned mods = 0, vk = 0;
+    CHECK(!addTonesHotkeyKeys("off", mods, vk));  // default: nothing registered
+    CHECK(!addTonesHotkeyKeys("bogus", mods, vk));
+    CHECK_EQ(addTonesHotkeyIndex("bogus"), size_t{0});
+    CHECK(addTonesHotkeyKeys("ctrl-alt-t", mods, vk));
+    CHECK_EQ(mods, 3u);  // MOD_CONTROL | MOD_ALT
+    CHECK_EQ(vk, static_cast<unsigned>('T'));
+    CHECK(addTonesHotkeyKeys("win-alt-t", mods, vk) && mods == 9u);
+    CHECK_EQ(addTonesHotkeyIndex("ctrl-shift-t"), size_t{2});
+    CHECK(kTextToolMenuOrder[0] == text::Tool::AddTones);
+}
+
+TEST(text_action_transform) {
+    std::u16string out;
+    CHECK(transformText(text::Tool::Upper, u"tiếng việt", nullptr, out) && out == u"TIẾNG VIỆT");
+    CHECK(transformText(text::Tool::StripDiacritics, u"Đường đi", nullptr, out) && out == u"Duong di");
+    CHECK(!transformText(text::Tool::Upper, u"ABC 123", nullptr, out));        // unchanged -> nothing
+    CHECK(!transformText(text::Tool::Lower, u"", nullptr, out));               // empty
+    CHECK(!transformText(text::Tool::AddTones, u"toi di hoc", nullptr, out));  // no data
+    std::u16string big(kTextToolMaxLength + 1, u'a');
+    CHECK(!transformText(text::Tool::Upper, big, nullptr, out));  // over the cap
+    // NFD input (some apps store decomposed text) comes back NFC
+    CHECK(transformText(text::Tool::Lower, u"TIẾNG", nullptr, out) && out == u"tiếng");
+
+    const std::vector<uint8_t> vl = readAll(VTX_KB_RESOURCES "/vnlexicon.bin");
+    const std::vector<uint8_t> el = readAll(VTX_KB_RESOURCES "/enlexicon.bin");
+    const std::vector<uint8_t> lm = readAll(VTX_KB_RESOURCES "/vnlm.bin");
+    addtones::LanguageData d;
+    CHECK(d.load(vl.data(), vl.size(), el.data(), el.size(), lm.data(), lm.size()));
+    CHECK(d.lm.ok());
+    CHECK(transformText(text::Tool::AddTones, u"toi di hoc hom nay", &d, out) && out == u"tôi đi học hôm nay");
+    CHECK(!transformText(text::Tool::AddTones, u"hello world", &d, out));  // English: unchanged
+}
+
+TEST(text_action_clipboard_policy) {
+    CHECK(clipboardFallbackAllowed("notepad.exe", false, "Notepad"));
+    CHECK(clipboardFallbackAllowed("chrome.exe", false, "Chrome_WidgetWin_1"));
+    CHECK(!clipboardFallbackAllowed("conhost.exe", true, "ConsoleWindowClass"));  // Ctrl+C = interrupt
+    CHECK(!clipboardFallbackAllowed("windowsterminal.exe", false, "CASCADIA_HOSTING_WINDOW_CLASS"));
+    CHECK(!clipboardFallbackAllowed("mintty.exe", false, "mintty"));
+    CHECK(!clipboardFallbackAllowed("mstsc.exe", false, "TscShellContainerClass"));  // keys go remote
+    CHECK(clipboardFormatKind(13) == ClipFormatKind::Global);      // CF_UNICODETEXT
+    CHECK(clipboardFormatKind(8) == ClipFormatKind::Global);       // CF_DIB
+    CHECK(clipboardFormatKind(0xC0A1) == ClipFormatKind::Global);  // registered (HTML Format…)
+    CHECK(clipboardFormatKind(2) == ClipFormatKind::Skip);         // CF_BITMAP: re-synthesised
+    CHECK(clipboardFormatKind(14) == ClipFormatKind::EnhMetafile);
+    CHECK(clipboardFormatKind(0x250) == ClipFormatKind::Skip);     // CF_PRIVATEFIRST range
+    CHECK(isShellSurfaceClass("Shell_TrayWnd") && isShellSurfaceClass("NotifyIconOverflowWindow"));
+    CHECK(!isShellSurfaceClass("Notepad") && !isShellSurfaceClass("Chrome_WidgetWin_1"));
 }

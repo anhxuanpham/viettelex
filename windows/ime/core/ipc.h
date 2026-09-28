@@ -19,9 +19,12 @@ enum class AppCommand : unsigned {
     // TIP could not store it (AppContainer / low IL): store it for the foreground app.
     // The app then refreshes the applang.txt mirror AppContainers read.
     SetAppLanguage = 8,
+    // TIP -> app (Công cụ văn bản): lParam = textToolReplyParam(request, status), see
+    // text_tool_ipc.h.
+    TextToolReply = 9,
 };
 
-inline bool isValidAppCommand(unsigned v) { return v >= 1 && v <= 8; }
+inline bool isValidAppCommand(unsigned v) { return v >= 1 && v <= 9; }
 // Commands a user may pass as `--command <n>` (StateChanged is TIP-internal).
 inline bool isUserCommand(unsigned v) { return v >= 1 && v <= 5; }
 

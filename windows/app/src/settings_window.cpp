@@ -43,6 +43,7 @@ using std::min;
 #include "settings_store.h"
 #include "shortcuts.h"
 #include "strings.h"
+#include "text_action_logic.h"
 #include "uninstall.h"
 #include "updater.h"
 #include "utf.h"
@@ -73,6 +74,7 @@ enum Id : int {
     IdComboHotkey,
     IdComboIcon,
     IdComboLang,
+    IdComboAddTones,
     IdScList = 3000,
     IdScKey,
     IdScValue,
@@ -110,6 +112,7 @@ const ToggleDef kToggles[] = {
     {&Settings::autoUpdateCheck, S::AutoUpdateCheck, S::AutoUpdateCheckDesc},          // 11
     {&Settings::debugLogging, S::DebugLogging, S::DebugLoggingDesc},                   // 12
     {&Settings::showTrayIcon, S::ShowTray, S::ShowTrayDesc},                           // 13
+    {&Settings::textToolsInMenu, S::TextToolsInMenu, S::TextToolsInMenuDesc},          // 14
 };
 constexpr int kToggleCount = static_cast<int>(sizeof(kToggles) / sizeof(kToggles[0]));
 
@@ -451,6 +454,10 @@ std::vector<Item> pageItems(int tab) {
         case 1:
             v.push_back(section(S::SecSpelling));
             for (int i = 5; i <= 10; ++i) v.push_back(toggleItem(i));
+            // Công cụ văn bản (macOS: same place, after the spelling options)
+            v.push_back(section(S::SecTextTools));
+            v.push_back(toggleItem(14));
+            v.push_back(comboItem(S::AddTonesHotkey, S::AddTonesHotkeyDesc, IdComboAddTones));
             break;
         case 2: v.push_back(blockItem(S::SecShortcuts, S::ShortcutsDesc, 360)); break;
         case 3: v.push_back(blockItem(S::SecApps, S::AppsDesc, 360)); break;
@@ -813,6 +820,15 @@ void createControls() {
                         SendMessageW(it.hwnd, CB_SETITEMHEIGHT, static_cast<WPARAM>(-1), px(32) - px(6));
                         break;
                     }
+                    case IdComboAddTones: {
+                        it.hwnd = makeCtl(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP, it.ctlId);
+                        for (const HotkeyChoice& c : kAddTonesHotkeys)
+                            SendMessageW(it.hwnd, CB_ADDSTRING, 0,
+                                         reinterpret_cast<LPARAM>(c.label ? c.label : tr(S::HotkeyOff)));
+                        applyControlTheme(it.hwnd, L"DarkMode_CFD");
+                        SendMessageW(it.hwnd, CB_SETITEMHEIGHT, static_cast<WPARAM>(-1), px(32) - px(6));
+                        break;
+                    }
                     default: break;
                 }
             } else if (it.ctl == Ctl::Button) {
@@ -1026,6 +1042,7 @@ void sync() {
                     if (g_settings.switchHotkey == kHotkeys[i]) sel = i;
                 break;
             case IdComboLang: sel = g_settings.uiLanguage == "en" ? 1 : 0; break;
+            case IdComboAddTones: sel = static_cast<int>(addTonesHotkeyIndex(g_settings.addTonesHotkey)); break;
             default: continue;
         }
         SendMessageW(it.hwnd, CB_SETCURSEL, static_cast<WPARAM>(sel), 0);
@@ -1401,6 +1418,12 @@ void onCommand(int id, int code, HWND ctl) {
                 changed();
                 setEnglish(g_settings.uiLanguage == "en");
                 PostMessageW(g_wnd, WM_APP + 1, 0, 0);  // rebuild outside this notification
+            }
+            break;
+        case IdComboAddTones:
+            if (code == CBN_SELCHANGE && sel() >= 0 && sel() < static_cast<int>(kAddTonesHotkeyCount)) {
+                g_settings.addTonesHotkey = kAddTonesHotkeys[sel()].id;
+                changed();  // settingsChanged() re-registers the hotkey
             }
             break;
         case IdScAdd: {

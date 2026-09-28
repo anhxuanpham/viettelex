@@ -4,6 +4,7 @@
 #include "keymap.h"
 #include "settings.h"
 #include "shortcuts.h"
+#include "text_tool_ipc.h"
 #include "test.h"
 
 #include <viettelex/vtx_engine.h>
@@ -342,5 +343,42 @@ TEST(ipc_state_changed_is_internal) {
     CHECK(!isUserCommand(static_cast<unsigned>(AppCommand::DirectMode)));
     CHECK(isValidAppCommand(static_cast<unsigned>(AppCommand::SetAppLanguage)));
     CHECK(!isUserCommand(static_cast<unsigned>(AppCommand::SetAppLanguage)));
-    CHECK(!isValidAppCommand(0) && !isValidAppCommand(9));
+    CHECK(isValidAppCommand(static_cast<unsigned>(AppCommand::TextToolReply)));
+    CHECK(!isUserCommand(static_cast<unsigned>(AppCommand::TextToolReply)));
+    CHECK(!isValidAppCommand(0) && !isValidAppCommand(10));
+}
+
+TEST(text_tool_ipc_roundtrip) {
+    // Công cụ văn bản: TIP <-> app payloads (text_tool_ipc.h)
+    const std::u16string t = u"toi di hoc \U0001F600 Việt";
+    std::vector<uint8_t> b = packTextToolData(0x0ABCDEF1u, 3, t);
+    uint32_t req = 0, tool = 0;
+    std::u16string out;
+    CHECK(unpackTextToolData(b.data(), b.size(), req, tool, out));
+    CHECK_EQ(req, 0x0ABCDEF1u);
+    CHECK_EQ(tool, 3u);
+    CHECK(out == t);
+    CHECK(unpackTextToolData(b.data(), 8, req, tool, out) && out.empty());
+    CHECK(!unpackTextToolData(b.data(), 7, req, tool, out));
+    CHECK(!unpackTextToolData(b.data(), b.size() - 1, req, tool, out));  // odd size
+    CHECK(!unpackTextToolData(nullptr, 0, req, tool, out));
+    std::vector<uint8_t> big = packTextToolData(1, 0, std::u16string(kTextToolMaxLength + 1, u'a'));
+    CHECK(!unpackTextToolData(big.data(), big.size(), req, tool, out));  // over the cap
+    const uint32_t lp = textToolReplyParam(0x1234567u, TextToolStatus::Refused);
+    CHECK_EQ(textToolReplyRequest(lp), 0x1234567u);
+    CHECK(textToolReplyStatus(lp) == TextToolStatus::Refused);
+    CHECK_EQ(textToolReplyRequest(textToolReplyParam(0xFFFFFFFFu, TextToolStatus::Replaced)), kTextToolRequestMask);
+    CHECK(isSecretInputScope(31) && isSecretInputScope(64) && !isSecretInputScope(5) && !isSecretInputScope(1));
+}
+
+TEST(text_tools_settings_defaults) {
+    Settings s;
+    CHECK(s.textToolsInMenu);                              // macOS textToolsInMenu default ON
+    CHECK_EQ(s.addTonesHotkey, std::string("off"));        // hotkey default OFF
+    CHECK_EQ(s.uiLanguage, std::string("vi"));             // Vietnamese UI regardless of locale
+    s.textToolsInMenu = false;
+    std::vector<uint8_t> b = serialize(s);
+    Settings r;
+    CHECK(deserialize(b.data(), b.size(), r));
+    CHECK(!r.textToolsInMenu);
 }

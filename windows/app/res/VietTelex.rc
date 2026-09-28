@@ -28,6 +28,12 @@ IDI_PROFILE_LOGO ICON "../../ime/res/profile_logo.ico"
 IDI_PROFILE_VI ICON "../../ime/res/profile_vi.ico"
 CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "VietTelex.manifest"
 
+// Công cụ văn bản → Thêm dấu: language data shared with iOS/Android/macOS (data_ids.h).
+#include "data_ids.h"
+IDR_VNLEXICON RCDATA "../../../iOS/Keyboard/Resources/vnlexicon.bin"
+IDR_ENLEXICON RCDATA "../../../iOS/Keyboard/Resources/enlexicon.bin"
+IDR_VNLM RCDATA "../../../iOS/Keyboard/Resources/vnlm.bin"
+
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION VTX_VER_MAJOR,VTX_VER_MINOR,VTX_VER_PATCH,VTX_VER_BUILD
  PRODUCTVERSION VTX_VER_MAJOR,VTX_VER_MINOR,VTX_VER_PATCH,VTX_VER_BUILD
