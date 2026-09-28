@@ -33,4 +33,16 @@ class EmojiGridLayoutTest {
         assertEquals(80f, m.cellH, 0.001f)
         assertEquals(32f, m.glyph, 0.001f)
     }
+
+    /**
+     * Đo emulator 28/09/2026 (Pixel 6 411 dp + chế độ tablet 800 dp): Gboard vẽ emoji
+     * cao ≈ 31 dp, bước 45.7 × 44.8 dp (9 cột). Mình ≈ 35 dp (điện thoại) / 34 dp
+     * (tablet) — KHÔNG được bé hơn Gboard: glyph phải chạm trần [MAX_GLYPH] ở mọi lưới thật.
+     */
+    @Test fun glyphNeverSmallerThanGboard() {
+        for ((w, h) in listOf(411f to 136f, 411f to 170f, 800f to 220f, 915f to 120f, 1280f to 260f)) {
+            val m = EmojiGridLayout.metrics(w, h)
+            assertEquals("w=$w h=$h", EmojiGridLayout.MAX_GLYPH, m.glyph, 0.001f)
+        }
+    }
 }

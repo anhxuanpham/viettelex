@@ -6,27 +6,78 @@
 // 27/09/2026: tab kaomoji / ký tự đặc biệt (^‿^) ở cuối dãy category.
 // 27/09/2026 (góp ý user: emoji bé, sát nhau): bỏ tiêu đề nhóm nhỏ trên lưới; THANH TÌM
 // luôn hiện trên cùng như iOS 26/27 gốc (chạm → KeyboardView dựng ô tìm + phím chữ);
-// ô emoji ≥ 40pt, glyph ~32pt như stock — hình học ở EmojiGridMetrics (thuần, có test).
+// 28/09/2026 (Hữu Đông: emoji vẫn bé hơn stock): glyph / bước ô / ô tìm / hàng category
+// đo khớp stock từng loại máy (iPhone dọc-ngang, iPad dọc-ngang) — EmojiGridMetrics.
 import UIKit
 
-/// Hình học lưới emoji (thuần): chọn số hàng sao cho ô ≥ `minCell` (40pt — vùng chạm
-/// thoải mái, stock iPhone dọc ~44pt), tối đa 5 hàng như stock; ô vuông, KHÔNG khe
-/// giữa ô (khoảng trắng quanh glyph chính là khoảng cách — stock cũng vậy). Glyph
-/// ~72% ô, trần 34pt (stock ~32pt trên iPhone 6.1").
+/// Hình học lưới emoji (thuần) — số đo bàn phím emoji stock iOS 26/27 (simulator
+/// 28/09/2026, XCUITest frame + đo pixel glyph; góp ý Hữu Đông "emoji vẫn bé hơn stock"):
+///
+/// | máy               | glyph (bbox) | bước ngang | bước dọc     | hàng | ô tìm | hàng category |
+/// |-------------------|--------------|------------|--------------|------|-------|---------------|
+/// | iPhone 17 dọc     | 29.3pt       | 46         | 38.7         | 5    | 40    | 40            |
+/// | iPhone 17 ngang   | 29.3pt       | 40         | 45.3         | 3    | 40    | 41            |
+/// | iPad Pro 11" dọc  | 44pt         | 62         | 76           | 3    | —(🔍 ở hàng dưới) | 56 |
+/// | iPad Pro 11" ngang| 44pt         | 63         | 59.7         | 5    | —     | 56            |
+///
+/// Glyph là cỡ CỐ ĐỊNH theo loại máy (Apple Color Emoji: bbox ≈ 0.917 × pointSize — stock dùng đúng
+/// 32pt / 48pt = khung phím emoji stock), không co theo ô như trước (ô 41pt iPad → glyph 28pt so với stock 44pt).
+/// Bước ngang cố định như stock; bước dọc = chiều cao lưới chia đều cho số hàng lớn
+/// nhất mà mỗi hàng ≥ `minPitchH` (bàn phím mình KHÔNG cao thêm khi vào emoji — host
+/// relayout, xem KeyboardView.updateSuggestionChrome — nên thường ít hàng hơn stock).
 struct EmojiGridMetrics: Equatable {
+    struct Spec: Equatable {
+        /// pointSize glyph emoji (bbox thật ≈ 0.917×).
+        let font: CGFloat
+        let pitchW: CGFloat
+        let minPitchH: CGFloat
+        let maxRows: Int
+        /// Lề trái trước cột đầu; khe THÊM giữa hai nhóm (stock tách nhóm rộng hơn).
+        let lead: CGFloat
+        let sectionGap: CGFloat
+        /// Chiều cao ô tìm trên cùng (0 = không có — iPad: 🔍 nằm ở hàng category như stock).
+        let searchField: CGFloat
+        /// Hàng [ABC][category][⌫] (gồm 2pt đệm đáy).
+        let categoryRow: CGFloat
+        let iconPoint: CGFloat
+    }
+
+    static let phonePortrait = Spec(font: 32, pitchW: 46, minPitchH: 38.5, maxRows: 5,
+                                    lead: 3, sectionGap: 14, searchField: 40, categoryRow: 40,
+                                    iconPoint: 17)
+    /// Ngang: bàn phím chỉ 162pt ⇒ giữ ô tìm / hàng category gọn (32/34) để còn 2–3 hàng.
+    static let phoneLandscape = Spec(font: 32, pitchW: 40, minPitchH: 38.5, maxRows: 5,
+                                     lead: 3, sectionGap: 16, searchField: 32, categoryRow: 34,
+                                     iconPoint: 15)
+    static let padPortrait = Spec(font: 48, pitchW: 62, minPitchH: 62, maxRows: 5,
+                                  lead: 13, sectionGap: 28, searchField: 0, categoryRow: 48,
+                                  iconPoint: 21)
+    static let padLandscape = Spec(font: 48, pitchW: 63, minPitchH: 52, maxRows: 5,
+                                   lead: 16.5, sectionGap: 30, searchField: 0, categoryRow: 48,
+                                   iconPoint: 21)
+
+    static func spec(pad: Bool, landscape: Bool) -> Spec {
+        pad ? (landscape ? padLandscape : padPortrait)
+            : (landscape ? phoneLandscape : phonePortrait)
+    }
+
+    static let minRows = 2
+    /// Khoảng từ đỉnh plane tới ô tìm, và từ ô tìm tới lưới.
+    static let searchTop: CGFloat = 6, gridGap: CGFloat = 2
+
     let rows: Int
-    let cell: CGFloat
+    let cellW: CGFloat
+    let cellH: CGFloat
     let fontSize: CGFloat
 
-    static let minCell: CGFloat = 40, maxRows = 5, minRows = 2
-    static let searchRow: CGFloat = 40, categoryRow: CGFloat = 34
-
-    static func compute(gridHeight h: CGFloat) -> EmojiGridMetrics {
-        let fit = Int((max(h, 0) / minCell).rounded(.down))
-        let rows = min(max(fit, minRows), maxRows)
-        let cell = max((h / CGFloat(rows) * 2).rounded(.down) / 2, 1)   // nửa pt: khỏi rớt hàng
-        return EmojiGridMetrics(rows: rows, cell: cell,
-                                fontSize: min((cell * 0.72).rounded(), 34))
+    static func compute(gridHeight h: CGFloat, spec: Spec = phonePortrait) -> EmojiGridMetrics {
+        let h = max(h, 0)
+        let fit = Int((h / spec.minPitchH).rounded(.down))
+        let rows = min(max(fit, minRows), spec.maxRows)
+        let cellH = max((h / CGFloat(rows) * 2).rounded(.down) / 2, 1)   // nửa pt: khỏi rớt hàng
+        // Lưới quá thấp (ép tối thiểu 2 hàng) thì glyph co theo ô, không tràn.
+        let font = min(spec.font, (min(cellH, spec.pitchW) * 0.92).rounded())
+        return EmojiGridMetrics(rows: rows, cellW: spec.pitchW, cellH: cellH, fontSize: font)
     }
 }
 
@@ -72,8 +123,17 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         }
     }
 
-    init(dark: Bool, abcSlot: ABCSlot? = nil) {
+    /// iPad: không ô tìm trên cùng — 🔍 nằm ở hàng category như stock iPad.
+    let pad: Bool
+    private(set) var spec: EmojiGridMetrics.Spec
+    private var searchHeight: NSLayoutConstraint?
+    private var rowHeight: NSLayoutConstraint?
+
+    init(dark: Bool, abcSlot: ABCSlot? = nil,
+         pad: Bool = UIDevice.current.userInterfaceIdiom == .pad) {
         self.abcSlot = abcSlot
+        self.pad = pad
+        self.spec = EmojiGridMetrics.spec(pad: pad, landscape: false)
         super.init(frame: .zero)
         self.dark = dark
         isMultipleTouchEnabled = true
@@ -118,11 +178,27 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
     /// độ tìm (EmojiSearchBar + phím chữ VietTelex).
     private func buildSearchField() {
         let ink: UIColor = dark ? .white : .black
+        if pad {
+            // iPad stock: 🔍 là một nút ở hàng category (buildCategoryRow chèn sau ABC).
+            let b = UIButton(type: .custom)
+            b.setImage(UIImage(systemName: "magnifyingglass",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: spec.iconPoint, weight: .medium)),
+                for: .normal)
+            b.tintColor = ink
+            b.accessibilityLabel = L("Tìm emoji")
+            b.accessibilityTraits = .searchField
+            b.addAction(UIAction { [weak self] _ in
+                KeyboardView.clickModifier()
+                self?.onSearch?()
+            }, for: .touchUpInside)
+            searchField = b
+            return
+        }
         let f = UIControl()
         // ≈ tertiarySystemFill (118,118,128) — nền ô tìm stock trên bàn phím.
         f.backgroundColor = UIColor(red: 118 / 255, green: 118 / 255, blue: 128 / 255,
                                     alpha: dark ? 0.24 : 0.12)
-        f.layer.cornerRadius = 16
+        f.layer.cornerRadius = spec.searchField / 2
         f.accessibilityLabel = L("Tìm emoji")
         f.accessibilityTraits = .searchField
         f.translatesAutoresizingMaskIntoConstraints = false
@@ -144,11 +220,13 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         }, for: .touchUpInside)
         addSubview(f)
         searchField = f
+        let fh = f.heightAnchor.constraint(equalToConstant: spec.searchField)
+        searchHeight = fh
         NSLayoutConstraint.activate([
-            f.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            f.topAnchor.constraint(equalTo: topAnchor, constant: EmojiGridMetrics.searchTop),
             f.leftAnchor.constraint(equalTo: leftAnchor, constant: 8),
             f.rightAnchor.constraint(equalTo: rightAnchor, constant: -8),
-            f.heightAnchor.constraint(equalToConstant: EmojiGridMetrics.searchRow - 8),
+            fh,
             icon.leftAnchor.constraint(equalTo: f.leftAnchor, constant: 10),
             icon.centerYAnchor.constraint(equalTo: f.centerYAnchor),
             label.leftAnchor.constraint(equalTo: icon.rightAnchor, constant: 6),
@@ -163,7 +241,7 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         layout.scrollDirection = .horizontal        // column-major như stock
         layout.minimumLineSpacing = 0               // khe = khoảng trắng quanh glyph
         layout.minimumInteritemSpacing = 0
-        layout.sectionInset = UIEdgeInsets(top: 0, left: 4, bottom: 0, right: 4)
+        // lề trái / khe giữa nhóm theo stock: collectionView(_:layout:insetForSectionAt:)
         collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collection.backgroundColor = .clear
         collection.disableKeyboardEdgeEffects()
@@ -180,7 +258,9 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         collection.addGestureRecognizer(hold)
         addSubview(collection)
         NSLayoutConstraint.activate([
-            collection.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 2),
+            pad ? collection.topAnchor.constraint(equalTo: topAnchor, constant: 4)
+                : collection.topAnchor.constraint(equalTo: searchField.bottomAnchor,
+                                                  constant: EmojiGridMetrics.gridGap),
             collection.leftAnchor.constraint(equalTo: leftAnchor),
             collection.rightAnchor.constraint(equalTo: rightAnchor),
         ])
@@ -218,15 +298,20 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
             abc.widthAnchor.constraint(equalToConstant: 44).isActive = true
         }
 
+        if pad {
+            row.addArrangedSubview(searchField)
+            searchField.widthAnchor.constraint(equalToConstant: 48).isActive = true
+        }
+
         let iconsStack = UIStackView()
         iconsStack.axis = .horizontal
         iconsStack.distribution = .fillEqually
         for (i, name) in Self.categoryIcons.enumerated() {
             let b = UIButton(type: .custom)
             b.setImage(UIImage(systemName: name,
-                withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium)), for: .normal)
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: spec.iconPoint, weight: .medium)), for: .normal)
             b.tintColor = ink.withAlphaComponent(0.55)
-            b.layer.cornerRadius = 13
+            b.layer.cornerRadius = (spec.categoryRow - 2) / 2 - 3
             b.addAction(UIAction { [weak self] _ in self?.jumpToCategory(i) }, for: .touchUpInside)
             categoryButtons.append(b)
             iconsStack.addArrangedSubview(b)
@@ -236,7 +321,7 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         kao.titleLabel?.font = .systemFont(ofSize: 12, weight: .semibold)
         kao.titleLabel?.adjustsFontSizeToFitWidth = true
         kao.setTitleColor(ink.withAlphaComponent(0.55), for: .normal)
-        kao.layer.cornerRadius = 13
+        kao.layer.cornerRadius = (spec.categoryRow - 2) / 2 - 3
         kao.accessibilityLabel = L("Kaomoji và ký tự đặc biệt")
         kao.addAction(UIAction { [weak self] _ in self?.showKaomoji() }, for: .touchUpInside)
         kaomojiButton = kao
@@ -258,12 +343,14 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         del.widthAnchor.constraint(equalToConstant: 44).isActive = true
 
         addSubview(row)
+        let rh = row.heightAnchor.constraint(equalToConstant: spec.categoryRow - 2)
+        rowHeight = rh
         NSLayoutConstraint.activate([
             row.topAnchor.constraint(equalTo: collection.bottomAnchor, constant: 2),
             row.leftAnchor.constraint(equalTo: leftAnchor),
             row.rightAnchor.constraint(equalTo: rightAnchor),
             row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2),
-            row.heightAnchor.constraint(equalToConstant: EmojiGridMetrics.categoryRow - 2),
+            rh,
         ])
         highlightCategory(sectionOnScreen())
     }
@@ -448,11 +535,33 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         tonePopup = nil
     }
 
+    /// Dọc/ngang đổi ô tìm, hàng category, bước ô (chỉ đổi hằng số constraint).
+    private func applySpecIfNeeded() {
+        let landscape: Bool
+        if let o = window?.windowScene?.interfaceOrientation { landscape = o.isLandscape }
+        else { landscape = bounds.width > (pad ? 1000 : 500) }
+        let s = EmojiGridMetrics.spec(pad: pad, landscape: landscape)
+        guard s != spec else { return }
+        spec = s
+        searchHeight?.constant = s.searchField
+        searchField.layer.cornerRadius = s.searchField / 2
+        rowHeight?.constant = s.categoryRow - 2
+        let r = (s.categoryRow - 2) / 2 - 3
+        let cfg = UIImage.SymbolConfiguration(pointSize: s.iconPoint, weight: .medium)
+        for (b, name) in zip(categoryButtons, Self.categoryIcons) {
+            b.setImage(UIImage(systemName: name, withConfiguration: cfg), for: .normal)
+            b.layer.cornerRadius = r
+        }
+        kaomojiButton?.layer.cornerRadius = r
+        collection.collectionViewLayout.invalidateLayout()
+    }
+
     // Xoay màn hình / đổi cỡ Split View → cell size tính lại theo chiều cao mới.
     private var lastLayoutWidth: CGFloat = 0
     override func layoutSubviews() {
+        applySpecIfNeeded()
         super.layoutSubviews()
-        let m = EmojiGridMetrics.compute(gridHeight: collection.bounds.height)
+        let m = EmojiGridMetrics.compute(gridHeight: collection.bounds.height, spec: spec)
         if bounds.width != lastLayoutWidth || m != metrics {
             lastLayoutWidth = bounds.width
             metrics = m
@@ -462,8 +571,8 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         }
         if let abc = abcButton as? ABCButton, let slot = abcSlot {
             // Nhìn: cột phím emoji cũ, cao bằng hàng category (32, cách đáy 2).
-            abc.frame = CGRect(x: slot.minX, y: bounds.height - 34,
-                               width: slot.maxX - slot.minX, height: 32)
+            abc.frame = CGRect(x: slot.minX, y: bounds.height - spec.categoryRow,
+                               width: slot.maxX - slot.minX, height: spec.categoryRow - 2)
             // Chạm: từ mép trái tới hết phím cũ, từ đỉnh phím cũ xuống đáy.
             abc.hitRect = CGRect(x: 0, y: bounds.height - slot.top,
                                  width: slot.maxX, height: slot.top)
@@ -488,8 +597,13 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
 
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout,
                         sizeForItemAt indexPath: IndexPath) -> CGSize {
-        let c = metrics.cell
-        return CGSize(width: c, height: c)
+        CGSize(width: metrics.cellW, height: metrics.cellH)
+    }
+
+    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout,
+                        insetForSectionAt section: Int) -> UIEdgeInsets {
+        UIEdgeInsets(top: 0, left: section == 0 ? spec.lead : 0, bottom: 0,
+                     right: section == sections.count - 1 ? spec.lead : spec.sectionGap)
     }
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {

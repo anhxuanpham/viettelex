@@ -22,29 +22,86 @@ final class UXFeedbackTests: XCTestCase {
 
     // MARK: 1. emoji
 
-    /// Ô emoji ≥ 40pt ở mọi chiều cao lưới thực tế (dọc có/không thanh gợi ý, ngang),
-    /// tối đa 5 hàng như stock, glyph ~ cỡ stock (28–34pt).
-    func testEmojiGridCellsAreLargeEnough() {
-        for h: CGFloat in [120, 126, 140, 148, 174, 190, 230, 260] {
-            let m = EmojiGridMetrics.compute(gridHeight: h)
-            XCTAssertGreaterThanOrEqual(m.cell, EmojiGridMetrics.minCell, "h=\(h)")
-            XCTAssertLessThanOrEqual(m.rows, 5, "h=\(h)")
-            XCTAssertLessThanOrEqual(CGFloat(m.rows) * m.cell, h + 0.01, "h=\(h): lưới tràn")
-            XCTAssertTrue((28...34).contains(m.fontSize), "h=\(h) font=\(m.fontSize)")
+    /// Số đo stock iOS 26/27 (simulator 28/09/2026 — góp ý Hữu Đông "emoji vẫn bé hơn
+    /// stock"): glyph bbox 29.3pt iPhone / 44pt iPad (≈ 0.917 × pointSize 32 / 48), bước ngang
+    /// 46 / 40 / 62 / 63, ô tìm 40, hàng category 40. Glyph KHÔNG co theo số hàng nữa
+    /// (trước: iPad ô 41 → glyph 28pt; iPhone bật thanh gợi ý ô 43 → glyph 27.5pt).
+    func testEmojiGridMatchesStockMetrics() {
+        typealias M = EmojiGridMetrics
+        XCTAssertEqual(M.phonePortrait.pitchW, 46)
+        XCTAssertEqual(M.phoneLandscape.pitchW, 40)
+        XCTAssertEqual(M.padPortrait.pitchW, 62)
+        XCTAssertEqual(M.padLandscape.pitchW, 63)
+        XCTAssertEqual(M.phonePortrait.searchField, 40)
+        XCTAssertEqual(M.phonePortrait.categoryRow, 40)
+        XCTAssertEqual(M.padPortrait.searchField, 0, "iPad: 🔍 ở hàng category như stock")
+        XCTAssertEqual(M.spec(pad: false, landscape: false), M.phonePortrait)
+        XCTAssertEqual(M.spec(pad: false, landscape: true), M.phoneLandscape)
+        XCTAssertEqual(M.spec(pad: true, landscape: false), M.padPortrait)
+        XCTAssertEqual(M.spec(pad: true, landscape: true), M.padLandscape)
+
+        // iPhone dọc — lưới đo trên simulator: tắt gợi ý 121.5 (3 hàng), bật gợi ý
+        // (+34) 155.5 → 4 hàng; cao như stock (5 × 38.7) → 5 hàng.
+        let off = M.compute(gridHeight: 121.5, spec: M.phonePortrait)
+        XCTAssertEqual(off, M(rows: 3, cellW: 46, cellH: 40.5, fontSize: 32))
+        let on = M.compute(gridHeight: 155.5, spec: M.phonePortrait)
+        XCTAssertEqual(on, M(rows: 4, cellW: 46, cellH: 38.5, fontSize: 32))
+        XCTAssertEqual(M.compute(gridHeight: 193.5, spec: M.phonePortrait).rows, 5)
+        // iPhone ngang: 2 hàng 43 (tắt gợi ý).
+        XCTAssertEqual(M.compute(gridHeight: 86, spec: M.phoneLandscape),
+                       M(rows: 2, cellW: 40, cellH: 43, fontSize: 32))
+        // iPad dọc 186 → 3 hàng 62 (stock 3 hàng); ngang 246 → 4 hàng 61.5 (stock 59.7).
+        XCTAssertEqual(M.compute(gridHeight: 186, spec: M.padPortrait),
+                       M(rows: 3, cellW: 62, cellH: 62, fontSize: 48))
+        XCTAssertEqual(M.compute(gridHeight: 246, spec: M.padLandscape),
+                       M(rows: 4, cellW: 63, cellH: 61.5, fontSize: 48))
+
+        for spec in [M.phonePortrait, M.phoneLandscape, M.padPortrait, M.padLandscape] {
+            for h: CGFloat in stride(from: 60, through: 340, by: 7) {
+                let m = M.compute(gridHeight: h, spec: spec)
+                XCTAssertLessThanOrEqual(CGFloat(m.rows) * m.cellH, h + 0.01, "h=\(h): lưới tràn")
+                XCTAssertLessThanOrEqual(m.rows, spec.maxRows)
+                XCTAssertLessThan(m.fontSize, m.cellH, "h=\(h): glyph không tràn ô")
+                if h >= 2 * spec.minPitchH {
+                    XCTAssertGreaterThanOrEqual(m.cellH, spec.minPitchH, "h=\(h)")
+                    XCTAssertEqual(m.fontSize, spec.font, "h=\(h): glyph cố định như stock")
+                }
+            }
         }
-        // Chiều cao lưới iPhone dọc có thanh gợi ý (252 − tìm 40 − category 36 − đệm): 4 hàng.
-        XCTAssertEqual(EmojiGridMetrics.compute(gridHeight: 174).rows, 4)
+    }
+
+    /// Plane thật: ô 46 × ≥38.5, glyph 32, ô tìm 40 cao; iPad không ô tìm trên cùng
+    /// mà có nút 🔍 ở hàng dưới.
+    @MainActor func testEmojiPlaneUsesStockGeometry() throws {
+        let phone = EmojiPlane(dark: true, pad: false)
+        phone.frame = CGRect(x: 0, y: 0, width: 402, height: 212)
+        phone.layoutIfNeeded()
+        XCTAssertEqual(phone.searchField.frame.height, 40)
+        let grid = try XCTUnwrap(phone.subviews.compactMap { $0 as? UICollectionView }.first)
+        grid.layoutIfNeeded()
+        let cell = try XCTUnwrap(grid.visibleCells.first)
+        XCTAssertEqual(cell.bounds.width, 46)
+        XCTAssertGreaterThanOrEqual(cell.bounds.height, 38.5)
+
+        let pad = EmojiPlane(dark: true, pad: true)
+        pad.frame = CGRect(x: 0, y: 0, width: 834, height: 240)
+        pad.layoutIfNeeded()
+        XCTAssertGreaterThan(pad.convert(pad.searchField.bounds, from: pad.searchField).minY,
+                             150, "iPad: 🔍 nằm ở hàng category dưới đáy")
+        let pgrid = try XCTUnwrap(pad.subviews.compactMap { $0 as? UICollectionView }.first)
+        pgrid.layoutIfNeeded()
+        XCTAssertEqual(pgrid.visibleCells.first?.bounds.width, 62)
     }
 
     /// Thanh tìm luôn hiện trên cùng; chạm → onSearch (vào chế độ tìm với phím chữ).
     @MainActor func testEmojiPlaneHasSearchFieldOnTop() throws {
-        let plane = EmojiPlane(dark: true)
-        plane.frame = CGRect(x: 0, y: 0, width: w, height: 252)
+        let plane = EmojiPlane(dark: true, pad: false)
+        plane.frame = CGRect(x: 0, y: 0, width: 390, height: 252)
         plane.layoutIfNeeded()
         let f = try XCTUnwrap(plane.searchField)
         XCTAssertLessThan(f.frame.minY, 10)
         XCTAssertGreaterThanOrEqual(f.frame.height, 30)
-        XCTAssertGreaterThan(f.frame.width, w * 0.8, "thanh tìm gần đầy bề ngang như stock")
+        XCTAssertGreaterThan(f.frame.width, 390 * 0.8, "thanh tìm gần đầy bề ngang như stock")
         var searched = false
         plane.onSearch = { searched = true }
         f.sendActions(for: .touchUpInside)
