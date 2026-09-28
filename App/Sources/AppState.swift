@@ -1161,6 +1161,12 @@ final class AppState: @unchecked Sendable {
         set { defaults.set(newValue, forKey: "textToolsInMenu") }
     }
 
+    /// Gõ phép tính rồi "=" ⇒ gợi ý kết quả, Tab để chèn (MathHint). Mặc định BẬT như iOS/Android.
+    var mathResults: Bool {
+        get { defaults.object(forKey: "mathResults") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "mathResults"); MathHint.shared.reloadSetting() }
+    }
+
     /// Phím tắt Thêm dấu cho vùng chọn: "off" (mặc định) / TextActionHotkey.choices.
     var addTonesHotkey: String {
         get { defaults.string(forKey: "addTonesHotkey") ?? "off" }

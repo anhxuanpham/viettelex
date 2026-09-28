@@ -1260,6 +1260,25 @@ enum AXTextEdit {
         return str
     }
 
+    /// Screen rect of the caret (Cocoa coordinates, origin bottom-left) via
+    /// kAXBoundsForRangeParameterizedAttribute on a 0-length range; nil on any failure.
+    /// Used only to place the math-result hint (MathHint) — never on the key path.
+    static func caretScreenRect() -> NSRect? {
+        guard AXIsProcessTrusted(), let element = focusedElement(), let caret = readCaret() else { return nil }
+        var range = CFRange(location: caret, length: 0)
+        guard let rangeVal = AXValueCreate(.cfRange, &range) else { return nil }
+        var result: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(
+                element, kAXBoundsForRangeParameterizedAttribute as CFString, rangeVal, &result) == .success,
+              let v = result, CFGetTypeID(v) == AXValueGetTypeID()
+        else { return nil }
+        var r = CGRect.zero
+        guard AXValueGetValue(v as! AXValue, .cgRect, &r) else { return nil }
+        // AX uses top-left origin on the primary screen; flip to Cocoa.
+        let primaryH = NSScreen.screens.first?.frame.height ?? 0
+        return NSRect(x: r.minX, y: primaryH - r.maxY, width: r.width, height: r.height)
+    }
+
     /// Deferred-probe experiment: the focused element's total character count via
     /// kAXNumberOfCharacters. Content-independent append detector — an ignored
     /// replacementRange leaves the field `bs` chars LONGER than a compliant replace
@@ -2771,6 +2790,23 @@ final class TerminalTapController {
         }
 
         let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
+
+        // Kết quả phép tính (MathHint): Tab khi ô "= 36 ⇥ Tab" đang hiện ⇒ chèn kết quả;
+        // phím khác chỉ tắt ô. Phím "=" (vị trí phím =, không Shift/⌘/⌃/⌥) ⇒ thử tính sau
+        // khi phím tới app (đọc AX, trên main). Không hiện ô ⇒ một lần đọc cờ dưới khoá.
+        let mathMods = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
+        if MathHint.shared.isShowing {
+            if keyCode == kVK_Tab, mathMods.isEmpty, let r = MathHint.shared.consumeTab() {
+                engine.reset()
+                SyntheticKeyboard.apply(backspaces: 0, insert: r, mode: emitMode)
+                shortcutTail.append(r)
+                return nil
+            }
+            MathHint.shared.dismiss()
+        }
+        if keyCode == kVK_ANSI_Equal, mathMods.isEmpty, MathHint.shared.enabled {
+            MathHint.shared.afterEquals(client: nil)
+        }
 
         if keyCode == kDelete {
             lastTapKeyWasBoundary = false   // ⌫ is word-adjacent editing, not a boundary

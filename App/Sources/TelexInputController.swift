@@ -280,6 +280,25 @@ final class TelexInputController: IMKInputController {
         guard event.type == .keyDown,
               let client = sender as? IMKTextInput else { return false }
 
+        // Kết quả phép tính (MathHint): ô "= 36 ⇥ Tab" đang hiện ⇒ Tab chèn kết quả, phím
+        // khác chỉ tắt ô rồi xử lý như thường. Phím "=" ⇒ thử tính sau khi app nhận phím.
+        // Không hiện ô thì chỉ là một lần đọc cờ dưới khoá.
+        if MathHint.shared.isShowing {
+            if event.keyCode == kTab,
+               event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
+               let r = MathHint.shared.consumeTab() {
+                if !engine.isEmpty { endComposition(client) }
+                client.insertText(r, replacementRange: kNoRange)
+                shortcutTail.append(r)
+                logDecision("math hint: Tab → insert result")
+                return true
+            }
+            MathHint.shared.dismiss()
+        }
+        let mathTrigger = MathHint.shared.enabled
+            && MathHintLogic.isTrigger(characters: event.characters, modifiers: event.modifierFlags)
+        defer { if mathTrigger { MathHint.shared.afterEquals(client: client) } }
+
         // Signpost the whole IMKit round trip; the end message names the strategy
         // that actually handled this key (see Instrumentation.swift).
         var spMode = "passthrough"

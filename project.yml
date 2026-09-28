@@ -55,6 +55,9 @@ targets:
       - path: iOS/Keyboard/VNSuggest.swift
       - path: iOS/Keyboard/VNLexicon2.swift
       - path: iOS/Keyboard/SyllableLM.swift
+      #  • kết quả phép tính "…=" (MathHint.swift) — cùng quy tắc chip iOS/Android.
+      - path: iOS/Keyboard/MathResults.swift
+      - path: iOS/Keyboard/NumberChips.swift
       - path: iOS/Keyboard/Resources/vnlexicon.bin
         buildPhase: resources
       - path: iOS/Keyboard/Resources/vnlm.bin
