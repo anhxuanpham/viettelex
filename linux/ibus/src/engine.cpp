@@ -154,6 +154,18 @@ public:
         if (!read(text, cursor, anchor)) return false;
         return anchor != cursor;
     }
+    // Before a reach-back only (Session): the GTK3 IBus module (Firefox, Chromium, GTK3 apps)
+    // sends anchor == cursor even with text selected — then PRIMARY against the caret, read
+    // with a short timeout (rare: re-edit / ⌫ reopen / shortcut or auto-restore delete).
+    bool selectionAtCaret() override {
+        IBusText *text = nullptr;
+        guint cursor = 0, anchor = 0;
+        if (!read(text, cursor, anchor)) return false;
+        const gchar *s = ibus_text_get_text(text);
+        if (!s) return anchor != cursor;
+        return vt::selectionAtCaret(s, cursor, anchor,
+                                    [](std::string &p) { return vt::readPrimarySelection(p, 150); });
+    }
 
 private:
     bool read(IBusText *&text, guint &cursor, guint &anchor) {

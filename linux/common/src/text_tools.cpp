@@ -308,8 +308,16 @@ bool primaryAdjacentToCursor(const std::string &text, unsigned cursor, const std
     return text.size() - at >= n && text.compare(at, n, primary) == 0;
 }
 
-bool readPrimarySelection(std::string &out, int timeoutMs) {
-    out.clear();
+bool selectionAtCaret(const std::string &text, unsigned cursor, unsigned anchor,
+                      const std::function<bool(std::string &)> &readPrimary) {
+    if (anchor != cursor) return true;
+    std::string p;
+    if (!readPrimary || !readPrimary(p)) return false;
+    return primaryAdjacentToCursor(text, cursor, p);
+}
+
+namespace {
+std::vector<std::vector<std::string>> primaryCommands() {
     std::vector<std::vector<std::string>> cmds;
     const char *wl = std::getenv("WAYLAND_DISPLAY");
     const char *x = std::getenv("DISPLAY");
@@ -323,7 +331,15 @@ bool readPrimarySelection(std::string &out, int timeoutMs) {
         p = which("xsel");
         if (!p.empty()) cmds.push_back({p, "-o", "-p"});
     }
-    for (const auto &c : cmds) {
+    return cmds;
+}
+}  // namespace
+
+bool primarySelectionToolAvailable() { return !primaryCommands().empty(); }
+
+bool readPrimarySelection(std::string &out, int timeoutMs) {
+    out.clear();
+    for (const auto &c : primaryCommands()) {
         std::string s;
         if (runProcess(c, "", s, timeoutMs, kTextToolMaxChars * 4 + 16) == 0 && !s.empty()) {
             out = std::move(s);

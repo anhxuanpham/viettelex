@@ -43,6 +43,7 @@
 
 #include <array>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -84,7 +85,11 @@ bool g_preeditUnderline = false;
 // fcitx::InputContext → viettelex::InputContext
 class FcitxClient final : public vt::InputContext {
 public:
-    explicit FcitxClient(fcitx::InputContext *ic) : ic_(ic) {}
+    using ReadPrimary = std::function<bool(std::string &)>;
+    // readPrimary: PRIMARY selection for selectionAtCaret (the clipboard addon's cache);
+    // empty = a short external read (wl-paste / xclip / xsel).
+    explicit FcitxClient(fcitx::InputContext *ic, ReadPrimary readPrimary = {})
+        : ic_(ic), readPrimary_(std::move(readPrimary)) {}
 
     void setPreedit(const std::string &s) override {
         fcitx::Text text;
@@ -149,9 +154,21 @@ public:
         const auto &st = ic_->surroundingText();
         return !st.isValid() || !st.selectedText().empty();
     }
+    // Before a reach-back only (Session): GTK3 clients (fcitx5-gtk3: Firefox, Chromium, GTK3
+    // apps) send anchor == cursor even with text selected — then PRIMARY against the caret.
+    bool selectionAtCaret() override {
+        if (!ic_->capabilityFlags().test(fcitx::CapabilityFlag::SurroundingText)) return false;
+        const auto &st = ic_->surroundingText();
+        if (!st.isValid()) return true;
+        return vt::selectionAtCaret(st.text(), st.cursor(), st.anchor(), [this](std::string &p) {
+            if (readPrimary_) return readPrimary_(p);
+            return vt::readPrimarySelection(p, 150);
+        });
+    }
 
 private:
     fcitx::InputContext *ic_;
+    ReadPrimary readPrimary_;
 };
 
 class VietTelexState final : public fcitx::InputContextProperty {
@@ -267,7 +284,7 @@ public:
             auto *ic = event.inputContext();
             auto *st = state(ic);
             ensureAppState(st);
-            FcitxClient client(ic);
+            FcitxClient client(ic, primaryReader(ic));
             refreshFieldFlags(st, client);
             vt::KeyEvent ev = toVt(event);
             if (st->session.isAddTonesHotkey(ev)) {
@@ -366,6 +383,26 @@ private:
     // Declared before its first use: the loader's return type is deduced (auto).
     FCITX_ADDON_DEPENDENCY_LOADER(clipboard, instance_->addonManager());
 #endif
+
+    // PRIMARY from the clipboard addon's in-process cache (no IPC); empty = no addon. The
+    // cache keeps the last text after the app drops the selection (GTK3 entry: select, then
+    // End) — so a cached hit is confirmed with a short external read when a tool exists.
+    FcitxClient::ReadPrimary primaryReader(fcitx::InputContext *ic) {
+#if defined(VT_HAVE_FCITX_CLIPBOARD)
+        return [this, ic](std::string &out) {
+            auto *clip = clipboard();
+            if (!clip) return vt::readPrimarySelection(out, 150);
+            out = clip->call<fcitx::IClipboard::primary>(ic);
+            if (out.empty()) return false;
+            std::string live;
+            if (vt::readPrimarySelection(live, 150) || vt::primarySelectionToolAvailable()) out = live;
+            return !out.empty();
+        };
+#else
+        (void)ic;
+        return {};
+#endif
+    }
 
     void ensureAppState(VietTelexState *st) {
         if (st->stateLoaded) return;

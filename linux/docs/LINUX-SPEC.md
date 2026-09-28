@@ -66,6 +66,13 @@ Linux không có "tap backspace" ổn định như macOS; hai cách chuẩn củ
   gõ"); IBus gửi `IBUS_ATTR_UNDERLINE_NONE` tường minh, Fcitx5 gửi `TextFormatFlag::NoFlag`. Ở
   Surrounding/Direct bỏ preedit hoàn toàn.
 - Mất focus / click chuột / đổi con trỏ → commit preedit (không nuốt chữ), reset engine.
+- **Có vùng chọn thì không với ngược** (sửa dấu từ cũ, ⌫ mở lại từ, gõ tắt / tự khôi phục ở
+  Surrounding): phím gõ như thường, app thay vùng chọn. GTK3 (Firefox, Chromium, app GTK3) gửi
+  surrounding không có anchor → kiểm thêm PRIMARY sát con trỏ (`InputContext::selectionAtCaret`,
+  `selectionAtCaret` trong text_tools). Chỉ hỏi ngay trước lần với ngược (hiếm), tối đa một lần
+  mỗi phím; gõ thường không tốn gì. Fcitx5: cache addon clipboard, trúng thì xác nhận bằng
+  `xclip`/`wl-paste` nếu có (cache giữ chữ cũ sau khi bỏ chọn); IBus: `xclip`/`wl-paste`/`xsel`
+  timeout 150 ms.
 
 ### 3.1 Direct cho terminal và gạch chân — kết quả đọc mã nguồn (26/09/2026)
 
