@@ -84,6 +84,20 @@ final class StickyInputSource {
         return CGDisplayBounds(display)
     }
 
+    /// User vừa CHỦ ĐỘNG đổi input source (chord ≤1s / click dải menu bar ≤5s)?
+    /// Dùng chung với SecureInputMonitor.PreBlockSelection (#100): mất VietTelex do
+    /// user tự đổi thì hết chặn KHÔNG được chọn lại. Luôn chạy (không phụ thuộc cờ
+    /// sticky), chỉ đọc hai timestamp.
+    func userGestureRecently(nowNs: UInt64) -> Bool {
+        let (chord, menu) = lock.withLock { (lastChordNs, lastMenuBarClickNs) }
+        return Self.isUserGesture(nowNs: nowNs, lastChordNs: chord, lastMenuBarClickNs: menu)
+    }
+
+    static func isUserGesture(nowNs: UInt64, lastChordNs: UInt64, lastMenuBarClickNs: UInt64) -> Bool {
+        (lastChordNs != 0 && nowNs &- lastChordNs <= gestureWindowNs)
+            || (lastMenuBarClickNs != 0 && nowNs &- lastMenuBarClickNs <= menuClickWindowNs)
+    }
+
     // MARK: - Vòng đời
 
     /// Gọi một lần từ main.swift. Tự theo dõi app activation (timestamp riêng —

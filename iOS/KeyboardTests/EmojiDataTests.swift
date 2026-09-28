@@ -47,7 +47,7 @@ final class EmojiDataTests: XCTestCase {
         for id in 0..<EmojiData.count where EmojiData.version(id) <= 160 && EmojiData.version(id) > 140 {
             XCTAssertTrue(EmojiData.canRender(EmojiData.emoji(id)), "không vẽ được \(EmojiData.emoji(id))")
         }
-        let shown = EmojiData.categories.reduce(0) { $0 + $1.emoji.count }
+        let shown = EmojiData.categories.reduce(0) { $0 + $1.ids.count }
         let upTo16 = (0..<EmojiData.count).filter { EmojiData.version($0) <= 160 }.count
         XCTAssertGreaterThanOrEqual(shown, upTo16)
     }

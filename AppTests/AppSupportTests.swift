@@ -1,4 +1,5 @@
 import XCTest
+import Carbon.HIToolbox
 import TelexCore
 @testable import VietTelex
 
@@ -157,6 +158,86 @@ final class AppSupportTests: XCTestCase {
         XCTAssertFalse(SecureInputMonitor.wantsLockScreen(k))
         XCTAssertNil(SecureInputMonitor.revealTarget(k))
         XCTAssertTrue(SecureInputMonitor.menuHeadline(k, holderName: "Google Chrome").contains("Google Chrome"))
+    }
+
+    /// Issue #100 (Edge, github.com): after the login submit navigated away, Edge kept
+    /// Secure Input on while NO password field was focused (reproduced in Chrome
+    /// 28/09/2026: ~22s). "X is on a password field — normal" was wrong there.
+    func testFrontAppHoldingSecureInputOffPasswordFieldIsReportedAsStuck() {
+        XCTAssertEqual(
+            SecureInputMonitor.classifyHint(holderName: "Microsoft Edge", holderAlive: true,
+                                            runningPasswordManagers: [], holderIsFrontmost: true,
+                                            focusedFieldIsSecure: false),
+            .heldAfterPasswordField("Microsoft Edge"))
+        // Still ON the password field → the benign reading.
+        XCTAssertEqual(
+            SecureInputMonitor.classifyHint(holderName: "Microsoft Edge", holderAlive: true,
+                                            runningPasswordManagers: [], holderIsFrontmost: true,
+                                            focusedFieldIsSecure: true),
+            .passwordFieldInFrontApp("Microsoft Edge"))
+        // AX unknown → benign reading (never accuse on no evidence).
+        XCTAssertEqual(
+            SecureInputMonitor.classifyHint(holderName: "Microsoft Edge", holderAlive: true,
+                                            runningPasswordManagers: [], holderIsFrontmost: true,
+                                            focusedFieldIsSecure: nil),
+            .passwordFieldInFrontApp("Microsoft Edge"))
+        // Not in front → generic, whatever AX says.
+        XCTAssertEqual(
+            SecureInputMonitor.classifyHint(holderName: "Microsoft Edge", holderAlive: true,
+                                            runningPasswordManagers: [], holderIsFrontmost: false,
+                                            focusedFieldIsSecure: false),
+            .generic)
+        let k = SecureInputMonitor.HintKind.heldAfterPasswordField("Microsoft Edge")
+        XCTAssertTrue(SecureInputMonitor.menuHeadline(k, holderName: "Microsoft Edge").contains("Microsoft Edge"))
+        XCTAssertFalse(SecureInputMonitor.wantsLockScreen(k))
+        XCTAssertNil(SecureInputMonitor.revealTarget(k))
+        XCTAssertFalse(SecureInputMonitor.hintText(k).isEmpty)
+        // Focus verdict: nothing focused but the app answered → not a password field;
+        // timeout / failure → unknown.
+        XCTAssertEqual(SecureFieldDetector.focusVerdict(subrole: "AXSecureTextField", hasFocus: true, appError: .success), true)
+        XCTAssertEqual(SecureFieldDetector.focusVerdict(subrole: nil, hasFocus: true, appError: .success), false)
+        XCTAssertEqual(SecureFieldDetector.focusVerdict(subrole: nil, hasFocus: false, appError: .noValue), false)
+        XCTAssertNil(SecureFieldDetector.focusVerdict(subrole: nil, hasFocus: false, appError: .cannotComplete))
+        // Return / Enter / Tab leave the password field → drop the cached verdict.
+        XCTAssertTrue(SecureFieldDetector.leavesField(keyCode: kVK_Return))
+        XCTAssertTrue(SecureFieldDetector.leavesField(keyCode: kVK_ANSI_KeypadEnter))
+        XCTAssertTrue(SecureFieldDetector.leavesField(keyCode: kVK_Tab))
+        XCTAssertFalse(SecureFieldDetector.leavesField(keyCode: kVK_ANSI_A))
+    }
+
+    /// Issue #100 race: the password field made macOS switch VietTelex → ABC and the
+    /// input-source-changed check ran BEFORE IsSecureEventInputEnabled() turned true
+    /// (the log caught ON only at the next poll, 3s later) — the calm branch latched
+    /// "VietTelex was not selected", so nothing re-selected it when the lock cleared.
+    func testPreBlockSelectionSurvivesSourceSwitchBeforeOnsetDetection() {
+        typealias P = SecureInputMonitor.PreBlockSelection
+        let s: UInt64 = 1_000_000_000
+        var p = P()
+        p.noteCalm(isVietTelex: true, nowNs: 10 * s, userGesture: false)
+        p.noteCalm(isVietTelex: false, nowNs: 100 * s, userGesture: false)   // macOS → ABC
+        XCTAssertTrue(p.wasSelected(onsetNs: 103 * s))                        // ON at poll
+        XCTAssertFalse(p.wasSelected(onsetNs: 100 * s + P.onsetGraceNs + 1)) // too late: unrelated
+        // The user switched away themselves (hotkey / menu bar) → never reclaim.
+        var u = P()
+        u.noteCalm(isVietTelex: true, nowNs: 10 * s, userGesture: false)
+        u.noteCalm(isVietTelex: false, nowNs: 100 * s, userGesture: true)
+        XCTAssertFalse(u.wasSelected(onsetNs: 101 * s))
+        // Never selected → never reclaim.
+        var n = P()
+        n.noteCalm(isVietTelex: false, nowNs: 100 * s, userGesture: false)
+        XCTAssertFalse(n.wasSelected(onsetNs: 101 * s))
+        // Still selected at onset (the old fast path) → reclaim.
+        var y = P()
+        y.noteCalm(isVietTelex: true, nowNs: 100 * s, userGesture: false)
+        XCTAssertTrue(y.wasSelected(onsetNs: 101 * s))
+        // Re-selected afterwards clears the loss stamp.
+        p.noteCalm(isVietTelex: true, nowNs: 120 * s, userGesture: false)
+        XCTAssertEqual(p.lostAtNs, 0)
+        // Gesture windows shared with StickyInputSource.
+        XCTAssertTrue(StickyInputSource.isUserGesture(nowNs: 10 * s, lastChordNs: 10 * s - 1, lastMenuBarClickNs: 0))
+        XCTAssertTrue(StickyInputSource.isUserGesture(nowNs: 10 * s, lastChordNs: 0, lastMenuBarClickNs: 6 * s))
+        XCTAssertFalse(StickyInputSource.isUserGesture(nowNs: 10 * s, lastChordNs: 0, lastMenuBarClickNs: 0))
+        XCTAssertFalse(StickyInputSource.isUserGesture(nowNs: 10 * s, lastChordNs: 8 * s, lastMenuBarClickNs: 4 * s))
     }
 
     func testSecureInputHintClassifiesPasswordManagerAfterSleep() {

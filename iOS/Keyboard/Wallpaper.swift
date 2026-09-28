@@ -100,14 +100,47 @@ enum Wallpaper {
             aspect = pw / ph
         }
         let px = displayMaxPixel(viewSize: viewSize, scale: scale, imageAspect: aspect)
-        let key = "\(version)|\(px)"
+        let target = CGSize(width: (viewSize.width * scale).rounded(), height: (viewSize.height * scale).rounded())
+        let key = "\(version)|\(px)|\(Int(target.width))x\(Int(target.height))"
         if let c = cache, c.key == key { return c.image }
         cache = nil                     // nhả ảnh cũ TRƯỚC khi giải ảnh mới
-        guard let cg = downsample(source: src, maxPixel: px) else { return nil }
+        guard let full = downsample(source: src, maxPixel: px) else { return nil }
+        // Chỉ giữ phần HIỆN (aspect-fill cắt giữa): ảnh dọc 3:4 trên bàn phím ngang chỉ lộ
+        // ~55 % — bitmap giữ lại cỡ đúng view thay vì cả ảnh.
+        let cg = aspectFillCrop(full, to: target) ?? full
         let img = UIImage(cgImage: cg, scale: scale, orientation: .up)
         cache = (key, img)
         return img
     }
 
+    /// Vẽ `img` kiểu aspect-fill (căn giữa, cắt phần thừa) vào bitmap MỚI đúng `size` px —
+    /// bitmap gốc nhả được ngay (CGImage.cropping chia chung bộ nhớ gốc nên không dùng).
+    /// Ảnh gốc hẹp hơn view (phải phóng to mới phủ kín) ⇒ cắt ở ĐỘ PHÂN GIẢI GỐC (bitmap nhỏ
+    /// hơn `size`, cùng tỉ lệ; UIImageView aspect-fill tự phóng — không phóng hai lần).
+    /// Đúng cỡ sẵn ⇒ trả nil (dùng thẳng ảnh gốc).
+    static func aspectFillCrop(_ img: CGImage, to size: CGSize) -> CGImage? {
+        guard size.width >= 1, size.height >= 1, img.width > 0, img.height > 0 else { return nil }
+        var k = max(size.width / CGFloat(img.width), size.height / CGFloat(img.height))
+        var target = size
+        if k > 1 { target = CGSize(width: size.width / k, height: size.height / k); k = 1 }
+        let w = max(Int(target.width.rounded()), 1), h = max(Int(target.height.rounded()), 1)
+        if img.width == w, img.height == h { return nil }
+        let dw = CGFloat(img.width) * k, dh = CGFloat(img.height) * k
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue
+                                      | CGBitmapInfo.byteOrder32Little.rawValue)
+        else { return nil }
+        ctx.interpolationQuality = .high
+        ctx.draw(img, in: CGRect(x: (CGFloat(w) - dw) / 2, y: (CGFloat(h) - dh) / 2, width: dw, height: dh))
+        return ctx.makeImage()
+    }
+
     static func dropCache() { cache = nil }
+    static var hasCache: Bool { cache != nil }
+
+    /// Scale giải ảnh nền cho bàn phím: tối đa @2x (máy @3x giải ở @2x rồi phóng). Nền đã
+    /// mờ + phủ tối + thường trong suốt một phần ⇒ mắt không phân biệt, mà bitmap 810×1080
+    /// @3x (3,4 MB) còn ~1,5 MB (RAM-AUDIT.md §6).
+    static func decodeScale(screenScale: CGFloat) -> CGFloat { min(screenScale, 2) }
 }

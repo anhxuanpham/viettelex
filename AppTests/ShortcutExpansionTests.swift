@@ -316,16 +316,109 @@ final class ShortcutExpansionTests: XCTestCase {
     }
 
     func testTapNeedsAnchoredRun() {
-        // Tap không đọc được màn hình terminal: cụm chưa neo (gõ ngay sau click) không nở.
+        // Tap không đọc được màn hình (terminal / AX tắt): cụm chưa neo (gõ ngay sau
+        // click) không nở; màn hình không bao giờ được hỏi khi cụm đã neo.
         var t = ShortcutTail()
         t.append("->")
-        let run = t.anchored ? t.run : ""
-        XCTAssertNil(ShortcutMatch.find(in: table, composed: "", raw: "", run: run,
-                                        allowWord: true, allowToken: t.anchored))
+        XCTAssertNil(ShortcutMatch.findForTap(in: table, composed: "", raw: "", tail: t,
+                                              allowWord: true, allowToken: true,
+                                              screenConfirms: { _ in false }))
         t.reset(); t.append("\n->")
-        XCTAssertEqual(ShortcutMatch.find(in: table, composed: "", raw: "", run: t.run,
-                                          allowWord: true, allowToken: t.anchored),
+        XCTAssertEqual(ShortcutMatch.findForTap(in: table, composed: "", raw: "", tail: t,
+                                                allowWord: true, allowToken: true,
+                                                screenConfirms: { _ in XCTFail("anchored: no AX read"); return false }),
                        .token(token: "->", expansion: "→"))
+    }
+
+    /// Issue #99: Chrome/Lark (tap) — click vào ô trống rồi gõ "-> " lần ĐẦU không nở
+    /// (tap chưa thấy khoảng trắng nào ⇒ cụm chưa neo), lần hai mới nở. Cụm chưa neo
+    /// giờ nở khi AX xác nhận cụm đứng riêng trước con trỏ; AX chỉ được hỏi khi cụm
+    /// ĐÃ khớp một khoá.
+    func testTapUnanchoredRunExpandsWhenScreenConfirms() {
+        var t = ShortcutTail()
+        t.reset()                    // click / đổi ô
+        t.append("-"); t.append(">")
+        var asked: [String] = []
+        let m = ShortcutMatch.findForTap(in: table, composed: "", raw: "", tail: t,
+                                         allowWord: true, allowToken: true,
+                                         screenConfirms: { asked.append($0); return true })
+        XCTAssertEqual(m, .token(token: "->", expansion: "→"))
+        XCTAssertEqual(asked, ["->"])
+        // Cụm không khớp khoá nào ⇒ không đọc màn hình.
+        var u = ShortcutTail(); u.append("=>")
+        XCTAssertNil(ShortcutMatch.findForTap(in: table, composed: "", raw: "", tail: u,
+                                              allowWord: true, allowToken: true,
+                                              screenConfirms: { _ in XCTFail("no key matched: no AX read"); return true }))
+        // Khoá CHỮ không phụ thuộc neo / màn hình.
+        XCTAssertEqual(ShortcutMatch.findForTap(in: table, composed: "ko", raw: "ko", tail: ShortcutTail(),
+                                                allowWord: true, allowToken: true,
+                                                screenConfirms: { _ in XCTFail("word key: no AX read"); return false }),
+                       .word(expansion: "không"))
+        // Tap cho phép token nhưng ranh giới không (dấu câu) ⇒ không hỏi.
+        XCTAssertNil(ShortcutMatch.findForTap(in: table, composed: "", raw: "", tail: t,
+                                              allowWord: true, allowToken: false,
+                                              screenConfirms: { _ in XCTFail(); return true }))
+    }
+
+    /// Xác nhận màn hình (thuần, reader giả lập AX kAXStringForRange): đầu ô, sau
+    /// khoảng trắng, sau xuống dòng ⇒ có; chữ dính trước ("a->"), con trỏ không đọc
+    /// được, AX trả nil, AX stale (chưa thấy ">") ⇒ không.
+    func testConfirmsTokenAgainstScreen() {
+        func check(_ text: String, caret: Int? = nil, readable: Bool = true) -> Bool {
+            let ns = text as NSString
+            return ShortcutScreen.confirmsToken("->", caret: caret ?? ns.length) { r in
+                guard readable, r.location >= 0, NSMaxRange(r) <= ns.length else { return nil }
+                return ns.substring(with: r)
+            }
+        }
+        XCTAssertTrue(check("->"))                 // đầu ô trống (video #99)
+        XCTAssertTrue(check("abc ->"))
+        XCTAssertTrue(check("dòng 1\n->"))
+        XCTAssertFalse(check("a->"))
+        XCTAssertFalse(check("-"))                 // AX stale: '>' chưa tới cây AX
+        XCTAssertFalse(check("->", readable: false))
+        XCTAssertFalse(ShortcutScreen.confirmsToken("->", caret: nil) { _ in "->" })
+        XCTAssertFalse(check("-> x", caret: 4))    // con trỏ không đứng ngay sau cụm
+    }
+
+    /// Mô hình luồng TAP (#99): màn hình = ô web, tap thấy phím, AX đọc được ô ⇒
+    /// "->␣" lần đầu sau click cũng nở; ô không có AX ⇒ giữ nguyên như cũ (không đoán).
+    func testTapFlowFirstArrowAfterClick() {
+        struct TapField {
+            var text = ""
+            var tail = ShortcutTail()
+            let table: ShortcutTable
+            let axReadable: Bool
+            mutating func click() { tail.reset() }
+            mutating func type(_ keys: String) {
+                for ch in keys {
+                    if ch == " " {
+                        let m = ShortcutMatch.findForTap(
+                            in: table, composed: "", raw: "", tail: tail,
+                            allowWord: true, allowToken: true) { token in
+                                let ns = text as NSString
+                                return ShortcutScreen.confirmsToken(token, caret: axReadable ? ns.length : nil) {
+                                    ns.substring(with: $0)
+                                }
+                            }
+                        if case let .token(token, e)? = m {
+                            text.removeLast(token.count); text += e     // ⌫ theo ký tự + gõ lại
+                            tail.replaceRun(with: e)
+                        }
+                    }
+                    text.append(ch); tail.append(String(ch))
+                }
+            }
+        }
+        var f = TapField(table: table, axReadable: true)
+        f.click(); f.type("-> -> ")
+        XCTAssertEqual(f.text, "→ → ")
+        var g = TapField(table: table, axReadable: false)
+        g.click(); g.type("-> -> ")
+        XCTAssertEqual(g.text, "-> → ")            // không AX: hành vi cũ, lần 2 mới nở
+        var h = TapField(table: table, axReadable: true)
+        h.text = "a"; h.click(); h.type("-> ")    // click ngay sau chữ "a"
+        XCTAssertEqual(h.text, "a-> ")
     }
 
     // MARK: - File (khứ hồi với iOS/Android)

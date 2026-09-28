@@ -67,7 +67,45 @@ final class SecureInputMonitor {
         /// field is focused and macOS blocks every IME there ON PURPOSE — not a fault.
         /// Maintainer 24/09/2026: say so instead of "can't type Vietnamese — Chrome".
         case passwordFieldInFrontApp(String)
+        /// The front app holds Secure Input but its focused element is NOT a password
+        /// field (issue #100: Edge after signing in to github.com — the password field
+        /// was removed by the navigation while focused and Chromium keeps Secure Input
+        /// on for many seconds; reproduced in Chrome 28/09/2026: ~22s). Not "normal",
+        /// and "click another field" is misleading — the user already is elsewhere.
+        case heldAfterPasswordField(String)
         case generic
+    }
+
+    /// Selection của user TRƯỚC lúc bị chặn — thuần để test (issue #100).
+    /// Race cũ: ô mật khẩu làm macOS đá selection sang ABC và notification
+    /// input-source-changed tới TRƯỚC khi IsSecureEventInputEnabled() kịp true (log
+    /// #100: ON chỉ bắt được ở nhịp poll 3s sau) — nhánh "yên bình" đọc TIS lúc đó ra
+    /// false và chốt luôn "trước khi chặn VietTelex không được chọn" ⇒ lúc hết chặn
+    /// không chọn lại ⇒ kẹt ABC tới khi user tự đổi/chuyển app.
+    /// Sửa: nhớ thời điểm MẤT selection; mất trong `onsetGraceNs` trước lúc phát hiện
+    /// chặn, không do gesture của user (hotkey/menu bar) ⇒ coi như vẫn đang chọn.
+    struct PreBlockSelection: Equatable {
+        /// Poll 5s + tolerance 2s + dư — độ trễ tối đa để bắt được ON.
+        static let onsetGraceNs: UInt64 = 10_000_000_000
+        private(set) var selected = false
+        private(set) var lostAtNs: UInt64 = 0
+        private(set) var lostByUser = false
+
+        mutating func noteCalm(isVietTelex: Bool, nowNs: UInt64, userGesture: Bool) {
+            if isVietTelex {
+                lostAtNs = 0; lostByUser = false
+            } else if selected {
+                lostAtNs = nowNs; lostByUser = userGesture
+            }
+            selected = isVietTelex
+        }
+
+        /// Lúc phát hiện ON (`onsetNs`): hết chặn thì có trả lại VietTelex không.
+        func wasSelected(onsetNs: UInt64) -> Bool {
+            if selected { return true }
+            return lostAtNs != 0 && !lostByUser && onsetNs >= lostAtNs
+                && onsetNs - lostAtNs <= Self.onsetGraceNs
+        }
     }
 
     /// Process còn sống không — kill(pid, 0) không gửi signal, chỉ hỏi tồn tại;
@@ -89,6 +127,9 @@ final class SecureInputMonitor {
     /// chặn. Cập nhật ở mỗi lần check lúc secure input off; đóng băng suốt lúc bị
     /// chặn (vì khi đó selection đã bị macOS đá sang ABC, đọc nữa là mất sự thật).
     private var selectedBeforeBlock = false
+    private var preBlock = PreBlockSelection()
+    /// Hint cuối đã log — chỉ log khi đổi (poll 5s gọi lại updateStatusItem).
+    private var lastLoggedKind: HintKind?
 
     /// Poll chỉ để bắt transition; mọi công việc thật nằm sau guard "có đổi không".
     func start() {
@@ -154,7 +195,16 @@ final class SecureInputMonitor {
             // input-source-changed (main.swift gọi check với reason đó), nên đọc TIS
             // mỗi 5s là việc thừa lúc máy rảnh (maintainer 25/09/2026).
             if Self.refreshesSelection(reason: reason) {
-                selectedBeforeBlock = TelexInputController.isVietTelexSelected()
+                let now = DispatchTime.now().uptimeNanoseconds
+                let isVT = TelexInputController.isVietTelexSelected()
+                let wasVT = preBlock.selected
+                preBlock.noteCalm(isVietTelex: isVT, nowNs: now,
+                                  userGesture: StickyInputSource.shared.userGestureRecently(nowNs: now))
+                selectedBeforeBlock = isVT
+                // VietTelex vừa bị đá (ô mật khẩu?): secure input thường bật NGAY sau
+                // — check thêm một nhịp settle thay vì đợi poll 5s (#100). Chỉ ở
+                // transition mất selection, không phải mỗi lần đổi source.
+                if wasVT, !isVT, reason == "input-source-changed" { checkSoon(reason: "source-lost") }
             }
             return
         }
@@ -166,6 +216,12 @@ final class SecureInputMonitor {
         }
         let was = activeHolder
         activeHolder = holder
+        if was == nil, holder != nil {
+            // Chốt selection trước lúc chặn — kể cả khi macOS đã đá sang ABC vài giây
+            // trước khi mình bắt được ON (PreBlockSelection).
+            selectedBeforeBlock = preBlock.wasSelected(onsetNs: DispatchTime.now().uptimeNanoseconds)
+            lastLoggedKind = nil
+        }
         if let h = holder {
             // Thẳng vào unified log không qua guard debugLogging của DebugLog.log —
             // sự kiện này cần dấu vết CẢ KHI user chưa kịp bật debug (chính là ca
@@ -189,6 +245,9 @@ final class SecureInputMonitor {
                 Signposts.log.notice("secure-input OFF — reselect VietTelex: \(ok ? "ok" : "FAILED", privacy: .public)")
                 DebugLog.log("secure-input reselect: \(ok ? "ok" : "FAILED")")
             }
+            lastLoggedKind = nil
+            preBlock.noteCalm(isVietTelex: TelexInputController.isVietTelexSelected(),
+                              nowNs: DispatchTime.now().uptimeNanoseconds, userGesture: false)
         }
         updateStatusItem()
     }
@@ -201,6 +260,8 @@ final class SecureInputMonitor {
             return "Secure input: ACTIVE — held by \(holder.label) (likely \(pm) after sleep)"
         case .passwordManager:
             return "Secure input: ACTIVE — held by \(holder.label) (password manager)"
+        case .heldAfterPasswordField:
+            return "Secure input: ACTIVE — held by \(holder.label) (front app, focused element is NOT a password field — browser left it on)"
         default:
             return "Secure input: ACTIVE — held by \(holder.label)"
         }
@@ -249,7 +310,8 @@ final class SecureInputMonitor {
 
     static func classifyHint(holderName: String?, holderAlive: Bool,
                              runningPasswordManagers: [String],
-                             holderIsFrontmost: Bool = false) -> HintKind {
+                             holderIsFrontmost: Bool = false,
+                             focusedFieldIsSecure: Bool? = nil) -> HintKind {
         if !holderAlive { return .orphan }
         if looksLikePasswordManager(holderName) {
             return .passwordManager(canonicalPasswordManagerName(holderName ?? "1Password"))
@@ -261,7 +323,12 @@ final class SecureInputMonitor {
         if looksLikeTerminal(holderName) { return .terminal }
         // After the specific diagnoses: a password manager / terminal in front still
         // gets its own fix above; any other front app is simply on a password field.
-        if holderIsFrontmost, let name = holderName { return .passwordFieldInFrontApp(name) }
+        // AX says the focused element is NOT a password field (or there is none): the
+        // app kept Secure Input after leaving it (#100). Unknown (nil) keeps the
+        // benign "on a password field" reading.
+        if holderIsFrontmost, let name = holderName {
+            return focusedFieldIsSecure == false ? .heldAfterPasswordField(name) : .passwordFieldInFrontApp(name)
+        }
         return .generic
     }
 
@@ -278,10 +345,14 @@ final class SecureInputMonitor {
     }
 
     private func currentHintKind(holder: Holder) -> HintKind {
-        Self.classifyHint(holderName: holder.name, holderAlive: holder.alive,
-                          runningPasswordManagers: Self.runningPasswordManagerNames(),
-                          holderIsFrontmost: holder.pid > 0
-                              && NSWorkspace.shared.frontmostApplication?.processIdentifier == holder.pid)
+        let front = holder.pid > 0
+            && NSWorkspace.shared.frontmostApplication?.processIdentifier == holder.pid
+        // One AX read of the front app's focused element — only while BLOCKED (poll
+        // 5s / menu open), never on a key path. 50ms messaging timeout inside.
+        let secureField: Bool? = front ? SecureFieldDetector.focusedIsSecure(appPid: holder.pid) : nil
+        return Self.classifyHint(holderName: holder.name, holderAlive: holder.alive,
+                                 runningPasswordManagers: Self.runningPasswordManagerNames(),
+                                 holderIsFrontmost: front, focusedFieldIsSecure: secureField)
     }
 
     // MARK: - Icon menu bar tạm thời
@@ -309,6 +380,13 @@ final class SecureInputMonitor {
             + "\n" + holder.label
         let menu = NSMenu()
         let kind = currentHintKind(holder: holder)
+        if kind != lastLoggedKind {
+            lastLoggedKind = kind
+            if case .heldAfterPasswordField(let app) = kind {
+                Signposts.log.notice("secure-input: \(app, privacy: .public) is in front but its focused element is not a password field — app left Secure Input on")
+                DebugLog.log("secure-input: \(app) in front, focused element NOT a password field → app left Secure Input on (not VietTelex)")
+            }
+        }
         let info = NSMenuItem(title: Self.menuHeadline(kind, holderName: holder.name),
                               action: nil, keyEquivalent: "")
         info.isEnabled = false
@@ -351,6 +429,8 @@ final class SecureInputMonitor {
                           holderName ?? VTLocalized("an app"))
         case .passwordFieldInFrontApp(let app):
             return String(format: VTLocalized("%@ is on a password field"), app)
+        case .heldAfterPasswordField(let app):
+            return String(format: VTLocalized("%@ is still holding Secure Input after the password field"), app)
         }
     }
 
@@ -370,6 +450,8 @@ final class SecureInputMonitor {
             return VTLocalized("An app is holding Secure Input (a password field) — click away from that field, or quit the app named above")
         case .passwordFieldInFrontApp:
             return VTLocalized("macOS pauses every input method in password fields — normal. Click another field to type Vietnamese again")
+        case .heldAfterPasswordField:
+            return VTLocalized("The browser kept the keyboard lock after signing in (usually clears by itself in a few seconds). To clear it now: switch to another app and back (⌘Tab twice), or reload the page")
         }
     }
 

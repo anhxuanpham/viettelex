@@ -78,18 +78,28 @@ enum EmojiData {
         }
     }()
 
-    /// (tên, danh sách) — đúng thứ tự stock; chỉ emoji máy này vẽ được.
-    static var categories: [(name: String, emoji: [String])] {
+    /// (tên, id) — đúng thứ tự stock; chỉ emoji máy này vẽ được. Giữ id `UInt16` (chuỗi đọc
+    /// lười từ blob mmap qua `emoji(_:)`) thay vì ~3.800 `String` trên heap (−1,7 MB,
+    /// RAM-AUDIT.md §4). Cache nhả được: `dropCaches()` khi rời plane emoji / thiếu RAM.
+    static var categories: [(name: String, ids: [UInt16])] {
         if let c = cachedCategories { return c }
         let c = rawCategories.map { cat in
-            (cat.name, (cat.start..<(cat.start + cat.count)).compactMap { id in
-                isSupported(id) ? emoji(id) : nil
+            (cat.name, (cat.start..<(cat.start + cat.count)).compactMap { id -> UInt16? in
+                isSupported(id) ? UInt16(id) : nil
             })
         }
         cachedCategories = c
         return c
     }
-    nonisolated(unsafe) private static var cachedCategories: [(name: String, emoji: [String])]?
+    nonisolated(unsafe) private static var cachedCategories: [(name: String, ids: [UInt16])]?
+    static var hasCachedCategories: Bool { cachedCategories != nil }
+
+    /// Rời bảng emoji / cảnh báo bộ nhớ: bỏ bảng category + cache kiểm glyph (dựng lại lười,
+    /// kiểm glyph chỉ chạm emoji mới hơn `trustedVersion` — rẻ, testGlyphCheckCost).
+    static func dropCaches() {
+        cachedCategories = nil
+        glyphCache = [:]
+    }
 
     // MARK: lọc glyph
 

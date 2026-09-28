@@ -56,7 +56,7 @@ final class RamBreakdownTests: XCTestCase {
         print("RAMPART   (templateBytes=\(dec!.templateBytes))")
         step("enlexicon.bin (SwipeEnglish.lexicon)") { _ = SwipeEnglish.lexicon }
         step("TelexKeyPrior (smartTouch trie)") { _ = TelexKeyPrior.warmUp() }
-        step("emoji.bin + categories") { _ = EmojiData.categories.count; _ = EmojiData.kaomoji.count }
+        step("emoji.bin + categories (≈ font Apple Color Emoji của CoreText khi kiểm glyph)") { _ = EmojiData.categories.count; _ = EmojiData.kaomoji.count }
         var futo: FutoSwipe? = FutoSwipe(source: FutoSwipe.bundledWeights)
         step("FUTO model load") { _ = futo!.load() }
         step("FUTO release") { futo!.release(); futo = nil }
@@ -88,11 +88,13 @@ final class RamBreakdownTests: XCTestCase {
 
         // --- ảnh nền cỡ màn iPhone 17 (402×290pt @3x) ---
         var img: CGImage?
-        step("Wallpaper decode 1206×870") {
+        step("Wallpaper decode (@2x, cắt đúng view)") {
             let jpg = Self.makeJPEG(width: 1080, height: 1440)
-            let px = Wallpaper.displayMaxPixel(viewSize: CGSize(width: 402, height: 290), scale: 3,
-                                               imageAspect: 1080.0 / 1440)
-            img = Wallpaper.downsample(data: jpg, maxPixel: px)
+            let scale = Wallpaper.decodeScale(screenScale: 3)
+            let view = CGSize(width: 402, height: 290)
+            let px = Wallpaper.displayMaxPixel(viewSize: view, scale: scale, imageAspect: 1080.0 / 1440)
+            let full = Wallpaper.downsample(data: jpg, maxPixel: px)!
+            img = Wallpaper.aspectFillCrop(full, to: CGSize(width: view.width * scale, height: view.height * scale)) ?? full
         }
         if let img { print("RAMPART   (wallpaper \(img.width)x\(img.height) = \(img.bytesPerRow * img.height / 1024) KB)") }
         step("Wallpaper release") { img = nil }
@@ -127,8 +129,9 @@ final class RamBreakdownTests: XCTestCase {
         step("close + release controller", settle: 1.0) { rig!.close(); rig = nil }
 
         // --- rò rỉ: mở/đóng controller mới 20 lần (iOS tạo controller mới mỗi lần hiện) ---
-        var cycle: [Double] = []
-        for i in 0..<20 {
+        // 3 vòng làm ấm (sau cảnh báo bộ nhớ UIKit vừa xả cache CA/ảnh — nạp lại một lần) rồi đo.
+        var cycle: [Double] = [], heapAt: [Int] = []
+        for i in -3..<20 {
             autoreleasepool {
                 let r = KeyboardBenchTests.Rig()
                 let keys = Array(KeyboardBenchTests.corpus)
@@ -136,13 +139,16 @@ final class RamBreakdownTests: XCTestCase {
                 r.close()
             }
             Self.spin(0.3)
-            if i % 5 == 4 { cycle.append(KeyboardBenchTests.footprintMB()) }
+            if i >= 0, i % 5 == 4 { cycle.append(KeyboardBenchTests.footprintMB()); heapAt.append(Self.heapBytes()) }
         }
-        print("RAMPART leak-cycles footprint every 5: \(cycle.map { String(format: "%.1f", $0) })")
-        // Rò rỉ #1 RAM-AUDIT.md (cây view cũ bị giữ qua trait _UICornerProvider): bỏ
-        // XCTExpectFailure khi đã sửa.
-        XCTExpectFailure("rò rỉ cây view mỗi lần hiện — RAM-AUDIT.md #1", strict: false)
-        XCTAssertLessThan((cycle.last ?? 0) - (cycle.first ?? 0), 3, "RAM tăng đều qua 20 vòng mở/đóng")
+        let heapGrowMB = Double((heapAt.last ?? 0) - (heapAt.first ?? 0)) / 1_048_576
+        print("RAMPART leak-cycles footprint every 5: \(cycle.map { String(format: "%.1f", $0) }) heap +\(String(format: "%.2f", heapGrowMB))MB")
+        // Rò rỉ #1 RAM-AUDIT.md (UIKit giữ UIInputView cũ ⇒ cây view cũ): đã sửa bằng xé cây ở
+        // viewDidDisappear. Heap (malloc, ổn định) là thước chính: giờ chỉ còn vỏ UIKit ~80
+        // KB/vòng. Footprint dao động theo cache CA/ảnh của UIKit (vừa xả ở cảnh báo bộ nhớ) nên
+        // chỉ chặn lỏng — trước khi sửa +17 MB / 20 vòng.
+        XCTAssertLessThan(heapGrowMB, 3, "heap tăng đều qua 15 vòng mở/đóng")
+        XCTAssertLessThan((cycle.last ?? 0) - (cycle.first ?? 0), 8, "RAM tăng đều qua 15 vòng mở/đóng")
     }
 
     /// Emoji màu: CoreText giải PNG (sbix) của Apple Color Emoji ra bitmap và GIỮ trong cache
@@ -150,7 +156,7 @@ final class RamBreakdownTests: XCTestCase {
     /// bỏ font / cảnh báo bộ nhớ không. Số in "RAMEMOJI …".
     @MainActor func testEmojiGlyphCache() throws {
         try SlowTests.require()
-        let all = EmojiData.categories.flatMap { $0.emoji }
+        let all = EmojiData.categories.flatMap { $0.ids.map { EmojiData.emoji(Int($0)) } }
         let ctx = CGContext(data: nil, width: 200, height: 200, bitsPerComponent: 8, bytesPerRow: 0,
                             space: CGColorSpaceCreateDeviceRGB(),
                             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!

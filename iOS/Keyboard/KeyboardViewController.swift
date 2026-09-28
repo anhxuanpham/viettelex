@@ -113,6 +113,15 @@ final class KeyboardViewController: UIInputViewController {
                     style: vc.traitCollection.userInterfaceStyle))
             }
         }
+        registerObservers()
+        installKeyboard()
+    }
+
+    /// Dựng KeyboardView + nối callback. Gọi ở viewDidLoad, và ở viewWillAppear khi CÙNG
+    /// controller hiện lại sau khi viewDidDisappear đã xé cây view (RAM-AUDIT.md #1). Mọi cấu
+    /// hình còn lại (trait ô, theme, một tay, gợi ý, vuốt…) viewWillAppear áp lại như với
+    /// controller mới — iOS vốn tạo controller mới gần như mỗi lần hiện.
+    private func installKeyboard() {
         // needsInputModeSwitchKey ở viewDidLoad CHƯA đáng tin (host chưa nối,
         // iOS còn in warning) — khởi tạo false, viewWillAppear set giá trị thật.
         keyboard = KeyboardView(
@@ -123,6 +132,9 @@ final class KeyboardViewController: UIInputViewController {
         keyboard.onDeleteWord = { [weak self] in self?.deleteWordBackward() }
         wireWordSwipe()
         wireSwipeTyping()
+        #if DEBUG
+        Self.debugKeyboardInstalls += 1
+        #endif
         keyboard.onBarToggle = { [weak self] in self?.updateSuggestions() }
         keyboard.onTemplate = { [weak self] in self?.insertTemplate($0) }
         keyboard.onOpenTemplates = { [weak self] in self?.openTemplatesInApp() }
@@ -138,19 +150,26 @@ final class KeyboardViewController: UIInputViewController {
         // Như KeyboardView: nền trong suốt = touch xuyên sang app host (rớt phím).
         view.backgroundColor = KeyboardView.touchableClear
         view.addSubview(keyboard)
-        NSLayoutConstraint.activate([
+        keyboardEdges = [
             keyboard.leftAnchor.constraint(equalTo: view.leftAnchor),
             keyboard.rightAnchor.constraint(equalTo: view.rightAnchor),
             keyboard.topAnchor.constraint(equalTo: view.topAnchor),
             keyboard.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
+        ]
+        NSLayoutConstraint.activate(keyboardEdges)
     }
+    /// 4 cạnh KeyboardView ↔ view gốc. Xé phải TỰ gỡ: removeFromSuperview không bỏ chúng
+    /// khỏi mảng constraint của UIInputView (leaks --traceTree: UIInputView → constraint →
+    /// anchor → KeyboardView cũ sống tiếp).
+    private var keyboardEdges: [NSLayoutConstraint] = []
 
     #if DEBUG
     /// Test/bench (KeyboardBenchTests, CompositionSync…): proxy giả thay host. Release không có.
     var debugProxy: UITextDocumentProxy?
     override var textDocumentProxy: UITextDocumentProxy { debugProxy ?? super.textDocumentProxy }
     var debugKeyboard: KeyboardView { keyboard }
+    /// Test: số lần dựng KeyboardView (viewDidLoad + mỗi lần hiện lại sau khi xé).
+    static var debugKeyboardInstalls = 0
     /// Test: gửi thẳng một phím vào handle() (dấu câu, ⌫…) như KeyboardView gửi.
     func debugHandle(_ key: KeyboardView.Key) { handle(key) }
     /// Test: chạm một ô thanh gợi ý với payload này.
@@ -173,6 +192,9 @@ final class KeyboardViewController: UIInputViewController {
         }
         #endif
         super.viewWillAppear(animated)
+        // Cùng controller hiện lại sau viewDidDisappear (cây view đã xé) → dựng mới, rồi phần
+        // dưới áp lại toàn bộ cấu hình như lần hiện đầu.
+        if keyboard.isTornDown { installKeyboard() }
         L10n.reload()   // ngôn ngữ giao diện app (uiLanguage) — một lần mỗi lần hiện
         TouchLog.loadSetting()
         // Đọc settings MỘT lần mỗi lần hiện (trước đây EngineBridge() tự load lần hai).
@@ -347,11 +369,22 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     /// Ẩn hẳn: bỏ cache/đề xuất tạm (template gõ vuốt GIỮ — dựng lại mỗi lần hiện tốn CPU
-    /// hơn; nhả khi hệ thống báo thiếu RAM).
+    /// hơn; nhả khi hệ thống báo thiếu RAM) và XÉ cây view (RAM-AUDIT.md #1: UIKit giữ
+    /// UIInputView cũ mãi ⇒ không xé thì mỗi lần hiện rò ~1,8 MB).
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         swipeSuggest = nil
         addTonesCache = nil
+        tearDownKeyboard()
+    }
+
+    private func tearDownKeyboard() {
+        closeClipboardPanel()
+        NSLayoutConstraint.deactivate(keyboardEdges)
+        keyboardEdges = []
+        keyboard?.tearDown()
+        // Phòng hờ: thứ gì khác từng gắn vào view gốc cũng gỡ (view gốc là thứ UIKit níu).
+        KeyboardView.stripSubviews(of: view)
     }
 
     override func didReceiveMemoryWarning() {
@@ -359,6 +392,10 @@ final class KeyboardViewController: UIInputViewController {
         langModelStorage?.saveNow()
         closeClipboardPanel()
         addTonesCache = nil
+        // Plane số/ký hiệu/chữ đang nằm cache (dựng lại khi cần), bảng emoji, ảnh nền đã giải
+        // (view đang hiện vẫn giữ ảnh của nó — cache tĩnh chỉ để lần hiện sau khỏi giải lại).
+        keyboard?.dropCaches()
+        Wallpaper.queue.async { Wallpaper.dropCache() }
         if view.window == nil { swipe = nil }
         if view.window == nil { KeySound.shared.shutdown() }
     }
@@ -1736,6 +1773,10 @@ extension KeyboardViewController {
     fileprivate func wireSwipeTyping() {
         keyboard.onSwipeBegan = { [weak self] in self?.swipeBegan() }
         keyboard.onSwipeEnded = { [weak self] path, sc in self?.swipeEnded(path, sc) }
+    }
+
+    /// Observer cấp controller — MỘT lần ở viewDidLoad (KeyboardView có thể dựng lại nhiều lần).
+    fileprivate func registerObservers() {
         NotificationCenter.default.addObserver(
             self, selector: #selector(voiceOverChanged),
             name: UIAccessibility.voiceOverStatusDidChangeNotification, object: nil)

@@ -580,6 +580,49 @@ enum SecureFieldDetector {
         return isSecureSubrole(ok ? subroleRef as? String : nil)
     }
 
+    /// Return / keypad Enter / Tab: the key that typically LEAVES a password field
+    /// (submit → navigation, or focus moves on). Pure — pinned by tests.
+    static func leavesField(keyCode: Int) -> Bool {
+        keyCode == kVK_Return || keyCode == kVK_ANSI_KeypadEnter || keyCode == kVK_Tab
+    }
+
+    /// Diagnostics only (SecureInputMonitor, while Secure Input is ON — never on a key
+    /// path): is the focused element of app `appPid` a password field? System-wide
+    /// focus first, then the APP element (Chromium often answers only there). No
+    /// focused element at all → false: a holder with nothing focused is not "on a
+    /// password field" (#100: Edge after the login page navigated away). nil = AX
+    /// untrusted / the app did not answer.
+    static func focusedIsSecure(appPid: pid_t) -> Bool? {
+        guard AXIsProcessTrusted() else { return nil }
+        func focused(_ root: AXUIElement) -> (AXUIElement?, AXError) {
+            AXUIElementSetMessagingTimeout(root, 0.05)
+            var ref: CFTypeRef?
+            let err = AXUIElementCopyAttributeValue(root, kAXFocusedUIElementAttribute as CFString, &ref)
+            guard err == .success, let f = ref, CFGetTypeID(f) == AXUIElementGetTypeID() else { return (nil, err) }
+            return ((f as! AXUIElement), err)
+        }
+        var (el, _) = focused(AXUIElementCreateSystemWide())
+        var appErr = AXError.success
+        if el == nil { (el, appErr) = focused(AXUIElementCreateApplication(appPid)) }
+        guard let element = el else {
+            return Self.focusVerdict(subrole: nil, hasFocus: false, appError: appErr)
+        }
+        AXUIElementSetMessagingTimeout(element, 0.05)
+        var subroleRef: CFTypeRef?
+        let ok = AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subroleRef) == .success
+        return Self.focusVerdict(subrole: ok ? subroleRef as? String : nil, hasFocus: true, appError: .success)
+    }
+
+    /// Pure: nothing focused → false only when the app ANSWERED "no value"
+    /// (noValue / attributeUnsupported); a timeout or failure → nil (unknown).
+    static func focusVerdict(subrole: String?, hasFocus: Bool, appError: AXError) -> Bool? {
+        if hasFocus { return isSecureSubrole(subrole) }
+        switch appError {
+        case .noValue, .attributeUnsupported, .success: return false
+        default: return nil
+        }
+    }
+
     /// The subrole test, split out so it can be pinned by tests. ONLY an explicit
     /// password subrole counts: a missing/unknown subrole must read as "not secure", or a
     /// browser that fails to answer would silently stop composing Vietnamese everywhere.
@@ -2138,9 +2181,10 @@ final class TerminalTapController {
     // Phím trước từ hiện tại là chữ số → không nở gõ tắt cho từ đó (issue #82, "5h").
     private var lastTapKeyWasDigit = false
     /// Gõ tắt khoá ký hiệu/số ("->", "k2"): cụm đã chốt liền trước từ hiện tại, dựng
-    /// từ chính các phím tap thấy (xem ShortcutTail). Terminal không có AX text để đọc
-    /// lại, nên tap CHỈ nở khi cụm được NEO (đầu cụm ngay sau khoảng trắng/Enter mình
-    /// thấy gõ) — cùng mức tin cậy với việc tap ⌫-gõ-lại từ đang soạn. TAP-thread.
+    /// từ chính các phím tap thấy (xem ShortcutTail). Cụm NEO (đầu cụm ngay sau khoảng
+    /// trắng/Enter mình thấy gõ) ⇒ nở như tap ⌫-gõ-lại từ đang soạn (terminal không có
+    /// AX text). Cụm CHƯA NEO (sau click/đổi ô, đầu ô — #99) ⇒ chỉ nở khi AX đọc lại
+    /// xác nhận (ShortcutMatch.findForTap). TAP-thread.
     private var shortcutTail = ShortcutTail()
     /// ⌫ ngay sau khi nở → trả lại chữ đã gõ (một lần). Phím thật nào tới cũng tiêu thụ.
     private var shortcutUndo: ShortcutUndo?
@@ -2696,6 +2740,13 @@ final class TerminalTapController {
         // login forms, which do NOT switch secure input on): never compose, never emit —
         // pass the raw key through untouched. See SecureFieldDetector.
         if IsSecureEventInputEnabled() || SecureFieldDetector.isSecure {
+            // Return/Tab in a password field submits the form / moves focus (#100:
+            // login → navigation with no activateServer). Drop the TTL-backed-off
+            // "secure" verdict so the NEXT key re-scans at once instead of passing raw
+            // for up to DetectorBackoff.capNs on the page after login.
+            if SecureFieldDetector.leavesField(keyCode: Int(event.getIntegerValueField(.keyboardEventKeycode))) {
+                SecureFieldDetector.invalidate()
+            }
             engine.reset(); shortcutTail.reset(); return pass
         }
         // An app that rejects synthetic input has a window up (Little Snitch alert):
@@ -2779,7 +2830,7 @@ final class TerminalTapController {
             let trigger: String? = newlineKey ? "\n" : (keyCode == kTab ? "\t" : nil)
             defer { if newlineKey { shortcutTail.append("\n") } else { shortcutTail.reset() } }
             let allow = ShortcutMatch.triggers(boundary: trigger, glued: lastTapKeyWasDigit)
-            let tokenPossible = allow.token && shortcutTail.anchored && !shortcutTail.run.isEmpty
+            let tokenPossible = allow.token && !shortcutTail.run.isEmpty   // chưa neo: emitBoundary xác nhận bằng AX
             if engine.isEmpty, !tokenPossible, SyntheticKeyboard.queueDrained() { return pass }
             lastTapKeyWasDigit = false
             if emitBoundary(suppressAutoRestore: false, allowShortcuts: allow.word, allowToken: allow.token)
@@ -3079,11 +3130,23 @@ final class TerminalTapController {
         // ("ddc" composes to "đc"); the raw form recovers it. Backspaces are always the
         // on-screen composed scalar count regardless of which form matched. Case
         // follows the typing (ko/Ko/KO — ShortcutTable.expansion). Then SYMBOL/DIGIT
-        // keys ("->", "k2", ":D") against the whole run before the caret — only when
-        // the run is anchored (ShortcutTail): no AX text to re-read in a terminal.
-        let run = shortcutTail.anchored ? shortcutTail.run : ""
-        switch ShortcutMatch.find(in: table, composed: word, raw: rawWord, run: run,
-                                  allowWord: allowShortcuts, allowToken: allowToken && shortcutTail.anchored) {
+        // keys ("->", "k2", ":D") against the whole run before the caret. Anchored run
+        // (ShortcutTail saw the space/Enter before it) → trust the key stream, as a
+        // terminal has no AX text to re-read. UNANCHORED run (right after a click /
+        // focus change / at the start of an empty field — issue #99: "->" in Chrome or
+        // Lark only expanded the second time) → expand only when AX re-reads the text
+        // before the caret and confirms the run stands alone. The AX read happens ONLY
+        // when the run already matches a key (a dictionary lookup) — never per key.
+        let run = shortcutTail.run
+        let match = ShortcutMatch.findForTap(
+            in: table, composed: word, raw: rawWord, tail: shortcutTail,
+            allowWord: allowShortcuts, allowToken: allowToken) { token in
+                let ok = ShortcutScreen.confirmsToken(token, caret: AXTextEdit.readCaret(),
+                                                      read: { AXTextEdit.readString(at: $0.location, length: $0.length) })
+                DebugLog.log("shortcut token(tap): unanchored run, screen \(ok ? "confirms" : "unreadable/disagrees → skip")")
+                return ok
+            }
+        switch match {
         case let .word(expansion)?:
             engine.reset()
             SyntheticKeyboard.apply(backspaces: onScreen, insert: expansion, mode: emitMode)
