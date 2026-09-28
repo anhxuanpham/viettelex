@@ -30,7 +30,8 @@ Depends: ${misc:Depends},
          gir1.2-gtk-4.0,
          gir1.2-adw-1,
          adwaita-icon-theme
-Recommends: viettelex-fcitx5 | viettelex-ibus
+Recommends: viettelex-fcitx5 | viettelex-ibus,
+            pkexec | policykit-1
 Description: VietTelex Vietnamese input method - settings application
  VietTelex types Vietnamese exactly like its macOS version: Telex, Simple
  Telex, VNI, free tone placement, Quick Telex, live spell-check, automatic
@@ -39,7 +40,26 @@ Description: VietTelex Vietnamese input method - settings application
  This package contains viettelex-settings, a GTK4/libadwaita application to
  change typing options, shortcuts (abbreviations) and per-application typing
  modes. Changes apply immediately to the running input method. It also
- detects Fcitx5/IBus and guides you through enabling VietTelex.
+ detects Fcitx5/IBus and guides you through enabling VietTelex, and can
+ update the VietTelex packages in one click (through pkexec).
+
+Package: viettelex
+Architecture: all
+Section: metapackages
+Depends: ${misc:Depends},
+         libviettelex-core (>= ${source:Version}),
+         viettelex-settings (= ${binary:Version}),
+         viettelex-fcitx5 (>= ${source:Version}) | viettelex-ibus (>= ${source:Version})
+Recommends: viettelex-text-tools (>= ${source:Version})
+Description: Vietnamese input method (Telex, VNI) - full install (metapackage)
+ VietTelex types Vietnamese exactly like its macOS version: Telex, Simple
+ Telex, VNI, free tone placement, Quick Telex, live spell-check, automatic
+ English restore and context-aware decisions.
+ .
+ This metapackage installs the typing engine, the settings application, the
+ text tools and one input method frontend: Fcitx5 by default, or IBus when
+ viettelex-ibus is already installed or requested
+ ("apt install viettelex viettelex-ibus").
 
 Package: libviettelex-core
 Architecture: any

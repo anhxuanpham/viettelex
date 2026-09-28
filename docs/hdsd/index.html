@@ -204,17 +204,17 @@ window.vtxDetectOS = function (ua, plat, touch) {
     <h2 class="n">Cài đặt &amp; bật bộ gõ</h2>
     <div class="card" data-os="ios">
       <h3>iPhone / iPad</h3>
-      <p>Tải VietTelex trên <a href="https://apps.apple.com/app/id6794425455" rel="noopener">App Store</a>, rồi vào Cài đặt → Cài đặt chung → Bàn phím → Bàn phím → <b>Thêm bàn phím mới…</b> → Tiếng Việt (VietTelex). Khi gõ, bấm 🌐 để chuyển sang VietTelex. Ô <b>Thử gõ</b> trong app để kiểm tra ngay: <code>vieejt</code> → <code>việt</code>.</p>
+      <p>Tải VietTelex trên <a href="https://apps.apple.com/app/id6794425455" rel="noopener">App Store</a> (<a href="/download/?os=ios">trang tải</a>), rồi vào Cài đặt → Cài đặt chung → Bàn phím → Bàn phím → <b>Thêm bàn phím mới…</b> → Tiếng Việt (VietTelex). Khi gõ, bấm 🌐 để chuyển sang VietTelex. Ô <b>Thử gõ</b> trong app để kiểm tra ngay: <code>vieejt</code> → <code>việt</code>.</p>
     </div>
     <div class="card" data-os="android">
       <h3>Android</h3>
-      <p>Cài đặt → Hệ thống → Ngôn ngữ &amp; nhập liệu → Bàn phím trên màn hình → Quản lý → bật VietTelex, rồi chọn VietTelex làm bàn phím (app có nút <b>Chọn VietTelex</b>). Cảnh báo “có thể thu thập mọi văn bản bạn nhập” là cảnh báo chung của Android cho mọi bàn phím bên thứ ba — VietTelex chạy hoàn toàn trên máy.</p>
+      <p>Tải ở <a href="/download/?os=android">trang tải</a>. Cài đặt → Hệ thống → Ngôn ngữ &amp; nhập liệu → Bàn phím trên màn hình → Quản lý → bật VietTelex, rồi chọn VietTelex làm bàn phím (app có nút <b>Chọn VietTelex</b>). Cảnh báo “có thể thu thập mọi văn bản bạn nhập” là cảnh báo chung của Android cho mọi bàn phím bên thứ ba — VietTelex chạy hoàn toàn trên máy.</p>
     </div>
     <p class="lead" style="margin-top:10px" data-os="ios android">Hầu hết cài đặt trong app áp dụng ở <b>lần mở bàn phím kế tiếp</b>.</p>
     <div class="card" data-os="macos">
       <h3>macOS</h3>
       <ul>
-        <li>Cài <b>một</b> trong hai cách: tải <a href="https://github.com/ptrinh/viettelex/releases/latest" rel="noopener">VietTelex-x.y.z.pkg</a> (đã ký &amp; notarize) rồi nhấp đúp, hoặc <code>brew install --cask ptrinh/viettelex/viettelex</code>. Đừng cài song song hai kênh.</li>
+        <li>Cài <b>một</b> trong hai cách: tải <a href="/download/?os=macos">VietTelex-x.y.z.pkg</a> (đã ký &amp; notarize) rồi nhấp đúp, hoặc <code>brew install --cask ptrinh/viettelex/viettelex</code>. Đừng cài song song hai kênh.</li>
         <li>Trình cài tự mở Cài đặt hệ thống → Bàn phím: <b>Nguồn đầu vào → Sửa… → ＋ → Tiếng Việt → ViệtTelex → Thêm</b>.</li>
         <li>Để gõ được trong <b>Terminal, iTerm, Chrome/Edge/Brave</b>: bật quyền <b>Trợ năng</b> (Quyền riêng tư &amp; bảo mật → Trợ năng → tick VietTelex); có thể cần khởi động lại máy một lần.</li>
         <li>Chuyển Việt/Anh bằng 🌐 hoặc <kbd>⌃</kbd><kbd>Space</kbd> như mọi bộ gõ của macOS (macOS nhớ theo từng app). Cài đặt của VietTelex: biểu tượng Vᴛ trên thanh menu → <b>Cài đặt…</b>.</li>
@@ -223,7 +223,7 @@ window.vtxDetectOS = function (ua, plat, touch) {
     <div class="card" data-os="windows">
       <h3>Windows</h3>
       <ul>
-        <li>Tải file <code>.msi</code> ở <a href="https://github.com/ptrinh/viettelex/releases?q=windows&amp;expanded=true" rel="noopener">GitHub Releases (bản windows)</a>: <code>…-x64.msi</code> cho máy Intel/AMD, <code>…-arm64.msi</code> cho máy ARM (Snapdragon). Cần Windows 10 1903 trở lên. File cài đã ký số.</li>
+        <li>Tải file <code>.msi</code> ở <a href="/download/?os=windows">trang tải</a> (hoặc <a href="https://github.com/ptrinh/viettelex/releases?q=windows&amp;expanded=true" rel="noopener">GitHub Releases</a>): <code>…-x64.msi</code> cho máy Intel/AMD, <code>…-arm64.msi</code> cho máy ARM (Snapdragon). Cần Windows 10 1903 trở lên. File cài đã ký số.</li>
         <li>Chạy file cài — không cần khởi động lại. Cài xong, cửa sổ <b>Cài đặt</b> của VietTelex tự mở; lần sau mở lại bằng <b>VietTelex</b> trong menu Start.</li>
         <li>VietTelex là một bàn phím Tiếng Việt của hệ thống: chọn nó bằng <kbd>Win</kbd><kbd>Space</kbd>. Không thấy trong danh sách? Mở VietTelex một lần từ menu Start, hoặc thêm ở Cài đặt → Thời gian &amp; ngôn ngữ → Ngôn ngữ → Tiếng Việt → Bàn phím.</li>
         <li>Nâng cấp: cài bản mới đè lên bản cũ, hoặc dùng <b>Kiểm tra cập nhật</b> trong app.</li>
@@ -231,7 +231,7 @@ window.vtxDetectOS = function (ua, plat, touch) {
     </div>
     <div class="card" data-os="linux">
       <h3>Linux (Ubuntu 22.04 / 24.04, amd64 + arm64)</h3>
-      <p>VietTelex là input method cho <b>Fcitx5</b> (khuyên dùng) hoặc <b>IBus</b> (mặc định của Ubuntu/GNOME). Cài từ kho APT (tự cập nhật qua <code>apt upgrade</code>):</p>
+      <p>VietTelex là input method cho <b>Fcitx5</b> (khuyên dùng) hoặc <b>IBus</b> (mặc định của Ubuntu/GNOME). Nhanh nhất: <code>curl -fsSL https://viettelex.com/install.sh | bash</code> (xem <a href="/download/?os=linux">trang tải</a>). Hoặc tự thêm kho APT (tự cập nhật qua <code>apt upgrade</code>):</p>
       <pre>sudo install -d -m 0755 /etc/apt/keyrings
 curl -fsSL https://ptrinh.github.io/viettelex-apt/viettelex-archive-keyring.gpg \
   | sudo tee /etc/apt/keyrings/viettelex.gpg &gt;/dev/null
@@ -245,7 +245,7 @@ EOF
 sudo apt update
 sudo apt install viettelex-fcitx5   # hoặc: sudo apt install viettelex-ibus</pre>
       <ul>
-        <li>Hoặc tải các file <code>.deb</code> ở <a href="https://github.com/ptrinh/viettelex/releases" rel="noopener">GitHub Releases</a> (<code>~jammy1</code> = 22.04, <code>~noble1</code> = 24.04) rồi <code>sudo apt install ./libviettelex-core_*.deb ./viettelex-fcitx5_*.deb ./viettelex-settings_*_all.deb</code> — cách này không tự cập nhật.</li>
+        <li>Hoặc tải các file <code>.deb</code> (kèm SHA256) ở <a href="/download/?os=linux">trang tải</a> (<code>~jammy1</code> = 22.04, <code>~noble1</code> = 24.04) rồi <code>sudo apt install ./libviettelex-core_*.deb ./viettelex-fcitx5_*.deb ./viettelex-settings_*_all.deb</code> — cách này không tự cập nhật.</li>
         <li>Sau khi cài, mở <b>VietTelex</b> trong menu ứng dụng (hoặc <code>viettelex-settings --onboarding</code>) và làm theo hướng dẫn. <b>Fcitx5</b>: <code>im-config -n fcitx5</code>, đăng nhập lại (lần đầu), rồi bấm <b>Thêm</b>. <b>IBus (GNOME)</b>: <code>ibus restart</code>, rồi Cài đặt → Bàn phím → Nguồn nhập → + → Tiếng Việt → VietTelex (hoặc bấm <b>Thêm</b> trong hướng dẫn).</li>
         <li>Chuyển Việt/Anh: <kbd>Ctrl</kbd><kbd>Space</kbd>. Đổi cài đặt trong app có hiệu lực ngay, không cần khởi động lại bộ gõ.</li>
       </ul>

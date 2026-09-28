@@ -13,7 +13,7 @@ PKG = os.path.join(HERE, "..", "viettelex_settings")
 sys.path.insert(0, os.path.join(HERE, ".."))
 from viettelex_settings import compat, config, i18n  # noqa: E402
 
-SOURCES = ("app.py", "compat.py", "config.py", "detect.py", "shortcuts.py")
+SOURCES = ("app.py", "compat.py", "config.py", "detect.py", "shortcuts.py", "updater.py")
 VN_LETTER = re.compile(r"[À-ỹĐđ]")
 PLACEHOLDER = re.compile(r"%(?:\d+\$)?[sd]")
 
