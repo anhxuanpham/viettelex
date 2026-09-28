@@ -8,7 +8,7 @@ set -u
 export DEBIAN_FRONTEND=noninteractive
 . /etc/os-release; S=$VERSION_CODENAME; A=$(dpkg --print-architecture)
 FAILS=0; fail(){ echo "FAIL: $*"; FAILS=$((FAILS+1)); }
-PK="libviettelex-core viettelex-fcitx5 viettelex-ibus viettelex-settings viettelex"
+PK="libviettelex-core viettelex-fcitx5 viettelex-ibus viettelex-text-tools viettelex-settings viettelex"
 purge(){ dpkg --purge $(dpkg-query -W -f="\${Package} \${db:Status-Abbrev}\\n" $PK 2>/dev/null | awk "\$2 !~ /^u/ {print \$1}") >/dev/null; }
 vers(){ dpkg-query -W -f='${Package}=${Version}(${db:Status-Abbrev}) ' $PK 2>/dev/null; echo; }
 isver(){ v=$(dpkg-query -W -f='${Version}' $1 2>/dev/null); [ "$v" = "$2~${S}1" ] || fail "$1=$v (want $2)"; }
@@ -78,6 +78,7 @@ printf 'Types: deb\nURIs: file:/fake/repo/\nSuites: %s\nComponents: main\nTruste
 apt-get update -qq
 apt-get install -y -qq viettelex >/tmp/c1.log 2>&1 || { tail /tmp/c1.log; fail "meta default"; }
 vers; dpkg -s viettelex-fcitx5 >/dev/null 2>&1 || fail "meta default không kéo fcitx5"
+isver viettelex-text-tools "$NEW"   # Recommends: apt mặc định cài
 dpkg -s viettelex-ibus >/dev/null 2>&1 && fail "meta default kéo ibus"
 purge; apt-get autoremove -y -qq >/dev/null
 apt-get install -y -qq viettelex viettelex-ibus >/tmp/c2.log 2>&1 || { tail /tmp/c2.log; fail "meta ibus"; }
