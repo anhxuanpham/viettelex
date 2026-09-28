@@ -8,7 +8,7 @@ import com.viettelex.telexcore.EnglishContextLookup
  *  - [SwipeEnglish.lexicon]: ~20k từ + tần suất 1 byte cùng thang vnlexicon
  *    (assets/enlexicon.bin, Scripts/gen-enlexicon.py; nguồn: docs/DATA-SOURCES.md).
  *    Không giữ template: decoder dựng template lúc chấm cho từ lọt lọc phím đầu/cuối.
- *  - [SwipeLangContext]: P(ngôn ngữ | 1–2 từ trước) → độ lệch + biên độ cho tiếng Anh.
+ *  - [SwipeLangContext]: P(ngôn ngữ | ≤ 3 từ trước, qua dấu câu) → độ lệch + biên độ cho tiếng Anh.
  *    MẶC ĐỊNH NGHIÊNG TIẾNG VIỆT (the/thế, can/cần trùng hẳn nét vuốt).
  */
 
@@ -131,8 +131,6 @@ object SwipeLangContext {
     // GIỮ Y HỆT bản Swift. Chọn bằng SwipeEnglishTests.sweepPriors (xem bản Swift).
     val DEFAULT = SwipeEnglishPrior(bias = -0.9f, margin = 0.3f)
     val ENGLISH = SwipeEnglishPrior(bias = 0.2f, margin = 0f)
-    val STRONG_ENGLISH = SwipeEnglishPrior(bias = 0.5f, margin = 0f)
-    val WEAK_ENGLISH = SwipeEnglishPrior(bias = -0.3f, margin = 0.3f)
     /** Chế độ Tiếng Anh: đẩy hẳn tiếng Anh lên (ứng viên Việt bị lọc sau decode). */
     val ONLY_ENGLISH = SwipeEnglishPrior(bias = 4f, margin = 0f)
 
@@ -149,10 +147,73 @@ object SwipeLangContext {
         return if (vnForm) Kind.VI else Kind.NEUTRAL
     }
 
-    fun prior(prev1: Kind, prev2: Kind): SwipeEnglishPrior = when {
-        prev1 == Kind.EN && prev2 == Kind.EN -> STRONG_ENGLISH
-        prev1 == Kind.EN -> ENGLISH
-        prev1 == Kind.NEUTRAL && prev2 == Kind.EN -> WEAK_ENGLISH
-        else -> DEFAULT
+    /** Độ lệch theo 2 từ trước (prev1 = liền trước) — = [prior] trên danh sách. */
+    fun prior(prev1: Kind, prev2: Kind): SwipeEnglishPrior = prior(listOf(prev1, prev2))
+
+    /**
+     * Tiền nghiệm LIÊN TỤC NGÔN NGỮ (28/09/2026): đang gõ tiếng Anh thì từ kế hay là tiếng Anh,
+     * đang gõ tiếng Việt thì tiếng Việt. [Continuity] — GIỮ Y HỆT bản Swift. Chỉnh trên dev
+     * (SwipeLangTuneTests): mạch Việt KHÔNG cần thêm — DEFAULT đã nghiêng Việt; viBias/viMargin > 0
+     * chỉ +0,1 điểm câu Việt mà −1,5…−3 điểm từ Anh chen sau từ Việt ⇒ 0. docs/DATA-SOURCES.md.
+     */
+    data class Continuity(
+        /** Trọng số từ lùi i vị trí = decay^i (từ trung tính vẫn tính khoảng cách). */
+        val decay: Float = 0.6f,
+        /** Mạch Anh s ≥ 1 (một từ Anh liền trước): bias = enBias, margin 0; 0 < s < 1: nội suy từ DEFAULT. */
+        val enBias: Float = 0.2f,
+        val enGain: Float = 0.5f,
+        /** Trần s mạch Anh (ba từ Anh ⇒ 1 + 0,6 + 0,36 = 1,96). */
+        val enCap: Float = 2f,
+        /** Mạch Việt: bias −= viBias·v, margin += viMargin·v, v = min(s Việt, viCap). */
+        val viBias: Float = 0f,
+        val viMargin: Float = 0f,
+        val viCap: Float = 2f,
+    )
+
+    val CONTINUITY = Continuity()
+    /** Số từ trước con trỏ được xét. */
+    const val WINDOW = 3
+
+    /**
+     * Ngôn ngữ ≤ [WINDOW] từ trước con trỏ, gần nhất trước: [composing] ⇒ từ đang soạn [pending]
+     * (sẽ chốt trước từ vuốt; null = không học được ⇒ trung tính) đứng đầu; [recent] = từ đã chốt,
+     * CŨ → MỚI; [english] = từ đó vừa được vuốt ra như tiếng Anh.
+     */
+    fun kinds(composing: Boolean, pending: String?, pendingEnglish: Boolean, recent: Collection<String>,
+              english: (String?) -> Boolean): List<Kind> {
+        val out = ArrayList<Kind>(WINDOW)
+        if (composing) out.add(classify(pending, pendingEnglish))
+        val r = recent.toList()
+        var i = r.size - 1
+        while (out.size < WINDOW && i >= 0) { out.add(classify(r[i], english(r[i]))); i-- }
+        return out
+    }
+
+    /**
+     * [kinds] = ngôn ngữ ≤ 3 từ trước con trỏ, gần nhất trước. Mạch Anh s = Σ decay^i trên các
+     * từ Anh, đi từ gần ra xa, DỪNG ở từ Việt đầu tiên (một từ Việt cắt mạch Anh — "check mail
+     * cho" → mạch Việt); mạch Việt đối xứng (dừng ở từ Anh). Không có từ nào rõ ngôn ngữ ⇒
+     * đúng [DEFAULT] (từ rời không đổi). Mạch Anh: [ENGLISH] ở s = 1, +enGain·(s − 1) tới
+     * trần; mạch Việt chỉ nới biên độ/độ lệch có trần — hình học + LM mạnh vẫn thắng, từ Anh
+     * chen giữa câu Việt vẫn ra.
+     */
+    fun prior(kinds: List<Kind>, c: Continuity = CONTINUITY): SwipeEnglishPrior {
+        val en = run(kinds, Kind.EN, Kind.VI, c.decay)
+        if (en >= 1f) return SwipeEnglishPrior(c.enBias + c.enGain * (minOf(en, c.enCap) - 1f), 0f)
+        if (en > 0f) return SwipeEnglishPrior(DEFAULT.bias + (c.enBias - DEFAULT.bias) * en, DEFAULT.margin * (1f - en))
+        val vi = minOf(run(kinds, Kind.VI, Kind.EN, c.decay), c.viCap)
+        if (vi <= 0f) return DEFAULT
+        return SwipeEnglishPrior(DEFAULT.bias - c.viBias * vi, DEFAULT.margin + c.viMargin * vi)
+    }
+
+    private fun run(kinds: List<Kind>, same: Kind, stop: Kind, decay: Float): Float {
+        var s = 0f; var w = 1f
+        for (i in 0 until minOf(3, kinds.size)) {
+            val k = kinds[i]
+            if (k == stop) break
+            if (k == same) s += w
+            w *= decay
+        }
+        return s
     }
 }

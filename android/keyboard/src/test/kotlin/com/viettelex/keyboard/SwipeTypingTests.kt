@@ -187,6 +187,42 @@ class SwipeTypingTests {
         assertFalse(p.text, p.text.contains("  "))   // sau space của user: không thêm space
     }
 
+    // ---- tiền nghiệm liên tục ngôn ngữ (SwipeLangContext.prior(kinds)) ----
+
+    @Test fun languageContinuityTheAfterEnglishWords() {
+        // đang gõ tiếng Anh ⇒ vuốt "the" ra "the" (tiếng Anh), kể cả qua dấu chấm câu
+        run {
+            val s = session(); val p = MockProxy()
+            s.type(p, "i like big ")
+            val c = s.swipe(p, "the")
+            assertTrue(c.toString(), c.english); assertEquals("the", c.word)
+        }
+        run {
+            val s = session(); val p = MockProxy()
+            s.type(p, "i like big. ")                   // sang câu mới: ngữ cảnh LM mất, ngôn ngữ còn
+            val c = s.swipe(p, "the")
+            assertTrue(c.toString(), c.english); assertEquals("the", c.word)
+            s.externalSelectionChange()                 // con trỏ nhảy ⇒ quên mạch
+            s.type(p, " ")
+            val d = s.swipe(p, "the")
+            assertFalse(d.toString(), d.english)
+        }
+    }
+
+    @Test fun languageContinuityTheAfterVietnameseWords() {
+        val s = session(); val p = MockProxy()
+        s.type(p, "vis duj nhuw ")
+        assertEquals("ví dụ như ", p.text)
+        val c = s.swipe(p, "the")
+        assertFalse(c.toString(), c.english); assertEquals("thế", c.word)
+        assertTrue(c.toString(), "the" in c.englishAlternatives)       // phương án Anh vẫn trên thanh
+        // chen MỘT từ Anh giữa câu Việt vẫn ra (nét không trùng từ Việt nào)
+        val s2 = session(); val p2 = MockProxy()
+        s2.type(p2, "minhf ddang ")
+        val m = s2.swipe(p2, "check")
+        assertTrue(m.toString(), m.english); assertEquals("check", m.word)
+    }
+
     @Test fun swipeAtFieldStartAndAfterNewlineNoLeadingSpace() {
         val s = session(); val p = MockProxy()
         val c = s.swipe(p, "viet", SwipeSuggest.Case.FIRST)

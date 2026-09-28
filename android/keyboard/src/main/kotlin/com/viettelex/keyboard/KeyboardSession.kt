@@ -270,6 +270,12 @@ class KeyboardSession(
     private var typedUndo: TypedUndo? = null
     /** Vài từ tiếng Anh vừa vuốt ra (chữ thường) — ngữ cảnh ngôn ngữ cho cú vuốt kế. */
     private val recentEnglish = ArrayDeque<String>()
+    /**
+     * ≤ 3 từ vừa chốt (cũ → mới) cho tiền nghiệm liên tục ngôn ngữ của gõ vuốt — KHÔNG xoá ở dấu
+     * câu (đang viết đoạn tiếng Anh thì câu sau vẫn là tiếng Anh), chỉ xoá khi đổi ô / con trỏ
+     * nhảy. Chỉ đẩy một tham chiếu chuỗi mỗi từ.
+     */
+    private val langRecent = ArrayDeque<String>()
     /** Vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh ([KeyboardSettings.spaceSwipeLanguage]). */
     var spaceFlickEnabled = false; private set
     /** Ngôn ngữ đang gõ; công tắc tắt ⇒ luôn VI. */
@@ -320,7 +326,7 @@ class KeyboardSession(
         filterSensitive = settings.filterSensitive
         swipeEnglish = settings.swipeEnglish
         autoCapitalize = settings.autoCapitalize
-        recentEnglish.clear()
+        recentEnglish.clear(); langRecent.clear()
         suggestionsActive = settings.showSuggestions && field.suggestionsAllowed && !field.isSecure && !field.passthrough
         lastWord = null; lastWord2 = null
         lastInsertWasSpace = false
@@ -425,6 +431,7 @@ class KeyboardSession(
     fun externalSelectionChange() {
         TouchLog.host("selectionChanged", false, bridge.isComposing)
         bridge.reset(); lastWord = null; lastWord2 = null
+        langRecent.clear()
         clearUndo()
         lastCommit = null
         clearSwipe()
@@ -744,10 +751,10 @@ class KeyboardSession(
         }
         val p1 = if (composing) pending else lastWord
         val p2 = if (composing) (if (pending != null) lastWord else null) else lastWord2
-        // Ngôn ngữ theo 2 từ trước: từ Anh vừa vuốt (nhãn) chắc nhất, rồi bảng từ của engine.
+        // Ngôn ngữ theo ≤ 3 từ trước (qua cả dấu câu): từ Anh vừa vuốt (nhãn) chắc nhất, rồi
+        // bảng từ của engine + từ điển. Tắt vuốt tiếng Anh ⇒ không tính gì.
         val english = if (bridge.englishMode) SwipeLangContext.ONLY_ENGLISH else if (!swipeEnglish) null else SwipeLangContext.prior(
-            SwipeLangContext.classify(p1, lit != null || isRecentEnglish(p1)),
-            SwipeLangContext.classify(p2, isRecentEnglish(p2)))
+            SwipeLangContext.kinds(composing, pending, lit != null || isRecentEnglish(pending), langRecent, ::isRecentEnglish))
         return SwipeSuggest.context(langModel, p1, p2, english)
     }
 
@@ -868,8 +875,13 @@ class KeyboardSession(
         }
         val learned = if (learnEnabled) langModel.record(word, lastWord, lastWord2, if (accepted) 2 else 1) else null
         lastCommit = LastCommit(word, lastWord, lastWord2, learned)
-        if (UserLangModel.learnable(word)) { lastWord2 = lastWord; lastWord = word }
-        else { lastWord = null; lastWord2 = null }
+        if (UserLangModel.learnable(word)) {
+            lastWord2 = lastWord; lastWord = word
+            if (swipeTypingActive && swipeEnglish) {   // tắt vuốt / vuốt tiếng Anh ⇒ 0 chi phí
+                langRecent.addLast(word)
+                if (langRecent.size > SwipeLangContext.WINDOW) langRecent.removeFirst()
+            }
+        } else { lastWord = null; lastWord2 = null }
     }
 
     // MARK: gợi ý

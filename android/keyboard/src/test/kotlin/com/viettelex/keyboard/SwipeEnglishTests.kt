@@ -80,9 +80,50 @@ class SwipeEnglishTests {
         assertEquals(SwipeLangContext.Kind.NEUTRAL, SwipeLangContext.classify(null))
         assertEquals(SwipeLangContext.Kind.EN, SwipeLangContext.classify("thế", swipedEnglish = true))
         assertEquals(SwipeLangContext.ENGLISH, SwipeLangContext.prior(SwipeLangContext.Kind.EN, SwipeLangContext.Kind.VI))
-        assertEquals(SwipeLangContext.STRONG_ENGLISH, SwipeLangContext.prior(SwipeLangContext.Kind.EN, SwipeLangContext.Kind.EN))
-        assertEquals(SwipeLangContext.WEAK_ENGLISH, SwipeLangContext.prior(SwipeLangContext.Kind.NEUTRAL, SwipeLangContext.Kind.EN))
         assertEquals(SwipeLangContext.DEFAULT, SwipeLangContext.prior(SwipeLangContext.Kind.NEUTRAL, SwipeLangContext.Kind.NEUTRAL))
+    }
+
+    /** Tiền nghiệm liên tục ngôn ngữ (SwipeLangContext.prior(kinds)) — cùng ca với bản Swift. */
+    @Test fun continuityPrior() {
+        val V = SwipeLangContext.Kind.VI; val E = SwipeLangContext.Kind.EN; val N = SwipeLangContext.Kind.NEUTRAL
+        fun p(vararg k: SwipeLangContext.Kind) = SwipeLangContext.prior(k.toList())
+        // không có ngữ cảnh / toàn trung tính / mạch Việt ⇒ y hệt DEFAULT (từ rời không đổi)
+        assertEquals(SwipeLangContext.DEFAULT, p())
+        assertEquals(SwipeLangContext.DEFAULT, p(N, N, N))
+        assertEquals(SwipeLangContext.DEFAULT, p(V))
+        assertEquals(SwipeLangContext.DEFAULT, p(V, V, V))
+        // một từ Anh liền trước ⇒ ENGLISH; mạch dài hơn ⇒ mạnh hơn, có trần
+        assertEquals(SwipeLangContext.ENGLISH, p(E))
+        assertEquals(SwipeLangContext.ENGLISH, p(E, V, E))                  // từ Việt cắt mạch
+        assertEquals(0.5f, p(E, E).bias, 1e-4f)
+        assertEquals(0.68f, p(E, E, E).bias, 1e-4f)
+        assertEquals(0f, p(E, E, E).margin, 0f)
+        assertTrue(p(E, E, E, E).bias <= p(E, E, E).bias + 1e-6f)          // chỉ xét 3 từ
+        // từ Anh cách một từ trung tính: nghiêng Anh vừa phải, nội suy giữa DEFAULT và ENGLISH
+        val far = p(N, E)
+        assertTrue(far.bias > SwipeLangContext.DEFAULT.bias && far.bias < SwipeLangContext.ENGLISH.bias)
+        assertTrue(far.margin > 0f && far.margin < SwipeLangContext.DEFAULT.margin)
+        assertTrue(p(N, E, E).bias > far.bias)
+        // từ Việt liền trước cắt mạch Anh phía xa ("check mail cho …")
+        assertEquals(SwipeLangContext.DEFAULT, p(V, E, E))
+        // trần: bias Anh không vượt enBias + enGain·(enCap − 1)
+        val c = SwipeLangContext.CONTINUITY
+        assertTrue(p(E, E, E).bias <= c.enBias + c.enGain * (c.enCap - 1f) + 1e-6f)
+    }
+
+    @Test fun continuityKinds() {
+        val V = SwipeLangContext.Kind.VI; val E = SwipeLangContext.Kind.EN; val N = SwipeLangContext.Kind.NEUTRAL
+        val none: (String?) -> Boolean = { false }
+        // đã chốt "tôi thích check" (cũ → mới) ⇒ gần nhất trước
+        assertEquals(listOf(E, V, V), SwipeLangContext.kinds(false, null, false, listOf("tôi", "thích", "check"), none))
+        // đang soạn từ mới ⇒ đứng đầu, tối đa 3
+        assertEquals(listOf(V, E, V), SwipeLangContext.kinds(true, "này", false, listOf("tôi", "thích", "check"), none))
+        // đang soạn nhưng không học được (số…) ⇒ trung tính, vẫn tính khoảng cách
+        assertEquals(listOf(N, E), SwipeLangContext.kinds(true, null, false, listOf("check"), none))
+        // nhãn "vừa vuốt ra như tiếng Anh" thắng từ điển ("the" vuốt Anh)
+        assertEquals(listOf(E), SwipeLangContext.kinds(false, null, false, listOf("to"), { it == "to" }))
+        assertEquals(listOf(E), SwipeLangContext.kinds(true, "can", true, emptyList(), none))
+        assertEquals(emptyList<SwipeLangContext.Kind>(), SwipeLangContext.kinds(false, null, false, emptyList(), none))
     }
 
     /** Đường sạch qua tâm phím (sigma 0). */
