@@ -9,7 +9,57 @@ bàn phím trước — user thấy "bàn phím trắng / tự đổi bàn phím
 > cao hơn máy thật vài MB; **phần tăng** giữa các trạng thái và rò rỉ thì như nhau. Dao động giữa
 > hai lượt chạy ±5 MB (máy có tải song song).
 
-## Kết luận nhanh
+## Đã sửa (28/09/2026) — trước / sau
+
+Cùng simulator iPhone 17 (iOS 27.0) riêng, bản Release, `ram-audit.sh` (XCUITest) + `leak-cycle.sh`
+(không AX). Trước = main 1380a38, sau = nhánh sửa. MB phys_footprint.
+
+| Trạng thái | default trước | default sau | all trước | all sau |
+|---|---|---|---|---|
+| Vừa hiện | 25 | 24 | 36 | **30** |
+| Sau 200 phím | 32 | 31 | 39 | 39 |
+| Đang mở emoji | 57 | **51** | 70 | **65** |
+| Rời emoji về chữ | 49 | 49 | 61 | 61 |
+| Sau 10 vòng ẩn/hiện | 63 | **50** | 76 | **62** |
+| Sau 30 vòng ẩn/hiện | 94 | **53** | 103 | **63** |
+| Đỉnh | 94 | 55 | 105 | 69 |
+| `leak-cycle.sh 30` (không AX): vòng 0 → 30 | 18 → 57, 31 `KeyboardView` sống | 16 → 20, 1 `KeyboardView` | — | 22 → 29 |
+
+1. **Rò rỉ cây view (#1) — gốc là UIKit, không phải code mình.** `ViewTreeLeakTests` tái hiện
+   với `UIInputView` RỖNG (không phím, không stack view, style `.keyboard` hay `.default` như
+   nhau): UIKit iOS 26+/27 không bao giờ nhả `UIInputView` — vòng `UIInputView` ⇄
+   `_UIInputViewContent` (associated object, `leaks --traceTree` gốc ở
+   `objc::AssociationsManager`). Trait `_UICornerProvider` / `NSISEngine` chỉ là thêm đường tới
+   cùng cái vỏ đó. Không tránh được bằng bỏ UIStackView / cornerRadius / trait. Sửa:
+   `viewDidDisappear` → `KeyboardView.tearDown()` (dừng timer/display link, bỏ planeCache,
+   bảng emoji, ảnh nền, gỡ đệ quy mọi subview + constraint) + gỡ 4 constraint cạnh
+   KeyboardView↔view gốc (removeFromSuperview KHÔNG gỡ chúng khỏi mảng constraint của
+   UIInputView — chính chúng giữ KeyboardView cũ khi cùng controller hiện lại) + gỡ subview
+   view gốc; `viewWillAppear` thấy đã xé ⇒ `installKeyboard()` dựng KeyboardView mới rồi áp
+   cấu hình như controller mới. Mỗi vòng còn rò phần vỏ của UIKit (~80 KB: UIInputView,
+   `_UIInputViewContent`, NSISEngine, trait storage, xpc_connection — heapdiff) thay vì ~1,8 MB.
+   Độ trễ (in-process, Debug): hiện lại cùng controller 10,7 ms ≈ mở controller mới 14,5 ms;
+   xé khi ẩn 1,1 ms; đường controller mới (thường gặp) không đổi.
+2. **Emoji**: `isPrefetchingEnabled = false`, ô bỏ `adjustsFontSizeToFitWidth` ⇒ lúc mở −6 MB
+   (CA 8,1 → 5,0 MB). `EmojiData.categories` giờ `[UInt16]` id (33 KB) — nhưng **1,8 MB đo
+   trước đây KHÔNG phải mảng String** (chuỗi emoji ≤15 byte nằm inline) mà là font Apple Color
+   Emoji CoreText nạp lần đầu khi kiểm glyph — lưới vẽ emoji cũng cần font đó nên không bớt được.
+   Rời lưới / tearDown / cảnh báo bộ nhớ ⇒ `EmojiData.dropCaches()`. Cache glyph CoreText (~8,5
+   KB/emoji) vẫn không xả được ⇒ "rời emoji" không đổi.
+3. **Cảnh báo bộ nhớ**: thêm `planeCache.removeAll()` (plane không hiện), `EmojiData.dropCaches()`,
+   `Wallpaper.dropCache()` (cache tĩnh; view đang hiện vẫn giữ ảnh). Simulator không bắn được
+   cảnh báo cho process khác ⇒ kiểm bằng `RamFixTests.testMemoryWarningDropsCaches`.
+4. **Ảnh nền**: giải ở tối đa @2x (`Wallpaper.decodeScale`) rồi **cắt đúng phần hiện**
+   (`aspectFillCrop`, aspect-fill giữa, không bao giờ phóng to vào bitmap): ảnh dọc 810×1080 trên
+   bàn phím iPhone 3,5 → 1,9 MB; ảnh chụp màn hình dọc 497×1080 2,1 → 0,7 MB. Ảnh chụp màn so
+   trước/sau: sai khác trung bình 0,24/255 mỗi kênh (mắt không thấy — nguồn ≤1080 px nên @2x
+   gần như không mất chi tiết).
+
+Test: `ViewTreeLeakTests` (cây cũ chết qua controller mới / cùng controller, trạng thái sau hiện
+lại, heap/vòng < 30 KB, độ trễ), `RamFixTests` (emoji id, dropCaches, lưới, cảnh báo bộ nhớ, cắt
+ảnh nền), `RamBreakdownTests` leak-cycles (bỏ XCTExpectFailure; 3 vòng làm ấm rồi đo).
+
+## Kết luận nhanh (audit gốc, trước khi sửa)
 
 1. **Rò rỉ nghiêm trọng: mỗi lần ẩn/hiện bàn phím giữ lại NGUYÊN cây view cũ** (~1,8 MB/lần,
    không bao giờ nhả). 30 lần ẩn/hiện: 25 → **107 MB**. Trên máy thật extension sẽ bị jetsam
@@ -97,6 +147,7 @@ KHÔNG qua XCUITest ⇒ không có runtime Accessibility giữ view):
 - Nguyên mẫu đã thử (KHÔNG commit): trong `viewDidDisappear` gỡ đệ quy mọi subview của `view`.
   Cắt được chuỗi (còn lại cùng lắm vài KB stack view + engine).
 
+**ĐÃ SỬA 28/09/2026** (xem đầu file — gốc là UIKit giữ `UIInputView`, kể cả khi rỗng).
 **Sửa đề xuất** (ưu tiên 1, tiết kiệm ~1,8 MB × số lần hiện, rủi ro trung bình):
 `viewDidDisappear` → `keyboard.tearDown()` (nhả planeCache, emoji plane, panel clipboard, gỡ
 subview đệ quy, `keyboard = nil`); `viewWillAppear` → nếu đã xé thì dựng lại `KeyboardView` (tách

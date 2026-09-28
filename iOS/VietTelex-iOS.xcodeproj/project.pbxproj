@@ -225,6 +225,7 @@
 		CF7F1ABF1498FE511CA6CA87 /* VietTelexKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 09561C431C2FC4B6BAFD5DB7 /* VietTelexKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		CF927A464EEB48A4770D3C9F /* PlusGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D488C3ADF837AC9FCDD9EC1D /* PlusGate.swift */; };
 		D0AB1A2F822234A53F66D19B /* TemplateEditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4FC671773198BA581BA9228 /* TemplateEditTests.swift */; };
+		D12405A0B0E9F812580C25F2 /* RamFixTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBB757354715E62384994C56 /* RamFixTests.swift */; };
 		D12EE5FDDD99168FAD725605 /* SyncCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 079761CFA779BBD4401101EF /* SyncCore.swift */; };
 		D4218E1F871AA9175218113F /* vnlm.bin in Resources */ = {isa = PBXBuildFile; fileRef = 6C7EDE7A95356B8F9043D32F /* vnlm.bin */; };
 		D45BA551FBF05D36CED8D449 /* SwipeLexicon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3994C0C17115101811283049 /* SwipeLexicon.swift */; };
@@ -242,6 +243,7 @@
 		DF225D04D7CF81C8C54070B8 /* number-chips.txt in Resources */ = {isa = PBXBuildFile; fileRef = 2B96A58C6EE35D288C488202 /* number-chips.txt */; };
 		E0E2190351D069CBD17F6B8C /* NumberChips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DF8BE49B914D1B4B31116F3 /* NumberChips.swift */; };
 		E16D46978F3A25EF2D8990ED /* AppearancePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62E14AD387BE2B1A54881E15 /* AppearancePolicy.swift */; };
+		E1A8B31E80F18094634EF943 /* ViewTreeLeakTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9822723B0DBD958953953CF /* ViewTreeLeakTests.swift */; };
 		E25796C6DF51C528137161EB /* futo-swipe-fixture.txt in Resources */ = {isa = PBXBuildFile; fileRef = 5A0609A6319273F70D4F03A6 /* futo-swipe-fixture.txt */; };
 		E295B1FEA8D18A42FF77BD3A /* EmojiSuggest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CCA79BB7903D0F4A2BC56B5 /* EmojiSuggest.swift */; };
 		E29FDF78A65EA7E6F0F8EF8F /* SensitiveWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF9F4445707DBA22FE5219CD /* SensitiveWords.swift */; };
@@ -434,6 +436,7 @@
 		C4D95DF2E5846D5F65882073 /* TemplateEdit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemplateEdit.swift; sourceTree = "<group>"; };
 		C5BC327E13C13C9D09229C0F /* SyllableLMTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyllableLMTests.swift; sourceTree = "<group>"; };
 		C8B6F1BC1B564638DA93D085 /* KeySoundTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeySoundTests.swift; sourceTree = "<group>"; };
+		C9822723B0DBD958953953CF /* ViewTreeLeakTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewTreeLeakTests.swift; sourceTree = "<group>"; };
 		CAD72939A03B2CDB528A0C4A /* Keyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Keyboard.entitlements; sourceTree = "<group>"; };
 		CBD24780DBDAEB07E6645C3E /* ScrollEdgeEffectTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollEdgeEffectTests.swift; sourceTree = "<group>"; };
 		CCEDEE554C73498F36146A9D /* VietTelexApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = VietTelexApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -461,6 +464,7 @@
 		E5BA79FCDFB7209A8D1C65B0 /* SwipeTyping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipeTyping.swift; sourceTree = "<group>"; };
 		E7BF9D54E0DFCE9D7395F598 /* swipe-paths.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "swipe-paths.txt"; sourceTree = "<group>"; };
 		E8E2E27B46842AE6F5EB0A74 /* SyncMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMerge.swift; sourceTree = "<group>"; };
+		EBB757354715E62384994C56 /* RamFixTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RamFixTests.swift; sourceTree = "<group>"; };
 		EE4C2C271F18A006B9967589 /* SwipePractice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipePractice.swift; sourceTree = "<group>"; };
 		EE8993F83A60C653C26799EC /* NumberRowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NumberRowTests.swift; sourceTree = "<group>"; };
 		F2C9781CE8B936C962B3EBA8 /* TelexCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TelexCore; path = ../TelexCore; sourceTree = SOURCE_ROOT; };
@@ -632,6 +636,7 @@
 				E2A6BDCAE323FDEA73473DB7 /* PlanePolicyTests.swift */,
 				8197742D5A3A7B8F8BE4C8DC /* PlusTests.swift */,
 				A14878A23261C8A092054E6F /* RamBreakdownTests.swift */,
+				EBB757354715E62384994C56 /* RamFixTests.swift */,
 				75A9F065C3D6400280AE99D7 /* ReEditWordTests.swift */,
 				CBD24780DBDAEB07E6645C3E /* ScrollEdgeEffectTests.swift */,
 				121671DAC21692CEBCF9B296 /* ShortcutTests.swift */,
@@ -652,6 +657,7 @@
 				56C41B594797A8B06ED5012D /* UserDictionaryTests.swift */,
 				3892A75525A06BACCAE066AB /* UXFeedbackTests.swift */,
 				B4C8682721439F0EE47DDC34 /* UXSnapshotTests.swift */,
+				C9822723B0DBD958953953CF /* ViewTreeLeakTests.swift */,
 				031628D00865BDD8F533A0B7 /* VNIBridgeTests.swift */,
 				8B3578841CEB4885B61BD148 /* VTCatchTests.swift */,
 				0599154D3A43772DC7456968 /* WordDeleteTests.swift */,
@@ -1155,6 +1161,7 @@
 				16FCA2CDAD7489F48F628D81 /* PlusStoreModel.swift in Sources */,
 				B5DA1E90A8B99B4F53BCFF96 /* PlusTests.swift in Sources */,
 				98FFB5EF984F57F300DD554A /* RamBreakdownTests.swift in Sources */,
+				D12405A0B0E9F812580C25F2 /* RamFixTests.swift in Sources */,
 				4059F85D6472E1CC2601D5DF /* ReEditWordTests.swift in Sources */,
 				47D0834606BB8E66AB2213D1 /* ScrollEdgeEffectTests.swift in Sources */,
 				0FC30ADCCD6DA0E278D59DD3 /* SeedData.swift in Sources */,
@@ -1204,6 +1211,7 @@
 				CE87DFF1AA26E9C3CF185681 /* VNSuggest.swift in Sources */,
 				925E9207BD1E9E7D10D7310B /* VTCatch.m in Sources */,
 				9B5CDAC8B9C8C2BC664BE68A /* VTCatchTests.swift in Sources */,
+				E1A8B31E80F18094634EF943 /* ViewTreeLeakTests.swift in Sources */,
 				9838BAAFDE2D5FDA55AE5EAF /* Wallpaper.swift in Sources */,
 				DC996CC66C628B133BA2BCDD /* WordDelete.swift in Sources */,
 				C0F883065272FE06DAE56D0E /* WordDeleteTests.swift in Sources */,
