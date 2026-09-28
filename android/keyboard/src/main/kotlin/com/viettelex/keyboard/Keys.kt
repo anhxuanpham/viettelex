@@ -38,6 +38,8 @@ object Keys {
     const val AUTO_CORRECT_REJECTED = "autoCorrectRejected"
     /** Vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh — mặc định TẮT (tắt ⇒ luôn Tiếng Việt). */
     const val SPACE_SWIPE_LANGUAGE = "spaceSwipeLanguage"
+    /** Tự thêm dấu cách sau . , ? ! ; : ([AutoSpace]) — mặc định TẮT. Giống iOS. */
+    const val AUTO_SPACE_AFTER_PUNCT = "autoSpaceAfterPunct"
     /** Ngôn ngữ đang gõ ("vi" | "en") — trạng thái bàn phím, KHÔNG sao lưu. */
     const val KEYBOARD_LANGUAGE = "keyboardLanguage"
     /** Gõ Telex bằng bàn phím cứng (tablet, DeX, Chromebook, BT/USB) — mặc định BẬT. */

@@ -4,7 +4,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -45,6 +47,7 @@ fun PlusScreen(plus: PlusController, onBack: () -> Unit) {
     val s by plus.state.collectAsState()
     val scope = rememberCoroutineScope()
     var debugOverride by rememberBoolPref(Keys.PLUS_DEBUG_OVERRIDE, false)
+    var addTonesChip by rememberBoolPref(Keys.ADD_TONES_CHIP, Prefs.D.addTonesChip)
     val isPlus = PlusGate.resolve(s.purchased, debugOverride, BuildConfig.DEBUG)
 
     LaunchedEffect(Unit) { plus.refresh() }
@@ -72,7 +75,11 @@ fun PlusScreen(plus: PlusController, onBack: () -> Unit) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(f.title, style = VTType.body, color = c.label)
                     Text(f.detail, style = VTType.footnote, color = c.secondary)
+                    Text(f.howTo, style = VTType.footnote, color = c.accent)
                 }
+            }
+            if (f.settingKey != null && PlusGate.isUnlocked(f)) {
+                SettingToggle(tr("Bật chip “Thêm dấu”"), null, addTonesChip) { addTonesChip = it }
             }
         }
     }
@@ -103,6 +110,13 @@ fun PlusScreen(plus: PlusController, onBack: () -> Unit) {
             }
         }
     }
+    if (s.offerAddTones) AlertDialog(
+        onDismissRequest = { plus.dismissAddTonesOffer() },
+        title = { Text(tr("Bật chip “Thêm dấu”?")) },
+        text = { Text(tr("Gõ không dấu cả câu, gõ dấu cách rồi chạm chip “Thêm dấu” ở đầu thanh gợi ý. Chip đang tắt — bật ngay? (Đổi lại ở Tính Năng → Gợi ý & từ điển.)")) },
+        confirmButton = { TextButton(onClick = { plus.acceptAddTonesOffer() }) { Text(tr("Bật ngay"), color = c.accent) } },
+        dismissButton = { TextButton(onClick = { plus.dismissAddTonesOffer() }) { Text(tr("Để sau"), color = c.secondary) } },
+    )
     s.message?.let { m ->
         VTSection { VTRow(onClick = { plus.dismissMessage() }) { Text(m, style = VTType.footnote, color = c.label) } }
     }

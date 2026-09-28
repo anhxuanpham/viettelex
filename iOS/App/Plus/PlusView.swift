@@ -29,6 +29,8 @@ struct PlusView: View {
     @ObservedObject var model: PlusStoreModel
     @AppStorage(PlusConfig.debugOverrideKey, store: UserDefaults(suiteName: PlusConfig.appGroup))
     private var debugOverride = false
+    @AppStorage(PlusOnboarding.addTonesKey, store: UserDefaults(suiteName: PlusConfig.appGroup))
+    private var addTonesChip = false
 
     var body: some View {
         List {
@@ -59,9 +61,14 @@ struct PlusView: View {
             Section {
                 ForEach(PlusFeature.allCases) { f in
                     Label {
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text(f.title)
                             Text(f.detail).font(.footnote).foregroundStyle(.secondary)
+                            Text(f.howTo).font(.footnote).foregroundStyle(accentBlue)
+                            if f.settingKey != nil, PlusGate.isUnlocked(f) {
+                                Toggle(L("Bật chip “Thêm dấu”"), isOn: $addTonesChip)
+                                    .font(.subheadline).tint(.green)
+                            }
                         }
                     } icon: {
                         Image(systemName: f.systemImage).foregroundStyle(accentBlue)
@@ -144,5 +151,11 @@ struct PlusView: View {
             await model.refreshEntitlements()
         }
         .onChange(of: debugOverride) { _ in model.objectWillChange.send() }
+        .alert(L("Bật chip “Thêm dấu”?"), isPresented: $model.offerAddTones) {
+            Button(L("Bật ngay")) { model.acceptAddTonesOffer() }
+            Button(L("Để sau"), role: .cancel) {}
+        } message: {
+            Text(L("Gõ không dấu cả câu, gõ dấu cách rồi chạm chip “Thêm dấu” ở đầu thanh gợi ý. Chip đang tắt — bật ngay? (Đổi lại ở Tính Năng → Gợi ý & từ điển.)"))
+        }
     }
 }

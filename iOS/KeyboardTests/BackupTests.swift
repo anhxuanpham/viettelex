@@ -21,6 +21,7 @@ final class BackupTests: XCTestCase {
         s["hapticFeedback"] = .bool(true); s["modernTone"] = .bool(true); s["numberRow"] = .bool(true)
         s["reEditWords"] = .bool(false); s["showSpaceLogo"] = .bool(false); s["swipeTyping"] = .bool(true)
         s["rowHeightAdjust"] = .int(-3); s["autoCorrect"] = .bool(true); s["autoCapitalize"] = .bool(false)
+        s["autoSpaceAfterPunct"] = .bool(true)
         s["keyboardTransparency"] = .int(40); s["keyLabelTransparency"] = .int(20)
         s["uiLanguage"] = .string("en")
         return BackupPayload(

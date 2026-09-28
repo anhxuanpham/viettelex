@@ -217,6 +217,216 @@ final class DoubleSpacePeriodTests: XCTestCase {
     }
 }
 
+/// "Tự thêm dấu cách sau dấu câu" (AutoSpace) — số liệu y hệt Android AutoSpaceTests.
+final class AutoSpaceTests: XCTestCase {
+
+    func testAddsAfterWord() {
+        for p in [".", ",", "?", "!", ";", ":"] {
+            XCTAssertTrue(AutoSpace.shouldAdd(punct: p, before: "xin chào" + p, after: ""), p)
+            XCTAssertTrue(AutoSpace.shouldAdd(punct: p, before: "chào" + p, after: nil), p)
+        }
+    }
+
+    func testNotInsideNumbers() {
+        XCTAssertFalse(AutoSpace.shouldAdd(punct: ".", before: "giá 3.", after: ""))
+        XCTAssertFalse(AutoSpace.shouldAdd(punct: ",", before: "1,", after: ""))
+        XCTAssertFalse(AutoSpace.shouldAdd(punct: ":", before: "lúc 10:", after: ""))
+        XCTAssertTrue(AutoSpace.shouldAdd(punct: "?", before: "số 3?", after: ""))   // ? ! ; sau số vẫn thêm
+    }
+
+    func testNotInUrlsEmailsPaths() {
+        XCTAssertFalse(AutoSpace.shouldAdd(punct: ".", before: "mail ptrinh@gmail.", after: ""))
+        XCTAssertFalse(AutoSpace.shouldAdd(punct: ".", before: "xem https://vnexpress.", after: ""))
+        XCTAssertFalse(AutoSpace.shouldAdd(punct: ".", before: "mở ~/Documents/a.", after: ""))
+        XCTAssertFalse(AutoSpace.shouldAdd(punct: ".", before: "vào www.", after: ""))
+        XCTAssertFalse(AutoSpace.shouldAdd(punct: ".", before: "vào www.google.", after: ""))
+        XCTAssertFalse(AutoSpace.shouldAdd(punct: ".", before: "trang vnexpress.net.", after: ""))
+        XCTAssertTrue(AutoSpace.shouldAdd(punct: ".", before: "vd e.g.", after: ""))      // viết tắt
+        XCTAssertTrue(AutoSpace.shouldAdd(punct: ".", before: "ờ..", after: ""))          // dấu ba chấm
+    }
+
+    func testNotForLoneOrMidText() {
+        XCTAssertFalse(AutoSpace.shouldAdd(punct: ":", before: "cười :", after: ""))     // ":)" sắp gõ
+        XCTAssertFalse(AutoSpace.shouldAdd(punct: ".", before: ".", after: ""))
+        XCTAssertFalse(AutoSpace.shouldAdd(punct: ",", before: "a,", after: " b"))        // đã có dấu cách sau
+        XCTAssertFalse(AutoSpace.shouldAdd(punct: ".", before: "(hi.", after: ")"))
+        XCTAssertTrue(AutoSpace.shouldAdd(punct: ",", before: "hello,", after: "world"))
+        XCTAssertFalse(AutoSpace.shouldAdd(punct: "-", before: "a-", after: ""))          // không phải dấu câu
+        XCTAssertFalse(AutoSpace.shouldAdd(punct: ".", before: "hi", after: ""))          // host chưa có dấu
+    }
+
+    func testReactions() {
+        XCTAssertEqual(AutoSpace.reaction(toText: ")"), .carry)
+        XCTAssertEqual(AutoSpace.reaction(toText: "\""), .carry)
+        XCTAssertEqual(AutoSpace.reaction(toText: "”"), .carry)
+        XCTAssertEqual(AutoSpace.reaction(toText: "."), .remove)
+        XCTAssertEqual(AutoSpace.reaction(toText: "?"), .remove)
+        XCTAssertEqual(AutoSpace.reaction(toText: "/"), .remove)
+        XCTAssertEqual(AutoSpace.reaction(toText: "("), .keep)
+        XCTAssertEqual(AutoSpace.reaction(toText: "5"), .keep)
+        XCTAssertEqual(AutoSpace.reaction(toText: "😀"), .keep)
+    }
+
+    func testFieldGate() {
+        XCTAssertTrue(FieldTraits().allowsAutoSpace)
+        XCTAssertFalse(FieldTraits(keyboardType: .emailAddress).allowsAutoSpace)
+        XCTAssertFalse(FieldTraits(keyboardType: .URL).allowsAutoSpace)
+        XCTAssertFalse(FieldTraits(keyboardType: .webSearch).allowsAutoSpace)
+        XCTAssertFalse(FieldTraits(keyboardType: .decimalPad).allowsAutoSpace)
+        XCTAssertFalse(FieldTraits(contentType: .password).allowsAutoSpace)
+        XCTAssertFalse(FieldTraits(secure: true).allowsAutoSpace)
+    }
+
+    func testSettingDefaultOffAndLoads() {
+        XCTAssertFalse(KeyboardSettings().autoSpaceAfterPunct)
+        let d = UserDefaults(suiteName: "vt-autospace")!
+        d.removePersistentDomain(forName: "vt-autospace")
+        d.set(true, forKey: "autoSpaceAfterPunct")
+        let saved = UserDefaultsProvider.shared
+        UserDefaultsProvider.shared = d
+        defer { UserDefaultsProvider.shared = saved }
+        XCTAssertTrue(KeyboardSettings.load().autoSpaceAfterPunct)
+    }
+
+    // MARK: controller thật + proxy giả
+
+    @MainActor private func rig(on: Bool) -> KeyboardBenchTests.Rig {
+        let d = KeyboardBenchTests.makeDefaults("C")
+        d.set(on, forKey: "autoSpaceAfterPunct")
+        UserDefaultsProvider.shared = d
+        return KeyboardBenchTests.Rig()
+    }
+
+    @MainActor private func run(_ on: Bool, _ keys: [KeyboardView.Key]) -> String {
+        let saved = UserDefaultsProvider.shared
+        defer { UserDefaultsProvider.shared = saved }
+        let r = rig(on: on)
+        defer { r.close() }
+        for k in keys { r.vc.debugHandle(k); KeyboardBenchTests.spin(0.02) }
+        return r.proxy.text
+    }
+
+    private func word(_ s: String) -> [KeyboardView.Key] { s.map { .letter($0) } }
+
+    @MainActor func testOffIsUnchanged() {
+        XCTAssertEqual(run(false, word("hi") + [.text("."), .space]), "hi. ")
+        XCTAssertEqual(run(false, word("hi") + [.text(",")]), "hi,")
+    }
+
+    /// Tắt: dấu câu không đọc context thêm (như phím ký hiệu thường "(").
+    @MainActor func testOffReadsNoExtraContext() {
+        let saved = UserDefaultsProvider.shared
+        defer { UserDefaultsProvider.shared = saved }
+        func reads(_ on: Bool, _ s: String) -> Int {
+            let r = rig(on: on)
+            defer { r.close() }
+            for k in word("hi") { r.vc.debugHandle(k) }
+            KeyboardBenchTests.spin(0.05)
+            r.proxy.contextReads = 0
+            r.vc.debugHandle(.text(s))
+            return r.proxy.contextReads
+        }
+        XCTAssertEqual(reads(false, ";"), reads(false, "("))
+        XCTAssertEqual(reads(true, "("), reads(false, "("))
+        XCTAssertGreaterThan(reads(true, ";"), reads(false, ";"))
+    }
+
+    @MainActor func testAddsSpaceAndSwallowsNext() {
+        XCTAssertEqual(run(true, word("hi") + [.text(",")]), "hi, ")
+        XCTAssertEqual(run(true, word("hi") + [.text("."), .space]), "hi. ")
+        XCTAssertEqual(run(true, word("hi") + [.text("."), .doubleSpacePeriod]), "hi. ")
+        XCTAssertEqual(run(true, word("hi") + [.text("."), .space, .space]), "hi.  ")   // chỉ nuốt 1
+        XCTAssertEqual(run(true, word("hi") + [.text(","), .letter("b")]), "hi, b")
+    }
+
+    @MainActor func testBackspaceRemovesOnlyAutoSpace() {
+        XCTAssertEqual(run(true, word("hi") + [.text("."), .backspace]), "hi.")
+        XCTAssertEqual(run(true, word("hi") + [.text("."), .backspace, .backspace]), "hi")
+    }
+
+    @MainActor func testPunctAndClosersAfterAutoSpace() {
+        XCTAssertEqual(run(true, word("hi") + [.text("."), .text("."), .text(".")]), "hi... ")
+        XCTAssertEqual(run(true, word("hi") + [.text("?"), .text("!")]), "hi?! ")
+        XCTAssertEqual(run(true, word("hi") + [.text("."), .text(")")]), "hi.) ")
+        XCTAssertEqual(run(true, word("hi") + [.text("."), .text("\""), .space]), "hi.\" ")
+        XCTAssertEqual(run(true, word("hi") + [.text("."), .newline]), "hi.\n")
+        XCTAssertEqual(run(true, word("http") + [.text(":"), .text("/"), .text("/")]), "http://")
+    }
+
+    @MainActor func testNumbersStayTight() {
+        XCTAssertEqual(run(true, [.text("3"), .text("."), .text("5")]), "3.5")
+        XCTAssertEqual(run(true, [.text("1"), .text(","), .text("0")]), "1,0")
+    }
+
+    /// Không tự thêm ở ô email / URL / mật khẩu.
+    @MainActor func testFieldGateInController() {
+        let saved = UserDefaultsProvider.shared
+        defer { UserDefaultsProvider.shared = saved }
+        for type in [UIKeyboardType.emailAddress, .URL, .webSearch] {
+            let r = rig(on: true)
+            r.proxy.keyboardType = type
+            r.vc.textDidChange(nil)                    // đọc lại trait ô
+            for k in word("hi") + [.text(".")] { r.vc.debugHandle(k) }
+            XCTAssertEqual(r.proxy.text, "hi.", "\(type.rawValue)")
+            r.close()
+        }
+    }
+
+    /// ". " tự thêm vẫn viết hoa chữ kế; double-space → ". " vẫn chạy.
+    @MainActor func testAutoCapAndDoubleSpace() {
+        let saved = UserDefaultsProvider.shared
+        defer { UserDefaultsProvider.shared = saved }
+        let r = rig(on: true)
+        defer { r.close() }
+        for (i, c) in "chao".enumerated() { _ = r.key(c, index: i + 1, drain: 0.03) }
+        r.vc.debugHandle(.text("."))
+        KeyboardBenchTests.spin(0.05)
+        _ = r.key("a", index: 5, drain: 0.03)
+        XCTAssertEqual(r.proxy.text, "Chao. A")
+        r.vc.debugHandle(.space); r.vc.debugHandle(.doubleSpacePeriod)
+        XCTAssertEqual(r.proxy.text, "Chao. A. ")
+    }
+}
+
+/// Dấu hiệu phím cách: VI/EN khi bật vuốt đổi ngôn ngữ, logo Vᴛ khi tắt.
+final class SpaceMarkTests: XCTestCase {
+    func testChoice() {
+        XCTAssertEqual(SpaceMark.choose(flickEnabled: true, showLogo: true, language: .vi), .code("VI"))
+        XCTAssertEqual(SpaceMark.choose(flickEnabled: true, showLogo: false, language: .en), .code("EN"))
+        XCTAssertEqual(SpaceMark.choose(flickEnabled: false, showLogo: true, language: .vi), .logo(.vi))
+        XCTAssertEqual(SpaceMark.choose(flickEnabled: false, showLogo: false, language: .vi), .none)
+    }
+
+    @MainActor func testSpaceBarShowsCodeAndFollowsLanguage() {
+        let saved = UserDefaultsProvider.shared
+        defer { UserDefaultsProvider.shared = saved }
+        let d = KeyboardBenchTests.makeDefaults("C")
+        d.set(true, forKey: "spaceSwipeLanguage")
+        UserDefaultsProvider.shared = d
+        let r = KeyboardBenchTests.Rig()
+        defer { r.close() }
+        let kb = r.vc.debugKeyboard
+        XCTAssertEqual(kb.debugSpaceMark(), "VI")
+        kb.spaceLanguage = .en
+        XCTAssertEqual(kb.debugSpaceMark(), "EN")
+        kb.configureSpaceFlick(enabled: false, language: .vi)
+        XCTAssertEqual(kb.debugSpaceMark(), "logo")
+        kb.configureSpaceFlick(enabled: true, language: .vi)
+        XCTAssertEqual(kb.debugSpaceMark(), "VI")
+        kb.debugSetPlane(numbers: true)                 // plane số dựng mới cũng có mã
+        XCTAssertEqual(kb.debugSpaceMark(), "VI")
+    }
+
+    @MainActor func testLogoWhenFlickOff() {
+        let saved = UserDefaultsProvider.shared
+        defer { UserDefaultsProvider.shared = saved }
+        UserDefaultsProvider.shared = KeyboardBenchTests.makeDefaults("C")
+        let r = KeyboardBenchTests.Rig()
+        defer { r.close() }
+        XCTAssertEqual(r.vc.debugKeyboard.debugSpaceMark(), "logo")
+    }
+}
+
 final class MemoryBudgetTests: XCTestCase {
 
     private func footprintMB() -> Double {

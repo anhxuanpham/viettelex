@@ -567,6 +567,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         applyBottomTrim()
         layoutSuggestionBar()
         layoutStripZones()
+        layoutOverlayPanel()
         loadWallpaperIfNeeded()
         logGeometryIfChanged()
         if pasteCard.superview != nil, !pasteCard.isHidden {   // xoay màn hình
@@ -624,6 +625,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         private(set) var cellFrames: [CGRect] = []
         private var laidOut: CGSize = .zero
         private var emojiCount = 0
+        /// Chip clipboard (1–3): CHIA ĐỀU bar như Android/Gboard; 0 = 3 ô cố định. Trước đây
+        /// [Dán SĐT…][Dán] nằm trong 2/3 ô, ô 3 trống ⇒ thanh gợi ý trông "ngắn 1 đoạn"
+        /// (Hữu Đông 28/09/2026).
+        private(set) var chipCount = 0
         /// Hit-area nở của slot (âm = rộng hơn bar): bar 20pt, nút ăn cả phần strip còn lại.
         var hitInsets: UIEdgeInsets = .zero
 
@@ -657,16 +662,34 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             laidOut = bounds.size
             let w = bounds.width / 3, h = bounds.height
             cellFrames = (0..<3).map { CGRect(x: CGFloat($0) * w, y: 0, width: w, height: h) }
+            layoutSlots()
+            layoutEmojis()
+        }
+
+        /// Chỉ chạy khi bề rộng bar / số chip đổi — mỗi phím không đụng frame.
+        func setChipCount(_ n: Int) {
+            let n = min(max(n, 0), 3)
+            guard n != chipCount else { return }
+            chipCount = n
+            layoutSlots()
+        }
+        private func layoutSlots() {
+            guard cellFrames.count == 3 else { return }
+            let n = chipCount > 0 ? chipCount : 3
+            let cw = bounds.width / CGFloat(n), h = bounds.height
             for (i, b) in slots.enumerated() {
-                b.frame = cellFrames[i].insetBy(dx: 3, dy: 0)
+                let cell = i < n ? CGRect(x: CGFloat(i) * cw, y: 0, width: cw, height: h) : cellFrames[i]
+                b.frame = cell.insetBy(dx: 3, dy: 0)
                 labels[i].frame = b.bounds
                 Self.fitShrink(labels[i])
             }
             for (i, d) in dividers.enumerated() {
-                d.frame = CGRect(x: cellFrames[i].maxX - 0.5, y: 4, width: 1, height: max(h - 8, 0))
+                let x = i + 1 < n ? CGFloat(i + 1) * cw : cellFrames[i].maxX
+                d.frame = CGRect(x: x - 0.5, y: 4, width: 1, height: max(h - 8, 0))
             }
-            layoutEmojis()
         }
+        /// Số vạch ngăn dùng được ở chế độ hiện tại (chip: giữa các chip).
+        var usableDividers: Int { chipCount > 0 ? chipCount - 1 : 2 }
 
         /// Emoji hiện chia đều ô 3 (như stack fillEqually cũ: 1 emoji = cả ô).
         func setEmojiCount(_ n: Int) {
@@ -840,12 +863,14 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         var texts: [(display: String, insert: String)?] = [nil, nil, nil]
         var emojis: [String] = []
         var pasteCardOn = false
+        var chipCount = 0
         switch SuggestionSlots.arrange(set) {
         case .slots(let s, let e):
             texts = s.map { $0.map { ($0.label, $0.payload) } }
             emojis = e
         case .chips(let c):
             for (i, x) in c.prefix(3).enumerated() { texts[i] = (x.label, x.payload) }
+            chipCount = min(c.count, 3)
         case .pasteCard:
             pasteCardOn = true
         case .pill(let u):
@@ -861,6 +886,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         if sig == lastSuggestionSig { return }
         lastSuggestionSig = sig
 
+        suggestionBar.setChipCount(chipCount)
         let ink = palette.barInk.ui
         let inkChanged = barInkApplied != ink
         barInkApplied = ink
@@ -894,7 +920,11 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         }
         // Vạch ngăn cố định: hiện khi bar có nội dung (ô trống vẫn giữ chỗ — như stock).
         let anyVisible = texts.contains { $0 != nil } || !emojis.isEmpty
-        for d in slotDividers where d.isHidden != (!anyVisible || pasteCardOn) { d.isHidden = !anyVisible || pasteCardOn }
+        let usable = suggestionBar.usableDividers
+        for (i, d) in slotDividers.enumerated() {
+            let hide = !anyVisible || pasteCardOn || i >= usable
+            if d.isHidden != hide { d.isHidden = hide }
+        }
         // Nút Dán kiểu iOS 27: MỘT ô rộng giữa bar, 2 dòng, thay cả 3 slot.
         setPasteCard(visible: pasteCardOn, image: set.pasteIsImage, ink: ink)
     }
@@ -927,6 +957,16 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         guard visible != clipboardButtonVisible else { return }
         clipboardButtonVisible = visible
         setNeedsLayout()   // bề rộng bar (layoutSuggestionBar)
+    }
+
+    /// Panel clipboard bám ĐÚNG vùng phím mỗi lượt layout. Trước đây chỉ đặt frame lúc mở
+    /// + autoresizing (cao cố định, neo đáy): bàn phím đổi chiều cao khi panel đang mở (xoay,
+    /// thu gọn ⌄, host cấp lại khung) ⇒ panel trồi lên đè dải gợi ý / hở hàng phím.
+    private func layoutOverlayPanel() {
+        guard let p = overlayPanel, p.superview === self else { return }
+        let f = rowsContainer.frame
+        if p.frame != f { p.frame = f }
+        bringSubviewToFront(p)
     }
 
     private func layoutClipboardExtras(stripOpen: Bool) {
@@ -1195,6 +1235,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private var letterKeys: [(button: UIButton, base: String)] = []
     private weak var spaceBar: UIButton?
     private weak var spaceLogo: UIImageView?
+    /// Mã "VI"/"EN" góc dưới-phải phím cách (thay logo khi bật vuốt đổi ngôn ngữ — SpaceMark).
+    private weak var spaceCode: UILabel?
+    /// Logo hoặc mã ngôn ngữ đang trên phím cách (ẩn/hiện khi trượt nhãn, badge).
+    private var spaceMarkView: UIView? { spaceCode ?? spaceLogo }
     private weak var indentedRow: UIStackView?
     private var indentedRowInset: CGFloat = 0
     private var shiftKeys: [KeyButton] = []   // iPad có 2 shift
@@ -1336,6 +1380,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let shiftKeys: [KeyButton]
         let spaceBar: UIButton?
         let spaceLogo: UIImageView?
+        let spaceCode: UILabel?
         let indentedRow: UIStackView?
         let indentedRowInset: CGFloat
         let crossRow: [NSLayoutConstraint]
@@ -1389,7 +1434,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             // mẫu câu lần 2 co dúm (bug user 2026-07-25). Dựng lại rẻ.
             planeCache[old] = CachedPlane(
                 rows: rowsContainer.arrangedSubviews, letterKeys: letterKeys,
-                shiftKeys: shiftKeys, spaceBar: spaceBar, spaceLogo: spaceLogo,
+                shiftKeys: shiftKeys, spaceBar: spaceBar, spaceLogo: spaceLogo, spaceCode: spaceCode,
                 indentedRow: indentedRow, indentedRowInset: indentedRowInset,
                 crossRow: crossRowConstraints,
                 distribution: rowsContainer.distribution)
@@ -1413,7 +1458,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             shiftKeys = cached.shiftKeys
             spaceBar = cached.spaceBar
             spaceLogo = cached.spaceLogo
-            spaceLogo?.image = spaceLogoImage()      // ngôn ngữ có thể đã đổi khi plane nằm cache
+            spaceCode = cached.spaceCode
+            refreshSpaceMark()                       // ngôn ngữ có thể đã đổi khi plane nằm cache
             indentedRow = cached.indentedRow
             indentedRowInset = cached.indentedRowInset
             crossRowConstraints = cached.crossRow
@@ -2081,25 +2127,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         space.pressedBackground = specialFill      // space sẫm lại khi đè
         space.accessibilityLabel = L("Dấu cách")
         spaceBar = space
-        // logo Vᴛ mờ ở mép phải nút space (thay "VI EN" — user 2026-07-23);
-        // PNG 2x/3x render từ MenuIcon.pdf nên sắc nét, tint theo appearance.
-        // Ẩn được qua Settings của app (showSpaceLogo, App Group).
-        let showLogo = UserDefaultsProvider.shared?.object(forKey: "showSpaceLogo") == nil
-            || UserDefaultsProvider.shared?.bool(forKey: "showSpaceLogo") == true
-        if showLogo {
-            let hint = UIImageView(image: spaceLogoImage())
-            hint.tintColor = inkFaded(0.16)
-            hint.contentMode = .scaleAspectFit
-            hint.translatesAutoresizingMaskIntoConstraints = false
-            spaceLogo = hint
-            space.addSubview(hint)
-            NSLayoutConstraint.activate([
-                hint.rightAnchor.constraint(equalTo: space.rightAnchor, constant: -10),
-                hint.centerYAnchor.constraint(equalTo: space.centerYAnchor),
-                hint.widthAnchor.constraint(equalToConstant: 22),
-                hint.heightAnchor.constraint(equalToConstant: 22),
-            ])
-        }
+        installSpaceMark(on: space)
         space.addAction(UIAction { _ in Self.clickModifier() }, for: .touchDown)
         space.addTarget(self, action: #selector(spaceTouchDown(_:event:)), for: .touchDown)
         // Vuốt đổi ngôn ngữ (SpaceFlick): theo dõi ngón — công tắc tắt ⇒ handler thoát ngay.
@@ -2546,11 +2574,22 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     // Rung: iOS vô hiệu UIFeedbackGenerator trong keyboard extension khi
     // không có Full Access — controller chỉ bật cờ khi setting ON + hasFullAccess.
     nonisolated(unsafe) static var hapticsEnabled = false
-    private static let haptic = UIImpactFeedbackGenerator(style: .light)
+    /// iOS 17.5+: generator phải GẮN VIEW đang hiện (init(style:view:)) — bản không view
+    /// (static, tạo trước khi extension có cửa sổ) im lặng trong keyboard extension:
+    /// "bật rung + Full Access mà không rung" (Hữu Đông / Phil 28/09/2026). View gắn ở
+    /// `attachHaptics(to:)` mỗi lần bàn phím hiện; chưa gắn thì dùng bản cũ.
+    nonisolated(unsafe) private static var haptic = UIImpactFeedbackGenerator(style: .light)
+    static func attachHaptics(to view: UIView) {
+        if #available(iOS 17.5, *) {
+            haptic = UIImpactFeedbackGenerator(style: .light, view: view)
+        }
+        if hapticsEnabled { haptic.prepare() }
+    }
     private static func feedback() {
         UIDevice.current.playInputClick()
         if hapticsEnabled {
-            haptic.impactOccurred()
+            if #available(iOS 17.5, *) { haptic.impactOccurred(intensity: 1, at: .zero) }
+            else { haptic.impactOccurred() }
             haptic.prepare()   // giữ Taptic Engine sẵn sàng cho phím kế — không trễ rung
         }
     }
@@ -2560,7 +2599,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// Đổi ngôn ngữ bằng vuốt phím cách: chỉ rung nhẹ (theo công tắc Rung phím).
     static func flickFeedback() {
         guard hapticsEnabled else { return }
-        haptic.impactOccurred()
+        if #available(iOS 17.5, *) { haptic.impactOccurred(intensity: 1, at: .zero) }
+        else { haptic.impactOccurred() }
         haptic.prepare()
     }
 
@@ -3106,17 +3146,72 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     var onSpaceFlick: (() -> Void)?
     private(set) var spaceFlickEnabled = false
     var spaceLanguage: KeyboardLanguage = .vi {
-        didSet { if oldValue != spaceLanguage { spaceLogo?.image = spaceLogoImage() } }
+        didSet { if oldValue != spaceLanguage { refreshSpaceMark() } }
     }
     private var flickStart: (p: CGPoint, t: CFTimeInterval)?
     private var flickLast: CGPoint?
     private var flickCarousel: (box: UIView, cur: UILabel, next: UILabel)?
 
     func configureSpaceFlick(enabled: Bool, language: KeyboardLanguage) {
+        let changed = spaceFlickEnabled != enabled
         spaceFlickEnabled = enabled
         if !enabled { flickStart = nil; endFlickPreview(committed: false, animated: false) }
         spaceLanguage = language
+        if changed {
+            // logo ↔ mã VI/EN: thay tại chỗ trên plane đang hiện; plane cache dựng lại khi mở.
+            planeCache.removeAll()
+            if let space = spaceBar { installSpaceMark(on: space) }
+        }
+        refreshSpaceMark()
+    }
+
+    /// Logo Vᴛ hoặc mã VI/EN trên phím cách (SpaceMark). Gọi lúc dựng plane, và tại chỗ khi
+    /// công tắc vuốt đổi ngôn ngữ đổi (configureSpaceFlick — không dựng lại cả plane).
+    private func installSpaceMark(on space: UIButton) {
+        // logo Vᴛ mờ ở mép phải nút space (thay "VI EN" — user 2026-07-23);
+        // PNG 2x/3x render từ MenuIcon.pdf nên sắc nét, tint theo appearance.
+        // Ẩn được qua Settings của app (showSpaceLogo, App Group).
+        // Bật vuốt đổi ngôn ngữ ⇒ mã "VI"/"EN" nhỏ góc dưới-phải như stock (SpaceMark).
+        let showLogo = UserDefaultsProvider.shared?.object(forKey: "showSpaceLogo") == nil
+            || UserDefaultsProvider.shared?.bool(forKey: "showSpaceLogo") == true
+        if spaceLogo?.superview === space { spaceLogo?.removeFromSuperview() }
+        if spaceCode?.superview === space { spaceCode?.removeFromSuperview() }
+        spaceLogo = nil; spaceCode = nil
+        switch SpaceMark.choose(flickEnabled: spaceFlickEnabled, showLogo: showLogo, language: spaceLanguage) {
+        case .none: break
+        case .code(let code):
+            let l = UILabel()
+            l.text = code
+            l.font = .systemFont(ofSize: Self.isPad ? 13 : 11, weight: .medium)
+            l.textColor = inkFaded(0.45)             // mờ như stock; theo độ trong suốt ký tự
+            l.isUserInteractionEnabled = false
+            l.isAccessibilityElement = false
+            l.translatesAutoresizingMaskIntoConstraints = false
+            spaceCode = l
+            space.addSubview(l)
+            NSLayoutConstraint.activate([
+                l.rightAnchor.constraint(equalTo: space.rightAnchor, constant: Self.isPad ? -10 : -7),
+                l.bottomAnchor.constraint(equalTo: space.bottomAnchor, constant: Self.isPad ? -6 : -4),
+            ])
+        case .logo:
+            let hint = UIImageView(image: spaceLogoImage())
+            hint.tintColor = inkFaded(0.16)
+            hint.contentMode = .scaleAspectFit
+            hint.translatesAutoresizingMaskIntoConstraints = false
+            spaceLogo = hint
+            space.addSubview(hint)
+            NSLayoutConstraint.activate([
+                hint.rightAnchor.constraint(equalTo: space.rightAnchor, constant: -10),
+                hint.centerYAnchor.constraint(equalTo: space.centerYAnchor),
+                hint.widthAnchor.constraint(equalToConstant: 22),
+                hint.heightAnchor.constraint(equalToConstant: 22),
+            ])
+        }
+    }
+
+    private func refreshSpaceMark() {
         spaceLogo?.image = spaceLogoImage()
+        spaceCode?.text = spaceLanguage.shortCode
     }
 
     private func spaceLogoImage() -> UIImage? {
@@ -3178,7 +3273,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         }
         let c = (box, label(spaceLanguage), label(spaceLanguage.toggled))
         space.addSubview(box)
-        spaceLogo?.alpha = 0
+        spaceMarkView?.alpha = 0
         flickCarousel = c
         return c
     }
@@ -3200,7 +3295,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let restoreLogo = { [weak self] in
             c.box.removeFromSuperview()
             guard let self, self.flickCarousel == nil else { return }
-            UIView.animate(withDuration: 0.2) { self.spaceLogo?.alpha = 1 }
+            UIView.animate(withDuration: 0.2) { self.spaceMarkView?.alpha = 1 }
         }
         guard animated else { restoreLogo(); return }
         if committed {
@@ -3230,7 +3325,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         l.font = .systemFont(ofSize: 16, weight: .regular)
         l.textColor = ink
         l.translatesAutoresizingMaskIntoConstraints = false
-        spaceLogo?.isHidden = true     // logo Vᴛ nhường chỗ, khỏi đè lên badge
+        spaceMarkView?.isHidden = true     // logo Vᴛ nhường chỗ, khỏi đè lên badge
         space.addSubview(l)
         NSLayoutConstraint.activate([
             l.centerXAnchor.constraint(equalTo: space.centerXAnchor),
@@ -3240,7 +3335,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             l.alpha = 0
         } completion: { [weak self] _ in
             l.removeFromSuperview()
-            self?.spaceLogo?.isHidden = false
+            self?.spaceMarkView?.isHidden = false
         }
     }
 
@@ -3801,6 +3896,17 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let card = pasteCard.superview != nil && !pasteCard.isHidden ? pasteCard.frame : nil
         return (cells, divs, titles, card)
     }
+    /// Test hook dải gợi ý: frame bar, nút 📋 (nil = ẩn/chưa tạo), chevron, ô slot.
+    /// `slots`/`dividers`: frame (toạ độ KeyboardView) các ô / vạch ngăn đang HIỆN.
+    func debugStripLayout() -> (bar: CGRect, clip: CGRect?, chevron: CGRect, cells: [CGRect],
+                                slots: [CGRect], dividers: [CGRect]) {
+        layoutIfNeeded()
+        let clip: CGRect? = clipZoneMade && !clipZone.isHidden ? clipZone.frame : nil
+        return (suggestionBar.frame, clip, chevronZone.frame,
+                suggestionBar.cellFrames.map { convert($0, from: suggestionBar) },
+                slotButtons.filter { !$0.isHidden }.map { convert($0.bounds, from: $0) },
+                slotDividers.filter { !$0.isHidden }.map { convert($0.bounds, from: $0) })
+    }
     /// Test hook: mô phỏng rebuild (đổi plane / xoay) — đường từng đặt lại alpha bar.
     func debugRefreshChrome() { updateSuggestionChrome() }
     /// Test hook trackpad: chạy đúng đường began/moved/frame/ended với thời gian giả;
@@ -3917,6 +4023,12 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// Test hook: plane chữ ↔ số.
     func debugSetPlane(numbers: Bool) {
         plane = numbers ? .numbers : .letters; rebuild()
+    }
+    /// Test hook: dấu hiệu trên phím cách — "logo", mã "VI"/"EN", nil = không có.
+    func debugSpaceMark() -> String? {
+        if let c = spaceCode, c.superview != nil { return c.text }
+        if let l = spaceLogo, l.superview != nil { return "logo" }
+        return nil
     }
     /// Test hook: button phím text (hàng số / plane số) theo nhãn, trong plane đang hiện.
     func debugKeyButton(_ title: String) -> UIButton? {

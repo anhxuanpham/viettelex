@@ -321,3 +321,119 @@ final class UXFeedbackTests: XCTestCase {
         }
     }
 }
+
+/// Hữu Đông 28/09/2026: "Thanh gợi ý bị ngắn 1 đoạn" sau khi dùng bảng clipboard 📋.
+final class ClipboardBarRegressionTests: XCTestCase {
+
+    /// Host như KeyboardViewController: bàn phím ghim 4 mép vào view gốc (khung do host cấp).
+    @MainActor private func makeHosted(height: CGFloat = 290)
+        -> (kb: KeyboardView, root: UIView, win: UIWindow, height: NSLayoutConstraint) {
+        let win = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        win.isHidden = false
+        let root = UIView()
+        root.translatesAutoresizingMaskIntoConstraints = false
+        win.addSubview(root)
+        let h = root.heightAnchor.constraint(equalToConstant: height)
+        NSLayoutConstraint.activate([
+            root.leftAnchor.constraint(equalTo: win.leftAnchor),
+            root.rightAnchor.constraint(equalTo: win.rightAnchor),
+            root.bottomAnchor.constraint(equalTo: win.bottomAnchor), h,
+        ])
+        let kb = KeyboardView(needsGlobe: false, inputController: nil) { _ in }
+        kb.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(kb)
+        NSLayoutConstraint.activate([
+            kb.leftAnchor.constraint(equalTo: root.leftAnchor),
+            kb.rightAnchor.constraint(equalTo: root.rightAnchor),
+            kb.topAnchor.constraint(equalTo: root.topAnchor),
+            kb.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+        ])
+        kb.setSuggestionsEnabled(true)
+        kb.setClipboardButton(visible: true)
+        win.layoutIfNeeded()
+        return (kb, root, win, h)
+    }
+
+    /// Mở như controller (toggleClipboardPanel): frame = vùng phím, overlayPanel.
+    @MainActor private func openPanel(_ kb: KeyboardView) -> ClipboardPanel {
+        let p = ClipboardPanel()
+        p.frame = kb.keyAreaFrame
+        kb.addSubview(p)
+        kb.overlayPanel = p
+        p.reload(items: [ClipItem(text: String(repeating: "nội dung rất dài ", count: 20), at: 0,
+                                  pinned: false, sensitive: false),
+                         ClipItem(text: "0912345678", at: 0, pinned: true, sensitive: false)],
+                 dark: false, incognito: false)
+        kb.setNeedsLayout()
+        return p
+    }
+
+    /// Mở → gõ → đóng → gõ: bar/📋/⌄ và 3 ô giữ nguyên khung trước khi mở.
+    @MainActor func testBarGeometryUnchangedAfterPanelOpenClose() {
+        let (kb, root, win, _) = makeHosted()
+        kb.showSuggestions(.init(nextWords: ["Em", "Anh", "Tôi"]))
+        let g0 = kb.debugStripLayout()
+        XCTAssertNotNil(g0.clip)
+        XCTAssertEqual(g0.slots.count, 3)
+        let p = openPanel(kb)
+        root.layoutIfNeeded()
+        kb.showSuggestions(.init(literal: "x", word: "xin"))
+        let g1 = kb.debugStripLayout()
+        XCTAssertEqual(g1.bar, g0.bar); XCTAssertEqual(g1.clip, g0.clip); XCTAssertEqual(g1.cells, g0.cells)
+        XCTAssertGreaterThanOrEqual(p.frame.minY, g0.bar.maxY, "panel không đè bar")
+        p.removeFromSuperview(); kb.overlayPanel = nil; kb.setNeedsLayout()
+        kb.showSuggestions(.init(nextWords: ["Và", "Là", "Có"]))
+        let g2 = kb.debugStripLayout()
+        XCTAssertEqual(g2.bar, g0.bar); XCTAssertEqual(g2.clip, g0.clip)
+        XCTAssertEqual(g2.chevron, g0.chevron); XCTAssertEqual(g2.slots, g0.slots)
+        withExtendedLifetime(win) {}
+    }
+
+    /// Bàn phím đổi chiều cao khi panel đang mở (xoay / host cấp lại khung): panel phải bám
+    /// vùng phím — trước đây cao cố định + neo đáy ⇒ trồi lên đè dải gợi ý.
+    @MainActor func testPanelFollowsKeyAreaWhenKeyboardResizes() {
+        let (kb, root, win, h) = makeHosted(height: 290)
+        kb.showSuggestions(.init(nextWords: ["Em", "Anh", "Tôi"]))
+        let bar = kb.debugStripLayout().bar
+        let p = openPanel(kb)
+        root.layoutIfNeeded()
+        for height: CGFloat in [240, 320, 290] {
+            h.constant = height
+            win.layoutIfNeeded()
+            XCTAssertEqual(p.frame, kb.keyAreaFrame, "cao \(height)")
+            XCTAssertGreaterThanOrEqual(p.frame.minY, bar.maxY, "cao \(height): panel đè bar")
+            XCTAssertEqual(kb.debugStripLayout().bar, bar)
+        }
+        withExtendedLifetime(win) {}
+    }
+
+    /// Chip clipboard [Dán SĐT…][Dán] CHIA ĐỀU bar (như Android) — không để ô 3 trống
+    /// khiến bar trông ngắn đi một đoạn; gõ tiếp thì về 3 ô cố định.
+    @MainActor func testClipChipsFillWholeBar() {
+        let (kb, _, win, _) = makeHosted()
+        kb.showSuggestions(.init(nextWords: ["Em", "Anh", "Tôi"]))
+        let g0 = kb.debugStripLayout()
+        var s = KeyboardView.SuggestionSet(nextWords: ["Em", "Anh", "Tôi"])
+        s.paste = true
+        s.clipChips = [("Dán SĐT 0912…", KeyboardView.clipTokenPrefix + "0912345678")]
+        kb.showSuggestions(s)
+        var g = kb.debugStripLayout()
+        XCTAssertEqual(g.slots.count, 2)
+        XCTAssertEqual(g.slots[0].minX, g0.bar.minX + 3, accuracy: 0.5)
+        XCTAssertEqual(g.slots[1].maxX, g0.bar.maxX - 3, accuracy: 0.5, "chip cuối chạm mép phải bar")
+        XCTAssertEqual(g.slots[0].width, g.slots[1].width, accuracy: 0.5)
+        XCTAssertEqual(g.dividers.count, 1)
+        XCTAssertEqual(g.dividers[0].midX, g0.bar.midX, accuracy: 0.5)
+        s.paste = false   // nút Dán tắt: một chip = cả bar
+        kb.showSuggestions(s)
+        g = kb.debugStripLayout()
+        XCTAssertEqual(g.slots.count, 1)
+        XCTAssertEqual(g.slots[0].width, g0.bar.width - 6, accuracy: 0.5)
+        XCTAssertTrue(g.dividers.isEmpty)
+        kb.showSuggestions(.init(nextWords: ["Và", "Là", "Có"]))
+        g = kb.debugStripLayout()
+        XCTAssertEqual(g.slots, g0.slots)
+        XCTAssertEqual(g.dividers, g0.dividers)
+        withExtendedLifetime(win) {}
+    }
+}

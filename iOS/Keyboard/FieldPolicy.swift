@@ -72,6 +72,11 @@ struct FieldTraits: Equatable {
     /// Ô cho phép thanh gợi ý (stock tắt ở ô mật khẩu / autocorrection = .no).
     var allowsSuggestions: Bool { autocorrection != .no && !secure }
 
+    /// Tự thêm dấu cách sau dấu câu: chỉ ô chữ thường (không email/URL/số/mật khẩu/omnibox).
+    var allowsAutoSpace: Bool {
+        !passthrough && !secure && inputKind == .normal && keyboardType != .webSearch
+    }
+
     /// Loại layout (web input type=number/email/url ánh xạ sang keyboardType).
     var inputKind: KeyboardView.InputKind {
         switch keyboardType {

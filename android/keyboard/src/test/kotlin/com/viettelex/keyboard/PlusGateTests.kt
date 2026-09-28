@@ -63,4 +63,13 @@ class PlusGateTests {
         assertEquals("plus", PlusConfig.PLUS_PRODUCT_ID)
         assertEquals(4, PlusConfig.ALL_PRODUCT_IDS.toSet().size)
     }
+
+    /** Màn Plus: mọi quyền lợi có dòng "Cách dùng"; Thêm dấu cả câu có công tắc đúng key IME đọc. */
+    @Test fun everyFeatureHasHowToLine() {
+        for (f in PlusFeature.entries) assertTrue("$f thiếu cách dùng", f.howTo.isNotBlank())
+        assertTrue(PlusFeature.SENTENCE_DIACRITICS.howTo.contains("Thêm dấu"))
+        assertTrue(PlusFeature.TEXT_TOOLS.howTo.contains("☰"))
+        assertEquals(Keys.ADD_TONES_CHIP, PlusFeature.SENTENCE_DIACRITICS.settingKey)
+        assertNull(PlusFeature.CLOUD_SYNC.settingKey)
+    }
 }

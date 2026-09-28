@@ -104,3 +104,54 @@ enum TypingHeuristics {
             && prev != "." && prev != "!" && prev != "?" && prev != ","
     }
 }
+
+/// "Tự thêm dấu cách sau dấu câu" (autoSpaceAfterPunct, mặc định TẮT). Phần THUẦN — bản
+/// Kotlin song sinh: android/keyboard/.../SuggestionSupport.kt (AutoSpace), test hai bên
+/// cùng số liệu. Controller: sau phím . , ? ! ; : chèn " " và nhớ lại; phím kế là dấu cách
+/// ⇒ nuốt, ⌫ ⇒ chỉ xoá dấu cách tự thêm, dấu câu / "/" / xuống dòng ⇒ gỡ dấu cách trước
+/// nó, ngoặc/nháy đóng ⇒ gỡ rồi dời dấu cách ra sau ngoặc ("hi." + ")" → "hi.) ").
+enum AutoSpace {
+    static let triggers: Set<Character> = [".", ",", "?", "!", ";", ":"]
+    static let closers: Set<Character> = [")", "]", "}", "\"", "'", "”", "’", "»", "›"]
+
+    enum Reaction: Equatable {
+        /// Không đụng dấu cách tự thêm.
+        case keep
+        /// Gỡ dấu cách tự thêm rồi xử lý phím như thường.
+        case remove
+        /// Gỡ, chèn ký tự, rồi thêm lại dấu cách sau nó.
+        case carry
+    }
+
+    /// Phím chèn chữ `s` ngay sau dấu cách tự thêm.
+    static func reaction(toText s: String) -> Reaction {
+        guard s.count == 1, let c = s.first else { return .keep }
+        if closers.contains(c) { return .carry }
+        if triggers.contains(c) || c == "/" { return .remove }
+        return .keep
+    }
+
+    /// Vừa chèn `punct`: có thêm dấu cách không. `before` = chữ trước con trỏ SAU khi chèn
+    /// (phải kết thúc bằng `punct`), `after` = chữ sau con trỏ (nil = không đọc được).
+    static func shouldAdd(punct: String, before: String, after: String?) -> Bool {
+        guard punct.count == 1, let p = punct.first, triggers.contains(p),
+              before.last == p else { return false }
+        // Đã có khoảng trắng / dấu câu / ngoặc đóng ngay sau con trỏ (sửa giữa câu).
+        if let a = after?.first, a.isWhitespace || triggers.contains(a) || closers.contains(a) { return false }
+        let token = before.dropLast().split(omittingEmptySubsequences: false,
+                                            whereSeparator: { $0.isWhitespace }).last ?? ""
+        guard let prev = token.last else { return false }          // dấu câu đứng riêng (" :)")
+        if prev.isNumber, p == "." || p == "," || p == ":" { return false }   // 3.5 · 1,000 · 10:30
+        if token.contains("@") || token.contains("/") { return false }        // email, URL, đường dẫn
+        return !looksLikeDomain(token)
+    }
+
+    /// "www.google", "vnexpress.net", "a.b-c.io": các đoạn giữa dấu chấm đều là chữ/số/-,
+    /// đoạn cuối ≥ 2 ký tự. "e.g", "U.S", "hi.." thì không.
+    static func looksLikeDomain(_ token: Substring) -> Bool {
+        if token.lowercased().hasPrefix("www") { return true }
+        let parts = token.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count >= 2, let last = parts.last, last.count >= 2 else { return false }
+        return parts.allSatisfy { !$0.isEmpty && $0.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" } }
+    }
+}

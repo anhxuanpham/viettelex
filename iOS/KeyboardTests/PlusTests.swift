@@ -106,8 +106,81 @@ final class FakePlusBackend: PlusStoreBackend {
 @MainActor
 final class PlusStoreModelTests: XCTestCase {
     private var flag: [Bool] = []
+    private var suite = UserDefaults(suiteName: "PlusStoreModelTests")!
+    override func setUp() {
+        super.setUp()
+        UserDefaults().removePersistentDomain(forName: "PlusStoreModelTests")
+        suite = UserDefaults(suiteName: "PlusStoreModelTests")!
+    }
     private func make(_ b: FakePlusBackend, initial: Bool = false) -> PlusStoreModel {
-        PlusStoreModel(backend: b, initialPurchased: initial, writeFlag: { [weak self] in self?.flag.append($0) })
+        PlusStoreModel(backend: b, initialPurchased: initial, writeFlag: { [weak self] in self?.flag.append($0) },
+                       onboardingDefaults: suite)
+    }
+
+    // MARK: cách dùng + lời mời bật chip "Thêm dấu" (Hữu Đông 28/09/2026)
+
+    func testEveryPlusFeatureHasHowToLine() {
+        for f in PlusFeature.allCases {
+            XCTAssertFalse(f.howTo.isEmpty, "\(f) thiếu dòng cách dùng")
+        }
+        XCTAssertTrue(PlusFeature.sentenceDiacritics.howTo.contains("Thêm dấu"))
+        XCTAssertTrue(PlusFeature.textTools.howTo.contains("☰"))
+        // Công tắc trên màn Plus ghi ĐÚNG key bàn phím đọc (KeyboardSettings.addTonesChip).
+        XCTAssertEqual(PlusFeature.sentenceDiacritics.settingKey, "addTonesChip")
+        let d = UserDefaults(suiteName: "PlusHowToKey")!
+        d.set(true, forKey: PlusFeature.sentenceDiacritics.settingKey!)
+        let saved = UserDefaultsProvider.shared
+        UserDefaultsProvider.shared = d
+        XCTAssertTrue(KeyboardSettings.load().addTonesChip)
+        UserDefaultsProvider.shared = saved
+        UserDefaults().removePersistentDomain(forName: "PlusHowToKey")
+        XCTAssertNil(PlusFeature.iCloudSync.settingKey)
+    }
+
+    func testPurchaseOffersAddTonesChipOnce() async {
+        let b = FakePlusBackend()
+        b.purchaseResult = .success(.success(productID: PlusConfig.plusProductID))
+        let m = make(b)
+        XCTAssertFalse(m.offerAddTones)
+        await m.buy(PlusConfig.plusProductID)
+        XCTAssertTrue(m.offerAddTones, "mua xong + chip tắt ⇒ hỏi")
+        XCTAssertFalse(suite.bool(forKey: "addTonesChip"), "chỉ hỏi, không tự bật")
+        m.acceptAddTonesOffer()
+        XCTAssertFalse(m.offerAddTones)
+        XCTAssertTrue(suite.bool(forKey: "addTonesChip"))
+        // Lần sau (khôi phục / mua lại) không hỏi nữa, kể cả khi user tắt chip.
+        suite.set(false, forKey: "addTonesChip")
+        let m2 = make(b)
+        await m2.restore()
+        XCTAssertFalse(m2.offerAddTones)
+    }
+
+    func testRestoreOffersWhenChipOffAndDeclineIsRemembered() async {
+        let b = FakePlusBackend()
+        b.entitlements = [.init(productID: PlusConfig.plusProductID, revoked: false)]
+        let m = make(b)
+        await m.restore()
+        XCTAssertTrue(m.offerAddTones)
+        m.offerAddTones = false          // "Để sau"
+        await m.restore()
+        XCTAssertFalse(m.offerAddTones, "một lần duy nhất")
+        XCTAssertFalse(suite.bool(forKey: "addTonesChip"))
+    }
+
+    func testNoOfferWhenChipOnOrNotPurchased() async {
+        let b = FakePlusBackend()
+        let tip = PlusConfig.tipProductIDs[0]
+        b.purchaseResult = .success(.success(productID: tip))
+        let m = make(b)
+        await m.buy(tip)
+        XCTAssertFalse(m.offerAddTones, "tip không mở Plus")
+        await m.restore()                // không có giao dịch Plus
+        XCTAssertFalse(m.offerAddTones)
+        suite.set(true, forKey: "addTonesChip")
+        b.purchaseResult = .success(.success(productID: PlusConfig.plusProductID))
+        await m.buy(PlusConfig.plusProductID)
+        XCTAssertTrue(m.purchased)
+        XCTAssertFalse(m.offerAddTones, "chip đã bật ⇒ khỏi hỏi")
     }
 
     func testEntitlementLogic() {

@@ -266,6 +266,7 @@ private fun FeatureHome(onOpen: (FeaturePage) -> Unit) {
     val templatesOn by rememberBoolPref(Keys.TEMPLATES_ENABLED, Prefs.D.templatesEnabled)
     val numberRow by rememberBoolPref(Keys.NUMBER_ROW, Prefs.D.numberRow)
     val spaceSwipe by rememberBoolPref(Keys.SPACE_SWIPE_LANGUAGE, Prefs.D.spaceSwipeLanguage)
+    val autoSpace by rememberBoolPref(Keys.AUTO_SPACE_AFTER_PUNCT, Prefs.D.autoSpaceAfterPunct)
     val haptic by rememberBoolPref(Keys.HAPTIC_FEEDBACK, Prefs.D.hapticFeedback)
     val oneHand by rememberStringPref(Keys.ONE_HAND_MODE, Prefs.D.oneHandMode)
     val hardware by rememberBoolPref(Keys.HARDWARE_TELEX, Prefs.D.hardwareTelex)
@@ -286,7 +287,8 @@ private fun FeatureHome(onOpen: (FeaturePage) -> Unit) {
         FeaturePage.GoVuot -> if (!swipe) tr("Đang tắt") else join(true to tr("Bật"), swipeEn to tr("Tiếng Anh"), swipeFuto to "Neural", none = "")
         FeaturePage.GoTat -> (if (!shortcutsOn) tr("Gõ tắt tắt") else if (shortcutCount == 0) tr("Gõ tắt bật") else tr("Gõ tắt: %d mục", shortcutCount)) +
             " · " + if (templatesOn) tr("Mẫu câu bật") else tr("Mẫu câu tắt")
-        FeaturePage.Phim -> join(numberRow to tr("Hàng số"), spaceSwipe to tr("Vuốt phím cách"), haptic to tr("Rung"),
+        FeaturePage.Phim -> join(numberRow to tr("Hàng số"), spaceSwipe to tr("Vuốt phím cách"),
+            autoSpace to tr("Cách sau dấu câu"), haptic to tr("Rung"),
             (oneHand != "off") to tr("Một tay"), hardware to tr("Bàn phím cứng"), none = tr("Mặc định"))
         FeaturePage.GiaoDien -> theme.effectiveTheme.title + (if (wallpaperOn) " · " + tr("Ảnh nền") else "") +
             if (theme.keyboardTransparency > 0 || theme.labelTransparency > 0) " · " + tr("Trong suốt") else ""
@@ -367,7 +369,7 @@ private fun GoiYPage(onBack: () -> Unit) {
         BoolToggle(Keys.NUMBER_CHIPS, Prefs.D.numberChips, tr("Chip số"), tr("Đọc số thành chữ, định dạng tiền, tính nhanh (12*3 → 36)."))
         RowDivider()
         BoolToggle(Keys.ADD_TONES_CHIP, Prefs.D.addTonesChip, tr("Chip “Thêm dấu”"),
-            tr("Câu vừa gõ không dấu → một chạm thêm dấu cả câu (hom nay troi dep → hôm nay trời đẹp). Tắt mặc định cho nhẹ máy."))
+            tr("Gõ không dấu cả câu (hom nay troi dep), gõ dấu cách → chip “Thêm dấu” hiện ở đầu thanh gợi ý, chạm để thành “hôm nay trời đẹp”; chạm “Hoàn tác” để trả lại. Tắt mặc định cho nhẹ máy."))
         RowDivider()
         BoolToggle(Keys.FILTER_SENSITIVE, Prefs.D.filterSensitive, tr("Lọc từ nhạy cảm"), tr("Không chủ động gợi ý từ tục — gõ tay vẫn bình thường."))
     }
@@ -458,10 +460,13 @@ private fun PhimPage(onBack: () -> Unit) {
         }
         BoolToggle(Keys.LONG_PRESS_SYMBOLS, Prefs.D.longPressSymbols, tr("Giữ phím hàng 2, 3 để ra ký tự đặc biệt"),
             tr("Giữ a … l, z … m để gõ @ # \$ _ & - + ( ) … Giữ , để ra dấu chấm (nếu , chưa dùng cho giọng nói)."))
+        RowDivider()
+        BoolToggle(Keys.AUTO_SPACE_AFTER_PUNCT, Prefs.D.autoSpaceAfterPunct, tr("Tự thêm dấu cách sau dấu câu"),
+            tr("Gõ . , ? ! ; : tự có dấu cách phía sau. Không thêm trong số (3.5, 1,000), email, đường dẫn. Gõ dấu cách ngay sau không thành hai dấu cách; ⌫ ngay sau chỉ xoá dấu cách đó."))
     }
     VTSection(header = tr("Cử chỉ")) {
         BoolToggle(Keys.SPACE_SWIPE_LANGUAGE, Prefs.D.spaceSwipeLanguage, tr("Vuốt phím cách đổi Tiếng Việt / Tiếng Anh"),
-            tr("Vuốt nhanh phím cách sang trái/phải. Tiếng Anh gõ nguyên văn, logo thành E. Giữ rồi kéo vẫn là di con trỏ."))
+            tr("Vuốt nhanh phím cách sang trái/phải. Góc phím cách hiện VI / EN. Tiếng Anh gõ nguyên văn. Giữ rồi kéo vẫn là di con trỏ."))
         RowDivider()
         OneHandRow()
     }
