@@ -17,6 +17,9 @@ struct ShortcutsSection: View {
     @AppStorage(ShortcutFile.enabledKey, store: UserDefaults(suiteName: "group.com.viettelex"))
     private var enabled = true
     @State private var count = ShortcutStore.load().count
+    @AppStorage(SystemTextReplacement.enabledKey, store: UserDefaults(suiteName: "group.com.viettelex"))
+    private var useSystem = true
+    @State private var systemSnapshot = SystemTextReplacement.readSnapshot(ShortcutStore.store)
 
     var body: some View {
         Section {
@@ -32,8 +35,40 @@ struct ShortcutsSection: View {
             } label: {
                 LabeledContent(L("Bảng gõ tắt"), value: count == 0 ? L("Trống") : L("%@ mục", count))
             }
+            if enabled {
+                Toggle(isOn: $useSystem) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L("Dùng Thay thế văn bản của iOS"))
+                        Text(L("Bung cả các mục trong Cài đặt → Cài đặt chung → Bàn phím → Thay thế văn bản. Chỉ đọc — sửa trong Cài đặt iOS; trùng chữ tắt thì bảng của VietTelex thắng."))
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                .tint(.green)
+                if useSystem { systemStatus }
+            }
         } header: { Text(L("Gõ tắt")) }
-        .onAppear { count = ShortcutStore.load().count }
+        .onAppear {
+            count = ShortcutStore.load().count
+            systemSnapshot = SystemTextReplacement.readSnapshot(ShortcutStore.store)
+        }
+    }
+}
+
+extension ShortcutsSection {
+    /// App không đọc được UILexicon — bàn phím ghi snapshot (cần Toàn quyền truy cập).
+    @ViewBuilder fileprivate var systemStatus: some View {
+        if let snap = systemSnapshot {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L("Đang dùng %@ mục từ Thay thế văn bản của iOS", snap.count))
+                if !snap.sample.isEmpty {
+                    Text(snap.sample.joined(separator: ", ") + (snap.count > snap.sample.count ? ", …" : ""))
+                        .font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+        } else {
+            Text(L("Số mục hiện ở đây sau khi mở bàn phím VietTelex (cần Toàn quyền truy cập để báo về app)."))
+                .font(.footnote).foregroundStyle(.secondary)
+        }
     }
 }
 
