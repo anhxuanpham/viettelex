@@ -247,6 +247,7 @@ struct TinhNangSections: View {
     @AppStorage("templatesEnabled", store: featureDefaults) private var templatesEnabled = true
     @AppStorage("numberRow", store: featureDefaults) private var numberRow = false
     @AppStorage("spaceSwipeLanguage", store: featureDefaults) private var spaceSwipeLanguage = false
+    @AppStorage("autoSpaceAfterPunct", store: featureDefaults) private var autoSpaceAfterPunct = false
     @AppStorage("hapticFeedback", store: featureDefaults) private var hapticFeedback = false
     @AppStorage("oneHandMode", store: featureDefaults) private var oneHandMode = "off"
     @AppStorage("clipboardHistory", store: featureDefaults) private var clipboardHistory = false
@@ -275,6 +276,7 @@ struct TinhNangSections: View {
             return st + " · " + (templatesEnabled ? L("Mẫu câu bật") : L("Mẫu câu tắt"))
         case .phim:
             return Self.join([(numberRow, L("Hàng số")), (spaceSwipeLanguage, L("Vuốt phím cách")),
+                              (autoSpaceAfterPunct, L("Cách sau dấu câu")),
                               (hapticFeedback, L("Rung")), (oneHandMode != "off", L("Một tay"))], none: L("Mặc định"))
         case .giaoDien:
             let wp = theme.wallpaperActive(fileExists: Wallpaper.url.map { FileManager.default.fileExists(atPath: $0.path) } ?? false)
@@ -490,6 +492,8 @@ struct PhimPage: View {
     @AppStorage("longPressSymbols", store: featureDefaults) private var longPressSymbols = false
     /// Vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh — mặc định TẮT (KeyboardSettings.spaceSwipeLanguage).
     @AppStorage("spaceSwipeLanguage", store: featureDefaults) private var spaceSwipeLanguage = false
+    /// Tự thêm dấu cách sau . , ? ! ; : — mặc định TẮT (KeyboardSettings.autoSpaceAfterPunct).
+    @AppStorage("autoSpaceAfterPunct", store: featureDefaults) private var autoSpaceAfterPunct = false
     /// "off" | "left" | "right" — bàn phím đọc lúc hiện (OneHand.resolve).
     @AppStorage("oneHandMode", store: featureDefaults) private var oneHandMode = "off"
     /// Ô phóng to chữ khi bấm phím — mặc định BẬT (KeyboardView.keyPreviewKey).
@@ -509,9 +513,10 @@ struct PhimPage: View {
                     }
                     settingToggle(L("Giữ phím hàng 2, 3 để ra ký tự đặc biệt"), L("Giữ a … l, z … m để gõ @ # $ _ & - + ( ) … Giữ , để ra dấu chấm."), isOn: $longPressSymbols)
                 }
+                settingToggle(L("Tự thêm dấu cách sau dấu câu"), L("Gõ . , ? ! ; : tự có dấu cách phía sau. Không thêm trong số (3.5, 1,000), email, đường dẫn. Gõ dấu cách ngay sau không thành hai dấu cách; ⌫ ngay sau chỉ xoá dấu cách đó."), isOn: $autoSpaceAfterPunct)
             } header: { Text(L("Phím")) }
             Section {
-                settingToggle(L("Vuốt phím cách đổi Tiếng Việt / Tiếng Anh"), L("Vuốt nhanh phím cách sang trái/phải. Tiếng Anh gõ nguyên văn, logo thành E. Giữ rồi kéo vẫn là di con trỏ."), isOn: $spaceSwipeLanguage)
+                settingToggle(L("Vuốt phím cách đổi Tiếng Việt / Tiếng Anh"), L("Vuốt nhanh phím cách sang trái/phải. Góc phím cách hiện VI / EN. Tiếng Anh gõ nguyên văn. Giữ rồi kéo vẫn là di con trỏ."), isOn: $spaceSwipeLanguage)
                 if isPhone {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(L("Chế độ một tay"))

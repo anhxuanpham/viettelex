@@ -30,6 +30,7 @@
     "autoCorrect" : true,
     "autoFixAdjacent" : true,
     "autoRestore" : true,
+    "autoSpaceAfterPunct" : true,
     "contextualEnglish" : true,
     "emojiSuggest" : true,
     "filterSensitive" : true,

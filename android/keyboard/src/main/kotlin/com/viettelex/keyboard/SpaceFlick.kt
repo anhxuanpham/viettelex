@@ -16,11 +16,31 @@ enum class KeyboardLanguage(val id: String, val displayName: String) {
     VI("vi", "Tiếng Việt"), EN("en", "English");
 
     val toggled: KeyboardLanguage get() = if (this == VI) EN else VI
+    /** Mã nhỏ góc dưới-phải phím cách khi bật vuốt đổi ngôn ngữ (như stock iOS nhiều ngôn ngữ). */
+    val shortCode: String get() = if (this == VI) "VI" else "EN"
 
     companion object {
         /** Công tắc tắt ⇒ luôn Tiếng Việt (không với tới EN); giá trị lạ ⇒ Tiếng Việt. */
         fun effective(stored: String?, flickEnabled: Boolean): KeyboardLanguage =
             if (flickEnabled && stored == EN.id) EN else VI
+    }
+}
+
+/**
+ * Dấu hiệu trên phím cách: bật vuốt đổi ngôn ngữ ⇒ mã "VI"/"EN" nhỏ góc dưới-phải (như stock
+ * iOS khi bật nhiều ngôn ngữ); tắt ⇒ logo Vᴛ (công tắc showSpaceLogo) như cũ. Giống iOS SpaceMark.
+ */
+sealed class SpaceMark {
+    object None : SpaceMark()
+    data class Logo(val language: KeyboardLanguage) : SpaceMark()
+    data class Code(val text: String) : SpaceMark()
+
+    companion object {
+        fun choose(flickEnabled: Boolean, showLogo: Boolean, language: KeyboardLanguage): SpaceMark = when {
+            flickEnabled -> Code(language.shortCode)
+            showLogo -> Logo(language)
+            else -> None
+        }
     }
 }
 

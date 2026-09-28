@@ -19,6 +19,7 @@ import com.viettelex.keyboard.Key
 import com.viettelex.keyboard.KeyCommitQueue
 import com.viettelex.keyboard.KeyboardLanguage
 import com.viettelex.keyboard.SpaceFlick
+import com.viettelex.keyboard.SpaceMark
 import com.viettelex.keyboard.SwipeLayout
 import com.viettelex.keyboard.SwipePath
 import com.viettelex.keyboard.SwipeSuggest
@@ -209,6 +210,10 @@ class KeyboardView(
     private val logo: android.graphics.Bitmap? by lazy { android.graphics.BitmapFactory.decodeResource(resources, R.drawable.ime_space_logo) }
     private val logoEn: android.graphics.Bitmap? by lazy { android.graphics.BitmapFactory.decodeResource(resources, R.drawable.ime_space_logo_en) }
     private val logoRect = android.graphics.RectF()
+    /** Mã "VI"/"EN" góc dưới-phải phím cách khi bật vuốt đổi ngôn ngữ (SpaceMark) — mờ như stock. */
+    private val codeColor = theme.withAlpha(theme.ink, 0.45f)
+    private val codePaint = theme.text(if (theme.tablet) 12f else 10.5f, color = codeColor, medium = true,
+        align = Paint.Align.RIGHT)
 
     /**
      * Chọn phím theo ngữ cảnh (thử nghiệm, SmartTouch): IME trả P(phím | từ đang gõ) lúc
@@ -718,12 +723,20 @@ class KeyboardView(
                         cx, cy + badgeOff, badgePaint)
                 }
                 if (carouselOn) { drawCarousel(c, k, contentAlpha); return }
-                if (showLogo && badgeAlpha < 1f) {
-                    val bmp = if (spaceLanguage == KeyboardLanguage.EN) logoEn else logo
-                    if (bmp != null) {
-                        logoPaint.alpha = ((1f - badgeAlpha) * contentAlpha).toInt()
-                        c.drawBitmap(bmp, null, logoRect, logoPaint)
+                if (badgeAlpha < 1f) when (val m = SpaceMark.choose(spaceFlickEnabled, showLogo, spaceLanguage)) {
+                    is SpaceMark.Code -> {
+                        codePaint.alpha = (android.graphics.Color.alpha(codeColor) * (1f - badgeAlpha) * contentAlpha / 255f).toInt()
+                        c.drawText(m.text, k.right - theme.dp(if (theme.tablet) 10f else 7f),
+                            k.bottom - theme.dp(if (theme.tablet) 7f else 5f), codePaint)
                     }
+                    is SpaceMark.Logo -> {
+                        val bmp = if (m.language == KeyboardLanguage.EN) logoEn else logo
+                        if (bmp != null) {
+                            logoPaint.alpha = ((1f - badgeAlpha) * contentAlpha).toInt()
+                            c.drawBitmap(bmp, null, logoRect, logoPaint)
+                        }
+                    }
+                    SpaceMark.None -> {}
                 }
             }
         }
