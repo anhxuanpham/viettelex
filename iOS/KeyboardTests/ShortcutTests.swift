@@ -234,4 +234,86 @@ final class ShortcutTests: XCTestCase {
         // bộ gợi ý: toàn khoá hợp lệ, không trống
         XCTAssertEqual(ShortcutTable(ShortcutFile.suggested).entries.count, ShortcutFile.suggested.count)
     }
+
+    // MARK: Thay thế văn bản của iOS
+
+    private let lexicon: SupplementaryLexiconCache.Pairs = [
+        (input: "omw", text: "On my way!"),
+        (input: "ko", text: "KHÔNG PHẢI CỦA TÔI"),     // trùng bảng VietTelex
+        (input: "Mn", text: "mọi người ơi"),            // trùng khác hoa/thường
+        (input: "Phil", text: "Phil"),                  // tên danh bạ
+        (input: "Trinh", text: "Trinh"),
+        (input: "a b", text: "khoá có khoảng trắng"),
+        (input: "->>", text: "⇒"),
+    ]
+
+    func testSystemReplacementFiltersContacts() {
+        let e = SystemTextReplacement.entries(from: lexicon)
+        XCTAssertEqual(e["omw"], "On my way!")
+        XCTAssertNil(e["Phil"]); XCTAssertNil(e["Trinh"])      // userInput == documentText
+        XCTAssertNil(e["a b"])
+        XCTAssertEqual(e.count, 4)
+    }
+
+    func testSystemReplacementMergePrecedence() {
+        let sys = SystemTextReplacement.entries(from: lexicon)
+        let m = SystemTextReplacement.merged(own: table.entries, system: sys)
+        XCTAssertEqual(m.expansion(for: "ko"), "không")           // VietTelex thắng
+        XCTAssertEqual(m.expansion(for: "Mn"), "Mọi người")       // thắng cả khi iOS khác hoa
+        XCTAssertEqual(m.expansion(for: "omw"), "On my way!")
+        XCTAssertEqual(m.expansion(for: "->"), "→")
+        XCTAssertEqual(m.expansion(for: "->>"), "⇒")
+        XCTAssertTrue(m.hasTokenKeys)
+        XCTAssertEqual(SystemTextReplacement.merged(own: table.entries, system: [:]), table)
+    }
+
+    func testSystemReplacementExpandsThroughBridge() {
+        let p = MockProxy(), b = EngineBridge(settings: settings())
+        b.setSystemReplacements(SystemTextReplacement.entries(from: lexicon))
+        type("Omw ko ->> ", bridge: b, proxy: p)
+        XCTAssertEqual(p.text, "On my way! không ⇒ ")
+        type("omw,", bridge: b, proxy: p)
+        XCTAssertEqual(p.text, "On my way! không ⇒ On my way!,")  // khoá chữ nở ở dấu câu
+        let p2 = MockProxy(), b2 = EngineBridge(settings: settings(ShortcutTable()))
+        b2.setSystemReplacements(["brb": "be right back"])
+        type("brb ⌫", bridge: b2, proxy: p2)
+        XCTAssertEqual(p2.text, "brb ")                             // ⌫ trả lại chữ đã gõ
+        XCTAssertEqual(typed("brb ", settings(ShortcutTable())), "brb ")   // chưa nạp ⇒ không bung
+    }
+
+    func testSystemReplacementOffMeansNoRequest() {
+        var requests = 0
+        let cache = SupplementaryLexiconCache { done in requests += 1; done(self.lexicon) }
+        let loader = SystemTextReplacementLoader(cache: cache)
+        var off = settings(); off.useSystemTextReplacement = false
+        let b = EngineBridge(settings: off)
+        XCTAssertFalse(loader.load(settings: off, bridge: { b }))
+        var shortcutsOff = settings(enabled: false)
+        shortcutsOff.useSystemTextReplacement = true
+        XCTAssertFalse(loader.load(settings: shortcutsOff, bridge: { b }))
+        XCTAssertEqual(requests, 0)
+        b.setSystemReplacements(["brb": "be right back"])          // tắt ⇒ bridge bỏ qua
+        XCTAssertEqual(type("brb ", bridge: b, proxy: MockProxy()), "brb ")
+
+        // bật: một lần hỏi mỗi phiên, bridge mới vẫn được gộp từ cache
+        var loadedCount = 0
+        let b1 = EngineBridge(settings: settings())
+        XCTAssertTrue(loader.load(settings: settings(), bridge: { b1 }) { _ in loadedCount += 1 })
+        XCTAssertEqual(type("omw ", bridge: b1, proxy: MockProxy()), "On my way! ")
+        let b2 = EngineBridge(settings: settings())
+        loader.load(settings: settings(), bridge: { b2 }) { _ in loadedCount += 1 }
+        XCTAssertEqual(type("omw ", bridge: b2, proxy: MockProxy()), "On my way! ")
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(loadedCount, 1)
+    }
+
+    func testSystemReplacementSnapshot() throws {
+        let d = try XCTUnwrap(UserDefaults(suiteName: "test.systemTextReplacement"))
+        d.removePersistentDomain(forName: "test.systemTextReplacement")
+        XCTAssertNil(SystemTextReplacement.readSnapshot(d))
+        let snap = SystemTextReplacement.Snapshot(["b": "1", "a": "2"])
+        SystemTextReplacement.writeSnapshot(snap, to: d)
+        XCTAssertEqual(SystemTextReplacement.readSnapshot(d), .init(count: 2, sample: ["a", "b"]))
+        XCTAssertNil(SystemTextReplacement.readSnapshot(nil))
+    }
 }

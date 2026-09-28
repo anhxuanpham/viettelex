@@ -266,3 +266,102 @@ enum ShortcutLearning {
         s.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).map(String.init)
     }
 }
+
+/// Thay thế văn bản của iOS (Cài đặt → Cài đặt chung → Bàn phím → Thay thế văn bản) dùng
+/// như gõ tắt. iOS không tự bung Thay thế văn bản cho bàn phím bên thứ ba; bàn phím đọc
+/// được danh sách qua `requestSupplementaryLexicon` (UILexicon — không cần Toàn quyền,
+/// chỉ ĐỌC; sửa trong Cài đặt iOS). UILexicon trộn cả tên danh bạ (userInput ==
+/// documentText) — bỏ. Bảng gõ tắt của VietTelex THẮNG khi trùng khoá (so chữ thường).
+/// App chứa không gọi được API này ⇒ bàn phím ghi snapshot nhỏ vào App Group (cần Toàn
+/// quyền — thiếu thì iOS chặn ghi, app không hiện số mục). Android: không có tương đương
+/// (UserDictionary bị chặn với bộ gõ bên thứ ba).
+enum SystemTextReplacement {
+    static let enabledKey = "useSystemTextReplacement"
+    static let snapshotKey = "systemTextReplacementSnapshot"
+    /// Trần số mục đọc từ UILexicon (danh sách người dùng tự tạo — thường vài chục).
+    static let maxEntries = 2000
+    static let snapshotSampleCount = 20
+
+    /// (userInput, documentText) của UILexicon → [khoá: nội dung], bỏ tên danh bạ và khoá
+    /// không hợp lệ (ShortcutTable.isValidKey).
+    static func entries(from pairs: [(input: String, text: String)]) -> [String: String] {
+        var out: [String: String] = [:]
+        for p in pairs.prefix(maxEntries) {
+            let k = p.input.trimmingCharacters(in: .whitespaces)
+            guard p.input != p.text, k != p.text, !p.text.isEmpty, ShortcutTable.isValidKey(k) else { continue }
+            if out[k] == nil { out[k] = p.text }
+        }
+        return out
+    }
+
+    /// Bảng gõ tắt hiệu lực: của VietTelex + Thay thế văn bản iOS; VietTelex thắng khi trùng
+    /// (so theo chữ thường — "Ko" của iOS không đè "ko" của VietTelex).
+    static func merged(own: [String: String], system: [String: String]) -> ShortcutTable {
+        guard !system.isEmpty else { return ShortcutTable(own) }
+        let ownLower = Set(own.keys.map { $0.lowercased() })
+        var all = own
+        for (k, v) in system where !ownLower.contains(k.lowercased()) { all[k] = v }
+        return ShortcutTable(all)
+    }
+
+    /// Snapshot cho app chứa: số mục + vài khoá đầu (theo thứ tự chữ cái).
+    struct Snapshot: Equatable {
+        var count: Int
+        var sample: [String]
+
+        init(count: Int, sample: [String]) { self.count = count; self.sample = sample }
+
+        init(_ entries: [String: String]) {
+            count = entries.count
+            sample = Array(entries.keys.sorted().prefix(SystemTextReplacement.snapshotSampleCount))
+        }
+
+        var plist: [String: Any] { ["count": count, "sample": sample] }
+
+        init?(plist: Any?) {
+            guard let d = plist as? [String: Any], let c = d["count"] as? Int else { return nil }
+            count = c
+            sample = d["sample"] as? [String] ?? []
+        }
+    }
+
+    /// Ghi snapshot chỉ khi đổi (tránh ghi App Group mỗi lần hiện bàn phím).
+    static func writeSnapshot(_ s: Snapshot, to d: UserDefaults?) {
+        guard let d, Snapshot(plist: d.object(forKey: snapshotKey)) != s else { return }
+        d.set(s.plist, forKey: snapshotKey)
+    }
+
+    static func readSnapshot(_ d: UserDefaults?) -> Snapshot? {
+        Snapshot(plist: d?.object(forKey: snapshotKey))
+    }
+}
+
+/// Nạp UILexicon MỘT lần mỗi phiên bàn phím (instance controller), dùng chung cho tự sửa
+/// (từ hợp lệ) và Thay thế văn bản. Không ai cần ⇒ không gọi API. `request` bơm được để test.
+final class SupplementaryLexiconCache {
+    typealias Pairs = [(input: String, text: String)]
+    private let request: (@escaping (Pairs) -> Void) -> Void
+    private(set) var pairs: Pairs?
+    private var waiting: [(Pairs) -> Void] = []
+    private(set) var requestCount = 0
+
+    init(request: @escaping (@escaping (Pairs) -> Void) -> Void) { self.request = request }
+
+    /// Gọi `completion` (luồng main) với danh sách; đã có ⇒ gọi ngay, đang chờ ⇒ xếp hàng.
+    func get(_ completion: @escaping (Pairs) -> Void) {
+        if let pairs { completion(pairs); return }
+        waiting.append(completion)
+        guard waiting.count == 1 else { return }
+        requestCount += 1
+        request { [weak self] p in
+            let deliver = {
+                guard let self else { return }
+                self.pairs = p
+                let w = self.waiting
+                self.waiting = []
+                w.forEach { $0(p) }
+            }
+            if Thread.isMainThread { deliver() } else { DispatchQueue.main.async(execute: deliver) }
+        }
+    }
+}

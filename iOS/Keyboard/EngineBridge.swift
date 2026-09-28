@@ -74,6 +74,9 @@ struct KeyboardSettings {
     /// "Thêm bộ gợi ý" trong app). Bảng lưu App Group key "shortcuts" ([khoá: nội dung]).
     var shortcutsEnabled = true
     var shortcuts = ShortcutTable()
+    /// Dùng Thay thế văn bản của iOS làm gõ tắt (SystemTextReplacement) — mặc định BẬT (chỉ
+    /// đọc dữ liệu người dùng tự tạo). Tắt (hoặc tắt Gõ tắt) ⇒ không gọi UILexicon.
+    var useSystemTextReplacement = true
     /// Chip "Thêm dấu" tự hiện sau dấu cách khi câu trước con trỏ gõ không dấu (Plus) —
     /// mặc định TẮT (27/09/2026, ưu tiên hiệu năng): tắt ⇒ không đọc context / không chạy
     /// AddTones ở mỗi dấu cách.
@@ -128,6 +131,9 @@ struct KeyboardSettings {
         if d.object(forKey: ShortcutFile.enabledKey) != nil { s.shortcutsEnabled = d.bool(forKey: ShortcutFile.enabledKey) }
         if s.shortcutsEnabled, let dict = d.dictionary(forKey: ShortcutFile.storeKey) as? [String: String] {
             s.shortcuts = ShortcutTable(dict)
+        }
+        if d.object(forKey: SystemTextReplacement.enabledKey) != nil {
+            s.useSystemTextReplacement = d.bool(forKey: SystemTextReplacement.enabledKey)
         }
         let flags: [(String, WritableKeyPath<KeyboardSettings, Bool>)] = [
             ("addTonesChip", \.addTonesChip), ("numberChips", \.numberChips),
@@ -237,8 +243,19 @@ final class EngineBridge {
     private(set) var englishMode = false
     private var enWord = ""
 
+    /// Bảng gõ tắt hiệu lực = settings.shortcuts (+ Thay thế văn bản iOS khi nạp xong).
+    private var shortcutTable: ShortcutTable
+
+    /// Gộp Thay thế văn bản của iOS vào bảng gõ tắt (bảng VietTelex thắng khi trùng). Chỉ
+    /// khi Gõ tắt + công tắc bật; controller gọi bất đồng bộ sau khi UILexicon trả về.
+    func setSystemReplacements(_ system: [String: String]) {
+        guard settings.shortcutsEnabled, settings.useSystemTextReplacement else { return }
+        shortcutTable = SystemTextReplacement.merged(own: settings.shortcuts.entries, system: system)
+    }
+
     init(settings: KeyboardSettings = .load()) {
         self.settings = settings
+        self.shortcutTable = settings.shortcuts
         engine.freeMarking = settings.freeMarking
         engine.simpleTelex = settings.simpleTelex
         engine.liveSpellCheck = settings.liveSpellCheck
@@ -619,7 +636,7 @@ final class EngineBridge {
     /// (fail-safe CompositionSync: chỉ khi chữ trước con trỏ đúng là nó), chèn nội dung +
     /// ranh giới. Trả nội dung đã bung, nil = không bung (boundary chạy tiếp như thường).
     private func tryExpandShortcut(_ text: String, proxy: TextProxyLike) -> String? {
-        let table = settings.shortcuts
+        let table = shortcutTable
         guard settings.shortcutsEnabled, shortcutsAllowed, !table.isEmpty else { return nil }
         if !typedEmpty, ShortcutTable.triggersWord(text),
            let e = table.wordExpansion(composed: typedWord, raw: typedRaw) {
@@ -717,8 +734,8 @@ final class EngineBridge {
     /// Nội dung sẽ bung nếu gõ ranh giới ngay bây giờ (thanh gợi ý hiện trước). Chỉ khoá chữ.
     var shortcutPreview: String? {
         guard settings.shortcutsEnabled, shortcutsAllowed, !passthrough, swipeOpen == nil,
-              !typedEmpty, !settings.shortcuts.isEmpty else { return nil }
-        return settings.shortcuts.wordExpansion(composed: typedWord, raw: typedRaw)
+              !typedEmpty, !shortcutTable.isEmpty else { return nil }
+        return shortcutTable.wordExpansion(composed: typedWord, raw: typedRaw)
     }
 
     /// Từ đang gõ tay (engine, hoặc nguyên văn ở chế độ Tiếng Anh) — cho gõ tắt.
@@ -914,5 +931,35 @@ final class EngineBridge {
         case .none:
             break
         }
+    }
+}
+
+/// Thay thế văn bản iOS → gõ tắt, phần nối controller ↔ bridge (test được không cần UIKit):
+/// công tắc tắt (hoặc Gõ tắt tắt) ⇒ KHÔNG hỏi UILexicon; bật ⇒ hỏi một lần mỗi phiên
+/// (SupplementaryLexiconCache), lọc (SystemTextReplacement.entries), gộp vào bridge hiện tại.
+final class SystemTextReplacementLoader {
+    let cache: SupplementaryLexiconCache
+    private(set) var entries: [String: String]?
+
+    init(cache: SupplementaryLexiconCache) { self.cache = cache }
+
+    static func wanted(_ s: KeyboardSettings) -> Bool { s.shortcutsEnabled && s.useSystemTextReplacement }
+
+    /// `bridge` đọc lúc kết quả về (controller có thể đã dựng bridge mới). `loaded` chỉ gọi
+    /// ở lần lọc đầu (ghi snapshot cho app). Trả false khi không cần nạp.
+    @discardableResult
+    func load(settings: KeyboardSettings, bridge: @escaping () -> EngineBridge?,
+              loaded: @escaping ([String: String]) -> Void = { _ in }) -> Bool {
+        guard Self.wanted(settings) else { return false }
+        if let entries { bridge()?.setSystemReplacements(entries); return true }
+        cache.get { [weak self] pairs in
+            guard let self else { return }
+            let first = self.entries == nil
+            let e = self.entries ?? SystemTextReplacement.entries(from: pairs)
+            self.entries = e
+            bridge()?.setSystemReplacements(e)
+            if first { loaded(e) }
+        }
+        return true
     }
 }

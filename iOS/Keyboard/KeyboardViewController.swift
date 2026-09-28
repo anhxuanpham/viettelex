@@ -73,6 +73,15 @@ final class KeyboardViewController: UIInputViewController {
     /// Thay thế văn bản + tên danh bạ của người dùng (requestSupplementaryLexicon, nạp một
     /// lần mỗi lần hiện khi tự sửa bật) — coi là từ hợp lệ, không sửa.
     private var lexiconWords: Set<String> = []
+    /// UILexicon nạp MỘT lần mỗi phiên controller (tự sửa + Thay thế văn bản iOS dùng chung).
+    private lazy var supplementaryLexicon = SupplementaryLexiconCache { [weak self] done in
+        guard let self else { return }
+        self.requestSupplementaryLexicon { lex in
+            done(lex.entries.prefix(5000).map { (input: $0.userInput, text: $0.documentText) })
+        }
+    }
+    /// Thay thế văn bản iOS làm gõ tắt (cache theo phiên).
+    private lazy var systemReplacements = SystemTextReplacementLoader(cache: supplementaryLexicon)
     /// Biên nhận học của từ vừa chốt — hoàn tác tự sửa rút lại đúng lượt học từ đã sửa.
     private var lastLearned: Learned?
     /// Vài từ tiếng Anh vừa vuốt ra (chữ thường) — ngữ cảnh ngôn ngữ cho cú vuốt kế
@@ -185,6 +194,7 @@ final class KeyboardViewController: UIInputViewController {
         autoCorrectSetting = settings.autoCorrect && !settings.vniMode
         wordTouches.removeAll(); wordTouchesOk = false; pendingTouch = nil
         if autoCorrectSetting { loadSupplementaryLexicon() }
+        loadSystemTextReplacements(settings)
         // Tắt ⇒ router không gọi prior (không closure, không cấp phát ở vùng biên phím).
         keyboard.letterPrior = smartTouchSetting ? { [weak self] in self?.smartTouchPrior() } : nil
         if smartTouchSetting { TelexKeyPrior.warmUpInBackground() }
@@ -899,18 +909,31 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     /// Thay thế văn bản (Cài đặt → Bàn phím) + tên danh bạ: không cần Toàn quyền truy cập;
-    /// iOS trả bất đồng bộ — nạp một lần mỗi lần hiện, chỉ khi tự sửa bật.
+    /// iOS trả bất đồng bộ — nạp một lần mỗi phiên, chỉ khi tự sửa bật.
     private func loadSupplementaryLexicon() {
-        requestSupplementaryLexicon { [weak self] lex in
+        guard lexiconWords.isEmpty else { return }
+        supplementaryLexicon.get { [weak self] pairs in
             var words: Set<String> = []
-            for e in lex.entries.prefix(5000) {
-                for s in [e.userInput, e.documentText] {
+            for e in pairs {
+                for s in [e.input, e.text] {
                     for w in s.lowercased().split(whereSeparator: { !$0.isLetter }) where w.count >= 2 {
                         words.insert(String(w))
                     }
                 }
             }
-            DispatchQueue.main.async { self?.lexiconWords = words }
+            self?.lexiconWords = words
+        }
+    }
+
+    /// Thay thế văn bản iOS làm gõ tắt (SystemTextReplacement): bất đồng bộ, ngoài đường
+    /// hiện bàn phím; gộp vào bridge hiện tại khi có. Ghi snapshot cho app (cần Toàn quyền).
+    private func loadSystemTextReplacements(_ settings: KeyboardSettings) {
+        systemReplacements.load(settings: settings, bridge: { [weak self] in self?.bridge }) { [weak self] entries in
+            guard let self else { return }
+            TouchLog.write("system text replacement: \(entries.count)")
+            if self.hasFullAccess {
+                SystemTextReplacement.writeSnapshot(.init(entries), to: UserDefaultsProvider.shared)
+            }
         }
     }
 
