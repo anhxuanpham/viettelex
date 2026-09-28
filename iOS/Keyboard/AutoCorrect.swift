@@ -8,7 +8,10 @@
 // (`evidence`); chỉ sửa khi ứng viên đủ phổ biến VÀ bỏ xa ứng viên thứ hai (`Params`).
 // Không có điểm chạm (từ vuốt, từ mở lại, bàn phím cứng) ⇒ không sửa. ⌫ ngay sau đó trả
 // lại chữ gốc. Ngưỡng dò bằng Android AutoCorrectEvalTests (mô phỏng chạm TouchSim).
+#if canImport(UIKit)
 import UIKit
+#endif
+import Foundation
 import TelexCore
 
 enum AutoCorrect {
@@ -64,6 +67,7 @@ enum AutoCorrect {
         return upper == 1 && raw.first?.isUppercase == true && sentenceStart
     }
 
+    #if canImport(UIKit)   // macOS (App target, CaretSuggestions.swift) không có FieldTraits
     /// Ô được tự sửa: không mật khẩu / passthrough (email, URL, username, OTP), ô app xin
     /// tắt autocorrect, omnibox, ô số, ô tên người (tên riêng).
     static func fieldAllows(_ f: FieldTraits) -> Bool {
@@ -76,6 +80,7 @@ enum AutoCorrect {
         .name, .givenName, .middleName, .familyName, .namePrefix, .nameSuffix, .nickname,
         .organizationName, .username, .emailAddress, .URL, .telephoneNumber,
     ]
+    #endif
 
     /// Từ tiếng Anh (enlexicon + từ mở mạch tiếng Anh của engine) — không sửa sang tiếng Việt.
     static func isEnglish(_ w: String) -> Bool {

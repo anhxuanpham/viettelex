@@ -16,7 +16,16 @@ enum AdjacentKeyFixer {
     ]
 
     /// Phím kề: cùng hàng ±1, hàng trên/dưới có tâm lệch ≤ 0.6 phím.
-    static let neighbors: [Character: [Character]] = {
+    static let neighbors: [Character: [Character]] = neighborTable(rows)
+
+    /// Bàn phím CỨNG (Mac, ANSI/ISO): hàng giữa thụt 0.25 phím, hàng dưới 0.75; phím hàng
+    /// kề lệch ≤ 0.8 phím là kề (hai phím chéo trên/dưới) — "g" kề "t" "y" "v" "b", "z" kề "a" "s".
+    static let physicalNeighbors: [Character: [Character]] = neighborTable([
+        (Array("qwertyuiop"), 0), (Array("asdfghjkl"), 0.25), (Array("zxcvbnm"), 0.75),
+    ], diagonal: 0.8)
+
+    private static func neighborTable(_ rows: [(keys: [Character], offset: Double)],
+                                      diagonal: Double = 0.6) -> [Character: [Character]] {
         var pos: [Character: (row: Int, x: Double)] = [:]
         for (r, row) in rows.enumerated() {
             for (i, k) in row.keys.enumerated() { pos[k] = (r, row.offset + Double(i)) }
@@ -25,11 +34,11 @@ enum AdjacentKeyFixer {
         for (k, p) in pos {
             out[k] = pos.filter { other, q in
                 other != k && ((q.row == p.row && abs(q.x - p.x) <= 1.01)
-                    || (abs(q.row - p.row) == 1 && abs(q.x - p.x) <= 0.6))
+                    || (abs(q.row - p.row) == 1 && abs(q.x - p.x) <= diagonal))
             }.map(\.key).sorted()
         }
         return out
-    }()
+    }
 
     /// - raw: phím đã gõ của từ hiện tại (chữ ascii; VNI thêm số mang dấu).
     /// - compose: raw → dạng hiển thị engine sẽ ra (cùng setting với bàn phím).
@@ -156,9 +165,11 @@ enum AdjacentKeyFixer {
     /// thể xuất hiện nhiều lần, khác vị trí). Không xét đảo phím: mô phỏng không có bằng chứng
     /// chạm cho nó và sửa oan tiếng lóng ("nma" → nam). Cắt tỉa tiền tố chết như `correction`.
     /// Dùng cho AutoCorrect (cần cả ứng viên thứ hai để đo độ chắc).
+    /// `neighbors`: bảng phím kề — mặc định bàn phím iPhone; macOS truyền `physicalNeighbors`.
     static func oneEditCandidates(_ lower: String, compose: (String) -> String,
                                   frequency: (String) -> Int?,
-                                  hasCompletion: (String) -> Bool) -> [Candidate] {
+                                  hasCompletion: (String) -> Bool,
+                                  neighbors: [Character: [Character]] = neighbors) -> [Candidate] {
         let c0 = Array(lower)
         let current = compose(lower)
         var out: [Candidate] = []
@@ -218,6 +229,7 @@ enum AdjacentKeyFixer {
         var count: Int { lock.lock(); defer { lock.unlock() }; return map.count }
     }
 
+    #if canImport(UIKit)   // EngineBridge chỉ có ở bàn phím iOS
     /// Bản sửa cho từ đang gõ theo đúng setting của `bridge`, qua cache của bridge.
     /// An toàn gọi ngoài main: chỉ dùng composeTrial (engine scratch riêng) + lexicon tĩnh.
     static func lexiconCorrection(raw: String, bridge: EngineBridge) -> String? {
@@ -238,4 +250,5 @@ enum AdjacentKeyFixer {
                                frequency: { VNSuggest.frequency(of: $0) })
         }
     }
+    #endif
 }

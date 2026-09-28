@@ -2265,6 +2265,10 @@ final class TerminalTapController {
     private var shortcutTail = ShortcutTail()
     /// Cụm trước dấu cách gần nhất (chip số "2 tỷ"). TAP-thread confined.
     private var numberPrevRun = ""
+    /// Phím thô của từ vừa chốt ở ranh giới gần nhất ("" = không có) — gợi ý sửa lỗi gõ.
+    private var lastCommitRaw = ""
+    /// Đếm âm tiết không dấu liên tiếp (gợi ý Thêm dấu) — chỉ cập nhật ở ranh giới khi bật.
+    private var toneRun = ToneRunLogic.Tracker()
     /// ⌫ ngay sau khi nở → trả lại chữ đã gõ (một lần). Phím thật nào tới cũng tiêu thụ.
     private var shortcutUndo: ShortcutUndo?
     /// emitBoundary vừa nở: (chữ trên màn hình trước khi nở, nội dung).
@@ -2598,6 +2602,7 @@ final class TerminalTapController {
         if type == .leftMouseDown || type == .rightMouseDown {
             engine.reset()
             shortcutTail.reset(); shortcutUndo = nil   // con trỏ đã dời
+            toneRun.reset()
             numberPrevRun = ""
             // Click ngoài ô gợi ý ⇒ con trỏ dời: tắt gợi ý (Tab sau đó không được chèn vào
             // chỗ khác). Click TRÊN ô ứng viên hệ thống thì để nó chọn (candidateSelected).
@@ -2868,7 +2873,7 @@ final class TerminalTapController {
                     return nil
                 }
             case .dismissConsume:
-                CaretHint.shared.dismiss()
+                CaretHint.shared.decline()
                 return nil
             case .dismissPass:
                 CaretHint.shared.dismiss()
@@ -2935,6 +2940,7 @@ final class TerminalTapController {
             // mới); Tab (hoàn thành lệnh shell) / Esc ⇒ cụm không còn biết.
             let trigger: String? = newlineKey ? "\n" : (keyCode == kTab ? "\t" : nil)
             defer { if newlineKey { shortcutTail.append("\n") } else { shortcutTail.reset() } }
+            toneRun.reset()
             let allow = ShortcutMatch.triggers(boundary: trigger, glued: lastTapKeyWasDigit)
             let tokenPossible = allow.token && !shortcutTail.run.isEmpty   // chưa neo: emitBoundary xác nhận bằng AX
             if engine.isEmpty, !tokenPossible, SyntheticKeyboard.queueDrained() { return pass }
@@ -3020,6 +3026,17 @@ final class TerminalTapController {
             lastTapKeyWasDigit = TelexInputController.gluesShortcutToken(ch.asciiValue)   // #82 số, #87 / # @ . _ -
             // Chip số (chỉ dạng tiền): dấu cách ngay sau cụm có chữ số ⇒ đọc màn hình (AX)
             // một lần sau khi phím tới app; terminal không có AX ⇒ dựng từ dòng phím (cụm neo).
+            // Gợi ý ranh giới từ (CaretSuggestions.swift) — như đường IMK; terminal không đọc
+            // được AX thì dựng văn bản từ dòng phím (cụm đã neo). Tắt hết ⇒ một lần đọc cờ.
+            if CaretHint.shared.wordHintsEnabled {
+                let tones = CaretHint.shared.tonesEnabled
+                    ? toneRun.feed(chunk: shortcutTail.run, boundary: boundaryText) : nil
+                CaretHint.shared.afterWord(
+                    .init(boundary: boundaryText, run: shortcutTail.run, prevRun: numberPrevRun,
+                          raw: tapExpanded == nil ? lastCommitRaw : "",
+                          anchored: shortcutTail.anchored, tones: tones),
+                    client: nil, controller: nil, canReplace: true)
+            }
             if boundaryText == " " {
                 let run = shortcutTail.run
                 if CaretHint.shared.numberEnabled,
@@ -3236,6 +3253,7 @@ final class TerminalTapController {
     private func emitBoundary(suppressAutoRestore: Bool, allowShortcuts: Bool = true,
                               allowToken: Bool = false) -> Bool {
         tapExpanded = nil
+        lastCommitRaw = ""
         let table = (allowShortcuts || allowToken) ? AppState.shared.shortcutTable : ShortcutTable()
         // Capture BOTH forms before reset() wipes them. The composed word is what's on
         // screen (drives the backspace count); the raw keystrokes are what the user
@@ -3288,6 +3306,7 @@ final class TerminalTapController {
         }
         guard !engine.isEmpty else { engine.reset(); return false }
         let restore = AppState.shared.autoRestore && !suppressAutoRestore
+        lastCommitRaw = rawWord
         if case let .replace(bs, insert) = engine.commitBoundary(autoRestore: restore) {
             SyntheticKeyboard.apply(backspaces: bs, insert: insert, mode: emitMode)
             shortcutTail.append(String(String.UnicodeScalarView(word.unicodeScalars.dropLast(bs))) + insert)

@@ -18,6 +18,7 @@
 //  • Tap: TerminalTap gọi cùng các hàm với client nil trên TAP-thread — trạng thái nằm
 //    dưới `lock`. "=" thấy ở cả hai đường chỉ tính một lần (`lastCheck`).
 import AppKit
+import Carbon.HIToolbox
 import InputMethodKit
 
 enum MathHintLogic {
@@ -39,7 +40,8 @@ enum MathHintLogic {
 /// Một gợi ý đang chờ: `replace` = đuôi văn bản trước con trỏ sẽ bị thay (rỗng = chỉ
 /// chèn thêm — kết quả phép tính), `insert` = chữ chèn vào.
 struct CaretSuggestion: Equatable {
-    enum Kind: Equatable { case math, number }
+    /// math/number: MathHint.swift; typo/tones/date: CaretSuggestions.swift.
+    enum Kind: Equatable { case math, number, typo, tones, date }
     let kind: Kind
     let display: String
     let replace: String
@@ -184,17 +186,35 @@ final class CaretHint {
     private var shownFrameCG: CGRect?                       // guarded by lock (toạ độ CG, gốc trên-trái)
     private var window: NSPanel?                            // main only
     private var hideWork: DispatchWorkItem?                 // main only
+    /// Thế hệ phím: +1 mỗi phím (keyAction) — việc chạy nền (sửa lỗi gõ, Thêm dấu) chỉ hiện
+    /// kết quả khi chưa có phím nào mới từ lúc kích hoạt ("gõ tiếp là huỷ").
+    private var keyGen: UInt64 = 0                          // guarded by lock
+    /// Từ người dùng đã Esc gợi ý sửa (chữ thường, trong phiên) / cụm không dấu đã Esc.
+    private let rejectedTypos = AutoCorrect.Rejected()      // guarded by lock
+    private var declinedTones: String?                      // guarded by lock
+    private let work = DispatchQueue(label: "com.viettelex.caretsuggest", qos: .userInitiated)
     /// Đọc nhiều lần mỗi phím (TAP-thread + main) — chỉ đọc cờ, không đụng UserDefaults.
     private(set) var mathEnabled: Bool
     private(set) var numberEnabled: Bool
+    private(set) var typoEnabled: Bool
+    private(set) var tonesEnabled: Bool
+    private(set) var dateEnabled: Bool
+    /// Có loại gợi ý ranh-giới-từ nào bật không — tắt hết ⇒ controller không làm gì thêm.
+    var wordHintsEnabled: Bool { typoEnabled || tonesEnabled || dateEnabled }
 
     private init() {
         mathEnabled = AppState.shared.mathResults
         numberEnabled = AppState.shared.numberChips
+        typoEnabled = AppState.shared.typoHints
+        tonesEnabled = AppState.shared.toneHints
+        dateEnabled = AppState.shared.dateHints
     }
     func reloadSetting() {
         mathEnabled = AppState.shared.mathResults
         numberEnabled = AppState.shared.numberChips
+        typoEnabled = AppState.shared.typoHints
+        tonesEnabled = AppState.shared.toneHints
+        dateEnabled = AppState.shared.dateHints
     }
 
     var isShowing: Bool { lock.withLock { pending != nil } }
@@ -239,6 +259,90 @@ final class CaretHint {
         }
     }
 
+    // MARK: Ranh giới từ (CaretSuggestions.swift): sửa lỗi gõ / thêm dấu / ngày giờ
+
+    /// Ranh giới từ vừa gõ. `run` = cụm đã chốt ngay trước ranh giới (ShortcutTail.run),
+    /// `prevRun` = cụm trước nó, `raw` = phím thô của từ vừa chốt ("" = không có từ / nở gõ
+    /// tắt), `anchored` = dòng phím thấy khoảng trắng trước cụm (dựng lại được văn bản khi
+    /// terminal không đọc được AX), `tones` = kích hoạt Thêm dấu từ ToneRunLogic.Tracker.
+    struct WordEvent {
+        var boundary: String
+        var run: String
+        var prevRun: String
+        var raw: String
+        var anchored: Bool
+        var tones: ToneRunLogic.Trigger?
+    }
+
+    var keyGeneration: UInt64 { lock.withLock { keyGen } }
+
+    /// Bất kỳ thread (IMK: main; tap: TAP-thread), SAU khi ranh giới đã xử lý. Chỉ gọi khi
+    /// `wordHintsEnabled`. Phần ở đây chỉ so chuỗi / kiểm âm tiết (không tra dữ liệu); tra
+    /// lexicon và process con Thêm dấu chạy trên hàng đợi nền, đọc màn hình trên main.
+    func afterWord(_ ev: WordEvent, client: IMKTextInput?, controller: TelexInputController?,
+                   canReplace: Bool) {
+        guard canReplace else { return }
+        let gen = keyGeneration
+        if dateEnabled, let phrase = DateHintLogic.detect(boundary: ev.boundary, prevRun: ev.prevRun, run: ev.run,
+                                                          isEnglish: TypoFixLogic.isEnglish) {
+            let stream = ev.anchored && !ev.prevRun.isEmpty ? ev.prevRun + " " + ev.run + " " : nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self] in
+                self?.showIfCurrent(gen, client: client, controller: controller, keyStream: stream) { before in
+                    DateHintLogic.suggestion(before: before, prevRun: ev.prevRun, run: ev.run, phrase: phrase, now: Date())
+                }
+            }
+            return
+        }
+        if typoEnabled, !ev.raw.isEmpty,
+           TypoFixLogic.worthChecking(boundary: ev.boundary, raw: ev.raw, word: ev.run),
+           !lock.withLock({ rejectedTypos.contains(ev.run) }) {
+            let flags = AppState.shared.engineFlags()
+            let stream = ev.anchored ? ev.run + ev.boundary : nil
+            work.async { [weak self] in
+                guard let fix = TypoFixLogic.lexiconCorrection(raw: ev.raw, flags: flags) else { return }
+                DispatchQueue.main.async {
+                    self?.showIfCurrent(gen, client: client, controller: controller, keyStream: stream) { before in
+                        TypoFixLogic.suggestion(before: before, word: ev.run, boundary: ev.boundary, raw: ev.raw, fix: fix)
+                    }
+                }
+            }
+            return
+        }
+        if tonesEnabled, let t = ev.tones {
+            let delay = t == .pause ? ToneRunLogic.pauseDelay : 0.04
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.keyGeneration == gen, !self.isShowing, !IsSecureEventInputEnabled(),
+                      let before = Self.textBeforeCaret(client: client, window: ToneRunLogic.window),
+                      let run = ToneRunLogic.run(before: before),
+                      !self.lock.withLock({ self.declinedTones.map { run.hasPrefix($0) } ?? false })
+                else { return }
+                self.work.async {
+                    // Process con (dữ liệu Thêm dấu không vào process IME); ~0.2 s.
+                    guard self.keyGeneration == gen,
+                          let restored = TextActionTransform.addTonesViaHelper(run, timeout: 3) else { return }
+                    DispatchQueue.main.async {
+                        self.showIfCurrent(gen, client: client, controller: controller, keyStream: nil,
+                                           window: ToneRunLogic.window) { before in
+                            CaretHintLogic.standsAlone(before: before, token: run)
+                                ? ToneRunLogic.suggestion(run: run, restored: restored) : nil
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// MAIN. Hiện gợi ý do `make` dựng từ văn bản trước con trỏ — chỉ khi chưa có phím mới
+    /// kể từ lúc kích hoạt (`gen`) và không ở Secure Input.
+    private func showIfCurrent(_ gen: UInt64, client: IMKTextInput?, controller: TelexInputController?,
+                               keyStream: String?, window: Int = CaretHint.window64,
+                               make: (String) -> CaretSuggestion?) {
+        guard keyGeneration == gen, !IsSecureEventInputEnabled() else { return }
+        let before = Self.textBeforeCaret(client: client, window: window) ?? (client == nil ? keyStream : nil)
+        guard let before, let s = make(before) else { return }
+        present(s, before: before, client: client, controller: controller)
+    }
+
     private func dedupe() -> Bool {
         let now = DispatchTime.now().uptimeNanoseconds
         return lock.withLock { () -> Bool in
@@ -253,6 +357,7 @@ final class CaretHint {
     /// `panelOnly` (tap) ⇒ chỉ nhận gợi ý dạng ô nổi — ô ứng viên IMK do controller lo.
     func keyAction(keyCode: Int, plain: Bool, panelOnly: Bool = false) -> CaretHintLogic.KeyAction? {
         lock.withLock {
+            keyGen &+= 1
             guard let p = pending, !panelOnly || pendingSurface == .panel else { return nil }
             return CaretHintLogic.action(kind: p.kind, keyCode: keyCode, plain: plain)
         }
@@ -278,10 +383,25 @@ final class CaretHint {
         if had { hideUI() }
     }
 
+    /// Esc: tắt gợi ý và nhớ lời từ chối — sửa lỗi gõ: không gợi ý lại từ đó (trong phiên);
+    /// thêm dấu: không mời lại cụm bắt đầu bằng cụm vừa từ chối (gõ tiếp cùng câu).
+    func decline() {
+        lock.withLock {
+            guard let p = pending else { return }
+            switch p.kind {
+            case .typo: rejectedTypos.add(String(p.replace.dropLast(1)))   // bỏ ký tự ranh giới
+            case .tones: declinedTones = p.replace
+            default: break
+            }
+        }
+        dismiss()
+    }
+
     /// TAP-thread (chuột xuống). Click ngoài ô ứng viên đang hiện ⇒ tắt. `point` toạ độ
     /// CGEvent (gốc trên-trái màn hình chính).
     func dismissForClick(at point: CGPoint) {
         let inside = lock.withLock { () -> Bool? in
+            keyGen &+= 1                      // con trỏ có thể dời: việc nền đang chờ thôi hiện
             guard pending != nil else { return nil }
             return shownFrameCG?.contains(point) ?? false
         }
@@ -291,6 +411,12 @@ final class CaretHint {
     /// Chỉ cho test: đặt trạng thái như vừa hiện (không tạo cửa sổ).
     func setPendingForTesting(_ s: CaretSuggestion?, surface: CaretHintLogic.Surface = .panel) {
         lock.withLock { pending = s; pendingSurface = s == nil ? nil : surface }
+    }
+
+    /// Chỉ cho test: lời từ chối đã nhớ (decline).
+    func isTypoRejectedForTesting(_ w: String) -> Bool { lock.withLock { rejectedTypos.contains(w) } }
+    func isTonesDeclinedForTesting(_ run: String) -> Bool {
+        lock.withLock { declinedTones.map { run.hasPrefix($0) } ?? false }
     }
 
     /// Chuỗi hiện trong ô ứng viên (IMKInputController.candidates(_:)).
@@ -304,15 +430,15 @@ final class CaretHint {
 
     private static let window64 = MathResults.maxLength + 2
 
-    private static func textBeforeCaret(client: IMKTextInput?) -> String? {
+    private static func textBeforeCaret(client: IMKTextInput?, window: Int = window64) -> String? {
         if let client {
             let sel = client.selectedRange()
             guard sel.location != NSNotFound, sel.length == 0, sel.location > 0 else { return nil }
-            let start = max(0, sel.location - window64)
+            let start = max(0, sel.location - window)
             return client.attributedSubstring(from: NSRange(location: start, length: sel.location - start))?.string
         }
         guard let caret = AXTextEdit.readCaret(), caret > 0 else { return nil }
-        let start = max(0, caret - window64)
+        let start = max(0, caret - window)
         return AXTextEdit.readString(at: start, length: caret - start)
     }
 

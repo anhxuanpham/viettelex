@@ -1174,6 +1174,26 @@ final class AppState: @unchecked Sendable {
         set { defaults.set(newValue, forKey: "numberChips"); CaretHint.shared.reloadSetting() }
     }
 
+    /// Gợi ý sửa lỗi gõ sai ở ranh giới từ ("tpoi␣" ⇒ "tôi", Tab để thay — CaretSuggestions).
+    /// Mặc định BẬT (chỉ gợi ý, không tự thay).
+    var typoHints: Bool {
+        get { defaults.object(forKey: "typoHints") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "typoHints"); CaretHint.shared.reloadSetting() }
+    }
+
+    /// Gợi ý thêm dấu cho cụm ≥3 âm tiết không dấu (". ! ?" hoặc dừng gõ sau dấu cách).
+    /// Mặc định TẮT.
+    var toneHints: Bool {
+        get { defaults.object(forKey: "toneHints") as? Bool ?? false }
+        set { defaults.set(newValue, forKey: "toneHints"); CaretHint.shared.reloadSetting() }
+    }
+
+    /// Gợi ý ngày giờ sau "hôm nay␣" / "ngày mai␣" / "hôm qua␣" / "bây giờ␣". Mặc định BẬT.
+    var dateHints: Bool {
+        get { defaults.object(forKey: "dateHints") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "dateHints"); CaretHint.shared.reloadSetting() }
+    }
+
     /// Phím tắt Thêm dấu cho vùng chọn: "off" (mặc định) / TextActionHotkey.choices.
     var addTonesHotkey: String {
         get { defaults.string(forKey: "addTonesHotkey") ?? "off" }
