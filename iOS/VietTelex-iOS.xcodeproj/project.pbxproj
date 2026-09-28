@@ -113,6 +113,7 @@
 		5E9A08F294F260D516411505 /* DisplayCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7D70220F7D14EBC3C3AACD /* DisplayCase.swift */; };
 		5F2C618E98766EB94AA1D538 /* enlexicon.bin in Resources */ = {isa = PBXBuildFile; fileRef = 7EA567D02615989E6D0A4A64 /* enlexicon.bin */; };
 		60C989F7964D8F6A731FF0AF /* UXFeedbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3892A75525A06BACCAE066AB /* UXFeedbackTests.swift */; };
+		622B106FC86E5387CEA108B4 /* HapticTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C79C970EC7D5AB3D9A9C662 /* HapticTests.swift */; };
 		635BBEF20890FF1801E21EE2 /* enlexicon.bin in Resources */ = {isa = PBXBuildFile; fileRef = 7EA567D02615989E6D0A4A64 /* enlexicon.bin */; };
 		644451BA58FBD5F6C99AD6E4 /* VietTelex.storekit in Resources */ = {isa = PBXBuildFile; fileRef = 161158B158034E15B97338F4 /* VietTelex.storekit */; };
 		64BE6CE8C0FDE071DE06E625 /* FieldPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 480410FD8F2A324AF6A742C1 /* FieldPolicy.swift */; };
@@ -358,6 +359,7 @@
 		69A12BC49EB45298684CF97D /* Wallpaper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Wallpaper.swift; sourceTree = "<group>"; };
 		6B7D70220F7D14EBC3C3AACD /* DisplayCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayCase.swift; sourceTree = "<group>"; };
 		6BFF48078EDB3236A1B9C795 /* ShortcutsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsView.swift; sourceTree = "<group>"; };
+		6C79C970EC7D5AB3D9A9C662 /* HapticTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticTests.swift; sourceTree = "<group>"; };
 		6C7EDE7A95356B8F9043D32F /* vnlm.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = vnlm.bin; sourceTree = "<group>"; };
 		6C928B7D91A4C54D1642E70F /* TouchTargetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchTargetTests.swift; sourceTree = "<group>"; };
 		6CD1ABEB72F0DCCF278A46E7 /* EmojiSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiSearch.swift; sourceTree = "<group>"; };
@@ -588,6 +590,7 @@
 				D93CDC9D2CEA8A91A576B183 /* FeatureRegressionTests.swift */,
 				4B68AFA53C7C54443DAB2DA2 /* FieldPolicyTests.swift */,
 				8FA4464DCB74D34A8A55E14B /* FutoSwipeTests.swift */,
+				6C79C970EC7D5AB3D9A9C662 /* HapticTests.swift */,
 				27D10BA36AFF204B214098B2 /* HostRewriteCompositionTests.swift */,
 				D20B596D225BB513FA414DB3 /* KeyAlternatesTests.swift */,
 				5143281A235F9FF66DF0ABAE /* KeyboardBenchTests.swift */,
@@ -1081,6 +1084,7 @@
 				C1206085EB6077DC29ECB44C /* FutoSwipe.swift in Sources */,
 				21EDE1994F70EBB3F1415A4C /* FutoSwipeModel.swift in Sources */,
 				A3ACE14C8F0F55490A23732E /* FutoSwipeTests.swift in Sources */,
+				622B106FC86E5387CEA108B4 /* HapticTests.swift in Sources */,
 				6D6F9E75269F8D8410CB106F /* HostRewriteCompositionTests.swift in Sources */,
 				944A23F2D0860BD58E042D08 /* KeyAlternates.swift in Sources */,
 				A9B5CB329E25C3281FFDE6CC /* KeyAlternatesTests.swift in Sources */,
