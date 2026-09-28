@@ -110,7 +110,8 @@ add_library(viettelex-common STATIC
   common/src/watcher.cpp
   common/src/gnome.cpp
   common/src/gnome_monitor.cpp
-  common/src/text_tools.cpp)
+  common/src/text_tools.cpp
+  common/src/caret_hints.cpp)
 target_include_directories(viettelex-common PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/common/include")
 target_compile_definitions(viettelex-common PRIVATE VT_TEXT_TOOL_PATH="${VT_TEXT_TOOL_INSTALLED}")
 target_link_libraries(viettelex-common PUBLIC telexcore PkgConfig::GIO Threads::Threads)
@@ -137,6 +138,11 @@ if(VT_BUILD_TESTS)
   target_link_libraries(test_common PRIVATE viettelex-common)
   target_compile_definitions(test_common PRIVATE VT_SOURCE_ROOT="${VT_REPO_ROOT}")
   add_test(NAME common COMMAND test_common)
+  # Caret suggestions, IM side (caret_hints.h + Session) + HintService against the real
+  # `viettelex-text-tool --serve` when it is built.
+  add_executable(test_caret_hints common/tests/test_caret_hints.cpp)
+  target_link_libraries(test_caret_hints PRIVATE viettelex-common)
+  add_test(NAME caret_hints COMMAND test_caret_hints)
   if(VT_TEXT_TOOL)
     # test_common also runs the real helper end to end (runTextTool / TextToolRunner).
     set_tests_properties(common PROPERTIES ENVIRONMENT
@@ -147,6 +153,13 @@ if(VT_BUILD_TESTS)
                      "${VT_REPO_ROOT}/iOS/KeyboardTests/Fixtures/text-tools.txt"
                      "${VT_REPO_ROOT}/iOS/KeyboardTests/Fixtures/add-tones.txt")
     set_tests_properties(text_tool_fixtures PROPERTIES ENVIRONMENT "VIETTELEX_DATA_DIR=${VT_TEXT_DATA_SRC}")
+    set_tests_properties(caret_hints PROPERTIES ENVIRONMENT
+      "VIETTELEX_TEXT_TOOL=${VT_TEXT_TOOL};VIETTELEX_DATA_DIR=${VT_TEXT_DATA_SRC}")
+    # Caret suggestion logic (Swift, CaretSuggest.swift + Serve.swift): the macOS
+    # CaretSuggestionsTests / MathHintTests cases + shared math/number fixtures.
+    add_test(NAME caret_suggest
+             COMMAND "${VT_TEXT_TOOL}" --self-test "${VT_REPO_ROOT}/iOS/KeyboardTests/Fixtures")
+    set_tests_properties(caret_suggest PROPERTIES ENVIRONMENT "VIETTELEX_DATA_DIR=${VT_TEXT_DATA_SRC}")
   endif()
 
 

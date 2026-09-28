@@ -95,6 +95,13 @@ bool vt_is_overflowed(const vt_engine *h);
 bool vt_can_reopen(const vt_engine *h);
 bool vt_previous_word_english(const vt_engine *h);
 
+/* Caret suggestions (linux/common caret_hints): cheap word-boundary checks, no handle.
+ * vt_is_valid_syllable: SyllableValidator.isValidSyllable (NFC UTF-8).
+ * vt_is_unaccented_syllable: ToneRunLogic.isUnaccentedSyllable — a chunk (edge punctuation
+ * allowed) that is an unaccented Vietnamese syllable in a–z ("toi", "hoc,", not "the"). */
+bool vt_is_valid_syllable(const char *utf8_word, bool teencode);
+bool vt_is_unaccented_syllable(const char *utf8_chunk);
+
 #ifdef __cplusplus
 }
 #endif

@@ -179,6 +179,24 @@ Rủi ro còn lại: `IBUS_ENABLE_SYNC_MODE=1` (không mặc định) + gõ rấ
 - Icon khay theo Việt/Anh: Fcitx5 `subModeIconImpl` (`viettelex` / `viettelex-off`), IBus
   icon + symbol property InputMode (`VT` / `E`).
 
+### 5.5 Gợi ý cạnh con trỏ (29/09/2026) — ngang bản macOS 1.8.2
+Phép tính, chip số dạng tiền, sửa lỗi gõ sai, thêm dấu cho cụm không dấu, ngày giờ. Hợp đồng
+(key, mặc định, luật phím): `common/SETTINGS.md` §8.
+- Phía IM (`common/src/caret_hints.cpp` + `Session`): đuôi chữ vừa gõ theo dòng phím (neo bằng
+  surrounding ở phím đầu sau khi con trỏ dời, nếu được sửa quanh con trỏ; U+FFFC = không biết
+  chữ trước), cổng rẻ ở `=` / ranh giới từ, thế hệ phím (`HintRequest::liveGen`: gõ tiếp là
+  huỷ, kể cả khi đang chờ 0,9 s), Tab/Enter/Esc. Engine `.so` thêm `vt_is_valid_syllable`,
+  `vt_is_unaccented_syllable` (không Foundation).
+- Phía tính: `viettelex-text-tool --serve` (`Serve.swift`, giao thức theo dòng) — symlink
+  `iOS/Keyboard/{MathResults,NumberChips,AutoCorrect,AdjacentKeyFixer,SeedData}.swift`, logic
+  thuần chép từ macOS ở `CaretSuggest.swift` (file macOS kéo AppKit). `HintService`: một worker
+  thread, yêu cầu mới nhất thắng, process con khởi động lười, tự thoát khi rảnh 2 phút.
+- Hiển thị: Fcitx5 `InputPanel::setAuxDown`, IBus `ibus_engine_update_auxiliary_text` (daemon
+  chuyển cho panel — ibus-ui-gtk3 / GNOME Shell vẽ popup tại con trỏ).
+- Test: ctest `caret_suggest` (`--self-test`: ca của macOS CaretSuggestionsTests/MathHintTests +
+  fixture chung math-results/number-chips), `caret_hints` (cổng, Session, HintService với helper
+  thật), `fcitx5_smoke` / `ibus_smoke` (12*3= → aux "= 36", Tab chèn 36).
+
 ## 6. Riêng Linux cần xử lý
 
 

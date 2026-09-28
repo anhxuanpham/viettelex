@@ -11,6 +11,11 @@
 //       exit 0 = đã đổi (stdout = kết quả) · 1 = không đổi / không xử lý · 2 = lỗi dùng/dữ liệu
 //   viettelex-text-tool --check-fixtures <text-tools.txt> <add-tones.txt>
 //       chạy fixture chung iOS/KeyboardTests/Fixtures (ctest), exit ≠ 0 nếu lệch
+//   viettelex-text-tool --serve
+//       gợi ý cạnh con trỏ (phép tính, chip số, sửa lỗi gõ, thêm dấu, ngày giờ): process con
+//       sống lâu của bộ gõ, giao thức theo dòng — Serve.swift / CaretSuggest.swift
+//   viettelex-text-tool --self-test <iOS/KeyboardTests/Fixtures>
+//       ca test macOS CaretSuggestionsTests/MathHintTests trên logic Linux (ctest)
 //
 // Dữ liệu (vnlexicon.bin, vnlm.bin, enlexicon.bin): $VIETTELEX_DATA_DIR, hoặc
 // <prefix>/share/viettelex suy từ vị trí file chạy, hoặc /usr/share/viettelex.
@@ -114,6 +119,12 @@ func checkFixtures(textTools: String, addTones: String) -> Int {
 }
 
 let args = Array(CommandLine.arguments.dropFirst())
+if args.first == "--serve" { serve() }
+if args.first == "--self-test" {
+    guard args.count == 2 else { fail("dùng: viettelex-text-tool --self-test <thư mục fixture>") }
+    guard VTDataFile.url("vnlexicon.bin") != nil else { fail("thiếu vnlexicon.bin (VIETTELEX_DATA_DIR)") }
+    exit(caretSelfTest(fixtures: args[1]) == 0 ? 0 : 1)
+}
 if args.first == "--check-fixtures" {
     guard args.count == 3 else { fail("dùng: viettelex-text-tool --check-fixtures <text-tools.txt> <add-tones.txt>") }
     guard VTDataFile.url("vnlexicon.bin") != nil else { fail("thiếu vnlexicon.bin (VIETTELEX_DATA_DIR)") }

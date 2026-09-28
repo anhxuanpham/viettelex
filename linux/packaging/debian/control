@@ -88,9 +88,11 @@ Description: VietTelex Vietnamese input method - text tools for the selection
  .
  This package adds "Tools..." to the input method menu: add Vietnamese tones
  to unaccented selected text ("toi di hoc" becomes "tôi đi học"), UPPERCASE,
- lowercase, Title Case, Sentence case and remove tones. It contains the
- viettelex-text-tool helper (run as a separate process, so the tone
- dictionary never stays in the input method's memory) and its data files.
+ lowercase, Title Case, Sentence case and remove tones. It also computes the
+ suggestions shown next to the caret while typing: math results, money
+ format for numbers, typo fixes, dates and tones for unaccented sentences.
+ It contains the viettelex-text-tool helper (run as a separate process, so
+ the dictionaries never stay in the input method's memory) and its data files.
 
 Package: viettelex-fcitx5
 Architecture: any

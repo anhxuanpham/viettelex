@@ -9,8 +9,12 @@
 // Text tools ("Công cụ…" in the status area + the optional Thêm dấu hotkey) run the helper
 // viettelex-text-tool off the main thread (viettelex::TextToolRunner) and commit the result
 // over the selection. Menu labels follow Settings::uiLanguage; the tray icon follows Việt/Anh.
+// Caret suggestions (phép tính, chip số, sửa lỗi gõ, thêm dấu, ngày giờ — caret_hints.h) are
+// computed by the same helper in `--serve` mode (viettelex::HintService) and shown as the
+// input panel's aux text, which Fcitx5 UIs draw in the popup at the caret.
 
 #include "viettelex/app.h"
+#include "viettelex/caret_hints.h"
 #include "viettelex/gnome.h"
 #include "viettelex/gnome_monitor.h"
 #include "viettelex/session.h"
@@ -133,6 +137,16 @@ public:
             ic_->forwardKey(key, true);
         }
     }
+    // Aux text below the (client) preedit: the input panel popup at the caret. Never the
+    // client preedit itself, so the app's text is not touched until Tab.
+    void showHint(const std::string &label) override {
+        ic_->inputPanel().setAuxDown(fcitx::Text(label));
+        ic_->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
+    }
+    void hideHint() override {
+        ic_->inputPanel().setAuxDown(fcitx::Text());
+        ic_->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
+    }
     bool textBeforeCursor(std::string &out) override {
         if (!ic_->capabilityFlags().test(fcitx::CapabilityFlag::SurroundingText)) return false;
         const auto &st = ic_->surroundingText();
@@ -191,7 +205,8 @@ public:
     explicit VietTelexEngine(fcitx::Instance *instance)
         : instance_(instance), appState_(vt::appStatePath()),
           factory_([this](fcitx::InputContext &ic) { return new VietTelexState(this, &ic); }),
-          runner_([this](std::function<void()> f) { dispatcher_.schedule(std::move(f)); }) {
+          runner_([this](std::function<void()> f) { dispatcher_.schedule(std::move(f)); }),
+          hints_([this](std::function<void()> f) { dispatcher_.schedule(std::move(f)); }) {
         appState_.load();
         dispatcher_.attach(&instance_->eventLoop());
         instance_->inputContextManager().registerProperty("viettelexState", &factory_);
@@ -261,6 +276,22 @@ public:
     }
 
     const vt::Settings &settings() const { return watcher_.settings(); }
+
+    // Session → helper (worker thread) → back here on the event loop.
+    void submitHint(fcitx::InputContext *ic, const vt::HintRequest &r) {
+        auto ref = ic->watch();
+        uint64_t gen = r.gen;
+        hints_.submit(r, [this, ref, gen](bool ok, const vt::CaretSuggestion &c) {
+            try {
+                auto *ic = ref.get();
+                if (!ok || !ic || !ic->hasFocus() || instance_->inputMethod(ic) != "viettelex") return;
+                FcitxClient client(ic);
+                state(ic)->session.deliverHint(gen, c, client);
+            } catch (...) {
+            }
+        });
+    }
+    bool hintsAvailable() const { return hints_.available(); }
 
     static vt::KeyEvent toVt(const fcitx::KeyEvent &event) {
         const fcitx::Key &key = event.key();
@@ -633,11 +664,14 @@ private:
     fcitx::EventDispatcher dispatcher_;               // declared before gnome_: outlives it
     std::unique_ptr<vt::GnomeAppMonitor> gnome_;
     vt::TextToolRunner runner_;                       // after dispatcher_: destroyed before it
+    vt::HintService hints_;                           // after dispatcher_: destroyed before it
 };
 
 VietTelexState::VietTelexState(VietTelexEngine *engine, fcitx::InputContext *ic_) : ic(ic_) {
     session.applySettings(engine->settings());
     session.onToggle = [engine, this](bool vi) { engine->onToggled(this, vi); };
+    if (engine->hintsAvailable())
+        session.setHintSink([engine, this](const vt::HintRequest &r) { engine->submitHint(ic, r); });
 }
 
 class VietTelexFactory final : public fcitx::AddonFactory {

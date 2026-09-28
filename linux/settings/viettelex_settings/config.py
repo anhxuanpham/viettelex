@@ -42,6 +42,12 @@ DEFAULTS = {
         "text_tools_menu": True,
         # Phím tắt "Thêm dấu cho vùng chọn"; "" = tắt (mặc định).
         "add_tones_hotkey": "",
+        # Gợi ý cạnh con trỏ (như macOS 1.8.2) — Tab áp dụng, không bao giờ tự thay.
+        "math_results": True,     # 12*3= → = 36
+        "number_chips": True,     # 1tr2␣ → 1.200.000 ₫
+        "typo_hints": True,       # tpoi␣ → tôi
+        "tone_hints": False,      # toi di hoc. → tôi đi học.
+        "date_hints": True,       # hôm nay␣ → 28/09/2026, bây giờ␣ → 21:35
     },
     "app_modes": {},
 }

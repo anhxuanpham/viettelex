@@ -50,6 +50,9 @@ class App:
         self.ic.connect("update-preedit-text", self._preedit)
         self.ic.connect("hide-preedit-text", lambda ic: setattr(self, "pre", ""))
         self.ic.connect("delete-surrounding-text", self._delete)
+        self.aux = ""
+        self.ic.connect("update-auxiliary-text", lambda ic, t, v: setattr(self, "aux", t.get_text() if v else ""))
+        self.ic.connect("hide-auxiliary-text", lambda ic: setattr(self, "aux", ""))
 
     def _sync(self):
         if self.surrounding:
@@ -257,6 +260,24 @@ def main():
         pump()
         g4.type("vie65")
         expect(g4.pre == "việ" and not g4.forwarded, f"gtk4 terminal {g4.pre!r} {g4.forwarded!r}")
+    # 10. caret suggestion (helper --serve): "12*3=" → auxiliary text at the caret, Tab
+    #     commits the result; the preedit is never used for it.
+    if os.environ.get("VIETTELEX_TEXT_TOOL"):
+        c = App(bus, "gtk3-im:gedit")
+        # Normally the daemon hands auxiliary text to the panel (ibus-ui-gtk3 / GNOME Shell's
+        # candidate popup at the caret); a client with CAP_AUXILIARY_TEXT gets it itself.
+        c.ic.set_capabilities(IBus.Capabilite.PREEDIT_TEXT | IBus.Capabilite.FOCUS | IBus.Capabilite.AUXILIARY_TEXT)
+        c.focus()
+        c.type("12*3=")  # config above is VNI: "12" / "3" compose, "*" / "=" end them
+        for _ in range(100):
+            if c.aux:
+                break
+            pump(0.05)
+        expect(c.aux == "= 36   Tab / Enter", f"math hint aux {c.aux!r}")
+        expect(c.pre == "", f"math hint in preedit {c.pre!r}")
+        expect(c.key(IBus.KEY_Tab, "\t"), "Tab not consumed by the hint")
+        expect(c.doc == "12*3=36" and c.aux == "", f"math hint applied {c.doc!r} aux {c.aux!r}")
+        expect(not c.key(IBus.KEY_Tab, "\t"), "Tab consumed without a hint")
     print(f"ibus smoke: {checks} checks passed (IBus {IBus.MAJOR_VERSION}.{IBus.MINOR_VERSION}.{IBus.MICRO_VERSION})")
 
 

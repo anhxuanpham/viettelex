@@ -41,6 +41,20 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(n["general"]["toggle_hotkey"], "Ctrl+space")
         self.assertFalse(n["general"]["preedit_underline"])  # "Gạch chân chữ đang gõ" off
         self.assertTrue(n["general"]["terminal_direct"])
+        # Gợi ý cạnh con trỏ = macOS 1.8.2: bật hết trừ Thêm dấu cho câu không dấu.
+        for k in ("math_results", "number_chips", "typo_hints", "date_hints"):
+            self.assertIs(n["general"][k], True, k)
+        self.assertIs(n["general"]["tone_hints"], False)
+
+    def test_caret_hint_keys_roundtrip(self):
+        n = config.normalize(config.parse('[general]\nmath_results = false\ntone_hints = true\n'
+                                          'typo_hints = "no"\n'))
+        self.assertIs(n["general"]["math_results"], False)
+        self.assertIs(n["general"]["tone_hints"], True)
+        self.assertIs(n["general"]["typo_hints"], True)  # sai kiểu → mặc định
+        text = config.dump(n)
+        self.assertIn("math_results = false", text)
+        self.assertIn("tone_hints = true", text)
 
     def test_wrong_type_falls_back_to_default(self):
         n = config.normalize(config.parse('[typing]\nfree_marking = "yes"\ninput_method = "abc"\n'

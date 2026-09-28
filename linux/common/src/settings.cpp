@@ -180,6 +180,11 @@ Settings parseConfig(const std::string &toml) {
                 if (v.kind == Value::Str) s.uiLanguage = lower(trim(v.s)) == "en" ? "en" : "vi";
             }
             else if (key == "text_tools_menu") setBool(s.textToolsMenu, v);
+            else if (key == "math_results") setBool(s.mathResults, v);
+            else if (key == "number_chips") setBool(s.numberChips, v);
+            else if (key == "typo_hints") setBool(s.typoHints, v);
+            else if (key == "tone_hints") setBool(s.toneHints, v);
+            else if (key == "date_hints") setBool(s.dateHints, v);
             else if (key == "add_tones_hotkey") {
                 if (v.kind == Value::Str) s.addTonesHotkey = v.s;
             }
@@ -220,6 +225,11 @@ std::string serializeConfig(const Settings &s) {
       << "ui_language = " << quote(s.uiLanguage == "en" ? "en" : "vi") << "\n"
       << "text_tools_menu = " << b(s.textToolsMenu) << "\n"
       << "add_tones_hotkey = " << quote(s.addTonesHotkey) << "\n"
+      << "math_results = " << b(s.mathResults) << "\n"
+      << "number_chips = " << b(s.numberChips) << "\n"
+      << "typo_hints = " << b(s.typoHints) << "\n"
+      << "tone_hints = " << b(s.toneHints) << "\n"
+      << "date_hints = " << b(s.dateHints) << "\n"
       << "\n[app_modes]\n";
     for (auto &kv : s.appModes) o << quote(kv.first) << " = " << quote(kv.second) << "\n";
     return o.str();

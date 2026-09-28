@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import urllib.request
+from types import SimpleNamespace
 
 import gi
 
@@ -62,6 +63,33 @@ def open_uri(uri):
         Gio.AppInfo.launch_default_for_uri(uri, None)
     except GLib.Error:
         spawn(["xdg-open", uri])
+
+
+# Gợi ý cạnh con trỏ (tab Tuỳ chỉnh → Công cụ văn bản): key config.toml [general], nhãn, mô tả.
+HINT_SWITCHES = (
+    ("math_results", N_("Hiện kết quả phép tính"),
+     N_("Gõ phép tính rồi “=” (12*3=, 200+10%=, 125 x (4 + 5.5) =) → kết quả cạnh con trỏ; "
+        "Tab hoặc Enter để chèn.")),
+    ("number_chips", N_("Chip số dạng tiền"),
+     N_("50k, 1tr2, 2 tỷ + dấu cách → 1.200.000 ₫ cạnh con trỏ; Tab để thay.")),
+    ("typo_hints", N_("Gợi ý sửa lỗi gõ sai"),
+     N_("Từ vừa gõ không phải tiếng Việt, tiếng Anh hay từ chat → gợi ý từ đúng khi gõ nhầm "
+        "một phím kề hoặc đảo hai phím (tpoi → tôi). Tab để thay, Esc = đừng gợi ý từ này nữa.")),
+    ("tone_hints", N_("Gợi ý thêm dấu cho câu không dấu"),
+     N_("Từ 3 âm tiết không dấu, sau . ! ? hoặc khi dừng gõ một chút → câu có dấu "
+        "(toi di hoc → tôi đi học). Tab để thay cả cụm. Mặc định tắt.")),
+    ("date_hints", N_("Gợi ý ngày giờ"),
+     N_("“hôm nay”, “ngày mai”, “hôm qua” → dd/mm/yyyy; “bây giờ” → giờ:phút (today, tomorrow, "
+        "yesterday, now sau một từ tiếng Anh). Tab để thay.")),
+)
+HINT_SUMMARY = (
+    ("text_tools_menu", N_("menu Công cụ…")),
+    ("math_results", N_("phép tính")),
+    ("number_chips", N_("chip số")),
+    ("typo_hints", N_("sửa lỗi gõ")),
+    ("tone_hints", N_("thêm dấu")),
+    ("date_hints", N_("ngày giờ")),
+)
 
 
 def row(title, subtitle=None):
@@ -333,13 +361,21 @@ class SettingsWindow(Adw.PreferencesWindow):
                     "(Ptyxis, Console) và phiên Wayland GNOME vẫn dùng preedit."))
         page.add(g)
 
-        g = Adw.PreferencesGroup(
-            title=_("Công cụ văn bản"),
-            description=_("Bôi đen chữ ở app bất kỳ rồi chọn trong menu bộ gõ → Công cụ…: Thêm dấu "
-                          "cho vùng chọn, HOA, thường, Hoa Đầu Từ, Hoa đầu câu, Xoá dấu. Không bao "
-                          "giờ chạy ở ô mật khẩu."))
-        self.switch(g, "general", "text_tools_menu", _("Hiện công cụ văn bản trong menu"),
-                    _("Menu “Công cụ…” của bộ gõ (khay Fcitx5 / menu IBus) liệt kê 6 công cụ trên."))
+        # Công cụ văn bản: thu gọn được, MẶC ĐỊNH ĐÓNG (như macOS 1.8.2) — khi đóng, dòng tóm
+        # tắt cho biết cái gì đang bật.
+        g = Adw.PreferencesGroup()
+        exp = Adw.ExpanderRow(expanded=False)
+        exp.set_title(esc(_("Công cụ văn bản")))
+        g.add(exp)
+        tools = SimpleNamespace(add=exp.add_row)
+        hint_rows = []
+        intro = row(_("Công cụ cho vùng chọn"),
+                    _("Bôi đen chữ ở app bất kỳ rồi chọn trong menu bộ gõ → Công cụ…: Thêm dấu "
+                      "cho vùng chọn, HOA, thường, Hoa Đầu Từ, Hoa đầu câu, Xoá dấu. Không bao "
+                      "giờ chạy ở ô mật khẩu."))
+        exp.add_row(intro)
+        hint_rows.append(self.switch(tools, "general", "text_tools_menu", _("Hiện công cụ văn bản trong menu"),
+                         _("Menu “Công cụ…” của bộ gõ (khay Fcitx5 / menu IBus) liệt kê 6 công cụ trên.")))
         at = row(_("Phím tắt Thêm dấu"),
                  _("Thêm dấu cho đoạn không dấu đang bôi đen (toi di hoc → tôi đi học). Mặc định tắt."))
         self.addtones_btn = Gtk.Button(valign=Gtk.Align.CENTER)
@@ -352,9 +388,24 @@ class SettingsWindow(Adw.PreferencesWindow):
         off.connect("clicked", lambda _b: self.set_addtones_hotkey(""))
         at.add_suffix(self.addtones_btn)
         at.add_suffix(off)
-        g.add(at)
+        exp.add_row(at)
         self.refreshers.append(self._refresh_addtones)
         self._refresh_addtones()
+        hints = row(_("Gợi ý cạnh con trỏ"),
+                    _("Hiện ngay cạnh con trỏ khi rất chắc; chỉ Tab mới áp dụng, phím khác bỏ qua, "
+                      "Esc = bỏ gợi ý. Không bao giờ tự thay, không chạy ở ô mật khẩu. Cần gói "
+                      "viettelex-text-tools."))
+        exp.add_row(hints)
+        for key, title, sub in HINT_SWITCHES:
+            hint_rows.append(self.switch(tools, "general", key, _(title), _(sub)))
+
+        def summary(*_a):
+            on = [_(label) for key, label in HINT_SUMMARY if self.cfg.get("general", key)]
+            exp.set_subtitle(esc(_("Đang bật: %s") % ", ".join(on) if on else _("Đang tắt hết")))
+        for r in hint_rows:
+            r.get_activatable_widget().connect("notify::active", summary)
+        self.refreshers.append(summary)
+        summary()
         page.add(g)
 
         g = Adw.PreferencesGroup(title=_("Chuyển Việt/Anh"))

@@ -6,6 +6,8 @@
 #include "telexcore.h"
 
 #include <cstring>
+#include <ctime>
+#include <vector>
 
 namespace viettelex {
 
@@ -126,6 +128,224 @@ void Session::applySettings(const Settings &s) {
                      !(hotkeyValid_ && at.keysym == hotkeySym_ && at.mods == hotkeyMods_);
     addTonesSym_ = at.keysym;
     addTonesMods_ = at.mods;
+    hintFlags_.math = s.mathResults;
+    hintFlags_.number = s.numberChips;
+    hintFlags_.typo = s.typoHints;
+    hintFlags_.tones = s.toneHints;
+    hintFlags_.date = s.dateHints;
+    // TypoFixLogic.EngineFlags(bits:) order (Serve.swift) — the helper composes candidates
+    // with the same engine settings as the typing engine.
+    const bool bits[] = {s.freeMarking, s.modernTone,      s.spellCheck,        s.simpleTelex,
+                         s.quickTelex,  s.vni,             s.bracketVowels,     s.contextualEnglish,
+                         s.collisionPrefersVietnamese,      s.teencode};
+    engineBits_.clear();
+    for (bool b : bits) engineBits_ += b ? '1' : '0';
+    updateHintsOn();
+    if (!hintsOn_) tailReset();
+}
+
+// MARK: - caret suggestions (caret_hints.h)
+
+namespace {
+constexpr size_t kTailKeep = 320;  // ToneRunLogic.window
+const char *const kUnknownHead = "\xef\xbf\xbc";  // U+FFFC: text before the tail is unknown
+
+bool endsWith(const std::string &s, const std::string &suffix) {
+    return s.size() >= suffix.size() && s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+// Byte offset of the last `n` characters of s (0 when s is shorter).
+size_t lastCharsOffset(const std::string &s, size_t n) {
+    size_t i = s.size();
+    while (i > 0 && n > 0) {
+        --i;
+        while (i > 0 && (static_cast<unsigned char>(s[i]) & 0xc0) == 0x80) --i;
+        --n;
+    }
+    return i;
+}
+
+bool isTailSpace(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; }
+}  // namespace
+
+void Session::setHintSink(std::function<void(const HintRequest &)> sink) {
+    hintSink_ = std::move(sink);
+    updateHintsOn();
+    if (!hintsOn_) tailReset();
+}
+
+std::string Session::typedBefore() const {
+    switch (tailHead_) {
+    case TailHead::Start: return tail_;
+    case TailHead::Newline: return "\n" + tail_;
+    default: return kUnknownHead + tail_;
+    }
+}
+
+void Session::tailReset() {
+    tail_.clear();
+    tailHead_ = TailHead::Unknown;
+    tailSeeded_ = false;
+    toneTracker_.reset();
+}
+
+void Session::tailAppend(const std::string &s) {
+    tail_ += s;
+    if (tail_.size() > kTailKeep * 4 || utf8Chars(tail_) > kTailKeep + 64) {
+        tail_.erase(0, lastCharsOffset(tail_, kTailKeep));
+        tailHead_ = TailHead::Unknown;
+    }
+}
+
+void Session::tailPop(size_t chars) {
+    if (utf8Chars(tail_) < chars) {
+        // Deleting into text we never saw: what is before the caret is unknown now.
+        tail_.clear();
+        tailHead_ = TailHead::Unknown;
+        return;
+    }
+    tail_.resize(lastCharsOffset(tail_, chars));
+}
+
+// First key after the caret moved: the text before it, when the client reports it reliably.
+void Session::seedTail(InputContext &ic) {
+    tailSeeded_ = true;
+    tail_.clear();
+    tailHead_ = TailHead::Unknown;
+    std::string before;
+    // Mid-word (hints just turned on): the word is not on screen as such — start blind.
+    if (!vt_is_empty(e_) || mode_ == DisplayMode::Direct || !surroundingEdits_ || !ic.textBeforeCursor(before))
+        return;
+    if (utf8Chars(before) <= kTailKeep) {
+        tail_ = before;
+        tailHead_ = TailHead::Start;
+    } else {
+        tail_ = before.substr(lastCharsOffset(before, kTailKeep));
+    }
+}
+
+void Session::requestHint(std::vector<std::string> fields, int delayMs) {
+    if (!hintSink_) return;
+    HintRequest r;
+    r.line = hints::request(fields);
+    r.delayMs = delayMs;
+    r.gen = keyGen_->load();
+    r.liveGen = keyGen_;
+    hintSink_(r);
+}
+
+// A printable boundary (or Enter / Tab / navigation) was just handled: keep the typed tail
+// in step with the screen, then fire the cheap triggers (MathHint.swift afterEquals /
+// afterNumberSpace, CaretSuggestions.swift afterWord — same order: date, typo, tones).
+void Session::afterBoundary(uint32_t ch, uint32_t keysym) {
+    if (isNewlineKey(keysym)) {
+        tail_.clear();
+        tailHead_ = TailHead::Newline;
+        tailSeeded_ = true;
+        toneTracker_.reset();
+        return;
+    }
+    if (ch == 0x1b || ch == 0x7f) return;  // Esc / Delete: nothing typed, caret stays
+    if (ch < 0x20 || keysym == ks::Tab) {  // navigation, Tab (focus may move), other keys
+        tailReset();
+        return;
+    }
+    // The run just committed before this boundary, and the one before it (ShortcutTail.run).
+    size_t end = tail_.size(), s = end;
+    while (s > 0 && !isTailSpace(tail_[s - 1])) --s;
+    std::string run = tail_.substr(s);
+    size_t pe = s;
+    while (pe > 0 && isTailSpace(tail_[pe - 1])) --pe;
+    size_t ps = pe;
+    while (ps > 0 && !isTailSpace(tail_[ps - 1])) --ps;
+    std::string prevRun = tail_.substr(ps, pe - ps);
+    std::string boundary = encode(ch);
+    tailAppend(boundary);
+
+    hints::ToneTrigger tt = hintFlags_.tones ? toneTracker_.feed(run, ch) : hints::ToneTrigger::None;
+    // The text the helper sees is built only when a trigger fires.
+    if (ch == '=') {
+        if (hintFlags_.math) requestHint({"math", typedBefore()});
+        return;
+    }
+    // Everything else replaces committed text: only where the Session may edit before the
+    // caret (surrounding proven, or Direct's blind BackSpaces) — macOS `canReplace`.
+    if (mode_ != DisplayMode::Direct && !surroundingEdits_) return;
+    if (hintFlags_.number && hints::numberWorthChecking(ch, run, prevRun)) {
+        requestHint({"number", typedBefore()});
+        return;
+    }
+    if (hintFlags_.date && hints::dateCandidate(ch, prevRun, run)) {
+        std::time_t t = std::time(nullptr);
+        std::tm lt{};
+        localtime_r(&t, &lt);
+        requestHint({"date", typedBefore(), prevRun, run, boundary, std::to_string(lt.tm_year + 1900),
+                     std::to_string(lt.tm_mon + 1), std::to_string(lt.tm_mday), std::to_string(lt.tm_hour),
+                     std::to_string(lt.tm_min)});
+        return;
+    }
+    if (hintFlags_.typo && lastEnded_.ended && !lastEnded_.raw.empty() && lastEnded_.text == run &&
+        hints::typoWorthChecking(ch, lastEnded_.raw, run) && !rejectedTypos_.contains(run) &&
+        // An unaccented syllable ("hoc" = học/hóc) is never a typo for TypoFixLogic (the
+        // lexicon has a toned completion); skipping it here keeps it from masking Thêm dấu.
+        !vt_is_unaccented_syllable(run.c_str())) {
+        requestHint({"typo", typedBefore(), run, boundary, lastEnded_.raw, engineBits_});
+        return;
+    }
+    if (tt != hints::ToneTrigger::None)
+        requestHint({"tones", typedBefore()}, tt == hints::ToneTrigger::Pause ? 900 : 0);  // ToneRunLogic.pauseDelay
+}
+
+void Session::deliverHint(uint64_t gen, const CaretSuggestion &s, InputContext &ic) {
+    if (!hintsOn_ || gen != keyGen_->load() || passthrough_ || !vietnamese_ || !vt_is_empty(e_)) return;
+    if (!s.replace.empty() && mode_ != DisplayMode::Direct && !surroundingEdits_) return;
+    if (!endsWith(tail_, s.replace)) return;  // the typed text moved on
+    if (s.kind == CaretSuggestion::Kind::Tones && !declinedTones_.empty() &&
+        s.replace.compare(0, declinedTones_.size(), declinedTones_) == 0)
+        return;
+    hint_ = s;
+    ic.showHint(hints::label(s));
+}
+
+void Session::dismissHint(InputContext &ic) {
+    if (!hint_) return;
+    hint_.reset();
+    ic.hideHint();
+}
+
+// Esc: sửa lỗi gõ ⇒ không gợi ý lại từ đó trong phiên; thêm dấu ⇒ không mời lại cụm bắt đầu
+// bằng cụm vừa từ chối (CaretHint.decline).
+void Session::declineHint(InputContext &ic) {
+    if (!hint_) return;
+    if (hint_->kind == CaretSuggestion::Kind::Typo) {
+        std::string w = hint_->replace, last;
+        popChar(w, last);  // drop the boundary
+        rejectedTypos_.add(w);
+    } else if (hint_->kind == CaretSuggestion::Kind::Tones) {
+        declinedTones_ = hint_->replace;
+    }
+    dismissHint(ic);
+}
+
+// Tab (math: Enter too). False = the screen no longer matches: dismissed, key goes on.
+bool Session::applyHint(InputContext &ic) {
+    CaretSuggestion s = *hint_;
+    dismissHint(ic);
+    if (!s.replace.empty() && mode_ != DisplayMode::Direct) {
+        // Read the screen back before replacing (macOS: like shortcuts / number chips).
+        std::string before;
+        if (ic.textBeforeCursor(before) && !endsWith(before, s.replace)) return false;
+        if (ic.hasSelection()) return false;
+    }
+    size_t n = utf8Chars(s.replace);
+    replace(ic, int(n), s.insert);
+    tailPop(n);
+    tailAppend(s.insert);
+    vt_forget_last_commit(e_);  // ⌫ must not re-open the word that was replaced
+    lastWasBoundaryChar_ = false;
+    lastEnded_ = EndedWord();
+    toneTracker_.reset();
+    return true;
 }
 
 void Session::setDisplayMode(DisplayMode m, InputContext &ic) {
@@ -185,11 +405,17 @@ void Session::hidePreedit(InputContext &ic) {
 
 void Session::focusIn() {
     vt_reset_context(e_);
+    hint_.reset();  // the frontend hid it on focus-out (finish)
+    if (hintsOn_) keyGen_->fetch_add(1);
+    tailReset();
     caretMoved_ = true;
     lastWasBoundaryChar_ = false;
 }
 
 void Session::finish(InputContext &ic, bool commitPreedit) {
+    dismissHint(ic);
+    if (hintsOn_) keyGen_->fetch_add(1);  // answers still on their way are stale now
+    tailReset();
     if (mode_ == DisplayMode::Preedit && !vt_is_empty(e_)) {
         std::string text = composed();
         vt_reset(e_);
@@ -226,6 +452,14 @@ void Session::endWord(InputContext &ic, bool suppressRestore, bool allowShortcut
     std::string word = composed();
     std::string rawWord = raw();
     size_t onScreen = utf8Chars(word);
+    // What stays on screen for this word — the typed tail of caret suggestions.
+    auto ended = [this](const std::string &text, const std::string &rawKeys) {
+        if (!hintsOn_) return;
+        lastEnded_.ended = true;
+        lastEnded_.text = text;
+        lastEnded_.raw = rawKeys;
+        tailAppend(text);
+    };
     if (allowShortcuts && shortcutsEnabled_ && !word.empty() && shortcuts_) {
         auto it = shortcuts_->find(word);
         if (it == shortcuts_->end()) it = shortcuts_->find(rawWord);
@@ -233,6 +467,7 @@ void Session::endWord(InputContext &ic, bool suppressRestore, bool allowShortcut
         if (it != shortcuts_->end() && (mode_ != DisplayMode::Surrounding || !selectionAtCaret(ic))) {
             std::string expansion = it->second;
             vt_reset(e_);
+            ended(expansion, std::string());
             if (mode_ == DisplayMode::Preedit) {
                 if (!expansion.empty()) ic.commit(expansion);
                 hidePreedit(ic);
@@ -249,7 +484,14 @@ void Session::endWord(InputContext &ic, bool suppressRestore, bool allowShortcut
         std::string text(buf, n < sizeof buf ? n : sizeof buf - 1);
         if (!text.empty()) ic.commit(text);
         hidePreedit(ic);
+        ended(text, rawWord);
     } else {
+        std::string finalText;
+        if (hintsOn_) {
+            char buf[256];
+            size_t n = vt_peek(e_, autoRestore, buf, sizeof buf);
+            finalText.assign(buf, n < sizeof buf ? n : sizeof buf - 1);
+        }
         vt_action a;
         vt_commit(e_, autoRestore, &a);
         // Auto-restore deletes the word: with a selection at the caret the delete would hit
@@ -257,8 +499,10 @@ void Session::endWord(InputContext &ic, bool suppressRestore, bool allowShortcut
         if (mode_ == DisplayMode::Surrounding && a.kind == VT_ACTION_REPLACE && a.backspaces > 0 &&
             selectionAtCaret(ic)) {
             vt_reset(e_);
+            ended(word, rawWord);
             return;
         }
+        ended(finalText, rawWord);
         if (a.kind == VT_ACTION_REPLACE)
             replace(ic, a.backspaces, std::string(a.insert, size_t(a.insert_len > 0 ? a.insert_len : 0)));
     }
@@ -271,6 +515,23 @@ bool Session::processKey(const KeyEvent &ev, InputContext &ic) {
     selectionMemo_ = -1;
     applyPendingMode();
 
+    // Caret suggestion showing: Tab applies (math: Enter too), Esc declines, any other key
+    // dismisses it and is handled as usual (CaretHintLogic.action).
+    if (hintsOn_) keyGen_->fetch_add(1);
+    if (hint_) {
+        switch (hints::keyAction(hint_->kind, ev.keysym, ev.mods)) {
+        case hints::KeyAction::Accept:
+            if (applyHint(ic)) return true;
+            break;
+        case hints::KeyAction::DismissConsume:
+            declineHint(ic);
+            return true;
+        case hints::KeyAction::DismissPass:
+            dismissHint(ic);
+            break;
+        }
+    }
+
     // Vi/En toggle hotkey (Ctrl+Space by default).
     if (isToggleHotkey(ev)) {
         finish(ic);
@@ -281,13 +542,17 @@ bool Session::processKey(const KeyEvent &ev, InputContext &ic) {
 
     if (!vietnamese_ || passthrough_) {
         if (!vt_is_empty(e_)) finish(ic);
+        if (tailSeeded_) tailReset();
         return false;
     }
+    if (hintsOn_ && !tailSeeded_) seedTail(ic);
+    lastEnded_.ended = false;
 
     // Shortcut chords (Ctrl/Alt/Super + key): commit the word, hand the key to the app.
     if (ev.mods & (VT_MOD_CTRL | VT_MOD_ALT | VT_MOD_SUPER)) {
         endWord(ic, false, false);
         vt_forget_last_commit(e_);
+        if (hintsOn_) tailReset();  // Ctrl+V / Ctrl+Z / Ctrl+←: the text before the caret is unknown
         gluedToDigit_ = false;
         caretMoved_ = true;
         lastWasBoundaryChar_ = false;
@@ -313,6 +578,7 @@ bool Session::processKey(const KeyEvent &ev, InputContext &ic) {
     bool newline = isNewlineKey(ev.keysym);
     endWord(ic, printable && isBracket(ch), !gluedToDigit_);
     if (newline) vt_reset_context(e_);   // a new line has no preceding word
+    if (hintsOn_) afterBoundary(ch, ev.keysym);
     if (printable) {
         gluedToDigit_ = gluesShortcutToken(ch);
         lastWasBoundaryChar_ = true;
@@ -363,6 +629,7 @@ bool Session::handleLetter(uint32_t ch, InputContext &ic) {
                 if (++n > 12) { tooLong = true; break; }
             }
             if (!word.empty() && !tooLong && !selectionAtCaret(ic) && vt_seed(e_, word.c_str())) {
+                if (hintsOn_) tailPop(n);  // the word is being edited again (back in the engine)
                 if (mode_ == DisplayMode::Preedit) {
                     ic.deleteBeforeCursor(int(n));
                     preedit_.clear();
@@ -374,6 +641,7 @@ bool Session::handleLetter(uint32_t ch, InputContext &ic) {
     vt_action a;
     vt_feed(e_, ch, &a);
     if (a.kind == VT_ACTION_PASSTHROUGH && vt_is_overflowed(e_)) {
+        if (hintsOn_) tailReset();
         // Word longer than the engine's 32 keys: never lose text. Preedit: finalise what
         // is composed and continue the tail as a fresh word (macOS commitAndPassThrough).
         if (mode_ == DisplayMode::Preedit) {
@@ -431,6 +699,7 @@ bool Session::handleBackspace(InputContext &ic) {
                     if (popChar(before, last) && before.size() >= word.size() &&
                         before.compare(before.size() - word.size(), word.size(), word) == 0 &&
                         !selectionAtCaret(ic)) {
+                        if (hintsOn_) tailPop(1 + utf8Chars(word));  // boundary gone, word back in the engine
                         if (mode_ == DisplayMode::Surrounding) {
                             replaceBeforeCursor(ic, 1, std::string());
                         } else {
@@ -443,10 +712,12 @@ bool Session::handleBackspace(InputContext &ic) {
                     }
                 }
                 vt_reset(e_);
+                if (hintsOn_) tailPop(1);
                 return false;
             }
         }
         vt_forget_last_commit(e_);
+        if (hintsOn_) tailPop(1);  // the app's own ⌫ deletes one character
         return false;
     }
     vt_action a;

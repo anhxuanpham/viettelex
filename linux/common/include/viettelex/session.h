@@ -5,10 +5,14 @@
 // client API; every typing decision lives here (unit-tested with a mock context).
 #pragma once
 
+#include "viettelex/caret_hints.h"
 #include "viettelex/keys.h"
 #include "viettelex/settings.h"
 
+#include <atomic>
 #include <functional>
+#include <memory>
+#include <optional>
 #include <string>
 
 struct vt_engine;
@@ -45,6 +49,10 @@ public:
         if (backspaces > 0) deleteBeforeCursor(backspaces);
         if (!utf8.empty()) commit(utf8);
     }
+    // Caret suggestion (caret_hints.h) next to the caret — Fcitx5 aux text / IBus auxiliary
+    // text, drawn by the candidate popup at the caret; never part of the preedit.
+    virtual void showHint(const std::string &label) { (void)label; }
+    virtual void hideHint() {}
 };
 
 class Session {
@@ -91,6 +99,19 @@ public:
     bool composing() const;
     std::string preedit() const { return preedit_; }
 
+    // MARK: caret suggestions (caret_hints.h)
+    // Where trigger requests go (the frontend's HintService); unset = hints off whatever the
+    // settings say (helper not installed). Results come back through deliverHint.
+    void setHintSink(std::function<void(const HintRequest &)> sink);
+    // Main thread: a helper answer for the request made at generation `gen`. Shown only when
+    // nothing was typed since (the generation still matches) and the typed text still ends
+    // with what it would replace.
+    void deliverHint(uint64_t gen, const CaretSuggestion &s, InputContext &ic);
+    const CaretSuggestion *hint() const { return hint_ ? &*hint_ : nullptr; }
+    // Text typed since the caret last moved, as sent to the helper (a leading newline /
+    // U+FFFC = line start / unknown text before it). For tests.
+    std::string typedBefore() const;
+
 private:
     bool handleLetter(uint32_t ch, InputContext &ic);
     bool handleBackspace(InputContext &ic);
@@ -128,6 +149,37 @@ private:
     bool addTonesValid_ = false;
     std::shared_ptr<const ShortcutTable> shortcuts_;
     std::string preedit_;
+
+    // caret suggestions
+    struct EndedWord {
+        bool ended = false;
+        std::string text;  // on screen after the boundary decision (restore / shortcut applied)
+        std::string raw;   // raw keys ("" for a shortcut expansion)
+    };
+    enum class TailHead { Start, Newline, Unknown };
+    void afterBoundary(uint32_t ch, uint32_t keysym);
+    void requestHint(std::vector<std::string> fields, int delayMs = 0);
+    bool applyHint(InputContext &ic);
+    void declineHint(InputContext &ic);
+    void dismissHint(InputContext &ic);
+    void seedTail(InputContext &ic);
+    void tailAppend(const std::string &s);
+    void tailPop(size_t chars);
+    void tailReset();
+    void updateHintsOn() { hintsOn_ = hintFlags_.any() && static_cast<bool>(hintSink_); }
+    HintFlags hintFlags_;
+    bool hintsOn_ = false;
+    std::string engineBits_;
+    std::function<void(const HintRequest &)> hintSink_;
+    std::shared_ptr<std::atomic<uint64_t>> keyGen_ = std::make_shared<std::atomic<uint64_t>>(0);
+    std::optional<CaretSuggestion> hint_;
+    std::string tail_;
+    TailHead tailHead_ = TailHead::Unknown;
+    bool tailSeeded_ = false;
+    EndedWord lastEnded_;
+    hints::ToneTracker toneTracker_;
+    hints::Rejected rejectedTypos_;
+    std::string declinedTones_;
 };
 
 }  // namespace viettelex

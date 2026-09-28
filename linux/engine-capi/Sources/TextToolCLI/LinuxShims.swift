@@ -75,4 +75,50 @@ extension StringProtocol {
         String(String(self).unicodeScalars.replacing(target.unicodeScalars, with: replacement.unicodeScalars))
     }
 }
+
+// Gợi ý cạnh con trỏ (MathResults, NumberChips, AutoCorrect, AdjacentKeyFixer — symlink
+// iOS/Keyboard) cần thêm vài API Foundation đầy đủ mà FoundationEssentials không có.
+// self-test caret_suggest (fixture math-results / number-chips) canh hành vi.
+
+/// Foundation đầy đủ re-export Glibc: MathResults dùng `pow` cho Double (không thì chỉ còn
+/// pow(Decimal, Int) của FoundationEssentials).
+func pow(_ x: Double, _ y: Double) -> Double { Glibc.pow(x, y) }
+
+extension String {
+    /// String(format:) kiểu printf (MathResults: "%.0f", "%.6f").
+    init(format: String, _ args: CVarArg...) {
+        let n = withVaList(args) { vsnprintf(nil, 0, format, $0) }
+        guard n > 0 else { self = ""; return }
+        var buf = [CChar](repeating: 0, count: Int(n) + 1)
+        _ = withVaList(args) { vsnprintf(&buf, buf.count, format, $0) }
+        self = String(decoding: buf.prefix(Int(n)).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    }
+}
+
+/// Chỉ tập `.whitespaces` (khoảng trắng ngang — Unicode Zs + tab), đủ cho mã dùng chung.
+struct CharacterSet {
+    let contains: (Unicode.Scalar) -> Bool
+    static let whitespaces = CharacterSet { $0 == "\t" || $0.properties.generalCategory == .spaceSeparator }
+}
+
+extension StringProtocol {
+    func trimmingCharacters(in set: CharacterSet) -> String {
+        let u = Array(unicodeScalars)
+        var a = 0, b = u.count
+        while a < b, set.contains(u[a]) { a += 1 }
+        while b > a, set.contains(u[b - 1]) { b -= 1 }
+        var v = String.UnicodeScalarView()
+        v.append(contentsOf: u[a..<b])
+        return String(v)
+    }
+}
+
+/// AdjacentKeyFixer.Cache (không dùng trong CLI nhưng phải biên dịch được).
+final class NSLock {
+    private var m = pthread_mutex_t()
+    init() { pthread_mutex_init(&m, nil) }
+    deinit { pthread_mutex_destroy(&m) }
+    func lock() { pthread_mutex_lock(&m) }
+    func unlock() { pthread_mutex_unlock(&m) }
+}
 #endif

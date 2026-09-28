@@ -50,6 +50,11 @@ default_vietnamese = true           # Trạng thái khi gặp app lần đầu
 ui_language = "vi"                  # Ngôn ngữ giao diện (app cài đặt + menu bộ gõ): "vi" | "en" — xem §6
 text_tools_menu = true              # Hiện "Công cụ…" (công cụ văn bản) trong menu bộ gõ — xem §7
 add_tones_hotkey = ""               # Phím tắt "Thêm dấu cho vùng chọn" (cú pháp §4); "" = tắt (mặc định)
+math_results = true                 # Gợi ý cạnh con trỏ (§8): kết quả phép tính "12*3=" → 36
+number_chips = true                 # chip số dạng tiền "1tr2 " → 1.200.000 ₫
+typo_hints = true                   # sửa lỗi gõ sai "tpoi " → tôi
+tone_hints = false                  # thêm dấu cho câu không dấu "toi di hoc." → tôi đi học.
+date_hints = true                   # ngày giờ "hôm nay " → 28/09/2026, "bây giờ " → 21:35
 
 [app_modes]
 # key = định danh app (Fcitx5: program; IBus: client name / app-id Wayland / WM_CLASS, chữ thường)
@@ -166,3 +171,30 @@ vùng chọn** (toi di hoc → tôi đi học), **HOA**, **thường**, **Hoa Đ
   không có gì phải khôi phục. Nếu menu làm app mất focus, kết quả được commit ở lần focus lại
   (trong 3 giây).
 - Không chạy ở ô mật khẩu / ô nhạy cảm và terminal (gõ đè không thay được gì ở đó).
+
+## 8. Gợi ý cạnh con trỏ (`math_results`, `number_chips`, `typo_hints`, `tone_hints`, `date_hints`)
+
+Như bản macOS 1.8.2 (`App/Sources/MathHint.swift`, `CaretSuggestions.swift`). Mỗi loại một
+công tắc; tắt hết = một lần đọc cờ mỗi phím, không theo dõi gì.
+
+| Key | Mặc định | Kích hoạt → gợi ý |
+|---|---|---|
+| `math_results` | bật | phép tính + `=` (`12*3=`, `200+10%=`, `125 x (4 + 5.5) =`) → `= 36`; Tab **hoặc Enter** chèn kết quả sau `=` |
+| `number_chips` | bật | `50k` / `1tr2` / `2 tỷ` + dấu cách → `1.200.000 ₫` (chỉ dạng tiền, không đọc số thành chữ); Tab thay |
+| `typo_hints` | bật | từ vừa gõ (ranh giới ` , ; ! ? )`) không là âm tiết Việt / tiếng Anh / từ chat → sửa MỘT phím kề trên bàn phím cứng hoặc đảo hai phím liền nhau, cùng ngưỡng macOS (tần suất ≥ 150, hơn ứng viên thứ hai ≥ 80); Tab thay (giữ ký tự ranh giới), Esc = không gợi ý lại từ đó trong phiên |
+| `tone_hints` | **tắt** | ≥ 3 âm tiết không dấu liên tiếp, rồi `. ! ?` hoặc dừng gõ 0,9 s sau dấu cách → cụm có dấu (Thêm dấu); Tab thay cả cụm, Esc = không mời lại cụm đó |
+| `date_hints` | bật | `hôm nay` / `ngày mai` / `hôm qua` + dấu cách → `dd/MM/yyyy`; `bây giờ` → `HH:mm`; today / tomorrow / yesterday / now chỉ sau một từ tiếng Anh; Tab thay cụm |
+
+Luật chung: chỉ Tab áp dụng (Enter chỉ cho phép tính — sau `50k␣` Enter là gửi tin), phím khác
+tắt gợi ý rồi đi tiếp như thường, không bao giờ tự thay, không chạy ở ô mật khẩu / ô nhạy cảm /
+khi đang English. Hiển thị: Fcitx5 = aux text của input panel, IBus = auxiliary text — UI của
+khung (classicui/kimpanel, ibus-ui-gtk3, popup của GNOME Shell) vẽ ngay cạnh con trỏ; preedit
+không bị đụng. Loại thay chữ đã chốt (mọi loại trừ phép tính) chỉ ở nơi bộ gõ được sửa chữ quanh
+con trỏ (surrounding đã chứng minh, không phải app ép preedit — Chrome/Firefox/LibreOffice…; hoặc
+terminal Direct); trước khi thay, chữ trước con trỏ được đọc lại (khi app báo) và phải khớp.
+
+Chạy ở đâu: bộ gõ chỉ theo dõi đuôi chữ vừa gõ và xét cổng rẻ ở ranh giới từ / phím `=`
+(`common/src/caret_hints.cpp`, `vt_is_valid_syllable` / `vt_is_unaccented_syllable`); việc tính
+(MathResults, NumberChips, lexicon sửa lỗi, Thêm dấu — mã Swift chung iOS/macOS) ở
+`viettelex-text-tool --serve`: một process con sống lâu, bật ở lần kích hoạt đầu, tự thoát sau
+2 phút rảnh. Thiếu gói `viettelex-text-tools` → không có gợi ý nào.
