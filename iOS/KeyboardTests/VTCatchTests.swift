@@ -20,3 +20,18 @@ final class VTCatchTests: XCTestCase {
         XCTAssertEqual(vtSafe(.default) { UIKeyboardType.emailAddress }, .emailAddress)
     }
 }
+
+/// Phím trắng trên nền tối (Phil 28/09/2026): trait sáng lúc mở rồi mới thành tối ⇒
+/// controller gọi lại updateDark mỗi lần layout; KeyboardView phải đổi palette ngay.
+final class LateDarkTraitTests: XCTestCase {
+    @MainActor func testLateDarkTraitSwitchesPalette() {
+        let kb = KeyboardView(needsGlobe: false, inputController: nil) { _ in }
+        kb.frame = CGRect(x: 0, y: 0, width: 393, height: 260)
+        kb.applyAppearance(.default, style: .light)
+        XCTAssertFalse(kb.isDarkAppearance)
+        kb.updateDark(AppearancePolicy.isDark(appearance: .default, style: .dark))
+        XCTAssertTrue(kb.isDarkAppearance)
+        kb.updateDark(AppearancePolicy.isDark(appearance: .light, style: .dark))   // host ép sáng
+        XCTAssertFalse(kb.isDarkAppearance)
+    }
+}

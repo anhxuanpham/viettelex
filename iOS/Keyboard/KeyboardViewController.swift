@@ -1690,6 +1690,13 @@ extension KeyboardViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         pushSwipeLayout(prepare: true)
+        // Sáng/tối: iOS 27 đôi khi báo trait SÁNG lúc viewWillAppear/viewDidAppear dù máy
+        // tối ⇒ phím trắng trên backdrop tối, chữ gợi ý đen khó đọc (Phil 28/09/2026). Mỗi
+        // lần layout so lại với trait hiện tại (chỉ so 2 giá trị đã có — không đọc proxy);
+        // updateDark tự bỏ qua khi không đổi.
+        keyboard?.updateDark(AppearancePolicy.isDark(
+            appearance: fieldTraits?.appearance ?? .default,
+            style: view.traitCollection.userInterfaceStyle))
     }
 
     private func isRecentEnglish(_ w: String?) -> Bool {
