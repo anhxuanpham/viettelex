@@ -254,6 +254,7 @@ enum L10n {
         "Từ tiếng Anh — vuốt đúng từng chữ.": "English word — swipe every letter.",
         "Vuốt qua các chữ không dấu rồi nhấc tay.": "Swipe across the letters without tones, then lift.",
         "Lưu nét vuốt trên máy": "Save swipe paths on device",
+        "Bật \"Lưu nét vuốt trên máy\" rồi vuốt vài từ để xuất được.": "Turn on \"Save swipe paths on device\" and swipe a few words to export.",
         "Đã lưu %@ nét.": "%@ paths saved.",
         "Tắt: chỉ luyện, không lưu gì.": "Off: practice only, nothing is saved.",
         "Xuất JSON…": "Export JSON…",
