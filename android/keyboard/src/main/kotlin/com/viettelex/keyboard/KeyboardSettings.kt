@@ -27,6 +27,8 @@ data class KeyboardSettings(
     var learnWords: Boolean = true,
     var filterSensitive: Boolean = true,
     var hapticFeedback: Boolean = false,
+    /** Độ mạnh rung 10…100 % ([HapticStrength]) — chỉ dùng khi hapticFeedback bật. */
+    var hapticStrength: Int = HapticStrength.DEFAULT,
     /** Gợi ý sửa lỗi chạm trượt (AdjacentKeyFixer) — mặc định BẬT. */
     var autoFixAdjacent: Boolean = true,
     /** Quyết định theo ngữ cảnh ("he is" giữ tiếng Anh) — mặc định BẬT. */
@@ -100,6 +102,7 @@ data class KeyboardSettings(
             s.addTonesChip = b(Keys.ADD_TONES_CHIP, s.addTonesChip)
             s.numberChips = b(Keys.NUMBER_CHIPS, s.numberChips)
             s.hapticFeedback = b(Keys.HAPTIC_FEEDBACK, s.hapticFeedback)
+            s.hapticStrength = HapticStrength.clamp((get(Keys.HAPTIC_STRENGTH) as? Number)?.toInt() ?: HapticStrength.DEFAULT)
             s.autoFixAdjacent = b(Keys.AUTO_FIX_ADJACENT, s.autoFixAdjacent)
             s.contextualEnglish = b(Keys.CONTEXTUAL_ENGLISH, s.contextualEnglish)
             s.reEditWords = b(Keys.RE_EDIT_WORDS, s.reEditWords)

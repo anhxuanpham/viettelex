@@ -267,6 +267,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         if (!hwTyped) configureField(info, settings)
         kb.holdNewline = field.holdNewline   // giữ lâu Enter = xuống dòng (ô nhiều dòng)
         feedback.hapticsEnabled = settings.hapticFeedback
+        feedback.hapticStrength = settings.hapticStrength
         kb.searchSettings = settings
         syncClipHistory(settings.clipboardHistory)
         // Copy lúc process IME chưa sống (listener không thấy) → bù khi hiện, không làm mới mục cũ.

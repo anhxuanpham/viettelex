@@ -66,6 +66,8 @@ object Keys {
     /** Bool — ô phóng to chữ khi bấm phím (balloon); tên như iOS App Group. Mặc định BẬT. */
     const val KEY_PREVIEW = "keyPreviewEnabled"
     const val HAPTIC_FEEDBACK = "hapticFeedback"
+    /** Độ mạnh rung 10…100 % (mặc định 45, [HapticStrength]) — giống iOS. */
+    const val HAPTIC_STRENGTH = "hapticStrength"
     /** Int −10…10 (dp mỗi hàng). */
     const val ROW_HEIGHT_ADJUST = "rowHeightAdjust"
     /** Bool — hàng phím số trên plane chữ (tên như iOS App Group). */

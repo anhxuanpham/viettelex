@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -26,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.viettelex.keyboard.HapticStrength
 import com.viettelex.keyboard.KeyAlternates
 import com.viettelex.keyboard.Keys
 import java.text.Normalizer
@@ -474,10 +476,34 @@ private fun PhimPage(onBack: () -> Unit) {
         BoolToggle(Keys.KEY_PREVIEW, Prefs.D.keyPreview, tr("Phóng to chữ khi bấm"), tr("Ô chữ lớn nổi trên phím vừa chạm. Tắt nếu thấy rối mắt."))
         RowDivider()
         BoolToggle(Keys.HAPTIC_FEEDBACK, Prefs.D.hapticFeedback, tr("Rung phím"), tr("Rung nhẹ mỗi lần chạm phím."))
+        HapticStrengthRow()
     }
     VTSection(header = tr("Bàn phím cứng")) {
         BoolToggle(Keys.HARDWARE_TELEX, Prefs.D.hardwareTelex, tr("Telex cho bàn phím cứng"),
             tr("Gõ Telex/VNI bằng bàn phím Bluetooth/USB, Samsung DeX, Chromebook. Phím tắt Ctrl/Alt vẫn tới app. Bàn phím ảo tự ẩn khi có bàn phím cứng (bật lại: Cài đặt hệ thống → Bàn phím vật lý → Hiện bàn phím ảo)."))
     }
     GuideLinkSection(FeaturePage.Phim)
+}
+
+/** Thanh trượt "Độ mạnh rung" 10…100 % dưới công tắc Rung phím (chỉ hiện khi bật) — giống iOS. */
+@Composable
+private fun HapticStrengthRow() {
+    val on by rememberBoolPref(Keys.HAPTIC_FEEDBACK, Prefs.D.hapticFeedback)
+    if (!on) return
+    val c = LocalVT.current
+    var pct by rememberIntPref(Keys.HAPTIC_STRENGTH, Prefs.D.hapticStrength)
+    RowDivider()
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(tr("Độ mạnh rung"), style = VTType.body, color = c.label, modifier = Modifier.weight(1f))
+            Text("${HapticStrength.clamp(pct)}%", style = VTType.body, color = c.secondary)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(tr("Nhẹ"), style = VTType.footnote, color = c.secondary)
+            Slider(value = HapticStrength.clamp(pct).toFloat(), valueRange = 10f..100f, steps = 17,
+                onValueChange = { v -> val n = HapticStrength.clamp(Math.round(v / 5) * 5); if (n != pct) pct = n },
+                modifier = Modifier.weight(1f))
+            Text(tr("Mạnh"), style = VTType.footnote, color = c.secondary)
+        }
+    }
 }
