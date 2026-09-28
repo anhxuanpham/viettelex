@@ -122,7 +122,7 @@ tập kiểm thử:
 | KN bigram (không cắt tỉa) | — | 87,9 % | 96,0 % |
 | KN trigram (không cắt tỉa, float) | ~ 31 MB | 90,1 % | 96,5 % |
 | KN 4-gram (không cắt tỉa) | — | 90,0 % | 96,5 % |
-| **KN trigram cắt tỉa + lượng tử (vnlm.bin)** | **2,6 MB** | **89,2 %** | **96,0 %** |
+| **KN trigram cắt tỉa + lượng tử (vnlm.bin)** | **2,6 MB** (v3: 1,43 MB) | **89,2 %** | **96,0 %** |
 
 Bảng trên đo với decoder giai đoạn 2. Sau khi decoder có tầng 2 (σ thích nghi, độ dài,
 chấm lại top-16 — commit 7cf48ae): bigram 86,1 % / 95,1 % → **trigram 89,4 % / 96,2 %**
@@ -187,7 +187,28 @@ khớp từng số. Build hai lần cho file y hệt từng byte.
 | Vuốt xen gõ + sửa theo từ gõ | 94,42 % | 94,47 % |
 | Câu trộn Việt–Anh top1 / top3 (n=270) | 230 / 267 | 230 / 267 |
 
-LAT_TABLE
+Độ trễ (ns/truy vấn, min nhiều vòng, cùng 2.665 truy vấn heldout; `SyllableLMTests.lookupLatency`
+Kotlin/Swift). "Vị trí" = context + 32 điểm ứng viên (một cú vuốt), "dòng" = bigram + 32 pmi
+(Thêm dấu), forEach = cả dòng (từ kế tiếp). v2 → v3:
+
+| | JVM | Swift Release (arm64) | iOS sim Debug |
+|---|---|---|---|
+| vị trí (context + 32 score) | 1.537 → 1.928 (×1,25) | 999 → 1.292 (×1,3) | 9.420 → 12.631 (×1,34) |
+| dòng (bigram + 32 pmi) | 647 → 634 (×1,0) | 384 → 566 (×1,47) | 7.257 → 7.096 (×1,0) |
+| forEach dòng | 514 → 767 (×1,49) | 2.000 → 2.506 (×1,25) | 41.281 → 40.518 (×1,0) |
+| context + score (lẻ) | 102 → 112 (×1,1) | 50 → 67 (×1,3) | 604 → 786 (×1,3) |
+| score / pmi lẻ (mỗi truy vấn một dòng khác) | 25 → 34 (×1,36) | 8 → 17 (×2,1) | 288 → 392 (×1,36) |
+
+Mức consumer: JVM Thêm dấu 30 âm tiết 0,133 → 0,158 ms, bigramNext 9,7 → 11,0 µs, PMI pool
+1,5 → 0,7 µs, vuốt heldout 0,062 → 0,064 ms/vuốt; iOS sim PMI pool 8,5 → 8,5 µs, bigramNext
+62,7 → 53,6 µs. Tra lẻ trên Swift Release chậm ×2 (+9 ns: select0 + đọc bit thay cho tìm nhị
+phân u16) — không consumer nào tra lẻ kiểu đó. Dòng ≤ 8 mục quét tuần tự; `bigram()` O(1) (biRow)
+nhanh hơn v2. RAM bẩn sau map + duyệt toàn bảng: 0 KB (iOS `SuggestBigramTests`).
+
+Kích thước bản Release (main 28/09 → nhánh này): iOS .app 8.248 → 7.068 KB (appex 5.820 →
+4.640 KB), macOS .app 5.492 → 4.296 KB, Android APK release 6.520.434 → 5.294.538 B (asset
+`noCompress`), AAB 7.413.577 → 6.928.781 B (AAB nén asset — dữ liệu EF ít nén hơn mảng thô),
+APK debug 16.142.435 → 14.932.923 B.
 
 ### Sửa lại từ vuốt trước — ngữ cảnh hai phía (27/09/2026, `SwipeRevise`)
 
