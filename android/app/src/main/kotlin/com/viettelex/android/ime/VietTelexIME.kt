@@ -202,6 +202,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
         accessibility?.removeTouchExplorationStateChangeListener(touchExplorationListener)
         clipboard.release()
+        feedback.releaseSound()
         workerThread?.quitSafely()
         session.finishInput()
         super.onDestroy()
@@ -267,6 +268,8 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         if (!hwTyped) configureField(info, settings)
         kb.holdNewline = field.holdNewline   // giữ lâu Enter = xuống dòng (ô nhiều dòng)
         feedback.hapticsEnabled = settings.hapticFeedback
+        // Âm thanh phím riêng: TẮT ⇒ nhả/không dựng gì (tiếng hệ thống như cũ).
+        feedback.configureSound(settings.keySound, settings.keySoundVolume) { worker().post(it) }
         kb.searchSettings = settings
         syncClipHistory(settings.clipboardHistory)
         // Copy lúc process IME chưa sống (listener không thấy) → bù khi hiện, không làm mới mục cũ.
@@ -374,6 +377,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         handler.removeCallbacks(autoShiftRun); handler.removeCallbacks(suggestRun)
         trackpadMoved = false                  // ô đóng: không auto-shift/gợi ý lúc nhả trackpad
         keyboard?.onHidden()
+        feedback.releaseSound()                // âm phím riêng: nhả SoundPool khi ẩn
         closeClipboardPane()
         inputShown = false
         clearSwipeUndo()

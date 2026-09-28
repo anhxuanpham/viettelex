@@ -119,6 +119,7 @@ struct FeatureSearchEntry: Identifiable {
             .init(viTitle: LK("Vuốt phím cách đổi Tiếng Việt / Tiếng Anh"), keywords: "space ngôn ngữ english language", page: .phim),
             .init(viTitle: LK("Phóng to chữ khi bấm"), keywords: "key preview popup", page: .phim),
             .init(viTitle: LK("Rung phím"), keywords: "haptic rung vibrate", page: .phim),
+            .init(viTitle: LK("Âm thanh phím"), keywords: "sound click tiếng âm lượng volume", page: .phim),
             .init(viTitle: LK("Theme & ảnh nền"), keywords: "theme màu chủ đề wallpaper hình nền", page: .giaoDien),
             .init(viTitle: LK("Độ trong suốt phím"), keywords: "trong suốt transparent", page: .giaoDien),
             .init(viTitle: LK("Độ trong suốt ký tự"), keywords: "trong suốt transparent chữ", page: .giaoDien),
@@ -500,6 +501,8 @@ struct PhimPage: View {
     @AppStorage("keyPreviewEnabled", store: featureDefaults) private var keyPreview = true
     @AppStorage("hapticFeedback", store: featureDefaults) private var hapticFeedback = false
     @AppStorage("hapticStrength", store: featureDefaults) private var hapticStrength = 45
+    @AppStorage("keySound", store: featureDefaults) private var keySound = false
+    @AppStorage("keySoundVolume", store: featureDefaults) private var keySoundVolume = 50
 
     private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
@@ -551,6 +554,23 @@ struct PhimPage: View {
                           maximumValueLabel: { Text(L("Mạnh")).font(.caption) }
                     }
                     FullAccessNotice(reason: L("Rung phím"))
+                }
+                settingToggle(L("Âm thanh phím"), L("Tiếng click riêng của VietTelex, chỉnh được âm lượng. Tắt: dùng tiếng bấm bàn phím của iOS (Cài đặt → Âm thanh). Im khi gạt chế độ im lặng."), isOn: $keySound)
+                if keySound {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(L("Âm lượng"))
+                            Spacer()
+                            Text("\(keySoundVolume)%").foregroundStyle(.secondary).monospacedDigit()
+                        }
+                        Slider(value: Binding(get: { Double(keySoundVolume) },
+                                              set: { keySoundVolume = Int($0.rounded()) }),
+                               in: 0...100, step: 5) {
+                            Text(L("Âm lượng"))
+                        } minimumValueLabel: { Image(systemName: "speaker.fill").font(.caption) }
+                          maximumValueLabel: { Image(systemName: "speaker.wave.3.fill").font(.caption) }
+                    }
+                    FullAccessNotice(reason: L("Âm thanh phím"))
                 }
             } header: { Text(L("Phản hồi khi chạm")) }
         }

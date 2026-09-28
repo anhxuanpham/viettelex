@@ -37,6 +37,8 @@
     "freeMarking" : true,
     "hapticFeedback" : true,
     "keyLabelTransparency" : 20,
+    "keySound" : true,
+    "keySoundVolume" : 70,
     "keyboardTransparency" : 40,
     "liveSpellCheck" : true,
     "longPressNumbers" : true,

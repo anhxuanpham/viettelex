@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -99,6 +100,7 @@ internal data class FeatureSearchEntry(val viTitle: String, val keywords: String
             FeatureSearchEntry("Chế độ một tay", "one hand một tay", FeaturePage.Phim), // l10n-key
             FeatureSearchEntry("Phóng to chữ khi bấm", "key preview popup", FeaturePage.Phim), // l10n-key
             FeatureSearchEntry("Rung phím", "haptic rung vibrate", FeaturePage.Phim), // l10n-key
+            FeatureSearchEntry("Âm thanh phím", "sound click tiếng âm lượng volume", FeaturePage.Phim), // l10n-key
             FeatureSearchEntry("Telex cho bàn phím cứng", "bluetooth usb dex chromebook hardware", FeaturePage.Phim), // l10n-key
             FeatureSearchEntry("Theme & ảnh nền", "theme màu chủ đề wallpaper hình nền color", FeaturePage.GiaoDien), // l10n-key
             FeatureSearchEntry("Độ trong suốt phím", "trong suốt transparent", FeaturePage.GiaoDien), // l10n-key
@@ -268,6 +270,7 @@ private fun FeatureHome(onOpen: (FeaturePage) -> Unit) {
     val spaceSwipe by rememberBoolPref(Keys.SPACE_SWIPE_LANGUAGE, Prefs.D.spaceSwipeLanguage)
     val autoSpace by rememberBoolPref(Keys.AUTO_SPACE_AFTER_PUNCT, Prefs.D.autoSpaceAfterPunct)
     val haptic by rememberBoolPref(Keys.HAPTIC_FEEDBACK, Prefs.D.hapticFeedback)
+    val keySound by rememberBoolPref(Keys.KEY_SOUND, Prefs.D.keySound)
     val oneHand by rememberStringPref(Keys.ONE_HAND_MODE, Prefs.D.oneHandMode)
     val hardware by rememberBoolPref(Keys.HARDWARE_TELEX, Prefs.D.hardwareTelex)
     val clipHistory by rememberBoolPref(Keys.CLIPBOARD_HISTORY, Prefs.D.clipboardHistory)
@@ -288,7 +291,7 @@ private fun FeatureHome(onOpen: (FeaturePage) -> Unit) {
         FeaturePage.GoTat -> (if (!shortcutsOn) tr("Gõ tắt tắt") else if (shortcutCount == 0) tr("Gõ tắt bật") else tr("Gõ tắt: %d mục", shortcutCount)) +
             " · " + if (templatesOn) tr("Mẫu câu bật") else tr("Mẫu câu tắt")
         FeaturePage.Phim -> join(numberRow to tr("Hàng số"), spaceSwipe to tr("Vuốt phím cách"),
-            autoSpace to tr("Cách sau dấu câu"), haptic to tr("Rung"),
+            autoSpace to tr("Cách sau dấu câu"), haptic to tr("Rung"), keySound to tr("Âm"),
             (oneHand != "off") to tr("Một tay"), hardware to tr("Bàn phím cứng"), none = tr("Mặc định"))
         FeaturePage.GiaoDien -> theme.effectiveTheme.title + (if (wallpaperOn) " · " + tr("Ảnh nền") else "") +
             if (theme.keyboardTransparency > 0 || theme.labelTransparency > 0) " · " + tr("Trong suốt") else ""
@@ -474,10 +477,30 @@ private fun PhimPage(onBack: () -> Unit) {
         BoolToggle(Keys.KEY_PREVIEW, Prefs.D.keyPreview, tr("Phóng to chữ khi bấm"), tr("Ô chữ lớn nổi trên phím vừa chạm. Tắt nếu thấy rối mắt."))
         RowDivider()
         BoolToggle(Keys.HAPTIC_FEEDBACK, Prefs.D.hapticFeedback, tr("Rung phím"), tr("Rung nhẹ mỗi lần chạm phím."))
+        RowDivider()
+        KeySoundRows()
     }
     VTSection(header = tr("Bàn phím cứng")) {
         BoolToggle(Keys.HARDWARE_TELEX, Prefs.D.hardwareTelex, tr("Telex cho bàn phím cứng"),
             tr("Gõ Telex/VNI bằng bàn phím Bluetooth/USB, Samsung DeX, Chromebook. Phím tắt Ctrl/Alt vẫn tới app. Bàn phím ảo tự ẩn khi có bàn phím cứng (bật lại: Cài đặt hệ thống → Bàn phím vật lý → Hiện bàn phím ảo)."))
     }
     GuideLinkSection(FeaturePage.Phim)
+}
+
+/** Âm thanh phím riêng + thanh âm lượng (hiện khi bật) — [com.viettelex.keyboard.KeySoundSynth]. */
+@Composable
+private fun KeySoundRows() {
+    val c = LocalVT.current
+    val on by rememberBoolPref(Keys.KEY_SOUND, Prefs.D.keySound)
+    BoolToggle(Keys.KEY_SOUND, Prefs.D.keySound, tr("Âm thanh phím"),
+        tr("Tiếng click riêng của VietTelex, chỉnh được âm lượng. Tắt: dùng âm thanh khi chạm của hệ thống. Im khi máy để Rung hoặc Im lặng."))
+    if (on) {
+        var vol by rememberIntPref(Keys.KEY_SOUND_VOLUME, Prefs.D.keySoundVolume)
+        RowDivider()
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Text(tr("Âm lượng: %s%%", vol), style = VTType.body, color = c.label)
+            Slider(value = vol.toFloat(), valueRange = 0f..100f,
+                onValueChange = { vol = Math.round(it / 5) * 5 })
+        }
+    }
 }

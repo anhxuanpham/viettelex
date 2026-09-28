@@ -27,6 +27,10 @@ data class KeyboardSettings(
     var learnWords: Boolean = true,
     var filterSensitive: Boolean = true,
     var hapticFeedback: Boolean = false,
+    /** Âm thanh phím riêng — mặc định TẮT (tắt ⇒ AudioManager.playSoundEffect như cũ, 0 chi phí). */
+    var keySound: Boolean = false,
+    /** Âm lượng âm phím riêng 0…100 %. */
+    var keySoundVolume: Int = 50,
     /** Gợi ý sửa lỗi chạm trượt (AdjacentKeyFixer) — mặc định BẬT. */
     var autoFixAdjacent: Boolean = true,
     /** Quyết định theo ngữ cảnh ("he is" giữ tiếng Anh) — mặc định BẬT. */
@@ -100,6 +104,8 @@ data class KeyboardSettings(
             s.addTonesChip = b(Keys.ADD_TONES_CHIP, s.addTonesChip)
             s.numberChips = b(Keys.NUMBER_CHIPS, s.numberChips)
             s.hapticFeedback = b(Keys.HAPTIC_FEEDBACK, s.hapticFeedback)
+            s.keySound = b(Keys.KEY_SOUND, s.keySound)
+            s.keySoundVolume = ((get(Keys.KEY_SOUND_VOLUME) as? Number)?.toInt() ?: s.keySoundVolume).coerceIn(0, 100)
             s.autoFixAdjacent = b(Keys.AUTO_FIX_ADJACENT, s.autoFixAdjacent)
             s.contextualEnglish = b(Keys.CONTEXTUAL_ENGLISH, s.contextualEnglish)
             s.reEditWords = b(Keys.RE_EDIT_WORDS, s.reEditWords)

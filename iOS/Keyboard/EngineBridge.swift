@@ -39,6 +39,10 @@ struct KeyboardSettings {
     var hapticFeedback = false // rung phím — chỉ hoạt động khi có Full Access
     /// Độ mạnh rung 10…100 (%), mặc định 45 (Phil 28/09 thấy "vừa").
     var hapticStrength = 45
+    /// Âm thanh phím riêng (KeySound) — mặc định TẮT (= click hệ thống như cũ). Cần Full Access.
+    var keySound = false
+    /// Âm lượng âm phím 0…100 (%), mặc định 50.
+    var keySoundVolume = 50
     /// Gợi ý sửa lỗi chạm trượt phím kề (AdjacentKeyFixer) — mặc định BẬT (25/09/2026).
     var autoFixAdjacent = true
     /// Quyết định theo ngữ cảnh (như macOS, mặc định BẬT): sau một từ tiếng Anh, từ
@@ -108,6 +112,8 @@ struct KeyboardSettings {
         if d.object(forKey: "filterSensitive") != nil { s.filterSensitive = d.bool(forKey: "filterSensitive") }
         if d.object(forKey: "hapticFeedback") != nil { s.hapticFeedback = d.bool(forKey: "hapticFeedback") }
         if d.object(forKey: "hapticStrength") != nil { s.hapticStrength = max(10, min(100, d.integer(forKey: "hapticStrength"))) }
+        if d.object(forKey: "keySound") != nil { s.keySound = d.bool(forKey: "keySound") }
+        if d.object(forKey: "keySoundVolume") != nil { s.keySoundVolume = max(0, min(100, d.integer(forKey: "keySoundVolume"))) }
         if d.object(forKey: "autoFixAdjacent") != nil { s.autoFixAdjacent = d.bool(forKey: "autoFixAdjacent") }
         if d.object(forKey: "contextualEnglish") != nil { s.contextualEnglish = d.bool(forKey: "contextualEnglish") }
         if d.object(forKey: "reEditWord") != nil { s.reEditWord = d.bool(forKey: "reEditWord") }

@@ -214,6 +214,7 @@ final class KeyboardViewController: UIInputViewController {
         KeyboardView.hapticsEnabled = settings.hapticFeedback && hasFullAccess
         KeyHaptics.shared.setStrength(settings.hapticStrength)
         TouchLog.write("haptics setting=\(settings.hapticFeedback ? 1 : 0) strength=\(settings.hapticStrength) fullAccess=\(hasFullAccess ? 1 : 0)")
+        applyKeySound(settings)
         // Báo trạng thái Full Access cho app chứa (ẩn banner nhắc cấp quyền).
         // Không Full Access thì iOS chặn GHI App Group → cờ giữ nguyên/vắng,
         // banner vẫn hiện — đúng ý.
@@ -290,7 +291,23 @@ final class KeyboardViewController: UIInputViewController {
         closeClipboardPanel()
         learnSettledSwipe()
         swipe?.releaseFuto()  // FUTO Swipe (thử nghiệm): nhả ~2.5 MB khi ẩn
+        KeySound.shared.shutdown()   // âm phím riêng: dừng engine khi ẩn (dựng lại lần hiện sau)
         langModelStorage?.saveNow()   // extension có thể bị kill ngay sau disappear
+    }
+
+    /// Âm thanh phím: BẬT + Full Access ⇒ tiếng riêng (engine dựng nền), không kèm click hệ
+    /// thống. TẮT hoặc thiếu Full Access ⇒ click hệ thống như cũ, không dựng engine (0 chi phí).
+    /// Âm lượng 0 % ⇒ im hẳn (không quay về click hệ thống).
+    static func customKeySoundActive(setting: Bool, fullAccess: Bool) -> Bool { setting && fullAccess }
+
+    private func applyKeySound(_ settings: KeyboardSettings) {
+        let on = Self.customKeySoundActive(setting: settings.keySound, fullAccess: hasFullAccess)
+        KeyboardView.customSoundEnabled = on
+        KeySound.shared.setVolume(percent: settings.keySoundVolume)
+        if on && settings.keySoundVolume > 0 { KeySound.shared.prepare() } else { KeySound.shared.shutdown() }
+        if settings.keySound {
+            TouchLog.write("keysound setting=1 volume=\(settings.keySoundVolume) fullAccess=\(hasFullAccess ? 1 : 0)")
+        }
     }
 
     /// Nạp NỀN dữ liệu tính năng đang BẬT (tắt ⇒ không nạp gì): model cá nhân + bảng bigram
@@ -322,6 +339,7 @@ final class KeyboardViewController: UIInputViewController {
         closeClipboardPanel()
         addTonesCache = nil
         if view.window == nil { swipe = nil }
+        if view.window == nil { KeySound.shared.shutdown() }
     }
 
     // Host truyền .default là thường — dark/light thật nằm ở trait hệ thống,
