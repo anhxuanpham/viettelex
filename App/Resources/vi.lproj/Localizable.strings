@@ -314,6 +314,7 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 "Suggest tones for unaccented sentences" = "Gợi ý thêm dấu cho câu không dấu";
 "After 3+ unaccented syllables (toi di hoc), when you type . ! ? or pause after a space, the toned text (tôi đi học) shows next to the cursor; press Tab to replace it." = "Sau từ 3 âm tiết không dấu trở lên (toi di hoc), khi gõ . ! ? hoặc dừng tay sau dấu cách, câu có dấu (tôi đi học) hiện cạnh con trỏ, bấm Tab để thay.";
 "Suggest dates and times" = "Gợi ý ngày giờ";
+"Maths results, number chips, typo/tone/date suggestions, add-tones hotkey…" = "Phép tính, chip số, gợi ý sửa lỗi / thêm dấu / ngày giờ, phím tắt Thêm dấu…";
 "Type “hôm nay”, “ngày mai”, “hôm qua” or “bây giờ” (after an English word: today, tomorrow, yesterday, now) and a space — the date (28/09/2026) or time (21:35) shows next to the cursor; press Tab to replace the words with it." = "Gõ “hôm nay”, “ngày mai”, “hôm qua” hoặc “bây giờ” (sau một từ tiếng Anh: today, tomorrow, yesterday, now) rồi dấu cách — ngày (28/09/2026) hoặc giờ (21:35) hiện cạnh con trỏ, bấm Tab để thay cụm đó bằng ngày giờ.";
 "Add-tones hotkey" = "Phím tắt Thêm dấu";
 "Off" = "Tắt";

@@ -745,8 +745,20 @@ struct GeneralTab: View {
                 Text(model.loc("After an English word, an ambiguous next word whose keys spell an English word is kept English instead of Vietnamese — “he is” → “he is”, not “he í”. After a Vietnamese or unclear word it stays Vietnamese — “sao í”."))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section {
-                DisclosureGroup(isExpanded: $textToolsExpanded) {
+            Section(header: Button {
+                withAnimation(.easeInOut(duration: 0.15)) { textToolsExpanded.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Label(model.loc("Text tools"), systemImage: "textformat")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .rotationEffect(.degrees(textToolsExpanded ? 90 : 0))
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)) {
+                if textToolsExpanded {
                     Text(model.loc("Select text in any app, then open the VietTelex menu → Tools… and pick (or press 1–6): add tones to unaccented text (toi di hoc → tôi đi học), UPPERCASE, lowercase, Title Case, Sentence case, remove tones."))
                         .font(.caption).foregroundStyle(.secondary)
                     Toggle(model.loc("Show text tools in the VietTelex menu"), isOn: $model.textToolsInMenu)
@@ -773,8 +785,9 @@ struct GeneralTab: View {
                     Text(model.loc("Type “hôm nay”, “ngày mai”, “hôm qua” or “bây giờ” (after an English word: today, tomorrow, yesterday, now) and a space — the date (28/09/2026) or time (21:35) shows next to the cursor; press Tab to replace the words with it."))
                         .font(.caption).foregroundStyle(.secondary)
             
-                } label: {
-                    Label(model.loc("Text tools"), systemImage: "textformat")
+                } else {
+                    Text(model.loc("Maths results, number chips, typo/tone/date suggestions, add-tones hotkey…"))
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
             Section(header: Label(model.loc("iCloud sync"), systemImage: "icloud")) {
