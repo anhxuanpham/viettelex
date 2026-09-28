@@ -46,4 +46,16 @@ final class AutoShiftTests: XCTestCase {
         XCTAssertEqual(FieldPolicy.autoShift(enabled: true, autocap: .sentences, before: { reads += 1; return "Xin " }), false)
         XCTAssertEqual(reads, 2)
     }
+
+    /// Thanh địa chỉ (.webSearch): phím "," đổi thành "." như stock, nhưng vẫn là ô chữ tự do
+    /// (gõ Telex / vuốt) và vẫn không tự thêm dấu cách / tự sửa.
+    func testWebSearchFieldGetsDotKey() {
+        let t = FieldTraits(keyboardType: .webSearch)
+        XCTAssertEqual(t.inputKind, .search)
+        XCTAssertTrue(t.inputKind.isFreeText)
+        XCTAssertFalse(t.allowsAutoSpace)
+        XCTAssertFalse(AutoCorrect.fieldAllows(t))
+        XCTAssertTrue(FieldTraits().inputKind.isFreeText)
+        XCTAssertFalse(FieldTraits(keyboardType: .URL).inputKind.isFreeText)
+    }
 }

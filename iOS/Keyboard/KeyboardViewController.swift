@@ -1635,7 +1635,7 @@ extension KeyboardViewController {
     /// Ô literal (email/URL/username/mật khẩu), layout số/email/URL: tắt.
     fileprivate func smartTouchPrior() -> ((Character) -> Float?)? {
         guard smartTouchSetting, let t = fieldTraits, !t.passthrough, !t.secure,
-              t.inputKind == .normal, !bridge.passthrough else { return nil }
+              t.inputKind.isFreeText, !bridge.passthrough else { return nil }
         return TelexKeyPrior.sharedIfReady?.forTyping(bridge.rawWord, vniMode: bridge.vniMode)
     }
 }

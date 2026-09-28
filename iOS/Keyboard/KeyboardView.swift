@@ -1162,8 +1162,13 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
 
     /// Loại ô nhập (từ textDocumentProxy.keyboardType) → đổi layout như stock:
     /// number mở thẳng plane số; email đổi hàng đáy thành phím @ và . ; url
-    /// thành . / .com. Chỉ ảnh hưởng hàng đáy plane CHỮ + plane mở đầu.
-    enum InputKind { case normal, number, email, url }
+    /// thành . / .com; search (thanh địa chỉ/tìm kiếm trình duyệt, .webSearch) đổi
+    /// "," thành "." như stock. Chỉ ảnh hưởng hàng đáy plane CHỮ + plane mở đầu.
+    enum InputKind {
+        case normal, number, email, url, search
+        /// Ô chữ tự do: gõ tiếng Việt / vuốt / chọn phím theo ngữ cảnh như ô thường.
+        var isFreeText: Bool { self == .normal || self == .search }
+    }
     private var inputKind: InputKind = .normal
 
     func configureInputKind(_ kind: InputKind) {
@@ -2242,6 +2247,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             switch inputKind {
             case .email: puncts = [("@", "@", 0.11), (".", ".", 0.09)]
             case .url:   puncts = [(".", ".", 0.075), ("/", "/", 0.075), (".com", ".com", 0.17)]
+            // Thanh địa chỉ: stock hiện "." thay "," (gõ tên miền); iPad đã có ".?" riêng.
+            case .search: puncts = padLetters ? [] : [(".", ".", 0.075)]
             // iPad plane chữ: không phím "," riêng như stock ("!," hàng 3 đã có).
             default:     puncts = padLetters ? [] : [(",", ",", 0.075)]
             }

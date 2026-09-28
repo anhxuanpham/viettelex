@@ -78,7 +78,7 @@ struct FieldTraits: Equatable {
 
     /// Tự thêm dấu cách sau dấu câu: chỉ ô chữ thường (không email/URL/số/mật khẩu/omnibox).
     var allowsAutoSpace: Bool {
-        !passthrough && !secure && inputKind == .normal && keyboardType != .webSearch
+        !passthrough && !secure && inputKind == .normal
     }
 
     /// Loại layout (web input type=number/email/url ánh xạ sang keyboardType).
@@ -89,6 +89,7 @@ struct FieldTraits: Equatable {
             return .number
         case .emailAddress: return .email
         case .URL: return .url
+        case .webSearch: return .search
         default: return .normal
         }
     }

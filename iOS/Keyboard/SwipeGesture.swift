@@ -83,7 +83,7 @@ enum SwipePolicy {
     /// tắt. VoiceOver: tắt (cử chỉ kéo là của VoiceOver).
     static func enabled(setting: Bool, isPad: Bool, traits: FieldTraits?, voiceOver: Bool) -> Bool {
         guard setting, !isPad, !voiceOver, let t = traits else { return false }
-        return !t.passthrough && !t.secure && t.inputKind == .normal
+        return !t.passthrough && !t.secure && t.inputKind.isFreeText
     }
 }
 

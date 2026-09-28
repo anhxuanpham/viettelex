@@ -189,7 +189,7 @@ final class FieldTraitsTests: XCTestCase {
         XCTAssertEqual(FieldTraits(keyboardType: .numberPad).inputKind, .number)
         XCTAssertEqual(FieldTraits(keyboardType: .emailAddress).inputKind, .email)
         XCTAssertEqual(FieldTraits(keyboardType: .URL).inputKind, .url)
-        XCTAssertEqual(FieldTraits(keyboardType: .webSearch).inputKind, .normal)
+        XCTAssertEqual(FieldTraits(keyboardType: .webSearch).inputKind, .search)   // phím "." thay ","
         XCTAssertTrue(FieldTraits(keyboardType: .emailAddress).passthrough)
         XCTAssertFalse(FieldTraits(keyboardType: .webSearch, autocorrection: .no).passthrough)
         XCTAssertFalse(FieldTraits(autocorrection: .no).allowsSuggestions)
