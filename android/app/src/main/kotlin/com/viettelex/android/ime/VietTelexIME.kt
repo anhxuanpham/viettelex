@@ -268,6 +268,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
         if (!hwTyped) configureField(info, settings)
         kb.holdNewline = field.holdNewline   // giữ lâu Enter = xuống dòng (ô nhiều dòng)
         feedback.hapticsEnabled = settings.hapticFeedback
+        feedback.hapticStrength = settings.hapticStrength
         // Âm thanh phím riêng: TẮT ⇒ nhả/không dựng gì (tiếng hệ thống như cũ).
         feedback.configureSound(settings.keySound, settings.keySoundVolume) { worker().post(it) }
         kb.searchSettings = settings

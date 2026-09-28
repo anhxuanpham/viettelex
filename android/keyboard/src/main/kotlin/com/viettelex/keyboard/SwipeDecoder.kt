@@ -25,6 +25,8 @@ import kotlin.math.sqrt
  * NHỊP (khi có thời gian điểm — SwipePath.ts): đuôi nét chậm ⇒ miễn phần LỐ theo hướng nét cuối
  * (người thật trôi quá phím cuối ~0.45 phím trước khi nhấc tay); tầng 2 phạt phím giữa nằm trên
  * đoạn lướt nhanh và đòi điểm DỪNG gần một phím. Không có thời gian ⇒ y hệt thuật toán cũ.
+ * UỐN h (tầng 2, không cần thời gian): cặp ứng viên chỉ khác chữ h của phụ âm ghép (chưa/của) đổi
+ * chỗ theo độ uốn của đường về h ([Params.bendWeight]).
  * Mọi phép tính Float32 cùng thứ tự với bản Swift → cùng điểm trên cùng input.
  *
  * Bộ nhớ: lười — không đọc lexicon/dựng template tới lần decode đầu (hoặc [prepare]).
@@ -222,6 +224,21 @@ class SwipeDecoder(val params: Params = Params()) {
         val dwellWeight: Float = 3f,
         val dwellRatio: Float = 0.35f,
         /**
+         * CHỮ "h" CỦA PHỤ ÂM GHÉP (tầng 2): hai ứng viên trong pool khác nhau đúng một phím giữa h
+         * đứng sau c/n/t/p/k/g (Việt) hoặc t/s/c/w/p/g (Anh) — chưa/của, chú/cụ. Nét thật lướt qua h
+         * nhanh như phím thường (không chậm lại) nên nhịp không phân biệt được; thứ phân biệt là đường
+         * UỐN về h: uốn = khoảng cách h tới dây cung nối 2 phím kề − khoảng cách h tới đường (phím).
+         * Ứng viên có h += w·kẹp(uốn − [bendBias], ±[bendCap]), rồi kẹp trong [min, max] điểm cặp
+         * ± 0,01 (chỉ đổi chỗ TRONG cặp, không vượt ứng viên khác). Chỉ khi dây cung cách h trong
+         * [[bendMinChord], [bendMaxChord]] phím (h gần thẳng hàng như chọn/con ⇒ hình học không phân
+         * biệt được; xa ⇒ kênh location đã đủ). 0 = tắt.
+         */
+        val bendWeight: Float = 3f,
+        val bendBias: Float = 0.05f,
+        val bendCap: Float = 0.3f,
+        val bendMinChord: Float = 0.3f,
+        val bendMaxChord: Float = 1f,
+        /**
          * Lố đích ở đầu cuối: thành phần lệch THEO hướng nét cuối của template (đi quá phím
          * cuối trước khi nhấc tay) được miễn tới [overshoot] phím ở điểm cuối (giảm dần về
          * 0 hết đoạn [Params.endSpan]); 0 = tắt.
@@ -278,6 +295,11 @@ class SwipeDecoder(val params: Params = Params()) {
     private var ovScale = 0f
     private val rkx = FloatArray(32)
     private val rky = FloatArray(32)
+    /** Mã phím ứng viên vừa [candidateKeys]; pool tầng 2: mã phím từng ứng viên (32/ô) + số phím. */
+    private val rkc = IntArray(32)
+    private var poolKeys = ByteArray(0)
+    private var poolLen = IntArray(0)
+    private var poolHasH = BooleanArray(0)
     private var bx = FloatArray(0)
     private var by = FloatArray(0)
     private val cosCorner: Float
@@ -605,6 +627,7 @@ class SwipeDecoder(val params: Params = Params()) {
             if (c !in 0 until 26) return -1
             val x = l.centers[c * 2]
             if (!x.isFinite()) return -1
+            rkc[k] = c
             rkx[k] = x; rky[k] = l.centers[c * 2 + 1]; k++
         }
         return k
@@ -631,8 +654,20 @@ class SwipeDecoder(val params: Params = Params()) {
         detectCorners(w)
         computeSpeed(xs, ys, ts, count)
         val t = params.rescoreTunnel * w
+        val bend = params.bendWeight > 0f
+        if (bend && poolLen.size < filled) {
+            poolLen = IntArray(filled); poolKeys = ByteArray(filled * 32); poolHasH = BooleanArray(filled)
+        }
         for (k in 0 until filled) {
             val km = candidateKeys(topIdx[k], l, en, fc)
+            if (bend) {
+                // 0 = không có h giữa ⇒ bỏ qua khi ghép cặp (đa số ứng viên)
+                var hasH = false
+                for (j in 1 until km - 1) if (rkc[j] == H) { hasH = true; break }
+                poolLen[k] = if (km > 0) km else 0
+                poolHasH[k] = hasH
+                for (j in 0 until km) poolKeys[k * 32 + j] = rkc[j].toByte()
+            }
             if (km <= 0) continue
             var cost = 0f
             if (params.alignWeight > 0f || speedOn) {
@@ -652,6 +687,7 @@ class SwipeDecoder(val params: Params = Params()) {
             }
             topScore[k] -= cost
         }
+        if (bend) insertionBend(l, fc)
         // insertion sort ổn định, giảm dần
         for (i in 1 until filled) {
             val s = topScore[i]; val id = topIdx[i]; val d = topDl[i]
@@ -660,6 +696,56 @@ class SwipeDecoder(val params: Params = Params()) {
                 topScore[j] = topScore[j - 1]; topIdx[j] = topIdx[j - 1]; topDl[j] = topDl[j - 1]; j--
             }
             topScore[j] = s; topIdx[j] = id; topDl[j] = d
+        }
+    }
+
+    /**
+     * Cặp ứng viên B = A + một phím giữa K (cùng ngôn ngữ): B += w·kẹp(uốn − bias, ±cap), uốn =
+     * d(K, dây cung phím trước–phím sau) − d(K, đường 48 điểm) (phím). Mỗi B lấy cặp A đầu tiên.
+     */
+    private fun insertionBend(l: SwipeLayout, fc: Int) {
+        val w = l.keyWidth
+        val c = l.centers
+        for (b in 0 until filled) {
+            val nb = poolLen[b]
+            if (nb < 3 || !poolHasH[b]) continue
+            val bEn = topIdx[b] >= fc
+            for (a in 0 until filled) {
+                if (poolLen[a] != nb - 1 || (topIdx[a] >= fc) != bEn) continue
+                var j = 0
+                while (j < nb - 1 && poolKeys[b * 32 + j] == poolKeys[a * 32 + j]) j++
+                if (j == 0 || j >= nb - 1) continue
+                var same = true
+                for (q in j until nb - 1) if (poolKeys[b * 32 + q + 1] != poolKeys[a * 32 + q]) { same = false; break }
+                if (!same) continue
+                val kp = poolKeys[b * 32 + j - 1].toInt(); val kk = poolKeys[b * 32 + j].toInt()
+                val kn = poolKeys[b * 32 + j + 1].toInt()
+                if (kk != H || !(if (bEn) H_AFTER_EN else H_AFTER_VI)[kp]) continue
+                val px = c[kp * 2]; val py = c[kp * 2 + 1]; val kx = c[kk * 2]; val ky = c[kk * 2 + 1]
+                val nx = c[kn * 2]; val ny = c[kn * 2 + 1]
+                val dx = nx - px; val dy = ny - py
+                val len2 = dx * dx + dy * dy
+                var u = if (len2 > 0f) ((kx - px) * dx + (ky - py) * dy) / len2 else 0f
+                if (u < 0f) u = 0f else if (u > 1f) u = 1f
+                val cx = kx - (px + u * dx); val cy = ky - (py + u * dy)
+                val chord = sqrt(cx * cx + cy * cy) / w
+                if (chord < params.bendMinChord || chord > params.bendMaxChord) break
+                var best = Float.MAX_VALUE
+                for (i in 0 until mx.size) {
+                    val ex = mx[i] - kx; val ey = my[i] - ky
+                    val q = ex * ex + ey * ey
+                    if (q < best) best = q
+                }
+                var g = chord - sqrt(best) / w - params.bendBias
+                if (g > params.bendCap) g = params.bendCap else if (g < -params.bendCap) g = -params.bendCap
+                // chỉ đổi thứ tự TRONG cặp: B mới kẹp trong [min(A, B) − ε, max(A, B) + ε]
+                val sa = topScore[a]; val sb = topScore[b]
+                var v = sb + params.bendWeight * g
+                val hi = (if (sa > sb) sa else sb) + BEND_EPS; val lo = (if (sa < sb) sa else sb) - BEND_EPS
+                if (v > hi) v = hi else if (v < lo) v = lo
+                topScore[b] = v
+                break
+            }
         }
     }
 
@@ -850,6 +936,14 @@ class SwipeDecoder(val params: Params = Params()) {
     fun learnOffset(path: SwipePath, folded: String): Boolean = learnOffset(path.xs, path.ys, path.count, folded)
 
     companion object {
+        private const val BEND_EPS = 0.01f
+        private const val H = 'h' - 'a'
+        /** Phím đứng trước h thành phụ âm ghép: Việt ch nh th ph kh gh; Anh th sh ch wh ph gh. */
+        private val H_AFTER_VI = keySet("cntpkg")
+        private val H_AFTER_EN = keySet("tscwpg")
+
+        private fun keySet(s: String): BooleanArray = BooleanArray(26).also { m -> for (c in s) m[c - 'a'] = true }
+
         /**
          * Phân xử ngôn ngữ trên danh sách đã xếp (port Swift `arbitrate`): top-1 tiếng Anh
          * mà có ứng viên Việt kém < [margin] ⇒ ứng viên Việt đó lên đầu; top-K thiếu ngôn

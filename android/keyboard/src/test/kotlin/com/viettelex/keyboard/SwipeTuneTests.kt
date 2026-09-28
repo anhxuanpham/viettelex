@@ -9,14 +9,17 @@ import java.util.Locale
 
 /**
  * BỘ ĐO CHỈNH decoder gõ vuốt (không chạy mặc định — SWIPE_TUNE=1). Đo trên CÙNG layout iPhone
- * (bước phím 36.8) với: nét THẬT (SWIPE_TRACES=file xuất từ Luyện vuốt, tách nửa A/B theo chỉ số
- * chẵn/lẻ), từ rời + câu giữ lại với đường giả "đều" (SwipeSim.path) và "tự nhiên"
- * (SwipeSim.natural, hiệu chỉnh theo nét thật). SWIPE_CFGS="legacy;base;sw=1,ov=0.5…" (khoá: xem
- * [cfgs]); SWIPE_TEST=1 ⇒ tập kiểm thử thay dev; SWIPE_JOINT=0 ⇒ sửa từ trước theo top-1 từ kế
- * (cũ). Kết quả 28/09/2026: docs/DATA-SOURCES.md "Nét vuốt thật".
+ * (bước phím 36.8) với: nét THẬT (SWIPE_TRACES=file xuất từ Luyện vuốt — KHÔNG commit; tách tất
+ * định 70 % chỉnh / 30 % giữ lại bằng [split]), từ rời + câu giữ lại với đường giả "đều"
+ * (SwipeSim.path) và "tự nhiên" (SwipeSim.natural, hiệu chỉnh theo nét thật).
+ * SWIPE_CFGS="nobend;base;bw=2,bb=0.1…" (khoá: xem [cfgs]; nobend = trước uốn h, legacy = trước
+ * nhịp); SWIPE_TEST=1 ⇒ tập kiểm thử thay dev (lỗi in theo tập đó); SWIPE_MISS=1 ⇒ bảng lỗi dạng +
+ * lỗi DẤU; SWIPE_ISOMISS=1 ⇒ lỗi từ rời; SWIPE_WORDS=chưa,của ⇒ top-1 từng từ trong câu (có ngữ
+ * cảnh); SWIPE_JOINT=0 ⇒ sửa từ trước theo top-1 từ kế (cũ). Kết quả: docs/DATA-SOURCES.md
+ * "Nét vuốt thật".
  *
- *   SWIPE_TUNE=1 SWIPE_TRACES=… SWIPE_CFGS='legacy;base' ./gradlew --offline :keyboard:test \
- *     --tests '*SwipeTuneTests.tune' -i | grep TUNE
+ *   SWIPE_TUNE=1 SWIPE_TRACES=… SWIPE_CFGS='nobend;base' ./gradlew --offline :keyboard:test \
+ *     --tests '*SwipeTuneTests.tune' --rerun -i | grep TUNE
  */
 class SwipeTuneTests {
     @Before fun setUp() = TestAssets.install()
@@ -47,8 +50,16 @@ class SwipeTuneTests {
 
     data class Cfg(val name: String, val p: SwipeDecoder.Params)
 
-    private fun realEval(traces: List<SwipeTrace>, p: SwipeDecoder.Params): Triple<Int, Int, List<String>> {
-        var t1 = 0; var t3 = 0; val miss = ArrayList<String>()
+    data class Real(val n: Int, val t1: Int, val t3: Int, val viN: Int, val viT1: Int, val acc: Int,
+                    val miss: List<String>, val tone: List<String>) {
+        fun fmt() = String.format(Locale.ROOT, "%.3f/%.3f vi %.3f en %.3f dấu %.3f (n=%d)", t1.toDouble() / n,
+            t3.toDouble() / n, viT1.toDouble() / maxOf(1, viN), (t1 - viT1).toDouble() / maxOf(1, n - viN),
+            acc.toDouble() / n, n)
+    }
+
+    private fun realEval(traces: List<SwipeTrace>, p: SwipeDecoder.Params): Real {
+        var t1 = 0; var t3 = 0; var viN = 0; var viT1 = 0; var acc = 0
+        val miss = ArrayList<String>(); val tone = ArrayList<String>()
         val ds = HashMap<SwipeLayout, SwipeDecoder>()
         for (t in traces) {
             val d = ds.getOrPut(t.layout) { SwipeDecoder(p).also { it.setLayout(t.layout) } }
@@ -56,10 +67,38 @@ class SwipeTuneTests {
             val c = full.map { it.folded }
             if (System.getenv("SWIPE_ONLY") == t.folded) println("TUNE ONLY ${t.folded}: " +
                 full.joinToString { String.format(Locale.ROOT, "%s %.2f", it.folded, it.score) })
-            if (c.firstOrNull() == t.folded) t1++ else miss.add("${t.folded}→${c.firstOrNull()}")
+            val vi = t.lang == SwipeLang.VI
+            if (vi) viN++
+            if (c.firstOrNull() == t.folded) {
+                t1++; if (vi) viT1++
+                // chấm cả DẤU (Luyện vuốt hiện từ có dấu): dạng đúng + dấu mạnh nhất = mục tiêu
+                val top = if (full[0].lang == SwipeLang.EN) full[0].folded else SwipeDecoder.expand(full[0].folded, 1).firstOrNull()?.word
+                if (top == t.target) acc++ else tone.add("${t.target}→$top")
+            } else miss.add("${t.folded}→${c.firstOrNull()}")
             if (t.folded in c.take(3)) t3++
         }
-        return Triple(t1, t3, miss)
+        return Real(traces.size, t1, t3, viN, viT1, acc, miss, tone)
+    }
+
+    /**
+     * Tách nét thật TẤT ĐỊNH 70 % chỉnh / 30 % giữ lại: phân tầng theo dạng mục tiêu (Luyện vuốt
+     * lặp một từ tới khi đúng ⇒ các lần thử cùng từ tương quan), trong mỗi nhóm xếp theo băm chỉ
+     * số, lần thứ k vào tập giữ lại khi (3k + băm(từ)) mod 10 < 3.
+     */
+    fun split(real: List<SwipeTrace>): Pair<List<SwipeTrace>, List<SwipeTrace>> {
+        fun mix(v: Long): Long {
+            var z = v * -0x61c8864680b583ebL
+            z = (z xor (z ushr 30)) * -0x40a7b892e31b1a47L
+            z = (z xor (z ushr 27)) * -0x6b2fb644ecceee15L
+            return z xor (z ushr 31)
+        }
+        val dev = ArrayList<Int>(); val test = ArrayList<Int>()
+        for ((w, idx) in real.indices.groupBy { real[it].folded }) {
+            val order = idx.sortedBy { mix(it.toLong() + 1) }
+            val off = ((mix(w.fold(7L) { h, ch -> h * 31 + ch.code }) ushr 1) % 10).toInt()
+            for ((k, i) in order.withIndex()) if ((k * 3 + off) % 10 < 3) test.add(i) else dev.add(i)
+        }
+        return dev.sorted().map { real[it] } to test.sorted().map { real[it] }
     }
 
     private fun isolated(p: SwipeDecoder.Params, natural: Boolean, seed: Long, n: Int = 300): Pair<Double, Double> {
@@ -73,12 +112,17 @@ class SwipeTuneTests {
         for ((w, lang) in vn.map { it to SwipeLang.VI } + en.map { it to SwipeLang.EN }) {
             val path = if (natural) sim.natural(w, ios) else sim.path(w, ios)
             val c = SwipePractice.decode(d, path, lang).map { it.folded }
-            if (c.firstOrNull() == w) t1++
+            if (c.firstOrNull() == w) t1++ else if (System.getenv("SWIPE_ISOMISS") == "1")
+                println("TUNE ISOMISS ${if (natural) "nat" else "old"} $w→${c.firstOrNull()}")
             if (w in c.take(3)) t3++
         }
         val tot = (vn.size + en.size).toDouble()
         return t1 / tot to t3 / tot
     }
+
+    /** SWIPE_WORDS=chưa,của… ⇒ in top-1 từng từ trong câu giữ lại (có ngữ cảnh). */
+    private val watch = System.getenv("SWIPE_WORDS")?.split(',')?.toSet() ?: emptySet()
+    private val watchHits = HashMap<String, IntArray>()
 
     private fun sentences(p: SwipeDecoder.Params, chains: List<List<String>>, natural: Boolean, seed: Long,
                           english: Boolean = true): Triple<Double, Double, Double> {
@@ -98,7 +142,11 @@ class SwipeTuneTests {
             n++
             if (c.word == w) t1++
             if (c.word == w || w in c.alternatives.take(2)) t3++
+            if (w in watch) watchHits.getOrPut(w) { IntArray(2) }.also { it[0]++; if (c.word == w) it[1]++ }
         }
+        if (watch.isNotEmpty()) println("TUNE WORDS " + (if (natural) "nat " else "old ") + watch.joinToString(" ") { k ->
+            watchHits[k]?.let { "$k ${it[1]}/${it[0]}" } ?: "$k -" })
+        watchHits.clear()
         return Triple(t1.toDouble() / n, t3.toDouble() / n, ns / 1e6 / n)
     }
 
@@ -111,7 +159,7 @@ class SwipeTuneTests {
                 val (k, v) = if ('=' in kv) kv.split('=') else listOf(kv, "")
                 p = when (k) {
                     "base" -> p
-                    "legacy" -> p.copy(speedWeight = 0f, dwellWeight = 0f, overshoot = 0f)
+                    "legacy" -> p.copy(speedWeight = 0f, dwellWeight = 0f, overshoot = 0f, bendWeight = 0f)
                     "sw" -> p.copy(speedWeight = v.toFloat())
                     "sr" -> p.copy(speedRef = v.toFloat())
                     "dw" -> p.copy(dwellWeight = v.toFloat())
@@ -129,6 +177,12 @@ class SwipeTuneTests {
                     "lw" -> p.copy(lengthWeight = v.toFloat())
                     "tun" -> p.copy(tunnel = v.toFloat())
                     "am" -> p.copy(adaptMax = v.toFloat())
+                    "nobend" -> p.copy(bendWeight = 0f)
+                    "bw" -> p.copy(bendWeight = v.toFloat())
+                    "bb" -> p.copy(bendBias = v.toFloat())
+                    "bc" -> p.copy(bendCap = v.toFloat())
+                    "bm" -> p.copy(bendMinChord = v.toFloat())
+                    "bx" -> p.copy(bendMaxChord = v.toFloat())
                     "at" -> p.copy(adaptThreshold = v.toFloat())
                     else -> error("khoá lạ $k")
                 }
@@ -140,7 +194,6 @@ class SwipeTuneTests {
     @Test fun tune() {
         assumeTrue(System.getenv("SWIPE_TUNE") == "1")
         val real = System.getenv("SWIPE_TRACES")?.let { SwipePractice.parseExport(File(it).readText()) } ?: emptyList()
-        val a = real.filterIndexed { i, _ -> i % 2 == 0 }; val b = real.filterIndexed { i, _ -> i % 2 == 1 }
         val all = heldout()
         val dev = all.filterIndexed { i, _ -> i % 12 == 0 }
         val test = all.filterIndexed { i, _ -> i % 12 == 6 }
@@ -149,10 +202,15 @@ class SwipeTuneTests {
         for (c in cfgs()) {
             val sb = StringBuilder(String.format(Locale.ROOT, "%-40s", c.name))
             if ("real" in what && real.isNotEmpty()) {
-                val ra = realEval(a, c.p); val rb = realEval(b, c.p); val r = realEval(real, c.p)
-                sb.append(String.format(Locale.ROOT, " | realA %2d/%d realB %2d/%d all %.3f/%.3f",
-                    ra.first, a.size, rb.first, b.size, r.first.toDouble() / real.size, r.second.toDouble() / real.size))
-                if (System.getenv("SWIPE_MISS") == "1") sb.append(" miss=" + r.third.joinToString(" "))
+                val (dv, te) = split(real)
+                val rd = realEval(dv, c.p); val rt = realEval(te, c.p)
+                sb.append(" | realDev ").append(rd.fmt()).append(" realTest ").append(rt.fmt())
+                if (System.getenv("SWIPE_MISS") == "1") {
+                    val r = if (useTest) rt else rd
+                    fun hist(l: List<String>) = l.groupingBy { it }.eachCount().entries.sortedBy { -it.value }
+                        .joinToString(" ") { "${it.key}×${it.value}" }
+                    sb.append("\nTUNE   miss=").append(hist(r.miss)).append("\nTUNE   dấu=").append(hist(r.tone))
+                }
             }
             if ("iso" in what) {
                 val nd = isolated(c.p, true, if (useTest) 2 else 1); val od = isolated(c.p, false, if (useTest) 2 else 1)
@@ -165,6 +223,19 @@ class SwipeTuneTests {
                     sn.first, sn.second, so.first, so.second, (sn.third + so.third) / 2))
             }
             println("TUNE " + sb)
+        }
+    }
+
+    /** In tần suất các dấu của từng dạng (SWIPE_FORMS=chua,cua…). */
+    @Test fun forms() {
+        assumeTrue(System.getenv("SWIPE_TUNE") == "1")
+        val b = VNLexicon2Data.blob
+        for (w in (System.getenv("SWIPE_FORMS") ?: "chua,cua").split(',')) {
+            val f = SwipeLexicon.indexOf(w)
+            if (f < 0) { println("TUNE FORM $w: không có"); continue }
+            val fs = SwipeLexicon.forms
+            println("TUNE FORM $w f=${fs.freq[f]} " + (fs.idStart[f] until fs.idStart[f + 1])
+                .joinToString { "${VNSuggest.display(it)}:${b.freq(it)}" })
         }
     }
 
@@ -252,7 +323,16 @@ class SwipeTuneTests {
                 for (chain in ch) {
                     val r = phrase(d, chain, { w -> if (natural) sim.natural(w, ios) else sim.path(w, ios) }, english)
                     n += chain.size; ok += chain.indices.count { r[it] == chain[it] }
+                    if (System.getenv("SWIPE_SEQDUMP") == "1") println("TUNE SEQ ${c.name} ${if (natural) "nat" else "old"} ${chain.joinToString(" ")} → ${r.joinToString(" ")}")
+                    for (i in chain.indices) if (chain[i] in watch)
+                        watchHits.getOrPut(chain[i]) { IntArray(2) }.also {
+                            it[0]++; if (r[i] == chain[i]) it[1]++
+                            else if (System.getenv("SWIPE_MISS") == "1") println("TUNE SEQMISS ${chain.joinToString(" ")} → ${r.joinToString(" ")}")
+                        }
                 }
+                if (watch.isNotEmpty()) println("TUNE SEQWORDS ${c.name} " + (if (natural) "nat " else "old ") +
+                    watch.joinToString(" ") { k -> watchHits[k]?.let { "$k ${it[1]}/${it[0]}" } ?: "$k -" })
+                watchHits.clear()
                 sb.append(String.format(Locale.ROOT, " | seq%s %.4f (n=%d, %.3f ms/từ)", if (natural) "Nat" else "Old",
                     ok.toDouble() / n, n, (System.nanoTime() - t0) / 1e6 / n))
             }

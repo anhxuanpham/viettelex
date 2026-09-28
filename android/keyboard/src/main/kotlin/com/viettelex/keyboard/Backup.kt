@@ -48,6 +48,7 @@ object BackupSettings {
         Spec(Keys.TEMPLATES_ENABLED, SettingKind.Bool(true)),
         Spec(Keys.SHOW_SPACE_LOGO, SettingKind.Bool(true)),
         Spec(Keys.HAPTIC_FEEDBACK, SettingKind.Bool(false)),
+        Spec(Keys.HAPTIC_STRENGTH, SettingKind.IntRange(HapticStrength.DEFAULT, HapticStrength.RANGE)),
         Spec(Keys.KEY_SOUND, SettingKind.Bool(false)),
         Spec(Keys.KEY_SOUND_VOLUME, SettingKind.IntRange(50, 0..100)),
         Spec(Keys.NUMBER_ROW, SettingKind.Bool(false)),

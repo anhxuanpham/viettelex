@@ -4,23 +4,72 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.SoundPool
+import android.os.Build
 import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.view.HapticFeedbackConstants
 import android.view.View
+import com.viettelex.keyboard.HapticStrength
 import com.viettelex.keyboard.KeySoundSynth
 import java.io.File
 
 /**
- * Âm + rung ở TOUCH-DOWN (spec §8).
- * Âm, setting "Âm thanh phím" TẮT (mặc định): AudioManager.playSoundEffect — chỉ kêu khi
- * "Âm thanh khi chạm" của hệ thống bật (y như trước, không dựng gì thêm).
- * Âm, setting BẬT: tiếng click riêng ([KeySoundSynth], SoundPool nạp sẵn) theo âm lượng
- * thanh trượt, KHÔNG kèm tiếng hệ thống; im khi máy ở Rung/Im lặng (như Gboard/AOSP).
- * Rung: toggle hapticFeedback (mặc định TẮT), Android không cần quyền đặc biệt.
+ * Âm + rung ở TOUCH-DOWN (spec §8). Âm: AudioManager.playSoundEffect — chỉ kêu khi
+ * "Âm thanh khi chạm" của hệ thống bật. Rung: toggle hapticFeedback (mặc định TẮT) +
+ * độ mạnh hapticStrength 10…100 % (giống iOS). Rung bằng Vibrator (quyền VIBRATE) chứ
+ * không performHapticFeedback: KEYBOARD_TAP bị hệ thống bỏ qua khi "Phản hồi khi chạm"/
+ * "Rung bàn phím" tắt (FLAG_IGNORE_GLOBAL_SETTING vô hiệu từ API 33) và không chỉnh
+ * được độ mạnh. Một VibrationEffect dựng sẵn cho mỗi độ mạnh (không cấp phát mỗi phím);
+ * tắt rung ⇒ không lấy Vibrator, không dựng gì. Máy không có motor ⇒ performHapticFeedback.
+ *
+ * Âm thanh phím riêng (setting keySound, mặc định TẮT ⇒ playSoundEffect như trên): BẬT ⇒
+ * click tổng hợp ([KeySoundSynth], SoundPool nạp sẵn) theo âm lượng thanh trượt, KHÔNG kèm
+ * tiếng hệ thống; im khi máy ở Rung/Im lặng (như Gboard/AOSP LatinIME).
  */
 class Feedback(private val ctx: Context) {
     private val audio = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val appCtx = ctx.applicationContext
     @Volatile var hapticsEnabled = false
+        set(v) { field = v; if (!v) { tapEffect = null; tickEffect = null } }
+
+    /** % đã kẹp; đổi ⇒ dựng lại hiệu ứng lười ở lần rung sau. */
+    @Volatile var hapticStrength = HapticStrength.DEFAULT
+        set(v) {
+            val c = HapticStrength.clamp(v)
+            if (c != field) { field = c; tapEffect = null; tickEffect = null }
+        }
+
+    private var vibratorLoaded = false
+    private var vibrator: Vibrator? = null
+    private var tapEffect: VibrationEffect? = null
+    private var tickEffect: VibrationEffect? = null
+
+    private fun vib(): Vibrator? {
+        if (!vibratorLoaded) {
+            vibratorLoaded = true
+            vibrator = runCatching {
+                if (Build.VERSION.SDK_INT >= 31)
+                    (appCtx.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
+                else @Suppress("DEPRECATION") (appCtx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
+            }.getOrNull()?.takeIf { it.hasVibrator() }
+        }
+        return vibrator
+    }
+
+    private fun effect(v: Vibrator, percent: Int): VibrationEffect =
+        if (v.hasAmplitudeControl())
+            VibrationEffect.createOneShot(HapticStrength.amplitudeDurationMs(percent), HapticStrength.amplitude(percent))
+        else VibrationEffect.createOneShot(HapticStrength.durationOnlyMs(percent), VibrationEffect.DEFAULT_AMPLITUDE)
+
+    /** Rung một nhịp theo độ mạnh; false ⇒ không có Vibrator, gọi view.performHapticFeedback. */
+    private fun vibrate(tick: Boolean): Boolean {
+        val v = vib() ?: return false
+        val e = if (tick) tickEffect ?: effect(v, hapticStrength / 2).also { tickEffect = it }
+                else tapEffect ?: effect(v, hapticStrength).also { tapEffect = it }
+        return runCatching { v.vibrate(e) }.isSuccess
+    }
 
     // --- Âm phím riêng (chỉ đụng trên main, trừ nạp WAV trên worker) ---
     private var soundEnabled = false
@@ -44,8 +93,8 @@ class Feedback(private val ctx: Context) {
         soundEnabled = enabled
         volumePercent = volume.coerceIn(0, 100)
         gain = KeySoundSynth.gain(volumePercent)
-        refreshRinger(force = true)
         if (!enabled || volumePercent == 0) { releaseSound(); return }
+        refreshRinger(force = true)
         if (pool != null) return
         val p = SoundPool.Builder().setMaxStreams(4).setAudioAttributes(
             AudioAttributes.Builder()
@@ -92,7 +141,7 @@ class Feedback(private val ctx: Context) {
             }
             KeySoundSynth.Route.SILENT -> {}
         }
-        if (hapticsEnabled) {
+        if (hapticsEnabled && !vibrate(tick = false)) {
             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP,
                 HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING)
         }
@@ -100,7 +149,7 @@ class Feedback(private val ctx: Context) {
 
     /** Nấc nhẹ (vuốt ⌫ thêm/bớt một từ): chỉ rung, không âm. */
     fun tick(view: View) {
-        if (hapticsEnabled) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK,
+        if (hapticsEnabled && !vibrate(tick = true)) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK,
             HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING)
     }
 

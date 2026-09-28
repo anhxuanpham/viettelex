@@ -176,11 +176,17 @@ fun SwipePracticeDialog(onDismiss: () -> Unit) {
                 }
                 VTSection(header = tr("Dữ liệu"), footer = tr("Nét vuốt chỉ nằm trên máy này (không sao lưu, không tự gửi đi). Xuất JSON để gửi cho nhà phát triển nếu bạn muốn giúp gõ vuốt chính xác hơn.")) {
                     SettingToggle(tr("Lưu nét vuốt trên máy"), if (stored > 0) tr("Đã lưu %s nét.", stored) else tr("Tắt: chỉ luyện, không lưu gì."), save) { save = it }
-                    if (stored > 0) {
-                        RowDivider()
-                        VTRow(onClick = { scope.launch(Dispatchers.IO) { TraceStore.share(ctx) } }) {
-                            Text(tr("Xuất JSON…"), style = VTType.body, color = c.accent)
+                    // Nút xuất LUÔN hiện (mờ + hướng dẫn khi chưa có nét) — trước ẩn tới khi có nét
+                    // nên người dùng không tìm thấy (Phil 28/09, giống iOS 99e9501).
+                    RowDivider()
+                    VTRow(onClick = if (stored > 0) ({ scope.launch(Dispatchers.IO) { TraceStore.share(ctx) } }) else null) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(tr("Xuất JSON…"), style = VTType.body, color = if (stored > 0) c.accent else c.tertiary)
+                            if (stored == 0) Text(tr("Bật \"Lưu nét vuốt trên máy\" rồi vuốt vài từ để xuất được."),
+                                style = VTType.footnote, color = c.secondary)
                         }
+                    }
+                    if (stored > 0) {
                         RowDivider()
                         VTRow(onClick = {
                             if (!confirmDelete) { confirmDelete = true; return@VTRow }
