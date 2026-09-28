@@ -138,6 +138,8 @@ final class KeyboardViewController: UIInputViewController {
     var debugProxy: UITextDocumentProxy?
     override var textDocumentProxy: UITextDocumentProxy { debugProxy ?? super.textDocumentProxy }
     var debugKeyboard: KeyboardView { keyboard }
+    /// Test: gửi thẳng một phím vào handle() (dấu câu, ⌫…) như KeyboardView gửi.
+    func debugHandle(_ key: KeyboardView.Key) { handle(key) }
     #endif
 
     #if DEBUG
@@ -174,6 +176,8 @@ final class KeyboardViewController: UIInputViewController {
         filterSensitive = settings.filterSensitive
         showSuggestionsSetting = settings.showSuggestions
         autoCapitalizeSetting = settings.autoCapitalize
+        autoSpaceSetting = settings.autoSpaceAfterPunct
+        autoSpacePunct = nil; autoSpaceUnderLetter = nil
         swipeSetting = settings.swipeTyping
         swipeEnglishSetting = settings.swipeEnglish
         swipeFutoSetting = settings.swipeFuto
@@ -344,6 +348,40 @@ final class KeyboardViewController: UIInputViewController {
     private var fieldTraits: FieldTraits?
     private var showSuggestionsSetting = true
     private var autoCapitalizeSetting = true
+    /// "Tự thêm dấu cách sau dấu câu" (AutoSpace) — tắt ⇒ không đọc context, không state.
+    private var autoSpaceSetting = false
+    /// Dấu câu/ngoặc vừa được thêm dấu cách tự động (sống tới phím kế).
+    private var autoSpacePunct: Character?
+    /// Phím chữ gõ ngay sau dấu cách tự thêm — iPad vuốt xuống / giữ ra dấu câu huỷ phím
+    /// chữ đó (replaceLastLetter) thì dấu cách tự thêm lại nằm ngay trước con trỏ.
+    private var autoSpaceUnderLetter: Character?
+
+    /// Dấu cách tự thêm sau `p` còn nằm ngay trước con trỏ (host/người dùng chưa đổi gì)?
+    private func autoSpaceStillThere(_ p: Character) -> Bool {
+        (textDocumentProxy.documentContextBeforeInput ?? "").hasSuffix(String(p) + " ")
+    }
+
+    private func removeAutoSpace() {
+        let was = applyingEdit
+        applyingEdit = true
+        textDocumentProxy.deleteBackward()
+        applyingEdit = was
+    }
+
+    /// Sau phím chèn `s` (dấu câu, ký hiệu): thêm dấu cách nếu công tắc bật + ô cho phép
+    /// + AutoSpace.shouldAdd; `carry` = dời dấu cách tự thêm ra sau ngoặc đóng vừa gõ.
+    private func applyAutoSpace(after s: String, carry: Bool) {
+        guard autoSpaceSetting, s.count == 1, let c = s.first,
+              carry || AutoSpace.triggers.contains(c) else { return }
+        guard fieldTraits?.allowsAutoSpace ?? true, !bridge.passthrough,
+              (textDocumentProxy as UITextInputTraits).isSecureTextEntry != true else { return }
+        if !carry {
+            guard AutoSpace.shouldAdd(punct: s, before: textDocumentProxy.documentContextBeforeInput ?? "",
+                                      after: textDocumentProxy.documentContextAfterInput) else { return }
+        }
+        textDocumentProxy.insertText(" ")
+        autoSpacePunct = c
+    }
 
     /// Đọc trait ô và cấu hình lại bàn phím CHỈ khi trait đổi (hoặc `force` ở
     /// viewWillAppear). Host đổi ô trong cùng app không gọi viewWillAppear → gọi
@@ -511,6 +549,41 @@ final class KeyboardViewController: UIInputViewController {
         let proxy = Proxy(p: textDocumentProxy)
         // textWillChange tới mà textDidChange chưa kịp → đối chiếu ngay trước phím.
         if externalChangePending, !trackpadActive { syncComposition("key") }
+        // Tự thêm dấu cách sau dấu câu: phím ngay sau quyết định số phận dấu cách đó.
+        var autoSpaceCarry = false
+        let underLetter = autoSpaceUnderLetter
+        autoSpaceUnderLetter = nil
+        if let p = autoSpacePunct {
+            autoSpacePunct = nil
+            if autoSpaceStillThere(p) {
+                switch key {
+                case .space, .doubleSpacePeriod:
+                    return                                // đã có dấu cách: nuốt, không thành 2
+                case .backspace:
+                    removeAutoSpace()                     // ⌫ chỉ xoá dấu cách tự thêm
+                    lastInsertWasSpace = false
+                    suggestionGen += 1
+                    let gen = suggestionGen
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, gen == self.suggestionGen else { return }
+                        self.updateAutoShift()
+                        if self.suggestionsActive { self.updateSuggestions() }
+                    }
+                    return
+                case .newline:
+                    removeAutoSpace()
+                case .text(let s):
+                    switch AutoSpace.reaction(toText: s) {
+                    case .keep: break
+                    case .remove: removeAutoSpace()
+                    case .carry: removeAutoSpace(); autoSpaceCarry = true
+                    }
+                case .letter:
+                    autoSpaceUnderLetter = p
+                default: break
+                }
+            }
+        }
         if textToolUndo != nil {               // ⌫ ngay sau công cụ văn bản = hoàn tác
             if case .backspace = key { undoTextTool(); return }
             textToolUndo = nil
@@ -568,11 +641,16 @@ final class KeyboardViewController: UIInputViewController {
         case .replaceLastLetter(let s):
             // Huỷ đúng phím chữ vừa gõ (không được thì ⌫ như cũ) rồi chèn như ký hiệu.
             if !bridge.undoLastLetter(proxy: proxy) { bridge.backspace(proxy: proxy) }
+            if let q = underLetter, autoSpaceSetting {
+                let r = AutoSpace.reaction(toText: s)
+                if r != .keep, autoSpaceStillThere(q) { removeAutoSpace(); autoSpaceCarry = r == .carry }
+            }
             if let d = Self.singleDigit(s), bridge.vniDigit(d, proxy: proxy) {
                 // VNI: số vuốt xuống (iPad) trong từ = phím dấu
             } else {
                 commitAndLearn(bridge.boundary(s, proxy: proxy), accepted: openAccepted)
                 lastWord = nil; lastWord2 = nil
+                applyAutoSpace(after: s, carry: autoSpaceCarry)
             }
             restoreUndo = nil; undoOfferActive = false
         case .text(let s):                            // numbers, symbols
@@ -583,6 +661,7 @@ final class KeyboardViewController: UIInputViewController {
                 commitAndLearn(final, accepted: openAccepted)
                 lastWord = nil; lastWord2 = nil            // dấu câu/ký hiệu = ngắt câu
                 typedCommit = (final, s)
+                applyAutoSpace(after: s, carry: autoSpaceCarry)
             }
             restoreUndo = nil; undoOfferActive = false
         case .space:
@@ -702,7 +781,7 @@ final class KeyboardViewController: UIInputViewController {
         let needsAutoShift: Bool
         switch key {
         case .space, .newline, .doubleSpacePeriod, .backspace, .moveCursor, .moveLine, .clearField: needsAutoShift = true
-        default: needsAutoShift = false
+        default: needsAutoShift = autoSpacePunct != nil      // ". " tự thêm ⇒ viết hoa chữ kế
         }
         suggestionGen += 1
         let gen = suggestionGen

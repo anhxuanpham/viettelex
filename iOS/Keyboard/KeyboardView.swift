@@ -1235,6 +1235,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private var letterKeys: [(button: UIButton, base: String)] = []
     private weak var spaceBar: UIButton?
     private weak var spaceLogo: UIImageView?
+    /// Mã "VI"/"EN" góc dưới-phải phím cách (thay logo khi bật vuốt đổi ngôn ngữ — SpaceMark).
+    private weak var spaceCode: UILabel?
+    /// Logo hoặc mã ngôn ngữ đang trên phím cách (ẩn/hiện khi trượt nhãn, badge).
+    private var spaceMarkView: UIView? { spaceCode ?? spaceLogo }
     private weak var indentedRow: UIStackView?
     private var indentedRowInset: CGFloat = 0
     private var shiftKeys: [KeyButton] = []   // iPad có 2 shift
@@ -1376,6 +1380,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let shiftKeys: [KeyButton]
         let spaceBar: UIButton?
         let spaceLogo: UIImageView?
+        let spaceCode: UILabel?
         let indentedRow: UIStackView?
         let indentedRowInset: CGFloat
         let crossRow: [NSLayoutConstraint]
@@ -1429,7 +1434,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             // mẫu câu lần 2 co dúm (bug user 2026-07-25). Dựng lại rẻ.
             planeCache[old] = CachedPlane(
                 rows: rowsContainer.arrangedSubviews, letterKeys: letterKeys,
-                shiftKeys: shiftKeys, spaceBar: spaceBar, spaceLogo: spaceLogo,
+                shiftKeys: shiftKeys, spaceBar: spaceBar, spaceLogo: spaceLogo, spaceCode: spaceCode,
                 indentedRow: indentedRow, indentedRowInset: indentedRowInset,
                 crossRow: crossRowConstraints,
                 distribution: rowsContainer.distribution)
@@ -1453,7 +1458,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             shiftKeys = cached.shiftKeys
             spaceBar = cached.spaceBar
             spaceLogo = cached.spaceLogo
-            spaceLogo?.image = spaceLogoImage()      // ngôn ngữ có thể đã đổi khi plane nằm cache
+            spaceCode = cached.spaceCode
+            refreshSpaceMark()                       // ngôn ngữ có thể đã đổi khi plane nằm cache
             indentedRow = cached.indentedRow
             indentedRowInset = cached.indentedRowInset
             crossRowConstraints = cached.crossRow
@@ -2121,25 +2127,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         space.pressedBackground = specialFill      // space sẫm lại khi đè
         space.accessibilityLabel = L("Dấu cách")
         spaceBar = space
-        // logo Vᴛ mờ ở mép phải nút space (thay "VI EN" — user 2026-07-23);
-        // PNG 2x/3x render từ MenuIcon.pdf nên sắc nét, tint theo appearance.
-        // Ẩn được qua Settings của app (showSpaceLogo, App Group).
-        let showLogo = UserDefaultsProvider.shared?.object(forKey: "showSpaceLogo") == nil
-            || UserDefaultsProvider.shared?.bool(forKey: "showSpaceLogo") == true
-        if showLogo {
-            let hint = UIImageView(image: spaceLogoImage())
-            hint.tintColor = inkFaded(0.16)
-            hint.contentMode = .scaleAspectFit
-            hint.translatesAutoresizingMaskIntoConstraints = false
-            spaceLogo = hint
-            space.addSubview(hint)
-            NSLayoutConstraint.activate([
-                hint.rightAnchor.constraint(equalTo: space.rightAnchor, constant: -10),
-                hint.centerYAnchor.constraint(equalTo: space.centerYAnchor),
-                hint.widthAnchor.constraint(equalToConstant: 22),
-                hint.heightAnchor.constraint(equalToConstant: 22),
-            ])
-        }
+        installSpaceMark(on: space)
         space.addAction(UIAction { _ in Self.clickModifier() }, for: .touchDown)
         space.addTarget(self, action: #selector(spaceTouchDown(_:event:)), for: .touchDown)
         // Vuốt đổi ngôn ngữ (SpaceFlick): theo dõi ngón — công tắc tắt ⇒ handler thoát ngay.
@@ -3146,17 +3134,72 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     var onSpaceFlick: (() -> Void)?
     private(set) var spaceFlickEnabled = false
     var spaceLanguage: KeyboardLanguage = .vi {
-        didSet { if oldValue != spaceLanguage { spaceLogo?.image = spaceLogoImage() } }
+        didSet { if oldValue != spaceLanguage { refreshSpaceMark() } }
     }
     private var flickStart: (p: CGPoint, t: CFTimeInterval)?
     private var flickLast: CGPoint?
     private var flickCarousel: (box: UIView, cur: UILabel, next: UILabel)?
 
     func configureSpaceFlick(enabled: Bool, language: KeyboardLanguage) {
+        let changed = spaceFlickEnabled != enabled
         spaceFlickEnabled = enabled
         if !enabled { flickStart = nil; endFlickPreview(committed: false, animated: false) }
         spaceLanguage = language
+        if changed {
+            // logo ↔ mã VI/EN: thay tại chỗ trên plane đang hiện; plane cache dựng lại khi mở.
+            planeCache.removeAll()
+            if let space = spaceBar { installSpaceMark(on: space) }
+        }
+        refreshSpaceMark()
+    }
+
+    /// Logo Vᴛ hoặc mã VI/EN trên phím cách (SpaceMark). Gọi lúc dựng plane, và tại chỗ khi
+    /// công tắc vuốt đổi ngôn ngữ đổi (configureSpaceFlick — không dựng lại cả plane).
+    private func installSpaceMark(on space: UIButton) {
+        // logo Vᴛ mờ ở mép phải nút space (thay "VI EN" — user 2026-07-23);
+        // PNG 2x/3x render từ MenuIcon.pdf nên sắc nét, tint theo appearance.
+        // Ẩn được qua Settings của app (showSpaceLogo, App Group).
+        // Bật vuốt đổi ngôn ngữ ⇒ mã "VI"/"EN" nhỏ góc dưới-phải như stock (SpaceMark).
+        let showLogo = UserDefaultsProvider.shared?.object(forKey: "showSpaceLogo") == nil
+            || UserDefaultsProvider.shared?.bool(forKey: "showSpaceLogo") == true
+        if spaceLogo?.superview === space { spaceLogo?.removeFromSuperview() }
+        if spaceCode?.superview === space { spaceCode?.removeFromSuperview() }
+        spaceLogo = nil; spaceCode = nil
+        switch SpaceMark.choose(flickEnabled: spaceFlickEnabled, showLogo: showLogo, language: spaceLanguage) {
+        case .none: break
+        case .code(let code):
+            let l = UILabel()
+            l.text = code
+            l.font = .systemFont(ofSize: Self.isPad ? 13 : 11, weight: .medium)
+            l.textColor = inkFaded(0.45)             // mờ như stock; theo độ trong suốt ký tự
+            l.isUserInteractionEnabled = false
+            l.isAccessibilityElement = false
+            l.translatesAutoresizingMaskIntoConstraints = false
+            spaceCode = l
+            space.addSubview(l)
+            NSLayoutConstraint.activate([
+                l.rightAnchor.constraint(equalTo: space.rightAnchor, constant: Self.isPad ? -10 : -7),
+                l.bottomAnchor.constraint(equalTo: space.bottomAnchor, constant: Self.isPad ? -6 : -4),
+            ])
+        case .logo:
+            let hint = UIImageView(image: spaceLogoImage())
+            hint.tintColor = inkFaded(0.16)
+            hint.contentMode = .scaleAspectFit
+            hint.translatesAutoresizingMaskIntoConstraints = false
+            spaceLogo = hint
+            space.addSubview(hint)
+            NSLayoutConstraint.activate([
+                hint.rightAnchor.constraint(equalTo: space.rightAnchor, constant: -10),
+                hint.centerYAnchor.constraint(equalTo: space.centerYAnchor),
+                hint.widthAnchor.constraint(equalToConstant: 22),
+                hint.heightAnchor.constraint(equalToConstant: 22),
+            ])
+        }
+    }
+
+    private func refreshSpaceMark() {
         spaceLogo?.image = spaceLogoImage()
+        spaceCode?.text = spaceLanguage.shortCode
     }
 
     private func spaceLogoImage() -> UIImage? {
@@ -3218,7 +3261,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         }
         let c = (box, label(spaceLanguage), label(spaceLanguage.toggled))
         space.addSubview(box)
-        spaceLogo?.alpha = 0
+        spaceMarkView?.alpha = 0
         flickCarousel = c
         return c
     }
@@ -3240,7 +3283,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         let restoreLogo = { [weak self] in
             c.box.removeFromSuperview()
             guard let self, self.flickCarousel == nil else { return }
-            UIView.animate(withDuration: 0.2) { self.spaceLogo?.alpha = 1 }
+            UIView.animate(withDuration: 0.2) { self.spaceMarkView?.alpha = 1 }
         }
         guard animated else { restoreLogo(); return }
         if committed {
@@ -3270,7 +3313,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         l.font = .systemFont(ofSize: 16, weight: .regular)
         l.textColor = ink
         l.translatesAutoresizingMaskIntoConstraints = false
-        spaceLogo?.isHidden = true     // logo Vᴛ nhường chỗ, khỏi đè lên badge
+        spaceMarkView?.isHidden = true     // logo Vᴛ nhường chỗ, khỏi đè lên badge
         space.addSubview(l)
         NSLayoutConstraint.activate([
             l.centerXAnchor.constraint(equalTo: space.centerXAnchor),
@@ -3280,7 +3323,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             l.alpha = 0
         } completion: { [weak self] _ in
             l.removeFromSuperview()
-            self?.spaceLogo?.isHidden = false
+            self?.spaceMarkView?.isHidden = false
         }
     }
 
@@ -3968,6 +4011,12 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// Test hook: plane chữ ↔ số.
     func debugSetPlane(numbers: Bool) {
         plane = numbers ? .numbers : .letters; rebuild()
+    }
+    /// Test hook: dấu hiệu trên phím cách — "logo", mã "VI"/"EN", nil = không có.
+    func debugSpaceMark() -> String? {
+        if let c = spaceCode, c.superview != nil { return c.text }
+        if let l = spaceLogo, l.superview != nil { return "logo" }
+        return nil
     }
     /// Test hook: button phím text (hàng số / plane số) theo nhãn, trong plane đang hiện.
     func debugKeyButton(_ title: String) -> UIButton? {

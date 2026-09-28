@@ -52,6 +52,8 @@ data class KeyboardSettings(
     var autoCapitalize: Boolean = true,
     /** Vuốt phím cách đổi Tiếng Việt ↔ Tiếng Anh — mặc định TẮT. Giống iOS. */
     var spaceSwipeLanguage: Boolean = false,
+    /** Tự thêm dấu cách sau . , ? ! ; : ([AutoSpace]) — mặc định TẮT; tắt ⇒ không đọc context. */
+    var autoSpaceAfterPunct: Boolean = false,
     /** Telex cho bàn phím cứng — mặc định BẬT; tắt ⇒ IME không đụng KeyEvent. */
     var hardwareTelex: Boolean = true,
     /** Gõ tắt — mặc định BẬT, bảng mặc định RỖNG (như macOS; "Thêm bộ gợi ý" trong app). */
@@ -108,6 +110,7 @@ data class KeyboardSettings(
             s.autoCorrect = b(Keys.AUTO_CORRECT, s.autoCorrect)
             s.autoCapitalize = b(Keys.AUTO_CAPITALIZE, s.autoCapitalize)
             s.spaceSwipeLanguage = b(Keys.SPACE_SWIPE_LANGUAGE, s.spaceSwipeLanguage)
+            s.autoSpaceAfterPunct = b(Keys.AUTO_SPACE_AFTER_PUNCT, s.autoSpaceAfterPunct)
             s.hardwareTelex = b(Keys.HARDWARE_TELEX, s.hardwareTelex)
             s.shortcutsEnabled = b(Keys.SHORTCUTS_ENABLED, s.shortcutsEnabled)
             if (s.shortcutsEnabled) s.shortcuts = ShortcutTable(ShortcutFile.parse(get(Keys.SHORTCUTS) as? String))

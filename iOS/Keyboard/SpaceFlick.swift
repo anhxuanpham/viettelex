@@ -16,6 +16,9 @@ enum KeyboardLanguage: String, Equatable {
     /// Nhãn thoáng trên phím cách lúc đổi.
     var displayName: String { self == .vi ? "Tiếng Việt" : "English" }
 
+    /// Mã nhỏ góc dưới-phải phím cách khi bật vuốt đổi ngôn ngữ (như stock iOS nhiều ngôn ngữ).
+    var shortCode: String { self == .vi ? "VI" : "EN" }
+
     /// Lưu ở UserDefaults riêng của bàn phím (ghi được cả khi không có Toàn quyền).
     static let storageKey = "keyboardLanguage"
 
@@ -69,5 +72,18 @@ enum SpaceFlick {
     /// Quãng kéo mà nhãn trượt trọn (= 2 × ngưỡng flick): tới ngưỡng thì nhãn mới đã hiện nửa.
     static func previewSpan(keyWidth: CGFloat, _ p: Params = Params()) -> CGFloat {
         2 * max(p.minDistance, keyWidth * p.minDistanceKeys)
+    }
+}
+
+/// Dấu hiệu trên phím cách: bật vuốt đổi ngôn ngữ ⇒ mã "VI"/"EN" nhỏ góc dưới-phải (như stock
+/// iOS khi bật nhiều ngôn ngữ); tắt ⇒ logo Vᴛ (công tắc showSpaceLogo) như cũ.
+enum SpaceMark: Equatable {
+    case none
+    case logo(KeyboardLanguage)
+    case code(String)
+
+    static func choose(flickEnabled: Bool, showLogo: Bool, language: KeyboardLanguage) -> SpaceMark {
+        if flickEnabled { return .code(language.shortCode) }
+        return showLogo ? .logo(language) : .none
     }
 }
