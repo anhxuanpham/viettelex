@@ -227,12 +227,17 @@ data class ThemeSettings(
     /** Độ trong suốt phím / ký tự 0…100 (miễn phí, mọi theme). */
     val keyboardTransparency: Int = 0,
     val labelTransparency: Int = 0,
+    /**
+     * Khung cắt đã chỉnh (null = ảnh cũ / chưa chỉnh → cắt giữa). Thuộc về ẢNH (như file) nên
+     * "Khôi phục giao diện gốc" giữ nguyên.
+     */
+    val crop: WallpaperCrop? = null,
 ) {
     /**
      * "Khôi phục giao diện gốc": mọi chỉnh ở màn Giao diện về mặc định. Ảnh nền chỉ bỏ
      * chọn (file giữ để bật lại); version giữ nguyên (không vứt bitmap cache vô cớ).
      */
-    fun resetToDefaults() = ThemeSettings(version = version)
+    fun resetToDefaults() = ThemeSettings(version = version, crop = crop)
     val isDefault: Boolean get() = this == resetToDefaults()
 
     val effectiveTheme: KeyboardTheme get() = if (ThemeGate.allows(theme)) theme else KeyboardTheme.SYSTEM
@@ -240,7 +245,8 @@ data class ThemeSettings(
 
     fun toMap(): Map<String, Any> = mapOf(Keys.KEYBOARD_THEME to theme.id, Keys.WALLPAPER_ENABLED to wallpaper,
         Keys.WALLPAPER_DIM to dim, Keys.WALLPAPER_BLUR to blur, Keys.WALLPAPER_VERSION to version,
-        Keys.KEYBOARD_TRANSPARENCY to keyboardTransparency, Keys.KEY_LABEL_TRANSPARENCY to labelTransparency)
+        Keys.KEYBOARD_TRANSPARENCY to keyboardTransparency, Keys.KEY_LABEL_TRANSPARENCY to labelTransparency) +
+        (crop?.let { mapOf(Keys.WALLPAPER_CROP to it.serialize()) } ?: emptyMap())
 
     companion object {
         fun load(get: (String) -> Any?) = ThemeSettings(
@@ -251,6 +257,7 @@ data class ThemeSettings(
             version = (get(Keys.WALLPAPER_VERSION) as? Number)?.toLong() ?: 0,
             keyboardTransparency = KeyboardTransparency.clamp((get(Keys.KEYBOARD_TRANSPARENCY) as? Number)?.toInt() ?: 0),
             labelTransparency = KeyboardTransparency.clamp((get(Keys.KEY_LABEL_TRANSPARENCY) as? Number)?.toInt() ?: 0),
+            crop = WallpaperCrop.parse(get(Keys.WALLPAPER_CROP) as? String),
         )
     }
 }
@@ -259,6 +266,36 @@ data class ThemeSettings(
 object WallpaperMath {
     const val MAX_EDGE = 1080
     const val MAX_BYTES = 400_000
+    /** Bản gốc giữ để chỉnh khung về sau — cạnh dài ≤ chừng này. */
+    const val SOURCE_MAX_EDGE = 2048
+
+    /**
+     * Cỡ px ảnh nướng cho IME từ bản gốc iw×ih + khung [crop] (null = cả ảnh, như cũ).
+     * Mật độ điểm ảnh = đúng bản cũ (cả ảnh thu ≤[MAX_EDGE]) × zoom, kẹp cạnh dài ≤[MAX_EDGE]
+     * và không phóng to ⇒ ở khung mặc định (zoom 1) IME giải ĐÚNG bằng số điểm ảnh như trước;
+     * zoom vào thì nét hơn nhưng không bao giờ vượt trần cũ (file ≤1080 px).
+     */
+    fun bakedSize(iw: Int, ih: Int, crop: WallpaperCrop?): Pair<Int, Int> {
+        if (crop == null || iw <= 0 || ih <= 0) return targetSize(iw, ih)
+        val r = crop.pixelRect(iw, ih)
+        val cw = r[2] - r[0]; val ch = r[3] - r[1]
+        val base = minOf(1.0, MAX_EDGE.toDouble() / maxOf(iw, ih))
+        val s = minOf(1.0, base * crop.zoom(iw, ih), MAX_EDGE.toDouble() / maxOf(cw, ch))
+        return maxOf(1, Math.round(cw * s).toInt()) to maxOf(1, Math.round(ch * s).toInt())
+    }
+
+    /**
+     * Ước lượng cỡ px vùng bàn phím dọc khi IME chưa từng đo (xem [Keys.IME_PORTRAIT_SIZE]):
+     * vùng phím + strip gợi ý mở + đệm thanh điều hướng.
+     */
+    fun estimatePortraitPx(screenShortPx: Int, density: Float, keyAreaDp: Float, stripDp: Float, navPx: Int): Pair<Int, Int> =
+        screenShortPx to Math.round((keyAreaDp + stripDp) * density + navPx)
+
+    /** "w×h" → cặp px dương, sai ⇒ null. */
+    fun parseSize(s: String?): Pair<Int, Int>? {
+        val p = s?.split("x")?.mapNotNull { it.trim().toIntOrNull() } ?: return null
+        return if (p.size == 2 && p[0] > 0 && p[1] > 0 && p[0] < 20000 && p[1] < 20000) p[0] to p[1] else null
+    }
 
     /** Cỡ lưu: cạnh dài ≤ [maxEdge], giữ tỉ lệ, không phóng to. */
     fun targetSize(w: Int, h: Int, maxEdge: Int = MAX_EDGE): Pair<Int, Int> {
@@ -293,6 +330,17 @@ object WallpaperMath {
         val ch = minOf(imgH, Math.ceil(vh / s - 1e-9).toInt().coerceAtLeast(1))
         val l = (imgW - cw) / 2; val t = (imgH - ch) / 2
         return intArrayOf(l, t, l + cw, t + ch)
+    }
+
+    /**
+     * Kế hoạch giải của IME cho file w×h trên view vw×vh: [left, top, right, bottom, inSampleSize]
+     * — chỉ vùng thấy được (cắt giữa), sample vừa phủ view. File đã nướng theo khung ⇒ vùng =
+     * gần cả file ở hướng dọc, dải giữa ([WallpaperCrop.landscape]) ở hướng ngang.
+     */
+    fun decodePlan(w: Int, h: Int, vw: Int, vh: Int): IntArray {
+        val c = visibleCrop(w, h, vw, vh)
+        val (needW, needH) = fillSize(w, h, vw, vh)
+        return intArrayOf(c[0], c[1], c[2], c[3], sampleSize(w, h, needW, needH))
     }
 
     /** Mờ hộp 3 lượt (ngang + dọc) trên ARGB — thay RenderScript đã bỏ. In-place. */

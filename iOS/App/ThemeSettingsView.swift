@@ -5,8 +5,10 @@ import PhotosUI
 
 private let groupDefaults = UserDefaults(suiteName: "group.com.viettelex")
 
-/// Bản ảnh CHƯA mờ (≤1080px) giữ trong container riêng của app — đổi độ mờ thì
-/// dựng lại ảnh cho bàn phím từ đây, không cần chọn lại ảnh.
+/// Bản ảnh GỐC chưa mờ, chưa cắt (≤ Wallpaper.sourceMaxEdge; ảnh chọn trước bản có trình
+/// chỉnh ≤1080) giữ trong container riêng của app — KHÔNG vào App Group (extension không
+/// bao giờ đụng), không vào file sao lưu. Đổi độ mờ / chỉnh khung thì dựng lại ảnh cho bàn
+/// phím từ đây, không cần chọn lại ảnh.
 private var wallpaperSourceURL: URL? {
     FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
         .appendingPathComponent("wallpaper-src.jpg")
@@ -20,10 +22,28 @@ struct ThemeSettingsView: View {
     @State private var busy = false
     @State private var error: String?
     @State private var confirmReset = false
+    @State private var editor: EditorInput?
     // Tính Năng → Giao diện gộp luôn logo + chiều cao hàng (không thuộc "Khôi phục giao diện gốc").
     @AppStorage("showSpaceLogo", store: groupDefaults) private var showSpaceLogo = true
     @AppStorage("rowHeightAdjust", store: groupDefaults) private var rowHeightAdjust = 0
     @AppStorage("numberRow", store: groupDefaults) private var numberRow = false
+    @AppStorage("showSuggestions", store: groupDefaults) private var showSuggestions = true
+
+    /// Ảnh đưa vào trình chỉnh: mới chọn (chưa ghi gì) hoặc bản gốc đã lưu ("Chỉnh ảnh").
+    struct EditorInput: Identifiable {
+        let id = UUID()
+        let image: CGImage
+        let crop: WallpaperCrop?
+        let isNew: Bool
+    }
+
+    /// Cỡ vùng bàn phím dọc hiện tại (khung chỉnh cùng tỉ lệ).
+    private var portraitKeyboardSize: CGSize {
+        Wallpaper.keyboardSize(screenSize: UIScreen.main.bounds.size,
+                               pad: UIDevice.current.userInterfaceIdiom == .pad, landscape: false,
+                               rowHeightAdjust: rowHeightAdjust, numberRow: numberRow,
+                               suggestions: showSuggestions)
+    }
 
     private static func loadPreviewImage() -> UIImage? {
         guard let url = Wallpaper.url, let cg = Wallpaper.downsample(url: url, maxPixel: 800) else { return nil }
@@ -68,6 +88,12 @@ struct ThemeSettingsView: View {
                           systemImage: "photo")
                 }
                 .disabled(busy || !ThemeGate.allowsWallpaper)
+                if hasWallpaperFile, hasSourceFile {
+                    Button { openEditorForSaved() } label: {
+                        Label(L("Chỉnh ảnh"), systemImage: "crop")
+                    }
+                    .disabled(busy || !ThemeGate.allowsWallpaper)
+                }
                 if hasWallpaperFile {
                     Toggle(L("Dùng ảnh nền"), isOn: binding(\.wallpaper)).tint(.green)
                     VStack(alignment: .leading) {
@@ -141,6 +167,18 @@ struct ThemeSettingsView: View {
             guard let item else { return }
             importWallpaper(item)
         }
+        .fullScreenCover(item: $editor) { input in
+            WallpaperEditorView(
+                image: input.image, crop: input.crop, keyboardSize: portraitKeyboardSize,
+                stripHeight: showSuggestions ? Wallpaper.suggestionStrip : 0,
+                palette: settings.palette(systemDark: scheme == .dark, wallpaperActive: true),
+                dim: settings.dim, blur: settings.blur,
+                onCancel: { editor = nil },
+                onDone: { crop, dim, blur in
+                    editor = nil
+                    saveEdited(input, crop: crop, dim: dim, blur: blur)
+                })
+        }
     }
 
     @ViewBuilder private var plusBadge: some View {
@@ -201,36 +239,72 @@ struct ThemeSettingsView: View {
         if blurChanged { rerenderBlur() } else { save() }
     }
 
+    private var hasSourceFile: Bool {
+        wallpaperSourceURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+    }
+
+    /// Ảnh vừa chọn → trình chỉnh (chưa ghi gì: Huỷ thì ảnh nền cũ còn nguyên).
     private func importWallpaper(_ item: PhotosPickerItem) {
         busy = true; error = nil
         Task {
             // Ảnh gốc chỉ nằm trong RAM của APP (không bao giờ tới extension).
             let data = try? await item.loadTransferable(type: Data.self)
-            let blur = settings.blur
-            let result: (src: Data, out: Data)? = await Task.detached(priority: .userInitiated) {
-                guard let data, let small = Wallpaper.downsample(data: data, maxPixel: Wallpaper.maxEdge),
-                      let src = Wallpaper.encodeJPEG(small),
-                      let out = Wallpaper.encodeJPEG(Wallpaper.blurred(small, radius: blur)) else { return nil }
-                return (src, out)
+            let image: CGImage? = await Task.detached(priority: .userInitiated) {
+                data.flatMap { Wallpaper.downsample(data: $0, maxPixel: Wallpaper.sourceMaxEdge) }
             }.value
             await MainActor.run {
                 busy = false
                 pickerItem = nil
-                guard let result else { error = L("Không đọc được ảnh này."); return }
-                write(src: result.src, out: result.out)
+                guard let image else { error = L("Không đọc được ảnh này."); return }
+                editor = EditorInput(image: image, crop: nil, isNew: true)
+            }
+        }
+    }
+
+    /// "Chỉnh ảnh": mở lại bản gốc đã lưu với khung đang dùng (ảnh cũ chưa có khung ⇒
+    /// trình chỉnh bắt đầu từ khung cắt giữa — đúng như bàn phím đang hiện).
+    private func openEditorForSaved() {
+        guard let srcURL = wallpaperSourceURL else { return }
+        busy = true; error = nil
+        let crop = settings.crop
+        Task.detached(priority: .userInitiated) {
+            let image = Wallpaper.downsample(url: srcURL, maxPixel: Wallpaper.sourceMaxEdge)
+            await MainActor.run {
+                busy = false
+                guard let image else { error = L("Không đọc được ảnh này."); return }
+                editor = EditorInput(image: image, crop: crop, isNew: false)
+            }
+        }
+    }
+
+    /// "Xong": lưu bản gốc (nếu mới chọn) + nướng vùng cắt cho bàn phím.
+    private func saveEdited(_ input: EditorInput, crop: WallpaperCrop, dim: Int, blur: Int) {
+        busy = true; error = nil
+        let image = input.image, isNew = input.isNew
+        Task.detached(priority: .userInitiated) {
+            let src = isNew ? Wallpaper.encodeSource(image) : nil
+            let out = Wallpaper.prepare(source: image, crop: crop, blur: blur)
+            await MainActor.run {
+                busy = false
+                guard let out, !isNew || src != nil else { error = L("Không đọc được ảnh này."); return }
+                settings.crop = crop
+                settings.dim = dim
+                settings.blur = blur
                 settings.wallpaper = true
+                write(src: src, out: out)
                 save()
             }
         }
     }
 
     private func rerenderBlur() {
-        guard let srcURL = wallpaperSourceURL, let data = try? Data(contentsOf: srcURL) else { save(); return }
+        guard let srcURL = wallpaperSourceURL, FileManager.default.fileExists(atPath: srcURL.path) else { save(); return }
         busy = true
-        let blur = settings.blur
+        let blur = settings.blur, crop = settings.crop
         Task.detached(priority: .userInitiated) {
-            let out = Wallpaper.downsample(data: data, maxPixel: Wallpaper.maxEdge)
-                .flatMap { Wallpaper.encodeJPEG(Wallpaper.blurred($0, radius: blur)) }
+            // Khung chuẩn hoá ⇒ đúng với mọi cỡ bản gốc; nil (ảnh cũ) = cả ảnh như trước.
+            let out = Wallpaper.downsample(url: srcURL, maxPixel: Wallpaper.sourceMaxEdge)
+                .flatMap { Wallpaper.prepare(source: $0, crop: crop, blur: blur) }
             await MainActor.run {
                 busy = false
                 if let out { write(src: nil, out: out) }
@@ -260,6 +334,7 @@ struct ThemeSettingsView: View {
         if let u = wallpaperSourceURL { try? FileManager.default.removeItem(at: u) }
         wallpaperImage = nil
         settings.wallpaper = false
+        settings.crop = nil
         settings.version = Date().timeIntervalSince1970
         save()
     }
@@ -273,14 +348,16 @@ struct ThemePreview: View {
     let large: Bool
     /// Tông backdrop hệ thống giả lập (lộ ra khi nền trong suốt).
     var systemDark: Bool? = nil
+    /// Chỉ vẽ phím (lớp phủ trên ảnh trong trình chỉnh ảnh nền).
+    var keysOnly = false
 
     private static let rows = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                systemBackdrop
-                if let bg = palette.background { Color(bg.ui) }
+                if !keysOnly { systemBackdrop }
+                if !keysOnly, let bg = palette.background { Color(bg.ui) }
                 if let wallpaper {
                     Image(uiImage: wallpaper).resizable().scaledToFill()
                         .frame(width: geo.size.width, height: geo.size.height).clipped()

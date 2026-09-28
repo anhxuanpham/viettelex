@@ -54,6 +54,12 @@ Cùng simulator iPhone 17 (iOS 27.0) riêng, bản Release, `ram-audit.sh` (XCUI
    bàn phím iPhone 3,5 → 1,9 MB; ảnh chụp màn hình dọc 497×1080 2,1 → 0,7 MB. Ảnh chụp màn so
    trước/sau: sai khác trung bình 0,24/255 mỗi kênh (mắt không thấy — nguồn ≤1080 px nên @2x
    gần như không mất chi tiết).
+   **Trình chỉnh khung (28/09/2026)**: người dùng kéo/zoom ảnh dưới khung đúng tỉ lệ bàn phím dọc;
+   app giữ bản gốc ≤2048 px (container riêng, không App Group, không sao lưu) + khung chuẩn hoá
+   (`wallpaperCrop` trong App Group) và **nướng sẵn đúng vùng cắt** (≤1080, đã mờ) vào
+   `wallpaper.jpg` — ImageIO không giải được một vùng, nên cắt ở app để extension chỉ giải phần
+   hiện. Bàn phím không đổi đường giải; ngang = dải giữa của khung dọc (cắt giữa file đã nướng).
+   Test `WallpaperCropTests.testDecodeRamNotAboveBefore`: đỉnh giải + bitmap giữ ≤ đường cũ.
 
 Test: `ViewTreeLeakTests` (cây cũ chết qua controller mới / cùng controller, trạng thái sau hiện
 lại, heap/vòng < 30 KB, độ trễ), `RamFixTests` (emoji id, dropCaches, lưới, cảnh báo bộ nhớ, cắt

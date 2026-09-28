@@ -118,6 +118,7 @@
 		5B52F74F525D2FE790784DEB /* AdjacentKeyFixer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08A25C830B85508BCD22F38A /* AdjacentKeyFixer.swift */; };
 		5C1E68D1CE795950C634F366 /* PlanePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C832E4FAF0818129299FF52 /* PlanePolicy.swift */; };
 		5CA3CB101E504E9B3DF8B3A9 /* VietTelexApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03B539001F2CE763F663710B /* VietTelexApp.swift */; };
+		5D4E6E65DD77BBA816CD4938 /* WallpaperEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F537D71E7DF6CC1F3FA95C1B /* WallpaperEditorView.swift */; };
 		5E88C6DD76B1FF760FC20D3D /* AutoCorrectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44937FCA0854428DB368FC7 /* AutoCorrectTests.swift */; };
 		5E9A08F294F260D516411505 /* DisplayCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7D70220F7D14EBC3C3AACD /* DisplayCase.swift */; };
 		5F2C618E98766EB94AA1D538 /* enlexicon.bin in Resources */ = {isa = PBXBuildFile; fileRef = 7EA567D02615989E6D0A4A64 /* enlexicon.bin */; };
@@ -247,6 +248,7 @@
 		DBE4AB9A3B654D9D44392251 /* TelexCore in Frameworks */ = {isa = PBXBuildFile; productRef = E6EA46A66DF9410EF89A3FC9 /* TelexCore */; };
 		DC996CC66C628B133BA2BCDD /* WordDelete.swift in Sources */ = {isa = PBXBuildFile; fileRef = 451B2112B13ABD917EEE3D9A /* WordDelete.swift */; };
 		DD68A1CBFFCFAC0280ACC90C /* VNSuggest.swift in Sources */ = {isa = PBXBuildFile; fileRef = C445BEBA75DFC20101EC3BA9 /* VNSuggest.swift */; };
+		DE66F26425D4405AA5861CC8 /* WallpaperCropTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36C728D6BE87D4E515070B03 /* WallpaperCropTests.swift */; };
 		DF225D04D7CF81C8C54070B8 /* number-chips.txt in Resources */ = {isa = PBXBuildFile; fileRef = 2B96A58C6EE35D288C488202 /* number-chips.txt */; };
 		E0A2DD33986C1D3ED43EA245 /* userlm-legacy-android-v1.bin in Resources */ = {isa = PBXBuildFile; fileRef = 208D0B979D689BDA140031CD /* userlm-legacy-android-v1.bin */; };
 		E0E2190351D069CBD17F6B8C /* NumberChips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DF8BE49B914D1B4B31116F3 /* NumberChips.swift */; };
@@ -351,6 +353,7 @@
 		30FDB51E50979B78B42D92A7 /* VTCatch.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = VTCatch.h; sourceTree = "<group>"; };
 		31AD519DC648CF654359B2C8 /* ICloudSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudSync.swift; sourceTree = "<group>"; };
 		359BC071F163E8255C943DA7 /* TouchGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchGeometry.swift; sourceTree = "<group>"; };
+		36C728D6BE87D4E515070B03 /* WallpaperCropTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperCropTests.swift; sourceTree = "<group>"; };
 		3892A75525A06BACCAE066AB /* UXFeedbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UXFeedbackTests.swift; sourceTree = "<group>"; };
 		38966B5E3DF4C19B07287B0C /* swipe-paths-en.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "swipe-paths-en.txt"; sourceTree = "<group>"; };
 		3994C0C17115101811283049 /* SwipeLexicon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipeLexicon.swift; sourceTree = "<group>"; };
@@ -487,6 +490,7 @@
 		F0FC8F0608409E1FDA1707BD /* suggest-dev.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "suggest-dev.txt"; sourceTree = "<group>"; };
 		F2C9781CE8B936C962B3EBA8 /* TelexCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TelexCore; path = ../TelexCore; sourceTree = SOURCE_ROOT; };
 		F316CA910C58A9377DC754A0 /* UserLangModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserLangModel.swift; sourceTree = "<group>"; };
+		F537D71E7DF6CC1F3FA95C1B /* WallpaperEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperEditorView.swift; sourceTree = "<group>"; };
 		F98CF75D5CF9E5845F830381 /* backup-ios-v1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "backup-ios-v1.json"; sourceTree = "<group>"; };
 		F9A392056B54E623933F9CD3 /* SuggestionSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionSupport.swift; sourceTree = "<group>"; };
 		FC4C7AA642979C79BA435C61 /* SwipeEnglishTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipeEnglishTests.swift; sourceTree = "<group>"; };
@@ -687,6 +691,7 @@
 				C9822723B0DBD958953953CF /* ViewTreeLeakTests.swift */,
 				031628D00865BDD8F533A0B7 /* VNIBridgeTests.swift */,
 				8B3578841CEB4885B61BD148 /* VTCatchTests.swift */,
+				36C728D6BE87D4E515070B03 /* WallpaperCropTests.swift */,
 				0599154D3A43772DC7456968 /* WordDeleteTests.swift */,
 				1CF891C409E9F5C6BC92268A /* Fixtures */,
 			);
@@ -727,6 +732,7 @@
 				41BD0E4DE3C769A2EDE19180 /* ThemeSettingsView.swift */,
 				4C0BA150CD7419FF42080989 /* UserDictView.swift */,
 				03B539001F2CE763F663710B /* VietTelexApp.swift */,
+				F537D71E7DF6CC1F3FA95C1B /* WallpaperEditorView.swift */,
 				92CD01597B3A59960ABD0DF6 /* Backup */,
 				0AC014664E5E5F22C04FB37A /* Plus */,
 				E3465DA8FF0BC03D9F14941A /* Practice */,
@@ -1115,6 +1121,7 @@
 				8B2674020C20D7CCCE423A49 /* VNSuggest.swift in Sources */,
 				5CA3CB101E504E9B3DF8B3A9 /* VietTelexApp.swift in Sources */,
 				E318F2FD0A91CFD018E4BC65 /* Wallpaper.swift in Sources */,
+				5D4E6E65DD77BBA816CD4938 /* WallpaperEditorView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1249,6 +1256,7 @@
 				9B5CDAC8B9C8C2BC664BE68A /* VTCatchTests.swift in Sources */,
 				E1A8B31E80F18094634EF943 /* ViewTreeLeakTests.swift in Sources */,
 				9838BAAFDE2D5FDA55AE5EAF /* Wallpaper.swift in Sources */,
+				DE66F26425D4405AA5861CC8 /* WallpaperCropTests.swift in Sources */,
 				DC996CC66C628B133BA2BCDD /* WordDelete.swift in Sources */,
 				C0F883065272FE06DAE56D0E /* WordDeleteTests.swift in Sources */,
 			);

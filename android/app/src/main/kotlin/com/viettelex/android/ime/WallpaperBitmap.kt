@@ -9,7 +9,8 @@ import com.viettelex.keyboard.WallpaperMath
 import java.io.File
 
 /**
- * Bitmap ảnh nền cho IME (RAM-AUDIT #4): chỉ giải VÙNG THẤY ĐƯỢC (center-crop theo tỉ lệ
+ * Bitmap ảnh nền cho IME (RAM-AUDIT #4). File đã được app cắt sẵn theo khung người dùng chỉnh
+ * ([com.viettelex.keyboard.WallpaperCrop]; ảnh cũ = cả ảnh). Chỉ giải VÙNG THẤY ĐƯỢC (center-crop theo tỉ lệ
  * view, BitmapRegionDecoder) ở inSampleSize như trước (vừa phủ view, không bao giờ lớn hơn
  * cần) ⇒ cùng điểm ảnh trên màn, bớt phần bị cắt. Cửa sổ vẽ bằng GPU ⇒ chuyển sang
  * [Bitmap.Config.HARDWARE]: điểm ảnh chỉ nằm ở GPU (texture vốn đã có), bỏ bản CPU ở native
@@ -29,9 +30,9 @@ object WallpaperBitmap {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.path, bounds)
         if (bounds.outWidth <= 0) return null
-        val (needW, needH) = WallpaperMath.fillSize(bounds.outWidth, bounds.outHeight, viewW, viewH)
-        val sample = WallpaperMath.sampleSize(bounds.outWidth, bounds.outHeight, needW, needH)
-        val cpu = decodeCrop(file, bounds.outWidth, bounds.outHeight, viewW, viewH, sample)
+        val plan = WallpaperMath.decodePlan(bounds.outWidth, bounds.outHeight, viewW, viewH)
+        val sample = plan[4]
+        val cpu = decodeCrop(file, bounds.outWidth, bounds.outHeight, plan)
             ?: runCatching { BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample }) }.getOrNull()
             ?: return null
         val b = if (hardware) toHardware(cpu) else cpu
@@ -39,8 +40,8 @@ object WallpaperBitmap {
         return b
     }
 
-    private fun decodeCrop(file: File, w: Int, h: Int, vw: Int, vh: Int, sample: Int): Bitmap? = runCatching {
-        val c = WallpaperMath.visibleCrop(w, h, vw, vh)
+    private fun decodeCrop(file: File, w: Int, h: Int, c: IntArray): Bitmap? = runCatching {
+        val sample = c[4]
         if (c[0] == 0 && c[1] == 0 && c[2] == w && c[3] == h) return@runCatching null   // thấy cả ảnh
         @Suppress("DEPRECATION")
         val d = if (Build.VERSION.SDK_INT >= 31) BitmapRegionDecoder.newInstance(file.path)

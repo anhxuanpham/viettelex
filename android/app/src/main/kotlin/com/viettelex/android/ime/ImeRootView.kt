@@ -56,9 +56,23 @@ class ImeRootView(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
+        recordPortraitSize(w, h)
         val f = wallpaperFile ?: return
         reloadGen++
         setWallpaper(WallpaperBitmap.load(f, theme.settings.version, w, h, isHardwareAccelerated))
+    }
+
+    /**
+     * Cỡ thật vùng bàn phím dọc (gồm strip + đệm điều hướng) cho khung trình chỉnh ảnh nền ở
+     * app. Prefs riêng (không bắn listener của IME, không sao lưu); chỉ ghi khi đổi.
+     */
+    private fun recordPortraitSize(w: Int, h: Int) {
+        if (w <= 0 || h <= 0 ||
+            resources.configuration.orientation != android.content.res.Configuration.ORIENTATION_PORTRAIT) return
+        val v = "${w}x$h"
+        val sp = context.getSharedPreferences(com.viettelex.keyboard.Keys.RUNTIME_PREFS, Context.MODE_PRIVATE)
+        if (sp.getString(com.viettelex.keyboard.Keys.IME_PORTRAIT_SIZE, null) != v)
+            sp.edit().putString(com.viettelex.keyboard.Keys.IME_PORTRAIT_SIZE, v).apply()
     }
 
     private fun setWallpaper(b: android.graphics.Bitmap?) {

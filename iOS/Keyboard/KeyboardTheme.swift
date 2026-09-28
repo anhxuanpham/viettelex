@@ -264,12 +264,16 @@ struct ThemeSettings: Equatable {
     static let dimKey = "wallpaperDim"        // % lớp phủ 0…80
     static let blurKey = "wallpaperBlur"      // bán kính mờ 0…20 (app áp khi lưu ảnh)
     static let versionKey = "wallpaperVersion" // đổi mỗi lần lưu ảnh → vứt cache
+    static let cropKey = "wallpaperCrop"      // "x,y,w,h" chuẩn hoá theo ảnh gốc; thiếu = cắt giữa
 
     var theme: KeyboardTheme = .system
     var wallpaper = false
     var dim = 30
     var blur = 0
     var version: Double = 0
+    /// Khung cắt đã chỉnh (nil = ảnh cũ / chưa chỉnh → cắt giữa). Thuộc về ẢNH (như file),
+    /// nên "Khôi phục giao diện gốc" giữ nguyên.
+    var crop: WallpaperCrop?
     /// Độ trong suốt phím / ký tự 0…100 (miễn phí, mọi theme).
     var keyboardTransparency = 0
     var labelTransparency = 0
@@ -279,6 +283,7 @@ struct ThemeSettings: Equatable {
     func resetToDefaults() -> ThemeSettings {
         var s = ThemeSettings()
         s.version = version
+        s.crop = crop
         return s
     }
     var isDefault: Bool { self == resetToDefaults() }
@@ -291,6 +296,7 @@ struct ThemeSettings: Equatable {
         if d.object(forKey: dimKey) != nil { s.dim = max(0, min(80, d.integer(forKey: dimKey))) }
         s.blur = max(0, min(20, d.integer(forKey: blurKey)))
         s.version = d.double(forKey: versionKey)
+        s.crop = WallpaperCrop(serialized: d.string(forKey: cropKey))
         s.keyboardTransparency = KeyboardTransparency.clamp(d.integer(forKey: KeyboardTransparency.keyboardKey))
         s.labelTransparency = KeyboardTransparency.clamp(d.integer(forKey: KeyboardTransparency.labelKey))
         return s
@@ -302,6 +308,7 @@ struct ThemeSettings: Equatable {
         d?.set(dim, forKey: Self.dimKey)
         d?.set(blur, forKey: Self.blurKey)
         d?.set(version, forKey: Self.versionKey)
+        if let crop { d?.set(crop.serialized, forKey: Self.cropKey) } else { d?.removeObject(forKey: Self.cropKey) }
         d?.set(keyboardTransparency, forKey: KeyboardTransparency.keyboardKey)
         d?.set(labelTransparency, forKey: KeyboardTransparency.labelKey)
     }
