@@ -9,7 +9,7 @@
   <a href="https://github.com/ptrinh/viettelex/releases/latest"><img src="https://img.shields.io/github/v/release/ptrinh/viettelex?color=c22727" alt="Release"></a>
   <a href="https://github.com/ptrinh/viettelex/releases"><img src="https://img.shields.io/github/downloads/ptrinh/viettelex/total?label=Downloads&color=4c1" alt="Downloads"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/ptrinh/viettelex?color=555" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/macOS-14%2B-17233d" alt="macOS 14+">
+  <img src="https://img.shields.io/badge/macOS-13%2B-17233d" alt="macOS 13+">
 </p>
 
 **VietTelex** (ViệtTelex / ViếtTelex) là bộ gõ tiếng Việt **Telex** (và **VNI**) cho macOS, được xây dựng trên **InputMethodKit** của Apple để tích hợp sâu. Không gạch chân từ đang gõ, con trỏ luôn ở cuối, dấu bỏ trực tiếp vào chữ, và gõ được cả trong **Terminal** mà không phá autocomplete của shell.
@@ -37,7 +37,7 @@ https://github.com/user-attachments/assets/b07b7321-912f-4d81-a741-bcaa9a43f07d
 
 ## Cài đặt
 
-**Website:** [ptrinh.github.io/viettelex](https://ptrinh.github.io/viettelex/) · **Homebrew:** `brew install --cask ptrinh/viettelex/viettelex`
+**Tải cho mọi nền tảng:** [viettelex.com/download](https://viettelex.com/download/) (iPhone/iPad · [Android](https://viettelex.com/download/?os=android) · [macOS](https://viettelex.com/download/?os=macos) · [Windows](https://viettelex.com/download/?os=windows) · [Linux](https://viettelex.com/download/?os=linux)) · **Homebrew:** `brew install --cask ptrinh/viettelex/viettelex`
 
 Chọn **một** cách cài: Homebrew hoặc `.pkg`. Cả hai cài cùng app đã ký vào
 `~/Library/Input Methods/VietTelex.app`; không cài song song vì hai bộ quản lý sẽ
@@ -45,7 +45,7 @@ cùng ghi/xoá một app. Khi đổi từ Homebrew sang `.pkg`, chạy
 `brew uninstall --cask viettelex` trước. Khi đổi từ `.pkg` sang Homebrew, chuyển
 sang ABC, thoát VietTelex, xoá app ở đường dẫn trên rồi mới chạy lệnh Homebrew.
 
-1. Nếu chọn `.pkg`, tải **`VietTelex-x.y.z.pkg`** từ [Releases](https://github.com/ptrinh/viettelex/releases) (đã ký + notarized).
+1. Nếu chọn `.pkg`, tải **`VietTelex-x.y.z.pkg`** ở [trang tải](https://viettelex.com/download/?os=macos) hoặc [Releases](https://github.com/ptrinh/viettelex/releases) (đã ký + notarized).
 2. Double-click → làm theo hướng dẫn (tự cài vào thư mục user, đăng ký bộ gõ, mở sẵn System Settings → Keyboard).
 3. **Input Sources → Edit… / ＋ → Vietnamese → ViệtTelex → Add.**
 

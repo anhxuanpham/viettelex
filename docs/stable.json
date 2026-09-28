@@ -7,5 +7,37 @@
     "x64": "https://github.com/ptrinh/viettelex/releases/download/windows-v1.1.5/VietTelex-1.1.5-x64.msi",
     "arm64": "https://github.com/ptrinh/viettelex/releases/download/windows-v1.1.5/VietTelex-1.1.5-arm64.msi",
     "notes": "Sửa gõ trong Command Prompt; nhớ Việt/Anh theo từng ứng dụng."
+  },
+  "linux": {
+    "version": "1.0.4",
+    "url": "https://github.com/ptrinh/viettelex/releases/tag/linux-v1.0.4",
+    "download": "https://github.com/ptrinh/viettelex/releases/download/linux-v1.0.4/",
+    "series": [
+      "jammy",
+      "noble"
+    ],
+    "sha256": {
+      "libviettelex-core_1.0.4.jammy1_amd64.deb": "c52d2eb279cba4e4d4c4f2e97756d25d17f1f374cc457fa436f74c2d39e8f6ee",
+      "libviettelex-core_1.0.4.jammy1_arm64.deb": "e11f620721eb95e33a38fc6905d5fadf43de8d9342940d9590b5814d46e606e9",
+      "libviettelex-core_1.0.4.noble1_amd64.deb": "88096d70171d5b65fd52624e17d3145c60d05909f8a99e6ad143f87dd0bf9dff",
+      "libviettelex-core_1.0.4.noble1_arm64.deb": "6925115b33a30f9b8c22dbcc7f7ea40c5407129c4dfb1f6c4a5a93db40b44830",
+      "viettelex-fcitx5_1.0.4.jammy1_amd64.deb": "1e6e9103d762a87fb0d535d8de325b7e09306ec395708536bd6ca4b7d7e6eb7a",
+      "viettelex-fcitx5_1.0.4.jammy1_arm64.deb": "9f5f5ce9229a6b89097ee84bf4e15a73c1c698a80f595500b15d7a23ab5700df",
+      "viettelex-fcitx5_1.0.4.noble1_amd64.deb": "c7d1b2568026381e34f2c2053c3cb591b91489b6092f66501ae7b037d1f5be14",
+      "viettelex-fcitx5_1.0.4.noble1_arm64.deb": "08c81a37a92ec90d56552da4ed922b6d20f841897fe8edeedbdcd75f05c53d3e",
+      "viettelex-ibus_1.0.4.jammy1_amd64.deb": "5f3e40e420019593ee1c5f04a3c6962292dec819ff5b2769b81e3c7e26823db9",
+      "viettelex-ibus_1.0.4.jammy1_arm64.deb": "1026b6323e6d6b109bc362fb0638ce5a898a07ec2afec0910fa58cd9a91c1c78",
+      "viettelex-ibus_1.0.4.noble1_amd64.deb": "ee6df9e2500718001e636985ae0b14b79416e269e7970fdd29dfae39e4580cdb",
+      "viettelex-ibus_1.0.4.noble1_arm64.deb": "09708de3b018f886c869f17439ef38cd3703803b4b6f7045c9550deb7bfd942b",
+      "viettelex-settings_1.0.4.jammy1_all.deb": "c929d5d783ea164d6bf9b42cc26e2ab47186482d5cf3fdc6a30d96d5f7c99205",
+      "viettelex-settings_1.0.4.noble1_all.deb": "b67822b797405b202030661b4a460dee4403a12fd1cfed1d208a8473c3e565b9",
+      "viettelex-text-tools_1.0.4.jammy1_amd64.deb": "4da39ccb8937cb689480506429697c2149ec84e1695759b146b96591c1276c7a",
+      "viettelex-text-tools_1.0.4.jammy1_arm64.deb": "940c0a0905f1d466e51dfa1f95ba619a9e5819ad1071e1e8d8eed5844df5a889",
+      "viettelex-text-tools_1.0.4.noble1_amd64.deb": "512707542b9bdc9c99f2eef5ac7fee0487b9c087db0e9e3e5cf064fbb0b7d147",
+      "viettelex-text-tools_1.0.4.noble1_arm64.deb": "8f7026f59b96e798c069dba563dc0dcbd1f9c5b66b925b6b591960cf0e52b4f0",
+      "viettelex_1.0.4.jammy1_all.deb": "763d603bc5d94786bc3133be90fbe9cd8ddb32bb33d5d40eabf297e910a490fe",
+      "viettelex_1.0.4.noble1_all.deb": "c5f9070c78b8722bb18d6e986941d8624515565884e4769d8487b2d1a4df06d2"
+    },
+    "notes": "Công cụ văn bản cho vùng chọn, giao diện tiếng Anh, icon khay Vᴛ/E, tự cập nhật một chạm, gói gộp viettelex + lệnh cài một dòng, sửa gõ dấu khi đang chọn chữ trong GTK3, gói nhỏ hơn."
   }
 }

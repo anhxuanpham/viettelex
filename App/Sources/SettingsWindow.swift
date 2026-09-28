@@ -128,6 +128,7 @@ final class SettingsModel: ObservableObject {
     @Published var stickyInputSource: Bool { didSet { AppState.shared.stickyInputSource = stickyInputSource } }
     @Published var switchHotkey: String { didSet { AppState.shared.switchHotkey = switchHotkey } }
     @Published var textToolsInMenu: Bool { didSet { AppState.shared.textToolsInMenu = textToolsInMenu } }
+    @Published var mathResults: Bool { didSet { AppState.shared.mathResults = mathResults } }
     @Published var addTonesHotkey: String {
         didSet {
             AppState.shared.addTonesHotkey = addTonesHotkey
@@ -216,6 +217,7 @@ final class SettingsModel: ObservableObject {
         stickyInputSource = AppState.shared.stickyInputSource
         switchHotkey = AppState.shared.switchHotkey
         textToolsInMenu = AppState.shared.textToolsInMenu
+        mathResults = AppState.shared.mathResults
         addTonesHotkey = AppState.shared.addTonesHotkey
         icloudSync = ICloudSync.shared.isEnabled
         menuIcon = AppState.shared.menuIcon
@@ -744,6 +746,9 @@ struct GeneralTab: View {
                     }
                 }
                 Text(model.loc("Works in any app, even when another input source is active. Needs Accessibility permission (copies the selection, then pastes the result — your clipboard is restored)."))
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle(model.loc("Show maths results"), isOn: $model.mathResults)
+                Text(model.loc("Type a calculation followed by “=” (12*3=, 200+10%=) — the result shows next to the cursor; press Tab to insert it."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section(header: Label(model.loc("iCloud sync"), systemImage: "icloud")) {

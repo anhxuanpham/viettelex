@@ -1,3 +1,27 @@
+viettelex (1.0.4) UNRELEASED; urgency=medium
+
+  * Công cụ văn bản cho vùng chọn: Thêm dấu, HOA, thường, Hoa Đầu Từ,
+    Hoa đầu câu, Xoá dấu (gói viettelex-text-tools).
+  * Giao diện tiếng Anh cho app cài đặt.
+  * Icon khay Vᴛ / E giống thanh menu macOS.
+  * Tự cập nhật một chạm: Giới thiệu → Kiểm tra cập nhật (polkit).
+  * Gói gộp `viettelex` + lệnh cài một dòng:
+    curl -fsSL https://viettelex.com/install.sh | bash
+  * Sửa gõ dấu khi đang chọn chữ trong app GTK3 (Firefox, Chromium...).
+  * Gói nhỏ hơn: viettelex-text-tools 17,5 → 5 MB.
+  * ---
+  * Text tools for the selection: add tones, UPPER, lower, Title Case,
+    Sentence case, remove tones (viettelex-text-tools package).
+  * English user interface for the settings app.
+  * Vᴛ / E tray icons matching the macOS menu bar.
+  * One-click self-update: About → Check for updates (polkit).
+  * `viettelex` metapackage + one-line install command.
+  * Fix tone marks being applied to old text while a selection is active
+    in GTK3 apps (Firefox, Chromium...).
+  * Smaller packages: viettelex-text-tools 17.5 → 5 MB.
+
+ -- VietTelex Maintainers <maintainers@viettelex.invalid>  Mon, 28 Sep 2026 12:00:00 +0000
+
 viettelex (1.0.3) UNRELEASED; urgency=medium
 
   * GNOME Wayland: real focused-app id via portal GetRunningApplications

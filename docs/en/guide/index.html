@@ -204,17 +204,17 @@ window.vtxDetectOS = function (ua, plat, touch) {
     <h2 class="n">Install &amp; enable</h2>
     <div class="card" data-os="ios">
       <h3>iPhone / iPad</h3>
-      <p>Get VietTelex on the <a href="https://apps.apple.com/app/id6794425455" rel="noopener">App Store</a>, then go to Settings → General → Keyboard → Keyboards → <b>Add New Keyboard…</b> → Vietnamese (VietTelex). While typing, tap 🌐 to switch to VietTelex. Try it right away in the app's <b>Thử gõ</b> box: <code>vieejt</code> → <code>việt</code>.</p>
+      <p>Get VietTelex on the <a href="https://apps.apple.com/app/id6794425455" rel="noopener">App Store</a> (<a href="/en/download/?os=ios">download page</a>), then go to Settings → General → Keyboard → Keyboards → <b>Add New Keyboard…</b> → Vietnamese (VietTelex). While typing, tap 🌐 to switch to VietTelex. Try it right away in the app's <b>Thử gõ</b> box: <code>vieejt</code> → <code>việt</code>.</p>
     </div>
     <div class="card" data-os="android">
       <h3>Android</h3>
-      <p>Settings → System → Languages &amp; input → On-screen keyboard → Manage → enable VietTelex, then select it (the app has a <b>Chọn VietTelex</b> button). The “may collect all the text you type” warning is Android's generic notice for every third-party keyboard — VietTelex runs entirely on-device.</p>
+      <p>Get it from the <a href="/en/download/?os=android">download page</a>. Settings → System → Languages &amp; input → On-screen keyboard → Manage → enable VietTelex, then select it (the app has a <b>Chọn VietTelex</b> button). The “may collect all the text you type” warning is Android's generic notice for every third-party keyboard — VietTelex runs entirely on-device.</p>
     </div>
     <p class="lead" style="margin-top:10px" data-os="ios android">Most settings take effect the <b>next time the keyboard opens</b>.</p>
     <div class="card" data-os="macos">
       <h3>macOS</h3>
       <ul>
-        <li>Install <b>one</b> way: download <a href="https://github.com/ptrinh/viettelex/releases/latest" rel="noopener">VietTelex-x.y.z.pkg</a> (signed &amp; notarized) and double-click it, or run <code>brew install --cask ptrinh/viettelex/viettelex</code>. Don't install through both channels.</li>
+        <li>Install <b>one</b> way: download <a href="/en/download/?os=macos">VietTelex-x.y.z.pkg</a> (signed &amp; notarized) and double-click it, or run <code>brew install --cask ptrinh/viettelex/viettelex</code>. Don't install through both channels.</li>
         <li>The installer opens System Settings → Keyboard: <b>Input Sources → Edit… → ＋ → Vietnamese → ViệtTelex → Add</b>.</li>
         <li>To type in <b>Terminal, iTerm, Chrome/Edge/Brave</b>: grant <b>Accessibility</b> (Privacy &amp; Security → Accessibility → tick VietTelex); a one-time restart may be needed.</li>
         <li>Switch Vietnamese/English with 🌐 or <kbd>⌃</kbd><kbd>Space</kbd> like any macOS input source (macOS remembers it per app). VietTelex settings: the Vᴛ menu bar icon → <b>Cài đặt…</b> (Settings…).</li>
@@ -223,7 +223,7 @@ window.vtxDetectOS = function (ua, plat, touch) {
     <div class="card" data-os="windows">
       <h3>Windows</h3>
       <ul>
-        <li>Download the <code>.msi</code> from <a href="https://github.com/ptrinh/viettelex/releases?q=windows&amp;expanded=true" rel="noopener">GitHub Releases (Windows builds)</a>: <code>…-x64.msi</code> for Intel/AMD PCs, <code>…-arm64.msi</code> for ARM (Snapdragon). Requires Windows 10 1903 or later. The installer is code-signed.</li>
+        <li>Download the <code>.msi</code> from the <a href="/en/download/?os=windows">download page</a> (or <a href="https://github.com/ptrinh/viettelex/releases?q=windows&amp;expanded=true" rel="noopener">GitHub Releases</a>): <code>…-x64.msi</code> for Intel/AMD PCs, <code>…-arm64.msi</code> for ARM (Snapdragon). Requires Windows 10 1903 or later. The installer is code-signed.</li>
         <li>Run it — no restart needed. When it finishes, the VietTelex <b>Settings</b> window opens; later, open it from <b>VietTelex</b> in the Start menu.</li>
         <li>VietTelex is a system Vietnamese keyboard: pick it with <kbd>Win</kbd><kbd>Space</kbd>. Not in the list? Open VietTelex once from the Start menu, or add it under Settings → Time &amp; language → Language → Vietnamese → Keyboards.</li>
         <li>Upgrading: install the new MSI over the old one, or use <b>Check for updates</b> in the app.</li>
@@ -231,7 +231,7 @@ window.vtxDetectOS = function (ua, plat, touch) {
     </div>
     <div class="card" data-os="linux">
       <h3>Linux (Ubuntu 22.04 / 24.04, amd64 + arm64)</h3>
-      <p>VietTelex is an input method for <b>Fcitx5</b> (recommended) or <b>IBus</b> (the Ubuntu/GNOME default). Install from the APT repository (updates arrive via <code>apt upgrade</code>):</p>
+      <p>VietTelex is an input method for <b>Fcitx5</b> (recommended) or <b>IBus</b> (the Ubuntu/GNOME default). Quickest: <code>curl -fsSL https://viettelex.com/install.sh | bash</code> (see the <a href="/en/download/?os=linux">download page</a>). Or add the APT repository yourself (updates arrive via <code>apt upgrade</code>):</p>
       <pre>sudo install -d -m 0755 /etc/apt/keyrings
 curl -fsSL https://ptrinh.github.io/viettelex-apt/viettelex-archive-keyring.gpg \
   | sudo tee /etc/apt/keyrings/viettelex.gpg &gt;/dev/null
@@ -245,7 +245,7 @@ EOF
 sudo apt update
 sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
       <ul>
-        <li>Or download the <code>.deb</code> files from <a href="https://github.com/ptrinh/viettelex/releases" rel="noopener">GitHub Releases</a> (<code>~jammy1</code> = 22.04, <code>~noble1</code> = 24.04) and run <code>sudo apt install ./libviettelex-core_*.deb ./viettelex-fcitx5_*.deb ./viettelex-settings_*_all.deb</code> — this route does not auto-update.</li>
+        <li>Or download the <code>.deb</code> files (with SHA256) from the <a href="/en/download/?os=linux">download page</a> (<code>~jammy1</code> = 22.04, <code>~noble1</code> = 24.04) and run <code>sudo apt install ./libviettelex-core_*.deb ./viettelex-fcitx5_*.deb ./viettelex-settings_*_all.deb</code> — this route does not auto-update.</li>
         <li>Then open <b>VietTelex</b> from the app menu (or <code>viettelex-settings --onboarding</code>) and follow the setup guide. <b>Fcitx5</b>: <code>im-config -n fcitx5</code>, log in again (first time only), then click <b>Thêm</b> (Add). <b>IBus (GNOME)</b>: <code>ibus restart</code>, then Settings → Keyboard → Input Sources → + → Vietnamese → VietTelex (or click <b>Thêm</b> in the guide).</li>
         <li>Switch Vietnamese/English: <kbd>Ctrl</kbd><kbd>Space</kbd>. Changes in the settings app apply immediately — no input-method restart.</li>
       </ul>
@@ -474,6 +474,7 @@ sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
       <ul>
         <li><b>Cơ chế gõ: …</b> (typing mode) of the current app — click to open the Typing modes table and copy debug info for a bug report.</li>
         <li><b>Text tools</b> (enable in Tùy chỉnh → “Hiện công cụ văn bản trong menu VietTelex”): select text in any app, then open the VietTelex menu → <b>Công cụ…</b> (Tools…; a small panel appears next to the cursor — click a button or press 1–6, Esc closes) — <b>add tones to the selection</b> (<code>toi di hoc</code> → tôi đi học), UPPERCASE, lowercase, Title Case, Sentence case, remove tones.</li>
+        <li><b>Maths results</b> (on by default; turn off in Tùy chỉnh → “Hiện kết quả phép tính”): type a calculation followed by <code>=</code> (<code>12*3=</code>, <code>200+10%=</code>) — a small “= 36 ⇥ Tab” hint appears next to the cursor; press <b>Tab</b> to insert the result, any other key dismisses it.</li>
         <li><b>Cài đặt…</b> opens VietTelex settings; <b>Cài đặt hệ thống…</b> opens Keyboard → Input Sources.</li>
       </ul>
     </div>

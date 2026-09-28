@@ -343,6 +343,38 @@ EN = {
         "No Linux release info on the stable channel yet — see the releases page.",
     "Có bản mới: %s": "New version available: %s",
     "Bạn đang dùng bản mới nhất (%s).": "You’re on the latest version (%s).",
+    "Cập nhật lên %s": "Update to %s",
+    "Đang chuẩn bị cập nhật…": "Preparing the update…",
+    "Khởi động lại bộ gõ": "Restart input method",
+    "Thử lại": "Try again",
+    "Không thấy gói VietTelex nào được cài bằng dpkg/apt.":
+        "No VietTelex package installed through dpkg/apt was found.",
+    "Chưa có bản cho kiến trúc %s.": "No build for the %s architecture yet.",
+    "Chưa có bản cho %s (hỗ trợ: %s).": "No build for %s yet (supported: %s).",
+    "hệ điều hành này": "this system",
+    "Địa chỉ tải không hợp lệ trong stable.json.": "Invalid download address in stable.json.",
+    "Thiếu mã kiểm tra SHA256 cho %s.": "Missing SHA256 checksum for %s.",
+    "Đã cập nhật lên %s. Khởi động lại bộ gõ và mở lại ứng dụng này để dùng bản mới.":
+        "Updated to %s. Restart the input method and reopen this app to use the new version.",
+    "Đã huỷ — chưa cập nhật (cần mật khẩu quản trị).":
+        "Cancelled — not updated (an administrator password is required).",
+    "Trình quản lý gói đang bận (Software Updater/apt khác đang chạy). Đợi xong rồi thử lại.":
+        "The package manager is busy (Software Updater or another apt is running). "
+        "Wait for it to finish, then try again.",
+    "Cập nhật lỗi (mã %d):\n%s": "Update failed (code %d):\n%s",
+    "không có thông báo": "no message",
+    "Máy này không dùng dpkg/apt — cập nhật theo cách bạn đã cài.":
+        "This system doesn’t use dpkg/apt — update the way you installed it.",
+    "Thiếu pkexec hoặc helper cập nhật — cài gói pkexec (22.04: policykit-1) hoặc cập nhật bằng apt.":
+        "pkexec or the update helper is missing — install the pkexec package (22.04: "
+        "policykit-1) or update with apt.",
+    "Địa chỉ tải không hợp lệ: %s": "Invalid download address: %s",
+    "Đang tải %d/%d: %s": "Downloading %d/%d: %s",
+    "Không tải được %s — kiểm tra mạng rồi thử lại.":
+        "Couldn’t download %s — check your connection and try again.",
+    "Sai mã SHA256 của %s — đã huỷ, không cài.": "SHA256 mismatch for %s — cancelled, nothing installed.",
+    "Đang cài (cần mật khẩu quản trị)…": "Installing (administrator password required)…",
+    "Không chạy được pkexec: %s": "Couldn’t run pkexec: %s",
 
     # --- Hướng dẫn bật bộ gõ (onboarding)
     "Bật bộ gõ VietTelex": "Set up VietTelex",

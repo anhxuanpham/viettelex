@@ -51,6 +51,9 @@
     <control>pointing</control>
   </supports>
   <releases>
+    <release version="1.0.4" date="2026-09-28">
+      <description><p>Text tools for the selection, English interface, Vᴛ / E tray icons, one-click self-update, the viettelex metapackage with a one-line installer, a fix for tone marks while text is selected in GTK3 apps, and smaller packages.</p></description>
+    </release>
     <release version="1.0.3" date="2026-09-26">
       <description><p>Less underline: focused-app detection on GNOME Wayland, Direct mode in terminals, preedit without underline by default.</p></description>
     </release>

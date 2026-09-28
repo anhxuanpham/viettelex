@@ -20,7 +20,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import APP_ID, VERSION, compat, config, detect, i18n, shortcuts  # noqa: E402
+from . import APP_ID, VERSION, compat, config, detect, i18n, shortcuts, updater  # noqa: E402
 from .i18n import N_, _  # noqa: E402
 
 WEBSITE = "https://ptrinh.github.io/viettelex/"
@@ -28,7 +28,7 @@ LEARN_URL = "https://ptrinh.github.io/viettelex/learn"
 FAQ_URL = "https://ptrinh.github.io/viettelex/#faq"
 BUG_URL = "https://github.com/ptrinh/viettelex/blob/main/BAO-LOI.md"
 RELEASES_URL = "https://github.com/ptrinh/viettelex/releases"
-STABLE_JSON = "https://ptrinh.github.io/viettelex/stable.json"
+STABLE_JSON = "https://viettelex.com/stable.json"  # trực tiếp HTTPS (github.io 301 qua http://)
 
 APP_MODE_CHOICES = [
     ("auto", N_("Tự động")),
@@ -813,7 +813,8 @@ class SettingsWindow(Adw.PreferencesWindow):
         upd = Adw.PreferencesGroup()
         self.update_row = row(_("Kiểm tra cập nhật"), _("Chỉ kết nối mạng khi bạn bấm nút này."))
         self.update_btn = Gtk.Button(label=_("Kiểm tra"), valign=Gtk.Align.CENTER)
-        self.update_btn.connect("clicked", lambda _b: self.check_update())
+        # Handler lưu lại để đổi hành động nút (Kiểm tra → Cập nhật → Khởi động lại) không chạy chồng.
+        self._upd_handlers = [self.update_btn.connect("clicked", lambda _b: self.check_update())]
         self.update_row.add_suffix(self.update_btn)
         upd.add(self.update_row)
         page.add(upd)
@@ -833,21 +834,62 @@ class SettingsWindow(Adw.PreferencesWindow):
             try:
                 with urllib.request.urlopen(STABLE_JSON, timeout=8) as r:
                     info = json.loads(r.read().decode("utf-8"))
-                msg, url = update_message(info, VERSION)
+                st, lin = updater.state(info, VERSION)
+                msg, url = updater.update_message(info, VERSION)
             except (OSError, ValueError):
+                st, lin = "error", None
                 msg, url = _("Không kết nối được máy chủ cập nhật."), None
-            GLib.idle_add(self._update_done, msg, url)
+            GLib.idle_add(self._update_done, st, lin, msg, url)
         threading.Thread(target=work, daemon=True).start()
 
-    def _update_done(self, msg, url):
+    def _set_update_action(self, label, cb):
+        self.update_btn.set_label(label)
+        for h in getattr(self, "_upd_handlers", []):
+            self.update_btn.disconnect(h)
+        self._upd_handlers = [self.update_btn.connect("clicked", lambda _b: cb())]
+        self.update_btn.set_sensitive(True)
+
+    def _update_done(self, st, lin, msg, url):
         self.update_btn.set_sensitive(True)
         self.update_row.set_subtitle(esc(msg))
-        if url:
-            self.update_btn.set_label(_("Mở trang tải"))
-            for h in getattr(self, "_upd_handlers", []):
-                self.update_btn.disconnect(h)
-            self._upd_handlers = [self.update_btn.connect("clicked", lambda _b: open_uri(url))]
+        if st == "available":
+            self._set_update_action(_("Cập nhật lên %s") % lin["version"],
+                                    lambda: self.run_update(lin))
+        elif url:
+            self._set_update_action(_("Mở trang tải"), lambda: open_uri(url))
         return False
+
+    def run_update(self, lin):
+        """Cập nhật một chạm: kho APT nếu đã thêm, không thì tải .deb (kiểm SHA256)."""
+        self.update_btn.set_sensitive(False)
+        self.update_row.set_subtitle(esc(_("Đang chuẩn bị cập nhật…")))
+
+        def progress(text):
+            GLib.idle_add(lambda: (self.update_row.set_subtitle(esc(text)), False)[1])
+
+        def work():
+            ok, msg, fallback = updater.run_update(lin, progress)
+            GLib.idle_add(self._run_update_done, ok, msg, fallback, lin)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _run_update_done(self, ok, msg, fallback, lin):
+        self.update_row.set_subtitle(esc(msg))
+        if ok:
+            self._set_update_action(_("Khởi động lại bộ gõ"), self.restart_after_update)
+        elif fallback:
+            self._set_update_action(_("Mở trang tải"), lambda: open_uri(lin.get("url") or RELEASES_URL))
+        else:
+            self._set_update_action(_("Thử lại"), lambda: self.run_update(lin))
+        return False
+
+    def restart_after_update(self):
+        fw = detect.active_framework(detect.collect())
+        argv = updater.restart_im_argv(fw)
+        if argv:
+            spawn(argv)
+        # Mở lại app bản mới (mã Python đã được thay trên đĩa).
+        spawn(["viettelex-settings"])
+        self.get_application().quit()
 
     # --- onboarding -------------------------------------------------------
 
@@ -907,23 +949,8 @@ def read_table(path):
         return None
 
 
-def version_tuple(v):
-    out = []
-    for p in str(v).split("."):
-        digits = "".join(c for c in p if c.isdigit())
-        out.append(int(digits) if digits else 0)
-    return tuple(out)
-
-
-def update_message(info, current):
-    """stable.json: dùng mục "linux" {version,url} nếu có (bản macOS dùng khoá gốc)."""
-    lin = info.get("linux") if isinstance(info, dict) else None
-    if not isinstance(lin, dict) or "version" not in lin:
-        return (_("Chưa có thông tin bản Linux trên kênh ổn định — xem trang phát hành."),
-                RELEASES_URL)
-    if version_tuple(lin["version"]) > version_tuple(current):
-        return (_("Có bản mới: %s") % lin["version"], lin.get("url") or RELEASES_URL)
-    return (_("Bạn đang dùng bản mới nhất (%s).") % current, None)
+version_tuple = updater.version_tuple
+update_message = updater.update_message
 
 
 def gnome_hotkey_conflict(value):

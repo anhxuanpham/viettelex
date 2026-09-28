@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- Nút "Cập nhật" trong viettelex-settings: pkexec /usr/libexec/viettelex/viettelex-update -->
+<policyconfig>
+  <vendor>VietTelex</vendor>
+  <vendor_url>https://viettelex.com/</vendor_url>
+  <icon_name>com.viettelex.Settings</icon_name>
+  <action id="org.viettelex.update">
+    <description>Update VietTelex</description>
+    <description xml:lang="vi">Cập nhật VietTelex</description>
+    <message>Authentication is required to update the VietTelex input method packages.</message>
+    <message xml:lang="vi">Cần mật khẩu quản trị để cập nhật bộ gõ VietTelex (chỉ cài các gói VietTelex).</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/viettelex/viettelex-update</annotate>
+  </action>
+</policyconfig>
