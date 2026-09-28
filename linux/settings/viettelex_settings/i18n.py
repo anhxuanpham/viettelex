@@ -165,6 +165,46 @@ EN = {
     "Hiện công cụ văn bản trong menu": "Show text tools in the menu",
     "Menu “Công cụ…” của bộ gõ (khay Fcitx5 / menu IBus) liệt kê 6 công cụ trên.":
         "The input method’s “Tools…” menu (Fcitx5 tray / IBus menu) lists the 6 tools above.",
+    "Công cụ cho vùng chọn": "Tools for the selection",
+    "Gợi ý cạnh con trỏ": "Suggestions next to the caret",
+    "Hiện ngay cạnh con trỏ khi rất chắc; chỉ Tab mới áp dụng, phím khác bỏ qua, "
+    "Esc = bỏ gợi ý. Không bao giờ tự thay, không chạy ở ô mật khẩu. Cần gói "
+    "viettelex-text-tools.":
+        "Shown right next to the caret only when very likely; only Tab applies, any other key "
+        "ignores it, Esc dismisses it. Never replaces anything by itself, never in password "
+        "fields. Needs the viettelex-text-tools package.",
+    "Hiện kết quả phép tính": "Show math results",
+    "Gõ phép tính rồi “=” (12*3=, 200+10%=, 125 x (4 + 5.5) =) → kết quả cạnh con trỏ; "
+    "Tab hoặc Enter để chèn.":
+        "Type a calculation, then “=” (12*3=, 200+10%=, 125 x (4 + 5.5) =) → the result next "
+        "to the caret; Tab or Enter inserts it.",
+    "Chip số dạng tiền": "Money format for numbers",
+    "50k, 1tr2, 2 tỷ + dấu cách → 1.200.000 ₫ cạnh con trỏ; Tab để thay.":
+        "50k, 1tr2, 2 tỷ + space → 1.200.000 ₫ next to the caret; Tab replaces.",
+    "Gợi ý sửa lỗi gõ sai": "Typo fix suggestions",
+    "Từ vừa gõ không phải tiếng Việt, tiếng Anh hay từ chat → gợi ý từ đúng khi gõ nhầm "
+    "một phím kề hoặc đảo hai phím (tpoi → tôi). Tab để thay, Esc = đừng gợi ý từ này nữa.":
+        "When the word just typed is not Vietnamese, English or a chat word → suggests the right "
+        "word for one neighbouring-key slip or two swapped keys (tpoi → tôi). Tab replaces, "
+        "Esc = don’t suggest this word again.",
+    "Gợi ý thêm dấu cho câu không dấu": "Add tones to unaccented sentences",
+    "Từ 3 âm tiết không dấu, sau . ! ? hoặc khi dừng gõ một chút → câu có dấu "
+    "(toi di hoc → tôi đi học). Tab để thay cả cụm. Mặc định tắt.":
+        "After 3 or more unaccented syllables, on . ! ? or a short pause → the toned sentence "
+        "(toi di hoc → tôi đi học). Tab replaces the whole run. Off by default.",
+    "Gợi ý ngày giờ": "Date and time suggestions",
+    "“hôm nay”, “ngày mai”, “hôm qua” → dd/mm/yyyy; “bây giờ” → giờ:phút (today, tomorrow, "
+    "yesterday, now sau một từ tiếng Anh). Tab để thay.":
+        "“hôm nay”, “ngày mai”, “hôm qua” → dd/mm/yyyy; “bây giờ” → hh:mm (today, tomorrow, "
+        "yesterday, now after an English word). Tab replaces.",
+    "menu Công cụ…": "Tools… menu",
+    "phép tính": "math",
+    "chip số": "money format",
+    "sửa lỗi gõ": "typo fixes",
+    "thêm dấu": "tones",
+    "ngày giờ": "date/time",
+    "Đang bật: %s": "On: %s",
+    "Đang tắt hết": "All off",
     "Phím tắt Thêm dấu": "Add tones hotkey",
     "Thêm dấu cho đoạn không dấu đang bôi đen (toi di hoc → tôi đi học). Mặc định tắt.":
         "Add tones to the selected unaccented text (toi di hoc → tôi đi học). Off by default.",

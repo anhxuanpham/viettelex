@@ -51,6 +51,7 @@ std::string preeditOf(InputContext *ic) { return ic->inputPanel().clientPreedit(
 
 void phase2(EventDispatcher *dispatcher, Instance *instance, ICUUID uuid);
 void phase3(EventDispatcher *dispatcher, Instance *instance, ICUUID uuid);
+void phase4(EventDispatcher *dispatcher, Instance *instance, ICUUID uuid);
 void finish(EventDispatcher *dispatcher, Instance *instance);
 
 void scheduleEvent(EventDispatcher *dispatcher, Instance *instance) {
@@ -212,13 +213,50 @@ void phase3(EventDispatcher *dispatcher, Instance *instance, ICUUID uuid) {
 
     g_toolTimer = instance->eventLoop().addTimeEvent(
         CLOCK_MONOTONIC, now(CLOCK_MONOTONIC) + 100000, 0,
-        [dispatcher, instance](EventSourceTime *src, uint64_t) {
+        [dispatcher, instance, uuid](EventSourceTime *src, uint64_t) {
             if (g_committed.empty() && ++g_polls < 100) {  // ≤ 10 s
                 src->setNextInterval(100000);
                 src->setOneShot();
                 return true;
             }
             EXPECT(g_committed == "tôi đi học");
+            phase4(dispatcher, instance, uuid);
+            return true;
+        });
+}
+
+// Caret suggestion end to end (helper --serve): "12*3=" → aux text "= 36 …" in the input
+// panel (drawn at the caret), Tab commits "36"; any other key hides it.
+std::unique_ptr<EventSourceTime> g_hintTimer;
+
+void phase4(EventDispatcher *dispatcher, Instance *instance, ICUUID uuid) {
+    auto *ic = instance->inputContextManager().findByUUID(uuid);
+    auto *tf = instance->addonManager().addon("testfrontend");
+    ic->setCapabilityFlags(CapabilityFlags{CapabilityFlag::Preedit});
+    ic->reset();
+    // Still VNI (phase 2): digits are composing keys, committed at the next boundary.
+    tf->call<ITestFrontend::pushCommitExpectation>("12");
+    tf->call<ITestFrontend::pushCommitExpectation>("3");
+    for (const char *k : {"1", "2", "asterisk", "3", "equal"}) {
+        tf->call<ITestFrontend::keyEvent>(uuid, Key(k), false);
+        tf->call<ITestFrontend::keyEvent>(uuid, Key(k), true);
+    }
+    g_polls = 0;
+    g_hintTimer = instance->eventLoop().addTimeEvent(
+        CLOCK_MONOTONIC, now(CLOCK_MONOTONIC) + 50000, 0,
+        [dispatcher, instance, uuid](EventSourceTime *src, uint64_t) {
+            auto *ic = instance->inputContextManager().findByUUID(uuid);
+            auto *tf = instance->addonManager().addon("testfrontend");
+            if (ic->inputPanel().auxDown().empty() && ++g_polls < 100) {  // ≤ 5 s
+                src->setNextInterval(50000);
+                src->setOneShot();
+                return true;
+            }
+            EXPECT(ic->inputPanel().auxDown().toString() == "= 36   Tab / Enter");
+            EXPECT(preeditOf(ic).empty());  // never in the app's text
+            tf->call<ITestFrontend::pushCommitExpectation>("36");
+            tf->call<ITestFrontend::keyEvent>(uuid, Key("Tab"), false);
+            EXPECT(ic->inputPanel().auxDown().empty());
             finish(dispatcher, instance);
             return true;
         });

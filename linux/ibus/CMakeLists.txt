@@ -21,5 +21,9 @@ if(VT_BUILD_TESTS)
     add_test(NAME ibus_smoke
              COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run-smoke.sh" "$<TARGET_FILE:ibus-engine-viettelex>")
     set_tests_properties(ibus_smoke PROPERTIES TIMEOUT 60)
+    if(VT_TEXT_TOOL)
+      set_tests_properties(ibus_smoke PROPERTIES ENVIRONMENT
+        "VIETTELEX_TEXT_TOOL=${VT_TEXT_TOOL};VIETTELEX_DATA_DIR=${VT_TEXT_DATA_SRC}")
+    endif()
   endif()
 endif()

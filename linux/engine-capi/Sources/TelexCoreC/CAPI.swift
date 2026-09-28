@@ -208,3 +208,40 @@ public func vt_can_reopen(_ h: OpaquePointer) -> Bool { box(h).e.canReopenLastCo
 
 @_cdecl("vt_previous_word_english")
 public func vt_previous_word_english(_ h: OpaquePointer) -> Bool { box(h).e.previousWordEnglish }
+
+// MARK: - Gợi ý cạnh con trỏ (linux/common caret_hints): kiểm âm tiết rẻ ở ranh giới từ
+
+/// SyllableValidator.isValidSyllable — cổng "Sửa lỗi gõ sai" (TypoFixLogic.worthChecking).
+@_cdecl("vt_is_valid_syllable")
+public func vt_is_valid_syllable(_ word: UnsafePointer<CChar>?, _ teencode: Bool) -> Bool {
+    guard let word else { return false }
+    return SyllableValidator.isValidSyllable(cString(word), teencode: teencode)
+}
+
+/// ToneRunLogic.isUnaccentedSyllable (App/Sources/CaretSuggestions.swift) — không Foundation:
+/// chữ a–z nên "thêm sắc vào nguyên âm đầu" là tra bảng thay cho NFC.
+@_cdecl("vt_is_unaccented_syllable")
+public func vt_is_unaccented_syllable(_ chunk: UnsafePointer<CChar>?) -> Bool {
+    guard let chunk else { return false }
+    return isUnaccentedSyllable(Substring(cString(chunk)))
+}
+
+private let edgePunct = Set(",;:\"'()[]…“”‘’.!?")
+private let acuteVowel: [Character: Character] = ["a": "á", "e": "é", "i": "í", "o": "ó", "u": "ú", "y": "ý"]
+
+func isUnaccentedSyllable(_ chunk: Substring) -> Bool {
+    var c = chunk
+    while let f = c.first, edgePunct.contains(f) { c = c.dropFirst() }
+    while let l = c.last, edgePunct.contains(l) { c = c.dropLast() }
+    guard !c.isEmpty, c.count <= 7,
+          c.unicodeScalars.allSatisfy({ ($0.value >= 97 && $0.value <= 122) || ($0.value >= 65 && $0.value <= 90) }),
+          !c.dropFirst().contains(where: \.isUppercase) || c.allSatisfy(\.isUppercase) else { return false }
+    let w = c.lowercased()
+    guard !EnglishContextLookup.opensEnglishRun(w) else { return false }
+    if SyllableValidator.isValidSyllable(w, teencode: false) { return true }
+    // Vần tắc (-c -ch -p -t) chỉ mang sắc/nặng: "hoc" là dạng không dấu của học/hóc.
+    guard let i = w.firstIndex(where: { acuteVowel[$0] != nil }) else { return false }
+    var acute = w
+    acute.replaceSubrange(i...i, with: String(acuteVowel[w[i]]!))
+    return SyllableValidator.isValidSyllable(acute, teencode: false)
+}

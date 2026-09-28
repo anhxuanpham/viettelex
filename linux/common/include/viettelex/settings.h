@@ -44,6 +44,12 @@ struct Settings {
     std::string uiLanguage = "vi";
     bool textToolsMenu = true;        // "Công cụ…" submenu (text tools) in the IM menu
     std::string addTonesHotkey;       // "Thêm dấu cho vùng chọn" hotkey; "" = off (default)
+    // Caret suggestions (caret_hints.h) — defaults = macOS 1.8.2. Tab applies, never automatic.
+    bool mathResults = true;          // "12*3=" → "= 36"
+    bool numberChips = true;          // "1tr2␣" → "1.200.000 ₫"
+    bool typoHints = true;            // "tpoi␣" → "tôi"
+    bool toneHints = false;           // "toi di hoc." → "tôi đi học."
+    bool dateHints = true;            // "hôm nay␣" → "28/09/2026", "bây giờ␣" → "21:35"
     // [app_modes] app id (lowercase) -> "preedit" | "surrounding" | "direct" | "off"
     std::map<std::string, std::string> appModes;
     // shortcuts.yml (never null after load)

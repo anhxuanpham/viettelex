@@ -95,6 +95,16 @@ between Vietnamese and English.
   comes from the app's surrounding text, else the PRIMARY selection (Fcitx5 built in; IBus via
   an already installed `wl-clipboard` / `xclip` / `xsel`). The clipboard is never touched.
   Disabled in password fields and terminals.*
+- **Gợi ý cạnh con trỏ / Suggestions next to the caret** (như macOS 1.8.2; Tuỳ chỉnh → Công cụ
+  văn bản, mục thu gọn): **kết quả phép tính** `12*3=` → `= 36` (Tab hoặc Enter chèn), **chip số**
+  `1tr2␣` → `1.200.000 ₫`, **sửa lỗi gõ sai** `tpoi␣` → `tôi`, **ngày giờ** `hôm nay␣` →
+  `28/09/2026`, `bây giờ␣` → `21:35` (bật sẵn), **thêm dấu cho câu không dấu** `toi di hoc.` →
+  `tôi đi học.` (tắt sẵn). Chỉ Tab áp dụng, phím khác bỏ qua, Esc = bỏ; không bao giờ tự thay,
+  không chạy ở ô mật khẩu. Hiện ở ô gợi ý cạnh con trỏ (Fcitx5 / IBus). Cần gói
+  `viettelex-text-tools`. / *Math results (Tab or Enter inserts), money format for numbers,
+  typo fixes, date/time (on by default) and tones for unaccented sentences (off by default),
+  shown in the input method's popup at the caret. Only Tab applies; any other key ignores the
+  hint; never automatic, never in password fields. Needs `viettelex-text-tools`.*
 
 ## Tương thích ứng dụng / App compatibility
 

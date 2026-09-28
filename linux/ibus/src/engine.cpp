@@ -12,10 +12,14 @@
 // viettelex-text-tool off the main thread (viettelex::TextToolRunner) and commit the result
 // over the selection. Labels follow Settings::uiLanguage; the InputMode icon/symbol follow
 // Việt/Anh (Vᴛ / E, like the macOS menu bar).
+// Caret suggestions (phép tính, chip số, sửa lỗi gõ, thêm dấu, ngày giờ — caret_hints.h) are
+// computed by the same helper in `--serve` mode (viettelex::HintService) and shown as the
+// engine's auxiliary text, which ibus-ui-gtk3 and GNOME Shell draw in the popup at the caret.
 
 #include "engine.h"
 
 #include "viettelex/app.h"
+#include "viettelex/caret_hints.h"
 #include "viettelex/gnome.h"
 #include "viettelex/gnome_monitor.h"
 #include "viettelex/session.h"
@@ -75,6 +79,7 @@ struct Globals {
     std::set<VtIBusEngine *> engines;
     std::unique_ptr<vt::GnomeAppMonitor> gnome;  // GNOME Wayland only
     std::unique_ptr<vt::TextToolRunner> runner;
+    std::unique_ptr<vt::HintService> hints;  // caret suggestions (helper --serve)
 };
 Globals &G() {
     static Globals g;
@@ -136,6 +141,11 @@ public:
             ibus_engine_forward_key_event(e_, kv, keycode, IBUS_RELEASE_MASK);
         }
     }
+    // Auxiliary text: the candidate popup at the caret (never the preedit).
+    void showHint(const std::string &label) override {
+        ibus_engine_update_auxiliary_text(e_, ibus_text_new_from_string(label.c_str()), TRUE);
+    }
+    void hideHint() override { ibus_engine_hide_auxiliary_text(e_); }
     bool textBeforeCursor(std::string &out) override {
         IBusText *text = nullptr;
         guint cursor = 0, anchor = 0;
@@ -311,6 +321,21 @@ void runTextTool(VtIBusEngine *self, vt::TextTool tool) {
                 *self->pendingResult = result;
                 self->pendingUntil = g_get_monotonic_time() + 3 * G_USEC_PER_SEC;
             }
+        } catch (...) {
+        }
+    });
+}
+
+// Session → helper (worker thread) → back on the main loop.
+void submitHint(VtIBusEngine *self, const vt::HintRequest &r) {
+    if (!G().hints) return;
+    uint64_t gen = r.gen;
+    G().hints->submit(r, [self, gen](bool ok, const vt::CaretSuggestion &c) {
+        try {
+            // The engine may have been destroyed or lost focus while the helper ran.
+            if (!ok || !G().engines.count(self) || !self->focused) return;
+            IBusClient client(IBUS_ENGINE(self));
+            self->session->deliverHint(gen, c, client);
         } catch (...) {
         }
     });
@@ -563,6 +588,8 @@ static void vt_ibus_engine_init(VtIBusEngine *self) {
     self->pendingUntil = 0;
     self->session->applySettings(settings());
     self->session->onToggle = [self](bool vi) { onToggled(self, vi); };
+    if (G().hints && G().hints->available())
+        self->session->setHintSink([self](const vt::HintRequest &r) { submitHint(self, r); });
 
     self->props = ibus_prop_list_new();
     g_object_ref_sink(self->props);
@@ -600,6 +627,8 @@ void vt_ibus_globals_init() {
     G().appState->load();
     if (G().watcher->fd() >= 0) g_unix_fd_add(G().watcher->fd(), G_IO_IN, onSettingsFd, nullptr);
     G().runner = std::make_unique<vt::TextToolRunner>(
+        [](std::function<void()> f) { g_main_context_invoke(nullptr, runOnMain, new std::function<void()>(std::move(f))); });
+    G().hints = std::make_unique<vt::HintService>(
         [](std::function<void()> f) { g_main_context_invoke(nullptr, runOnMain, new std::function<void()>(std::move(f))); });
 
     // Started now (not at first focus) so the focus changes since login are seen.

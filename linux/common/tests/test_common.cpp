@@ -320,6 +320,16 @@ void testTextToolSettings() {
     CHECK_EQ(r.uiLanguage, std::string("en"));
     CHECK(!r.textToolsMenu);
     CHECK_EQ(r.addTonesHotkey, std::string("Ctrl+Alt+t"));
+
+    // Caret suggestions: defaults = macOS 1.8.2 (all on except tones), round trip.
+    CHECK(d.mathResults && d.numberChips && d.typoHints && d.dateHints);
+    CHECK(!d.toneHints);
+    Settings h = parseConfig("[general]\nmath_results = false\nnumber_chips = false\ntypo_hints = false\n"
+                             "tone_hints = true\ndate_hints = false\n");
+    CHECK(!h.mathResults && !h.numberChips && !h.typoHints && h.toneHints && !h.dateHints);
+    Settings hr = parseConfig(serializeConfig(h));
+    CHECK(!hr.mathResults && !hr.numberChips && !hr.typoHints && hr.toneHints && !hr.dateHints);
+    CHECK(parseConfig("[general]\nmath_results = \"no\"\n").mathResults);  // wrong type → default
 }
 
 void testAddTonesHotkey() {
