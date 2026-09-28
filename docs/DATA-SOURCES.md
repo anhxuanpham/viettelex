@@ -274,6 +274,50 @@ Còn sai trên tập giữ lại: chưa → của ×4 (nét thẳng), chọn →
 golf, felt→left). Có ngữ cảnh (vuốt tuần tự): chưa cuối câu hỏi ("…đài loan chưa") và "không cho"
 → "không có" vẫn thua LM — việc của trọng số LM, chưa đụng.
 
+### Liên tục ngôn ngữ — đang gõ tiếng Anh thì từ kế là tiếng Anh (28/09/2026, `SwipeLangContext.prior(kinds)`)
+
+Ngữ cảnh = ngôn ngữ ≤ 3 từ trước con trỏ (từ đang soạn + vòng 3 từ đã chốt, gõ hay vuốt; **không
+xoá ở dấu câu** — câu sau của đoạn tiếng Anh vẫn là tiếng Anh; xoá khi đổi ô / chữ trước con trỏ đổi
+từ ngoài; chỉ ghi khi bật vuốt + vuốt tiếng Anh). Mỗi từ: `classify` (nhãn "vừa vuốt ra tiếng Anh" >
+dấu tiếng Việt > từ mượn trung tính > EnglishContextWords > từ điển Việt/Anh; trùng cả hai = trung
+tính). Mạch Anh s = Σ 0,6^i trên từ Anh, đi từ gần ra xa, dừng ở từ Việt đầu tiên: s ≥ 1 ⇒ bias
+0,2 + 0,5·(min(s, 2) − 1) (một / hai / ba từ Anh: 0,2 / 0,5 / 0,68), margin 0; 0 < s < 1 (từ Anh
+cách từ trung tính) nội suy từ DEFAULT. Không có từ nào rõ ngôn ngữ, hoặc mạch Việt ⇒ đúng DEFAULT
+(−0,9 / 0,3) ⇒ từ rời không đổi. Chế độ Tiếng Anh (vuốt phím cách) vẫn `onlyEnglishPrior`.
+
+**Mạch Việt không cộng thêm**: DEFAULT đã nghiêng Việt; quét viMargin/viBias 0,1…0,8 (dev) chỉ +0,1
+điểm câu Việt (lỗi ngôn ngữ trong câu Việt chỉ còn 5/1 160 từ) mà −1,4…−7 điểm từ Anh chen sau từ
+Việt ⇒ 0 (khớp lần thử trước với bias −1,2…−1,5). Chỉnh trên dev; decay 0,4/0,8, enGain 0,3…1,2,
+enBias 0…0,4: cao hơn thì câu Anh +0,3 mà từ Việt sau từ Anh −2…−5.
+
+Tập (`Fixtures/swipe-lang-sentences.txt`, `Scripts/gen-swipe-lang-eval.py`): 1 200 câu tiếng Anh
+Tatoeba 3–8 từ (chỉ a–z trong enlexicon, không tên riêng; [CC BY 2.0 FR](https://creativecommons.org/licenses/by/2.0/fr/),
+© các thành viên Tatoeba, `downloads.tatoeba.org/exports/per_language/eng/eng_sentences.tsv.bz2`
+09/2026) + 573 câu trộn (93 câu tự soạn kiểu chat/công sở, câu Việt giữ lại ghép câu Anh hai chiều,
+câu Việt chèn một từ Anh hay chen); câu Việt = bigram-heldout. Tách dev/test cố định; đoạn văn = 3
+câu liền cùng tập (câu 2–3 chỉ có ngữ cảnh NGÔN NGỮ của câu trước, LM thì mất như thật). Vuốt tuần tự
+như bàn phím (`SwipeLangTuneTests`, ngữ cảnh = từ đã giải mã, sửa từ trước, bật vuốt tiếng Anh,
+layout iPhone), tập kiểm thử, top-1 đường tự nhiên / đều:
+
+| tập (test) | trước | sau |
+|---|---|---|
+| câu Việt thuần (n = 1 184) | 84,1 / 87,6 | 84,0 / 87,5 |
+| **câu Anh thuần** (n = 3 160) | 86,3 / 89,0 | **91,8 / 94,4** |
+| — từ đầu câu 2–3 của đoạn Anh (n = 311) | 61,8 / 63,5 | **95,2 / 99,0** |
+| — từ Anh sau từ Anh trong câu | 90,6 / 93,4 | 93,0 / 95,6 |
+| câu trộn, cả câu (n = 2 164) | 82,5 / 86,7 | 83,4 / 87,3 |
+| — từ Anh ngay sau từ Việt | 77,3 / 81,8 | 77,8 / 81,8 |
+| — từ Việt ngay sau từ Anh | 71,0 / 73,1 | 70,4 / 71,0 |
+| — từ Anh sau từ Anh | 90,5 / 93,7 | 92,4 / 95,2 |
+| từ rời: nét thật giữ lại / giả tự nhiên / giả đều | 0,780 / 0,875 / 0,903 | y hệt |
+
+Giá phải trả: từ Việt đầu tiên sau một mạch Anh dài (−0,6 / −2,1 điểm; "…the house bạn" → "ban").
+Lỗi còn lại trong câu Anh phần lớn là Anh↔Anh (our→or, too→to, in→on — cần LM tiếng Anh), lỗi
+ngôn ngữ trong câu Anh giảm 135 → 75 (dev). Chi phí: ≤ 3 lần `classify` (tra nhị phân) mỗi cú vuốt,
+một phép thêm vào mảng 3 phần tử mỗi từ chốt khi bật vuốt; tắt vuốt = 0.
+Chạy lại: `SWIPE_LANG_TUNE=1 SWIPE_LANG_CFGS='old;base' [SWIPE_TEST=1] ./gradlew --offline
+:keyboard:test --tests '*SwipeLangTuneTests*' --rerun -i | grep LANG`.
+
 ## enlexicon.bin — từ điển tiếng Anh cho gõ vuốt (giai đoạn 3)
 
 - File: `iOS/Keyboard/Resources/enlexicon.bin`, `android/app/src/main/assets/enlexicon.bin`

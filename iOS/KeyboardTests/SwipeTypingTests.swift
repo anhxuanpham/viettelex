@@ -271,6 +271,42 @@ final class SwipeTypingTests: XCTestCase {
         return s.finish(path(word), case: sc, contextWords: [], english: prior, bridge: b, proxy: p)
     }
 
+    /// Vuốt với tiền nghiệm liên tục ngôn ngữ như controller: `recent` = từ đã chốt (cũ → mới).
+    @discardableResult
+    private func swipeRun(_ word: String, _ s: SwipeTyping, _ b: EngineBridge, _ p: MockProxy,
+                          recent: [String]) -> SwipeTyping.Outcome? {
+        b.letter(word.first!, proxy: p)
+        s.begin(bridge: b, proxy: p)
+        let prior = SwipeLangContext.prior(SwipeLangContext.kinds(
+            composing: false, pending: nil, pendingEnglish: false, recent: recent, english: { _ in false }))
+        return s.finish(path(word), case: .lower, contextWords: [], prev: recent.last,
+                        prev2: recent.dropLast().last, english: prior, bridge: b, proxy: p)
+    }
+
+    func testContinuityTheAfterEnglishWords() {
+        let (s, b, p) = make()
+        typed("i like big ", b, p)
+        let out = swipeRun("the", s, b, p, recent: ["i", "like", "big"])
+        XCTAssertEqual(out?.english, true, "\(String(describing: out))")
+        XCTAssertEqual(out?.word, "the")
+    }
+
+    func testContinuityTheAfterVietnameseWords() {
+        let (s, b, p) = make()
+        typed("vis duj nhuw ", b, p)
+        XCTAssertEqual(p.text, "ví dụ như ")
+        let out = swipeRun("the", s, b, p, recent: ["ví", "dụ", "như"])
+        XCTAssertEqual(out?.english, false, "\(String(describing: out))")
+        XCTAssertEqual(out?.word, "thế")
+        XCTAssertTrue(out?.englishAlternatives.contains("the") == true, "\(String(describing: out))")
+        // một từ Anh chen giữa câu Việt vẫn ra
+        let (s2, b2, p2) = make()
+        typed("minhf ddang ", b2, p2)
+        let m = swipeRun("check", s2, b2, p2, recent: ["mình", "đang"])
+        XCTAssertEqual(m?.english, true, "\(String(describing: m))")
+        XCTAssertEqual(m?.word, "check")
+    }
+
     func testCollisionAfterVietnameseStaysVietnamese() {
         let (s, b, p) = make()
         typed("tooi ", b, p)

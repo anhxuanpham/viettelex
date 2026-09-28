@@ -9,7 +9,7 @@
 //     Không giữ template: decoder dựng template NGAY LÚC CHẤM cho các từ lọt bộ lọc
 //     phím đầu/cuối (xếp sẵn theo cặp phím đầu–cuối) — vài trăm từ mỗi cú vuốt thay
 //     vì 20k × 192 B = 3,8 MB template thường trực.
-//   • `SwipeLangContext`: P(ngôn ngữ | 1–2 từ trước) → độ lệch điểm cho ứng viên tiếng
+//   • `SwipeLangContext`: P(ngôn ngữ | ≤ 3 từ trước) → độ lệch điểm cho ứng viên tiếng
 //     Anh + biên độ phải thắng. MẶC ĐỊNH NGHIÊNG TIẾNG VIỆT: 182+ từ tiếng Anh trùng hẳn
 //     chuỗi với âm tiết Việt (the/thế, to/tô, can/cần…) — nét vuốt y hệt, phân xử sai
 //     tệ hơn gõ chạm, nên chỉ chọn tiếng Anh top-1 khi hình học thắng rõ hoặc đang
@@ -143,7 +143,7 @@ struct SwipeEnglishPrior: Equatable {
     var margin: Float
 }
 
-/// Ngữ cảnh ngôn ngữ từ 1–2 từ trước con trỏ.
+/// Ngữ cảnh ngôn ngữ từ ≤ 3 từ trước con trỏ.
 enum SwipeLangContext {
     enum Kind: Equatable { case vi, en, neutral }
 
@@ -154,8 +154,6 @@ enum SwipeLangContext {
     // Mạch Anh: bias 0.2 cân hai ngôn ngữ (từ Việt sau một từ Anh vẫn hay gặp: "app chưa").
     static let defaultPrior = SwipeEnglishPrior(bias: -0.9, margin: 0.3)
     static let englishPrior = SwipeEnglishPrior(bias: 0.2, margin: 0)
-    static let strongEnglishPrior = SwipeEnglishPrior(bias: 0.5, margin: 0)
-    static let weakEnglishPrior = SwipeEnglishPrior(bias: -0.3, margin: 0.3)
     /// Chế độ Tiếng Anh: đẩy hẳn tiếng Anh lên (ứng viên Việt bị lọc bỏ sau decode).
     static let onlyEnglishPrior = SwipeEnglishPrior(bias: 4, margin: 0)
 
@@ -178,13 +176,70 @@ enum SwipeLangContext {
         return vnForm ? .vi : .neutral
     }
 
-    /// Độ lệch tiếng Anh theo 2 từ trước (prev1 = liền trước).
-    static func prior(prev1: Kind, prev2: Kind) -> SwipeEnglishPrior {
-        switch (prev1, prev2) {
-        case (.en, .en): return strongEnglishPrior
-        case (.en, _): return englishPrior
-        case (.neutral, .en): return weakEnglishPrior
-        default: return defaultPrior
+    /// Độ lệch theo 2 từ trước (prev1 = liền trước) — = `prior(kinds)`.
+    static func prior(prev1: Kind, prev2: Kind) -> SwipeEnglishPrior { prior([prev1, prev2]) }
+
+    /// Tiền nghiệm LIÊN TỤC NGÔN NGỮ (28/09/2026): đang gõ tiếng Anh thì từ kế hay là tiếng
+    /// Anh, đang gõ tiếng Việt thì tiếng Việt. GIỮ Y HỆT bản Kotlin (SwipeLangContext.Continuity).
+    /// Chỉnh trên dev (SwipeLangTuneTests.kt, vuốt tuần tự câu Việt / Anh / trộn): mạch Việt
+    /// KHÔNG cần thêm gì — DEFAULT đã nghiêng Việt; nới thêm (viBias/viMargin > 0) chỉ +0,1 điểm
+    /// câu Việt mà −1,5…−3 điểm từ Anh chen sau từ Việt ⇒ để 0.
+    struct Continuity: Equatable {
+        /// Trọng số từ lùi i vị trí = decay^i (từ trung tính vẫn tính khoảng cách).
+        var decay: Float = 0.6
+        /// Mạch Anh s ≥ 1 (một từ Anh liền trước): bias = enBias + enGain·(min(s, enCap) − 1),
+        /// margin 0; 0 < s < 1: nội suy tuyến tính từ DEFAULT.
+        var enBias: Float = 0.2
+        var enGain: Float = 0.5
+        var enCap: Float = 2
+        /// Mạch Việt: bias −= viBias·v, margin += viMargin·v, v = min(s Việt, viCap).
+        var viBias: Float = 0
+        var viMargin: Float = 0
+        var viCap: Float = 2
+    }
+
+    static let continuity = Continuity()
+    /// Số từ trước con trỏ được xét.
+    static let window = 3
+
+    /// `kinds` = ngôn ngữ ≤ 3 từ trước con trỏ, gần nhất trước. Mạch Anh s = Σ decay^i trên các
+    /// từ Anh, đi từ gần ra xa, DỪNG ở từ Việt đầu tiên (một từ Việt cắt mạch Anh — "check mail
+    /// cho" → mạch Việt); mạch Việt đối xứng (dừng ở từ Anh). Không có từ nào rõ ngôn ngữ ⇒
+    /// đúng `defaultPrior` (từ rời không đổi). Có trần — hình học + LM mạnh vẫn thắng, từ Anh
+    /// chen giữa câu Việt vẫn ra.
+    static func prior(_ kinds: [Kind], _ c: Continuity = continuity) -> SwipeEnglishPrior {
+        let en = run(kinds, .en, stop: .vi, c.decay)
+        if en >= 1 { return SwipeEnglishPrior(bias: c.enBias + c.enGain * (min(en, c.enCap) - 1), margin: 0) }
+        if en > 0 {
+            return SwipeEnglishPrior(bias: defaultPrior.bias + (c.enBias - defaultPrior.bias) * en,
+                                     margin: defaultPrior.margin * (1 - en))
         }
+        let vi = min(run(kinds, .vi, stop: .en, c.decay), c.viCap)
+        if vi <= 0 { return defaultPrior }
+        return SwipeEnglishPrior(bias: defaultPrior.bias - c.viBias * vi, margin: defaultPrior.margin + c.viMargin * vi)
+    }
+
+    private static func run(_ kinds: [Kind], _ same: Kind, stop: Kind, _ decay: Float) -> Float {
+        var s: Float = 0, w: Float = 1
+        for k in kinds.prefix(3) {
+            if k == stop { break }
+            if k == same { s += w }
+            w *= decay
+        }
+        return s
+    }
+
+    /// Ngôn ngữ ≤ `window` từ trước con trỏ, gần nhất trước: `composing` ⇒ từ đang soạn
+    /// `pending` (sẽ chốt trước từ vuốt; nil = không học được ⇒ trung tính) đứng đầu; `recent` =
+    /// từ đã chốt, CŨ → MỚI; `english(w)` = w vừa được vuốt ra như tiếng Anh.
+    static func kinds(composing: Bool, pending: String?, pendingEnglish: Bool, recent: [String],
+                      english: (String?) -> Bool) -> [Kind] {
+        var out: [Kind] = []
+        out.reserveCapacity(window)
+        if composing { out.append(classify(pending, swipedEnglish: pendingEnglish)) }
+        for w in recent.reversed() where out.count < window {
+            out.append(classify(w, swipedEnglish: english(w)))
+        }
+        return out
     }
 }
