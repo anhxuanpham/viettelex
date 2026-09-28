@@ -2597,7 +2597,7 @@ final class TerminalTapController {
 
         if type == .leftMouseDown || type == .rightMouseDown {
             engine.reset()
-            shortcutTail.reset(); shortcutUndo = nil   // con trỏ đã dời
+            shortcutTail.caretMoved(); shortcutUndo = nil   // con trỏ đã dời (neo khi AX mù, #99)
             numberPrevRun = ""
             // Click ngoài ô gợi ý ⇒ con trỏ dời: tắt gợi ý (Tab sau đó không được chèn vào
             // chỗ khác). Click TRÊN ô ứng viên hệ thống thì để nó chọn (candidateSelected).
@@ -2724,7 +2724,7 @@ final class TerminalTapController {
                 shortcutTail.append(engine.composed)
                 shortcutTail.append(t)
             } else {
-                shortcutTail.reset()
+                shortcutTail.caretMoved()   // ⌘V/⌘←/⌘Tab…: con trỏ ở chỗ mới (#99)
             }
             if !engine.isEmpty || engine.canReopenLastCommit { engine.reset() }
             // ALWAYS notify: the IMKit controller's engine state is invisible from here,
@@ -2932,9 +2932,14 @@ final class TerminalTapController {
             defer { engine.forgetLastCommit() }
             // Gõ tắt: Return/Enter ("\n") và Tab ("\t") nở cả khoá chữ lẫn khoá ký hiệu;
             // Esc chỉ khoá chữ (hành vi cũ). Sau Enter cụm bắt đầu lại (dòng/prompt
-            // mới); Tab (hoàn thành lệnh shell) / Esc ⇒ cụm không còn biết.
+            // mới); Tab (hoàn thành lệnh shell / đổi ô ⇒ coi như dời con trỏ, #99) / Esc
+            // ⇒ cụm không còn biết.
             let trigger: String? = newlineKey ? "\n" : (keyCode == kTab ? "\t" : nil)
-            defer { if newlineKey { shortcutTail.append("\n") } else { shortcutTail.reset() } }
+            defer {
+                if newlineKey { shortcutTail.append("\n") }
+                else if keyCode == kTab { shortcutTail.caretMoved() }
+                else { shortcutTail.reset() }
+            }
             let allow = ShortcutMatch.triggers(boundary: trigger, glued: lastTapKeyWasDigit)
             let tokenPossible = allow.token && !shortcutTail.run.isEmpty   // chưa neo: emitBoundary xác nhận bằng AX
             if engine.isEmpty, !tokenPossible, SyntheticKeyboard.queueDrained() { return pass }
@@ -2980,7 +2985,7 @@ final class TerminalTapController {
             lastTapKeyWasBoundary = true
             emitBoundary(suppressAutoRestore: false, allowShortcuts: false)
             engine.forgetLastCommit()      // navigation: the caret left the word behind
-            shortcutTail.reset()
+            shortcutTail.caretMoved()
             return pass
         }
         // Layout remap: the tap is handed the character macOS produced with ITS
@@ -3254,16 +3259,20 @@ final class TerminalTapController {
         // terminal has no AX text to re-read. UNANCHORED run (right after a click /
         // focus change / at the start of an empty field — issue #99: "->" in Chrome or
         // Lark only expanded the second time) → expand only when AX re-reads the text
-        // before the caret and confirms the run stands alone. The AX read happens ONLY
-        // when the run already matches a key (a dictionary lookup) — never per key.
+        // before the caret and confirms the run stands alone. AX unreadable (Lark,
+        // Photoshop — #99 follow-up) → the run expands when it started right at a caret
+        // jump (click / navigation / ⌘-combo / Tab: ShortcutTail.afterJump). The AX read
+        // happens ONLY when the run already matches a key (a dictionary lookup) — never
+        // per key.
         let run = shortcutTail.run
+        let afterJump = shortcutTail.afterJump
         let match = ShortcutMatch.findForTap(
             in: table, composed: word, raw: rawWord, tail: shortcutTail,
             allowWord: allowShortcuts, allowToken: allowToken) { token in
-                let ok = ShortcutScreen.confirmsToken(token, caret: AXTextEdit.readCaret(),
-                                                      read: { AXTextEdit.readString(at: $0.location, length: $0.length) })
-                DebugLog.log("shortcut token(tap): unanchored run, screen \(ok ? "confirms" : "unreadable/disagrees → skip")")
-                return ok
+                let v = ShortcutScreen.tokenVerdict(token, caret: AXTextEdit.readCaret(),
+                                                    read: { AXTextEdit.readString(at: $0.location, length: $0.length) })
+                DebugLog.log("shortcut token(tap): unanchored run, screen=\(v) afterJump=\(afterJump)")
+                return v
             }
         switch match {
         case let .word(expansion)?:

@@ -139,15 +139,23 @@ enum ShortcutMatch: Equatable {
 
     /// Tap: tra ở ranh giới với cụm `tail`. Cụm đã neo ⇒ tin dòng phím như trước. Cụm
     /// chưa neo (sau click / đổi ô — issue #99: "->" đầu ô Chrome/Lark phải gõ 2 lần)
-    /// ⇒ khoá ký hiệu chỉ nở khi `screenConfirms(token)` (AX đọc lại) nói có; khoá
-    /// chữ không đổi. `screenConfirms` chỉ được gọi khi cụm ĐÃ khớp một khoá.
+    /// ⇒ khoá ký hiệu hỏi màn hình `screen(token)` (AX đọc lại): đứng riêng ⇒ nở, dính
+    /// chữ trước ⇒ không. AX KHÔNG đọc được (Lark, Photoshop — #99 follow-up) ⇒ nở khi
+    /// cụm bắt đầu ngay sau một lần dời con trỏ (`tail.afterJump`: click, phím điều
+    /// hướng, ⌘/⌃-tổ hợp, Tab) — coi chỗ dời tới là neo. Đánh đổi (Phil duyệt): click
+    /// ngay sau chữ rồi gõ "->" ("a|->") nở thành "a→"; ⌫ ngay sau vẫn hoàn tác. Khoá
+    /// chữ không đổi. `screen` chỉ được gọi khi cụm ĐÃ khớp một khoá.
     static func findForTap(in table: ShortcutTable, composed: String, raw: String, tail: ShortcutTail,
                            allowWord: Bool, allowToken: Bool,
-                           screenConfirms: (String) -> Bool) -> ShortcutMatch? {
+                           screen: (String) -> ShortcutScreen.TokenVerdict) -> ShortcutMatch? {
         let m = find(in: table, composed: composed, raw: raw, run: tail.run,
                      allowWord: allowWord, allowToken: allowToken)
-        if case let .token(token, _)? = m, !tail.anchored, !screenConfirms(token) { return nil }
-        return m
+        guard case let .token(token, _)? = m, !tail.anchored else { return m }
+        switch screen(token) {
+        case .standsAlone: return m
+        case .glued: return nil
+        case .unreadable: return tail.afterJump ? m : nil
+        }
     }
 
     /// Ranh giới `boundary` (nil = Esc / phím không chèn ký tự) + từ có dính sau ký tự
@@ -162,21 +170,30 @@ enum ShortcutMatch: Equatable {
 /// Cụm ký tự liền nhau ĐÃ CHỐT ngay trước con trỏ (từ khoảng trắng gần nhất), dựng
 /// từ chính các phím mình thấy — không đọc màn hình mỗi phím. `anchored` = đầu cụm
 /// chắc chắn đứng ngay sau một khoảng trắng/xuống dòng mình thấy gõ. Mọi sự kiện có
-/// thể dời con trỏ (click, phím điều hướng, đổi ô, ⌘-tổ hợp) phải reset().
+/// thể dời con trỏ (click, phím điều hướng, đổi ô, ⌘-tổ hợp) phải reset() — hoặc
+/// caretMoved() ở đường tap khi chắc đó là một lần DỜI con trỏ (xem `afterJump`).
 struct ShortcutTail: Equatable {
     /// Dài hơn khoá dài nhất (64) thì không khoá nào khớp được cho tới khoảng trắng kế.
     static let maxRun = 64
     private(set) var run = ""
     private(set) var anchored = false
+    /// Cụm (chưa neo) bắt đầu NGAY tại chỗ con trỏ vừa dời tới (click / điều hướng /
+    /// ⌘-tổ hợp / Tab) và từ đó chỉ có phím mình thấy gõ. Chỉ dùng khi AX không đọc
+    /// được (ShortcutMatch.findForTap) — issue #99 follow-up (Lark, Photoshop).
+    private(set) var afterJump = false
     private var runCount = 0
 
-    mutating func reset() { run = ""; runCount = 0; anchored = false }
+    mutating func reset() { run = ""; runCount = 0; anchored = false; afterJump = false }
+
+    /// Con trỏ vừa dời (click, phím điều hướng, ⌘/⌃-tổ hợp, Tab đổi ô): bỏ cụm, đánh
+    /// dấu chỗ mới là điểm bắt đầu cụm.
+    mutating func caretMoved() { reset(); afterJump = true }
 
     /// Văn bản vừa hiện ra trước con trỏ (từ đã chốt, ký tự ranh giới, nội dung nở).
     mutating func append(_ s: String) {
         for ch in s {
             if ch.isWhitespace || ch.isNewline {
-                run = ""; runCount = 0; anchored = true
+                run = ""; runCount = 0; anchored = true; afterJump = false
             } else if runCount >= Self.maxRun {
                 reset()                       // quá dài: đầu cụm không còn biết
             } else {
@@ -188,7 +205,7 @@ struct ShortcutTail: Equatable {
     /// ⌫ khi không có từ đang soạn: xoá ký tự cuối cụm; cụm rỗng ⇒ vừa xoá khoảng
     /// trắng, phần trước nó không biết ⇒ mất neo.
     mutating func backspace() {
-        if run.isEmpty { anchored = false } else { run.removeLast(); runCount -= 1 }
+        if run.isEmpty { anchored = false; afterJump = false } else { run.removeLast(); runCount -= 1 }
     }
 
     /// Cụm vừa bị thay (khoá ký hiệu nở): bỏ cụm, giữ neo, rồi nối nội dung mới.
@@ -245,15 +262,34 @@ enum ShortcutScreen {
         return NSRange(location: start, length: t.count)
     }
 
+    /// Màn hình nói gì về một cụm chưa neo (tap, issue #99).
+    enum TokenVerdict: Equatable {
+        /// Cụm nằm ngay trước con trỏ và đứng riêng (đầu văn bản / sau khoảng trắng).
+        case standsAlone
+        /// Cụm nằm ngay trước con trỏ nhưng DÍNH ký tự không trắng trước nó ("a->").
+        case glued
+        /// Không đọc được, hoặc đọc ra thứ không kết thúc bằng cụm mình vừa thấy gõ
+        /// (caret giả — Lark báo 1 hằng số — hay cache AX trễ): màn hình không đáng tin.
+        case unreadable
+    }
+
     /// Tap (issue #99): cụm CHƯA NEO — gõ ngay sau click / đổi ô / đầu ô trống, tap
-    /// không thấy khoảng trắng nào trước cụm. Chỉ nở khi màn hình (AX, `read` = đọc
-    /// UTF-16 range của ô đang focus) xác nhận cụm nằm ngay trước con trỏ và đứng
-    /// riêng (đầu văn bản / sau khoảng trắng / xuống dòng). Không đọc được ⇒ false
-    /// (giữ hành vi cũ). Chỉ gọi khi cụm đã khớp một khoá — không đọc mỗi phím.
-    static func confirmsToken(_ token: String, caret: Int?, read: (NSRange) -> String?) -> Bool {
+    /// không thấy khoảng trắng nào trước cụm. Đọc màn hình (AX, `read` = đọc UTF-16
+    /// range của ô đang focus) xem cụm có đứng riêng trước con trỏ không. Chỉ gọi khi
+    /// cụm đã khớp một khoá — không đọc mỗi phím.
+    static func tokenVerdict(_ token: String, caret: Int?, read: (NSRange) -> String?) -> TokenVerdict {
         guard let caret, let window = readWindow(caret: caret, text: token),
-              let text = read(window) else { return false }
+              let text = read(window) else { return .unreadable }
+        let w = Array(text.utf16), t = Array(token.utf16)
+        guard !t.isEmpty, window.location + w.count == caret, w.count >= t.count,
+              Array(w.suffix(t.count)) == t else { return .unreadable }
         return tokenRange(caret: caret, token: token, window: text, windowStart: window.location) != nil
+            ? .standsAlone : .glued
+    }
+
+    /// true ⇔ màn hình xác nhận cụm đứng riêng (tokenVerdict == .standsAlone).
+    static func confirmsToken(_ token: String, caret: Int?, read: (NSRange) -> String?) -> Bool {
+        tokenVerdict(token, caret: caret, read: read) == .standsAlone
     }
 
     /// Range UTF-16 cần thay để hoàn tác `undo` nếu màn hình kết thúc ĐÚNG bằng nội
