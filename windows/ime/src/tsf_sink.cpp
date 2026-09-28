@@ -5,7 +5,7 @@
 namespace vtx::tip {
 
 namespace {
-constexpr int kMaxRead = 64;
+constexpr int kMaxRead = 400;  // word edits need ~64; caret hints read up to 320 (tones)
 }  // namespace
 
 ITfRange* TsfTextSink::selectionRange() {

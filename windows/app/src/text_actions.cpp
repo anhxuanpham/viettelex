@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "app.h"
+#include "app_messages.h"
 #include "app_policy.h"
 #include "foreground.h"
 #include "../res/data_ids.h"
@@ -14,6 +15,8 @@
 #include "strings.h"
 #include "text_action_logic.h"
 #include "text_tool_ipc.h"
+#include "caret_hint_ipc.h"
+#include "typo_fix.h"
 
 namespace vtx::app {
 
@@ -23,8 +26,9 @@ constexpr int kHotkeyId = 0x5654;
 constexpr UINT_PTR kTimerStart = 0x5401;  // tray path: the app we returned to has focus
 constexpr UINT_PTR kTimerTip = 0x5402;    // the TIP did not answer -> clipboard fallback
 constexpr UINT_PTR kTimerDone = 0x5403;   // the TIP took the result but never confirmed
-constexpr UINT kMsgWork = WM_APP + 0x61;      // selection from the TIP: transform + answer
-constexpr UINT kMsgClipDone = WM_APP + 0x62;  // clipboard worker finished (wParam 1 = ok)
+// Main-window messages: app_messages.h (kMsgUpdateChecked/Downloaded share this window).
+constexpr UINT kMsgWork = kMsgTextToolWork;
+constexpr UINT kMsgClipDone = kMsgTextToolClipDone;
 constexpr UINT kStartDelayMs = 150, kTipWaitMs = 600, kDoneWaitMs = 3000;
 
 enum class Stage { Idle, Starting, WaitTip, Transform, WaitReplace, Clipboard };
@@ -85,6 +89,39 @@ const addtones::LanguageData* languageData() {
         return d;
     }();
     return data;
+}
+
+// ---- Gợi ý cạnh con trỏ: jobs from the TIPs (caret_hint_ipc.h) --------------------------
+// Only the latest job is kept: a newer key in the TIP makes an older answer useless anyway.
+struct HintWork {
+    bool pending = false;
+    HWND tip = nullptr;
+    HintMessage msg;
+} g_hintWork;
+
+bool isTipWindow(HWND h) {
+    if (!h || !IsWindow(h)) return false;
+    wchar_t title[64] = {};
+    GetWindowTextW(h, title, 64);
+    return wcsncmp(title, L"VietTelexTip:", 13) == 0;
+}
+
+void onHintWork() {
+    if (!g_hintWork.pending) return;
+    g_hintWork.pending = false;
+    static HintJobs jobs(languageData());
+    HintMessage reply;
+    reply.request = g_hintWork.msg.request;
+    reply.job = g_hintWork.msg.job;
+    reply.text = jobs.answer(g_hintWork.msg);
+    const std::vector<uint8_t> b = packHintMessage(reply);
+    COPYDATASTRUCT cds;
+    cds.dwData = kCopyHintReply;
+    cds.cbData = static_cast<DWORD>(b.size());
+    cds.lpData = const_cast<uint8_t*>(b.data());
+    DWORD_PTR r = 0;
+    SendMessageTimeoutW(g_hintWork.tip, WM_COPYDATA, reinterpret_cast<WPARAM>(g_mainWnd), reinterpret_cast<LPARAM>(&cds),
+                        SMTO_ABORTIFHUNG, 250, &r);
 }
 
 void finish(bool beep, const char* why) {
@@ -487,6 +524,18 @@ bool textActionsMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT& result) {
             return true;
         case WM_COPYDATA: {
             const auto* cds = reinterpret_cast<const COPYDATASTRUCT*>(lp);
+            if (cds && cds->dwData == kCopyHintRequest) {
+                result = FALSE;
+                HintMessage m;
+                if (!isTipWindow(reinterpret_cast<HWND>(wp)) || !unpackHintMessage(cds->lpData, cds->cbData, m))
+                    return true;
+                g_hintWork.pending = true;
+                g_hintWork.tip = reinterpret_cast<HWND>(wp);
+                g_hintWork.msg = std::move(m);
+                PostMessageW(g_mainWnd, kMsgHintWork, 0, 0);  // answer outside the TIP's SendMessage
+                result = TRUE;
+                return true;
+            }
             if (!cds || cds->dwData != kCopySelection) return false;
             result = FALSE;
             uint32_t request = 0, tool = 0;
@@ -504,6 +553,10 @@ bool textActionsMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT& result) {
         }
         case kMsgWork:
             onWork();
+            result = 0;
+            return true;
+        case kMsgHintWork:
+            onHintWork();
             result = 0;
             return true;
         case kMsgClipDone:

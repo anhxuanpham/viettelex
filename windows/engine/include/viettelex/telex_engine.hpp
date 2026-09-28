@@ -201,4 +201,10 @@ bool isValidSyllable(const uint8_t* classes, int n, Tone tone, bool teencode);
 bool isValidPrefix(const uint8_t* bases, int n, bool teencode);
 } // namespace SyllableValidator
 
+/// EnglishContextLookup (TelexCore EnglishContextWords.swift): lowercase ASCII words that
+/// OPEN an English run (the, is, you, check…) — the same table `contextualEnglish` uses.
+namespace EnglishContextLookup {
+bool opensEnglishRun(const char* word, int length);
+} // namespace EnglishContextLookup
+
 } // namespace vtx

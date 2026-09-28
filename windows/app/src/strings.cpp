@@ -185,6 +185,33 @@ const Pair kStrings[] = {
     {L"Hoa Đầu Từ", L"Title Case"},
     {L"Hoa đầu câu", L"Sentence case"},
     {L"Xoá dấu", L"Remove tones"},
+    {L"Phép tính, chip số, gợi ý sửa lỗi / thêm dấu / ngày giờ, phím tắt Thêm dấu…",
+     L"Maths results, number chips, typo/tone/date suggestions, add-tones hotkey…"},
+    {L"Hiện kết quả phép tính", L"Show maths results"},
+    {L"Gõ phép tính rồi “=” (12*3=, 200+10%=) — kết quả hiện cạnh con trỏ, bấm Tab hoặc Enter để chèn.",
+     L"Type a calculation followed by “=” (12*3=, 200+10%=) — the result shows next to the cursor; press Tab or "
+     L"Enter to insert it."},
+    {L"Chip số", L"Number chips"},
+    {L"Gõ số tiền có k/tr/tỷ (50k, 1tr2, 2 tỷ) rồi dấu cách — dạng tiền (1.200.000 ₫) hiện cạnh con trỏ, bấm Tab để "
+     L"thay.",
+     L"Type an amount with k/tr/tỷ (50k, 1tr2, 2 tỷ) and a space — the money format (1.200.000 ₫) shows next to the "
+     L"cursor; press Tab to replace it."},
+    {L"Gợi ý sửa lỗi gõ sai", L"Suggest typo fixes"},
+    {L"Sau một từ không phải tiếng Việt hay tiếng Anh (tpoi, nayd), từ nhiều khả năng đúng (tôi, này) hiện cạnh con "
+     L"trỏ, bấm Tab để thay. Esc: thôi gợi ý từ đó.",
+     L"After a word that isn’t Vietnamese or English (tpoi, nayd), a likely fix (tôi, này) shows next to the cursor; "
+     L"press Tab to replace it. Esc stops suggesting that word."},
+    {L"Gợi ý thêm dấu cho câu không dấu", L"Suggest tones for unaccented sentences"},
+    {L"Sau từ 3 âm tiết không dấu trở lên (toi di hoc), khi gõ . ! ? hoặc dừng tay sau dấu cách, câu có dấu (tôi đi "
+     L"học) hiện cạnh con trỏ, bấm Tab để thay.",
+     L"After 3+ unaccented syllables (toi di hoc), when you type . ! ? or pause after a space, the toned text (tôi đi "
+     L"học) shows next to the cursor; press Tab to replace it."},
+    {L"Gợi ý ngày giờ", L"Suggest dates and times"},
+    {L"Gõ “hôm nay”, “ngày mai”, “hôm qua” hoặc “bây giờ” (sau một từ tiếng Anh: today, tomorrow, yesterday, now) "
+     L"rồi dấu cách — ngày (28/09/2026) hoặc giờ (21:35) hiện cạnh con trỏ, bấm Tab để thay cụm đó bằng ngày giờ.",
+     L"Type “hôm nay”, “ngày mai”, “hôm qua” or “bây giờ” (after an English word: today, tomorrow, yesterday, now) "
+     L"and a space — the date (28/09/2026) or time (21:35) shows next to the cursor; press Tab to replace the words "
+     L"with it."},
 };
 static_assert(sizeof(kStrings) / sizeof(kStrings[0]) == static_cast<size_t>(S::Count), "string table size");
 }  // namespace

@@ -4,6 +4,7 @@
 add_library(vtx_ime_core STATIC
   core/app_language.cpp
   core/app_policy.cpp
+  core/caret_hints.cpp
   core/debug_log.cpp
   core/com_path.cpp
   core/registration.cpp
@@ -27,9 +28,12 @@ if(VTX_IME_TESTS)
   enable_testing()
   add_executable(vtx_ime_tests
     tests/test_main.cpp
+    tests/caret_hints_tests.cpp
     tests/core_tests.cpp
     tests/session_tests.cpp)
   target_include_directories(vtx_ime_tests PRIVATE tests)
+  target_compile_definitions(vtx_ime_tests PRIVATE
+                             VTX_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/../../iOS/KeyboardTests/Fixtures")
   target_link_libraries(vtx_ime_tests PRIVATE vtx_ime_core)
   if(MSVC)
     target_compile_options(vtx_ime_tests PRIVATE /utf-8)
@@ -62,6 +66,7 @@ if(WIN32)
     src/display_attribute.cpp
     src/dllmain.cpp
     src/globals.cpp
+    src/hint_popup.cpp
     src/register.cpp
     src/text_service.cpp
     src/tsf_sink.cpp

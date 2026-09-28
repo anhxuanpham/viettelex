@@ -81,6 +81,13 @@ enum class S {
     AddTonesHotkey, AddTonesHotkeyDesc,
     MenuTextTools,
     ToolAddTones, ToolUpper, ToolLower, ToolTitle, ToolSentence, ToolStrip,
+    // Gợi ý cạnh con trỏ (macOS 1.8.2), in the collapsible Text tools section
+    TextToolsSummary,
+    MathResults, MathResultsDesc,
+    NumberChips, NumberChipsDesc,
+    TypoHints, TypoHintsDesc,
+    ToneHints, ToneHintsDesc,
+    DateHints, DateHintsDesc,
     Count
 };
 

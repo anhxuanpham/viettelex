@@ -1,0 +1,140 @@
+// typo_fix.h — "Gợi ý sửa lỗi gõ sai" for a PHYSICAL keyboard (macOS 1.8.2 TypoFixLogic in
+// App/Sources/CaretSuggestions.swift, on iOS/Keyboard/AdjacentKeyFixer.swift +
+// AutoCorrect.swift). Runs in VietTelex.exe only: it needs vnlexicon / enlexicon (already
+// embedded for Công cụ văn bản); the TIP asks over caret_hint_ipc.h after its cheap gate
+// (caret_hints.h typoWorthChecking).
+//
+// One edit away from a lexicon word: a key replaced by a NEIGHBOUR on the physical keyboard
+// (ANSI/ISO stagger) or two adjacent keys swapped; a dropped / extra key only counts as a
+// RIVAL. Suggested only when the candidate is common (≥ minFreq) and beats the runner-up
+// by ≥ margin — thresholds tuned on macOS (TypoFixEvalTests, DEV P 98.5% R 17.6%); the
+// same eval runs here (app_tests typo_eval_precision_floor).
+#pragma once
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+struct vtx_engine;
+
+namespace vtx { namespace addtones { class Lexicon; struct LanguageData; } }
+
+namespace vtx::app::typo {
+
+enum class Edit : uint8_t { Sub = 1, Swap = 2, Del = 4, Ins = 8 };
+constexpr uint8_t kAllEdits = 15;
+
+struct Cand {
+    std::u32string word;
+    int freq = 0;
+    Edit edit = Edit::Sub;
+    bool operator==(const Cand& o) const { return word == o.word && freq == o.freq && edit == o.edit; }
+};
+
+struct Params {
+    int minLen = 3;
+    int minFreq = 150;
+    int margin = 80;
+    uint8_t edits = static_cast<uint8_t>(Edit::Sub) | static_cast<uint8_t>(Edit::Swap);
+    uint8_t rivals = static_cast<uint8_t>(Edit::Del) | static_cast<uint8_t>(Edit::Ins);
+};
+// = TypoFixLogic.defaults (keep identical to macOS).
+inline Params defaults() { return Params{}; }
+
+// AdjacentKeyFixer.physicalNeighbors: "g" -> f h t y v b, "z" -> a s x.
+const std::vector<char32_t>& physicalNeighbors(char32_t key);
+
+// Lexicon / engine / known-word lookups (injected: tests use fakes).
+class Source {
+public:
+    virtual ~Source() = default;
+    virtual std::u32string compose(const std::u32string& raw) const = 0;       // raw -> screen text
+    virtual std::optional<int> frequency(const std::u32string& word) const = 0;  // nullopt = not a word
+    virtual bool hasCompletion(const std::u32string& prefix) const = 0;          // still a prefix of a word
+    virtual bool isKnown(const std::u32string& lower) const = 0;                 // English / chat / declined
+};
+
+// "cũm" -> "cum": drop the five tone marks, keep letter marks (ư, â, đ…).
+std::u32string stripTones(const std::u32string& s);
+
+// Every ONE-edit candidate that is a lexicon word (≠ current text). `edits` = Edit bits.
+std::vector<Cand> candidates(const std::u32string& lower, const Source& src, uint8_t edits = kAllEdits);
+// The top candidate by frequency, if it comes from a proposable edit, is common enough and
+// beats the runner-up (counted over edits ∪ rivals) by the margin.
+std::optional<Cand> pick(const std::vector<Cand>& cands, const Params& p = defaults());
+// The fix for the word typed as `raw`, or nullopt. Capital first kept.
+std::optional<std::u32string> correction(const std::u32string& raw, const Source& src, const Params& p = defaults());
+
+// ---------------------------------------------------------------- the real data
+// VNSuggest over vnlexicon.bin: exact frequency, and "matches(prefix, poolLimit: 1)".
+class LexiconIndex {
+public:
+    explicit LexiconIndex(const addtones::Lexicon& lx);
+    std::optional<int> frequency(const std::u32string& word) const;
+    bool contains(const std::u32string& word) const { return frequency(word).has_value(); }
+    bool hasCompletion(const std::u32string& typed) const;
+
+private:
+    struct Dec {
+        uint8_t base, attr;
+    };
+    bool decompose(const std::u32string& s, std::vector<Dec>& out) const;
+    void range(const std::string& prefix, int& lo, int& hi) const;
+    const addtones::Lexicon& lx_;
+    std::unordered_map<char32_t, Dec> table_;
+    std::vector<std::vector<int>> firstTop_;  // VNLexicon2Data.firstCharTop, per 'a'..'z'
+};
+
+// Engine + lexicon + English + chat words, composing with `engineFlags` (the typist's).
+class LexiconSource final : public Source {
+public:
+    LexiconSource(const addtones::LanguageData& data, uint32_t engineFlags);
+    ~LexiconSource() override;
+    LexiconSource(const LexiconSource&) = delete;
+    LexiconSource& operator=(const LexiconSource&) = delete;
+
+    std::u32string compose(const std::u32string& raw) const override;
+    std::optional<int> frequency(const std::u32string& w) const override { return index_.frequency(w); }
+    bool hasCompletion(const std::u32string& p) const override { return index_.hasCompletion(p); }
+    bool isKnown(const std::u32string& lower) const override;
+    bool isEnglish(const std::u32string& lower) const;
+    bool isChatWord(const std::u32string& lower) const { return chat_.count(lower) != 0; }
+    const std::unordered_set<std::u32string>& chatWords() const { return chat_; }
+
+private:
+    const addtones::LanguageData& data_;
+    LexiconIndex index_;
+    vtx_engine* engine_ = nullptr;
+    std::unordered_set<std::u32string> chat_;
+};
+
+// TypoFixLogic.chatWords source: the ASCII seed unigrams (iOS SeedData.swift); the ones
+// that are Vietnamese syllables are dropped at load (LexiconSource).
+const std::vector<const char*>& seedAsciiWords();
+
+}  // namespace vtx::app::typo
+
+namespace vtx { struct HintMessage; }
+
+namespace vtx::app {
+
+// VietTelex.exe's answer to a caret-hint job from the TIP (caret_hint_ipc.h): the typo fix
+// for the raw keys, or Thêm dấu for the unaccented run. "" = nothing to suggest (also
+// without language data). The lexicon source is rebuilt only when the engine flags change.
+class HintJobs {
+public:
+    explicit HintJobs(const addtones::LanguageData* data) : data_(data) {}
+    ~HintJobs();
+    HintJobs(const HintJobs&) = delete;
+    HintJobs& operator=(const HintJobs&) = delete;
+    std::u16string answer(const HintMessage& m);
+
+private:
+    const addtones::LanguageData* data_;
+    typo::LexiconSource* source_ = nullptr;
+    uint32_t flags_ = 0;
+};
+
+}  // namespace vtx::app

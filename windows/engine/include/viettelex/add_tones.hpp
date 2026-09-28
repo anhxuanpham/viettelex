@@ -34,6 +34,10 @@ public:
     int formFirstId(int f) const { return formStart_[static_cast<size_t>(f)]; }
     int formEndId(int f) const { return formStart_[static_cast<size_t>(f) + 1]; }
     int formCount() const { return static_cast<int>(forms_.size()); }
+    /// Folded key (lowercase a–z bases) of syllable `id`, and the per-letter attribute
+    /// byte (quality << 3 | tone, VNSuggest.decompose) of its letter `i`.
+    std::string_view folded(int id) const;
+    uint8_t attr(int id, int i) const;
 
 private:
     uint32_t u32(size_t off) const;
@@ -41,7 +45,7 @@ private:
     size_t size_ = 0;
     int count_ = 0;
     uint32_t hash_ = 0;
-    size_t folded_ = 0, display_ = 0, offsets_ = 0, dispOffsets_ = 0, freqs_ = 0;
+    size_t folded_ = 0, display_ = 0, attrs_ = 0, offsets_ = 0, dispOffsets_ = 0, freqs_ = 0;
     std::vector<std::string_view> forms_;
     std::vector<int> formStart_;
 };

@@ -2,16 +2,17 @@
 # portable core (unit-tested on any OS).
 
 add_library(vtx_app_core STATIC core/update_check.cpp core/uninstall.cpp core/setup_helper_logic.cpp core/direct_policy.cpp core/input_switch.cpp
-            core/text_action_logic.cpp)
+            core/text_action_logic.cpp core/typo_fix.cpp)
 target_include_directories(vtx_app_core PUBLIC core)
 target_link_libraries(vtx_app_core PUBLIC vtx_ime_core viettelex_text)
 
 if(VTX_IME_TESTS)
-  add_executable(vtx_app_tests ../ime/tests/test_main.cpp tests/app_tests.cpp)
+  add_executable(vtx_app_tests ../ime/tests/test_main.cpp tests/app_tests.cpp tests/typo_fix_tests.cpp)
   target_include_directories(vtx_app_tests PRIVATE ../ime/tests)
   target_link_libraries(vtx_app_tests PRIVATE vtx_app_core)
   target_compile_definitions(vtx_app_tests PRIVATE
-                             VTX_KB_RESOURCES="${CMAKE_CURRENT_SOURCE_DIR}/../../iOS/Keyboard/Resources")
+                             VTX_KB_RESOURCES="${CMAKE_CURRENT_SOURCE_DIR}/../../iOS/Keyboard/Resources"
+                             VTX_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/../../iOS/KeyboardTests/Fixtures")
   if(MSVC)
     target_compile_options(vtx_app_tests PRIVATE /utf-8)
   endif()

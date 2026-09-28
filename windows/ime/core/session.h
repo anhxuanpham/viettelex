@@ -108,6 +108,11 @@ public:
     void setCompositionOnlyContext(bool on);
     bool compositionOnlyContext() const { return compositionOnly_; }
     OutputMode wordMode() const { return wordMode_; }
+    // The word the LAST handleKey committed at a printable boundary: its raw keys and the
+    // text left on screen (auto-restore applied). Empty after any other key, after a
+    // shortcut expansion or when nothing was committed (caret hints: typo gate).
+    const std::u16string& lastCommitRaw() const { return lastRaw_; }
+    const std::u16string& lastCommitText() const { return lastText_; }
 
 private:
     bool isWordKey(char32_t c) const;
@@ -134,6 +139,7 @@ private:
     std::u16string shown_;     // what the current word looks like on screen
     bool overflow_ = false;    // engine overflowed: rest of the word passes through raw
     bool reopenArmed_ = false; // last event was a printable boundary after a commit
+    std::u16string lastRaw_, lastText_;  // see lastCommitRaw()
 };
 
 // Characters that may belong to a word already on screen (ASCII letters + Latin

@@ -3,10 +3,11 @@
 #pragma once
 #include <windows.h>
 
+#include "app_messages.h"
+
 namespace vtx::app {
 
-constexpr UINT kMsgUpdateChecked = WM_APP + 0x61;  // lParam: UpdateInfo* (owned by receiver)
-constexpr UINT kMsgUpdateDownloaded = WM_APP + 0x62;  // lParam: wchar_t* path or nullptr; wParam: status
+// kMsgUpdateChecked / kMsgUpdateDownloaded: app_messages.h (one list for the main window).
 
 struct UpdateInfo {
     bool ok = false;        // request + parse succeeded

@@ -140,6 +140,8 @@ bool TypingSession::wantsKey(const KeyInput& k) const {
 }
 
 bool TypingSession::handleKey(const KeyInput& k, TextSink& sink) {
+    lastRaw_.clear();
+    lastText_.clear();
     if (!engine_) return false;
     switch (k.kind) {
         case KeyKind::Char:
@@ -439,18 +441,31 @@ bool TypingSession::commitWord(TextSink& sink, KeyKind kind) {
         }
     }
 
+    const std::u16string raw = printable ? rawOf(engine_) : std::u16string();
+    std::u16string finalText;
+    bool committed = true;
     if (comp) {
         uint16_t buf[VTX_MAX_TEXT + 1];
         int32_t n = vtx_commit_text(engine_, opt_.autoRestore ? 1 : 0, buf, VTX_MAX_TEXT + 1);
-        sink.endComposition(toU16(buf, n));
+        finalText = toU16(buf, n);
+        sink.endComposition(finalText);
     } else {
         vtx_action a;
         vtx_commit_boundary(engine_, opt_.autoRestore ? 1 : 0, &a);
+        finalText = shown_;
         if (a.kind == VTX_REPLACE) {
             std::u16string expect;
-            if (!tailOf(shown_, a.backspaces, expect) || !sink.replaceBeforeCaret(expect, actionInsert(a)))
+            if (!tailOf(shown_, a.backspaces, expect) || !sink.replaceBeforeCaret(expect, actionInsert(a))) {
                 vtx_forget_last_commit(engine_);
+                committed = false;
+            } else {
+                finalText = shown_.substr(0, shown_.size() - expect.size()) + actionInsert(a);
+            }
         }
+    }
+    if (printable && committed) {
+        lastRaw_ = raw;
+        lastText_ = finalText;
     }
     shown_.clear();
     reopenArmed_ = printable;
