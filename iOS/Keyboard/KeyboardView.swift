@@ -213,6 +213,57 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
 
     deinit { repeatTimer?.invalidate() }
 
+    /// Bàn phím ẩn hẳn (viewDidDisappear): xé cả cây view. Lý do (RAM-AUDIT.md #1): iOS 26+
+    /// UIKit giữ `UIInputView` của controller mãi (vòng `UIInputView` ⇄ `_UIInputViewContent`
+    /// qua associated object — tái hiện được với UIInputView RỖNG trong ViewTreeLeakTests),
+    /// kèm trait corner-provider trỏ vào UIStackView cũ ⇒ cây phím cũ (~1,8 MB) sống theo mỗi
+    /// lần hiện. Xé: dừng timer/display link, bỏ planeCache + ảnh nền, gỡ đệ quy mọi subview —
+    /// thứ gì còn bị UIKit níu chỉ là vỏ rỗng vài KB. View đã xé KHÔNG dùng lại: controller
+    /// dựng KeyboardView mới nếu cùng controller hiện lại (KeyboardViewController.viewWillAppear).
+    private(set) var isTornDown = false
+    func tearDown() {
+        guard !isTornDown else { return }
+        isTornDown = true
+        repeatTimer?.invalidate(); repeatTimer = nil
+        trackpadLink?.invalidate(); trackpadLink = nil
+        altTimer?.cancel(); altTimer = nil
+        commaTimer?.cancel(); commaTimer = nil
+        dropAltHold()
+        planeCache.removeAll()
+        EmojiData.dropCaches()
+        letterKeys.removeAll(); shiftKeys = []; crossRowConstraints = []
+        spaceBar = nil; spaceLogo = nil; spaceCode = nil; indentedRow = nil
+        overlayPanel?.removeFromSuperview(); overlayPanel = nil
+        wallpaperView.image = nil
+        wallpaperLoadedFor = .zero
+        Self.stripSubviews(of: self, constraints: true)
+        removeFromSuperview()
+    }
+
+    /// Cảnh báo bộ nhớ: bỏ các plane KHÔNG hiện (planeCache — plane đang hiện nằm ở
+    /// rowsContainer, không trong cache) + bảng emoji (lưới đang mở đã giữ bản riêng).
+    func dropCaches() {
+        planeCache.removeAll()
+        EmojiData.dropCaches()
+    }
+
+    #if DEBUG
+    var debugPlaneCacheCount: Int { planeCache.count }
+    var debugWallpaperImage: UIImage? { wallpaperView.image }
+    #endif
+
+    /// Gỡ đệ quy (lá trước): cắt mọi tham chiếu cha→con để phần UIKit còn níu không kéo theo
+    /// cả cây. Arranged subview của UIStackView gỡ qua removeFromSuperview là đủ (UIKit bỏ
+    /// luôn khỏi arrangedSubviews). `constraints`: gỡ luôn constraint của từng view (chỉ dùng
+    /// cho cây của mình — view gốc của controller còn constraint hệ thống, đừng đụng).
+    static func stripSubviews(of v: UIView, constraints: Bool = false) {
+        for s in v.subviews {
+            stripSubviews(of: s, constraints: constraints)
+            s.removeFromSuperview()
+        }
+        if constraints { v.removeConstraints(v.constraints) }
+    }
+
     /// Bật/tắt thanh gợi ý: mở rộng khoảng trống phía trên vừa đủ (44pt).
     func setSuggestionsEnabled(_ on: Bool) {
         suggestionsEnabled = on
@@ -1181,7 +1232,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         guard wallpaperActive, bounds.width > 0, bounds.height > 0,
               bounds.size != wallpaperLoadedFor else { return }
         wallpaperLoadedFor = bounds.size
-        let size = bounds.size, scale = window?.screen.scale ?? UIScreen.main.scale
+        let size = bounds.size
+        let scale = Wallpaper.decodeScale(screenScale: window?.screen.scale ?? UIScreen.main.scale)
         let version = themeSettings.version
         Wallpaper.queue.async { [weak self] in
             let img = Wallpaper.loadForKeyboard(version: version, viewSize: size, scale: scale)
@@ -1444,6 +1496,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 crossRow: crossRowConstraints,
                 distribution: rowsContainer.distribution)
         }
+        // Rời lưới emoji: nhả bảng category (lưới không cache, dựng lại lười khi mở lại).
+        if builtPlane == .emoji, plane != .emoji { EmojiData.dropCaches() }
         builtPlane = plane; builtReturn = returnTitle
         builtDark = dark; builtPalette = palette; builtWidth = bounds.width
         builtGlobe = needsGlobe; builtKind = inputKind

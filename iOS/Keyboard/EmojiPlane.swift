@@ -92,7 +92,17 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
     var onKaomoji: ((String) -> Void)?
 
     private var dark = false
-    private var sections: [(name: String, emoji: [String])] = []
+    /// Một nhóm của lưới: category = id vào emoji.bin (không giữ String), Recents = chuỗi.
+    struct Section {
+        let name: String
+        let ids: [UInt16]
+        let strings: [String]
+        init(name: String, ids: [UInt16]) { self.name = name; self.ids = ids; strings = [] }
+        init(name: String, strings: [String]) { self.name = name; ids = []; self.strings = strings }
+        var count: Int { strings.isEmpty ? ids.count : strings.count }
+        subscript(i: Int) -> String { strings.isEmpty ? EmojiData.emoji(Int(ids[i])) : strings[i] }
+    }
+    private var sections: [Section] = []
     private var collection: UICollectionView!
     private var categoryButtons: [UIButton] = []
     private var kaomojiButton: UIButton?
@@ -155,10 +165,10 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
     }
 
     private func reloadSections() {
-        var s: [(String, [String])] = []
+        var s: [Section] = []
         let r = recents
-        if !r.isEmpty { s.append(("recents", r)) }
-        s.append(contentsOf: EmojiData.categories.map { ($0.name, $0.emoji) })
+        if !r.isEmpty { s.append(Section(name: "recents", strings: r)) }
+        s.append(contentsOf: EmojiData.categories.map { Section(name: $0.name, ids: $0.ids) })
         sections = s
     }
 
@@ -251,6 +261,9 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         collection.register(EmojiCell.self, forCellWithReuseIdentifier: "e")
         collection.translatesAutoresizingMaskIntoConstraints = false
         collection.isMultipleTouchEnabled = true
+        // Không dựng/vẽ trước cột ngoài màn hình: mỗi emoji MỚI vẽ ra để lại ~8,5 KB cache glyph
+        // CoreText suốt đời process (RAM-AUDIT.md §4) — chỉ vẽ cái người dùng thật sự lướt tới.
+        collection.isPrefetchingEnabled = false
         // Long-press emoji có skin tone → popup 6 biến thể (cancelsTouchesInView
         // mặc định true nên tap thường không bị chèn kèm emoji gốc).
         let hold = UILongPressGestureRecognizer(target: self, action: #selector(cellHold(_:)))
@@ -490,7 +503,7 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         let pt = g.location(in: collection)
         guard let ip = collection.indexPathForItem(at: pt),
               let cell = collection.cellForItem(at: ip),
-              let variants = Self.toneVariants(of: sections[ip.section].emoji[ip.item])
+              let variants = Self.toneVariants(of: sections[ip.section][ip.item])
         else { return }
         showTonePopup(variants, over: cell)
     }
@@ -585,12 +598,12 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
     func numberOfSections(in collectionView: UICollectionView) -> Int { sections.count }
 
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        sections[section].emoji.count
+        sections[section].count
     }
 
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "e", for: indexPath) as! EmojiCell
-        cell.label.text = sections[indexPath.section].emoji[indexPath.item]
+        cell.label.text = sections[indexPath.section][indexPath.item]
         cell.setFont(metrics.fontSize)
         return cell
     }
@@ -608,7 +621,7 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         dismissTonePopup()
-        let e = sections[indexPath.section].emoji[indexPath.item]
+        let e = sections[indexPath.section][indexPath.item]
         KeyboardView.clickLetter()
         let hadRecents = sections.first?.name == "recents"
         noteUsed(e)
@@ -692,7 +705,9 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
             super.init(frame: frame)
             label.font = .systemFont(ofSize: 32)
             label.textAlignment = .center
-            label.adjustsFontSizeToFitWidth = true
+            // KHÔNG adjustsFontSizeToFitWidth: cỡ glyph đã tính vừa ô (EmojiGridMetrics, ≤ 0.92 ×
+            // ô); bật co chữ làm UILabel đo/dựng layout thêm mỗi ô (RAM-AUDIT.md §4).
+            label.lineBreakMode = .byClipping
             label.translatesAutoresizingMaskIntoConstraints = false
             contentView.addSubview(label)
             NSLayoutConstraint.activate([
