@@ -39,7 +39,7 @@ class SuggestBigramTests {
                         chains: List<List<String>> = heldout(), learn: Boolean = false): Acc {
         val m = seeded()
         var nAcc = 0; var t1 = 0; var n = 0; var t3 = 0; var nn = 0; var nx = 0
-        val big = if (useBigram) SyllableBigram.shared else null
+        val big = if (useBigram) SyllableLM.shared else null
         for (chain in chains) for (i in 1 until chain.size) {
             val w = chain[i]; val prev = chain[i - 1]; val prev2 = chain.getOrNull(i - 2)
             val typed = SwipeSuggest.fold(w)
@@ -101,7 +101,9 @@ class SuggestBigramTests {
         assertEquals("bỏ", rank("đã", "bo")[0])
         assertEquals("ăn", rank("bữa", "an")[0])
         assertEquals("phạt", rank("hình", "phat")[0])
-        assertEquals("giấc", rank("mọi", "giac")[0])
+        // (vnlm.bin thay vnbigram.bin 28/09/2026: "mọi giấc" bị cắt tỉa khỏi vnlm ⇒ đổi ví dụ)
+        assertEquals("viện", rank("bệnh", "vien")[0])
+        assertEquals("tiết", rank("thời", "tiet")[0])
         assertEquals("tháng", rank("vào", "thang")[0])
         // không âm tiết trước / âm tiết lạ ⇒ như cũ (tần suất + seed)
         val pool = VNSuggest.matches("bo", 24, "bo")
@@ -128,7 +130,7 @@ class SuggestBigramTests {
 
     @Test fun lexiconIdMatchesSwipeLookup() {
         for (w in listOf("hòa", "hoà", "Thuỷ", "quý", "nghiêng", "a", "đ", "hello", ""))
-            assertEquals(w, SyllableBigram.idOf(w), VNSuggest.lexiconId(w))
+            assertEquals(w, SyllableLM.idOf(w), VNSuggest.lexiconId(w))
     }
 
     /** Qua KeyboardSession thật: gõ chạm Telex, thanh gợi ý dùng bigram (nền + từ kế tiếp). */
@@ -159,7 +161,7 @@ class SuggestBigramTests {
         for (i in pairs.indices) SuggestRank.bigramNext(pairs[i].first, 6)
         val next = (System.nanoTime() - t) / 1e3 / pairs.size
         t = System.nanoTime()
-        SyllableBigram.fnv1a(KeyboardData.buffer(Keys.ASSET_LEXICON))
+        SyllableLM.fnv1a(KeyboardData.buffer(Keys.ASSET_LEXICON))
         val load = (System.nanoTime() - t) / 1e6
         println(String.format(Locale.ROOT, "GỢI Ý CHẠM độ trễ JVM: PMI pool %.1f µs | bigramNext %.1f µs | nạp lần đầu (hash lexicon) %.2f ms",
             inline, next, load))
@@ -187,7 +189,7 @@ class SuggestBigramTests {
             val l = measure(true, SuggestRank.Params(bigramWeight = w, bigramCap = cap, bigramDamp = d), chains, learn = true)
             println("TUNE w=$w cap=$cap damp=$d → ${a.fmt()} || học: ${l.fmt()}")
         }
-        for (f in listOf(12.0, 16.0, 20.0)) for (mp in listOf(0.25f)) {
+        for (f in listOf(8.0, 10.0, 12.0, 16.0)) for (mp in listOf(0.25f)) {
             val a = measure(true, SuggestRank.Params(nextFreqWeight = f), chains)
             println("TUNE next f=$f minPmi=$mp → ${a.fmt()}")
         }

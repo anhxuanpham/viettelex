@@ -69,7 +69,7 @@ class SwipeReviseTests {
 
     @Test fun rightScoreClamped() {
         val lm = SyllableLM.shared!!
-        val id = { s: String -> SyllableBigram.idOf(s) }
+        val id = { s: String -> SyllableLM.idOf(s) }
         val r = SwipeRevise.rightScore(lm, -1, id("hôm"), id("nay"))
         assertTrue(r > 0f && r <= SwipeRevise.RIGHT_CAP)
         assertTrue(SwipeRevise.rightScore(lm, -1, id("hôm"), id("xịch")) >= SwipeRevise.RIGHT_FLOOR)

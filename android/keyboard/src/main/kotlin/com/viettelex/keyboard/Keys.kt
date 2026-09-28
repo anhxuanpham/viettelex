@@ -129,7 +129,6 @@ object Keys {
     // assets
     const val ASSET_LEXICON = "vnlexicon.bin"
     const val ASSET_EN_LEXICON = "enlexicon.bin"
-    const val ASSET_BIGRAM = "vnbigram.bin"
     const val ASSET_LM = "vnlm.bin"
     /** Encoder FUTO Swipe fp16 (FUTO Model Weights License 1.0 — chỉ đọc khi bật SWIPE_FUTO). */
     const val ASSET_FUTO = "futoswipe.bin"

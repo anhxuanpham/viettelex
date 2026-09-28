@@ -38,11 +38,13 @@ object SuggestRank {
         val nextFreqWeight: Double = NEXT_FREQ_WEIGHT,
     )
 
-    // chọn trên heldout (27/09/2026, lưới trong SuggestBigramTests.tuneGrid); cap·damp = 3.6 < 4
+    // chọn trên heldout (27/09/2026, lưới trong SuggestBigramTests.tuneGrid); cap·damp = 3.6 < 4.
+    // 28/09/2026 chuyển sang bigram của vnlm.bin: lưới lại trên tập dev — giữ w/cap/damp,
+    // nextFreqWeight 12 → 10 (PMI KN có thang khác chút).
     const val BIGRAM_WEIGHT = 2.5
     const val BIGRAM_CAP = 8.0
     const val BIGRAM_DAMP = 0.45
-    const val NEXT_FREQ_WEIGHT = 12.0
+    const val NEXT_FREQ_WEIGHT = 10.0
     val DEFAULT = Params()
 
     /**
@@ -63,20 +65,23 @@ object SuggestRank {
         }.map { pool[it].word }
     }
 
-    /** PMI bigram của từng ứng viên sau âm tiết [prev] (null nếu không có dữ liệu). Chạy nền. */
+    /**
+     * PMI bigram (vnlm.bin, chỉ mục tường minh — thiếu = 0) của từng ứng viên sau âm tiết [prev]
+     * (null nếu không có dữ liệu). Chạy nền.
+     */
     fun inlinePmi(pool: List<VNSuggest.Match>, prev: String?,
-                  big: SyllableBigram? = SyllableBigram.shared): FloatArray? {
-        if (prev == null || big == null || pool.isEmpty()) return null
-        val row = big.row(VNSuggest.lexiconId(prev))
+                  lm: SyllableLM? = SyllableLM.shared): FloatArray? {
+        if (prev == null || lm == null || pool.isEmpty()) return null
+        val row = lm.bigram(VNSuggest.lexiconId(prev))
         if (row.size == 0) return null
-        return FloatArray(pool.size) { if (pool[it].id >= 0) row.score(pool[it].id) else 0f }
+        return FloatArray(pool.size) { if (pool[it].id >= 0) row.explicit(pool[it].id) else 0f }
     }
 
-    /** Top [limit] âm tiết hay theo sau [prev] theo bigram tĩnh (chữ thường, dạng lexicon). */
-    fun bigramNext(prev: String, limit: Int, big: SyllableBigram? = SyllableBigram.shared,
+    /** Top [limit] âm tiết hay theo sau [prev] theo bigram tĩnh vnlm.bin (chữ thường, dạng lexicon). */
+    fun bigramNext(prev: String, limit: Int, lm: SyllableLM? = SyllableLM.shared,
                    p: Params = DEFAULT): List<String> {
-        if (big == null || limit <= 0) return emptyList()
-        val row = big.row(VNSuggest.lexiconId(prev))
+        if (lm == null || limit <= 0) return emptyList()
+        val row = lm.bigram(VNSuggest.lexiconId(prev))
         if (row.size == 0) return emptyList()
         val ids = IntArray(limit); val sc = DoubleArray(limit); var n = 0
         row.forEach { id, pmi ->

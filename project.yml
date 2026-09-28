@@ -42,20 +42,22 @@ targets:
       # Logic thuần DÙNG CHUNG với iOS (cùng file, không bản sao — sửa một chỗ là cả hai
       # nền tảng thấy; fixture/test ở iOS/KeyboardTests + AppTests):
       #  • đồng bộ iCloud LWW (cùng định dạng KVS với app iOS) — ICloudSync.swift;
-      #  • công cụ văn bản HOA/thường/xoá dấu + Thêm dấu (Viterbi trên vnlexicon/vnbigram)
+      #  • công cụ văn bản HOA/thường/xoá dấu + Thêm dấu (Viterbi trên vnlexicon + bigram vnlm.bin)
       #    — TextActions.swift. Dữ liệu Thêm dấu chỉ được nạp trong process con
       #    `VietTelex --add-tones`, không bao giờ trong process IME.
       - path: iOS/App/Backup/SyncCore.swift
       - path: iOS/Keyboard/TextTools.swift
+      # L("…") của TextTools (giao diện tiếng Anh, b8da26e) — chỉ Foundation.
+      - path: iOS/Shared/L10n.swift
       - path: iOS/Keyboard/AddTones.swift
       - path: iOS/Keyboard/SwipeLexicon.swift
       - path: iOS/Keyboard/SwipeEnglish.swift
       - path: iOS/Keyboard/VNSuggest.swift
       - path: iOS/Keyboard/VNLexicon2.swift
-      - path: iOS/Keyboard/SyllableBigram.swift
+      - path: iOS/Keyboard/SyllableLM.swift
       - path: iOS/Keyboard/Resources/vnlexicon.bin
         buildPhase: resources
-      - path: iOS/Keyboard/Resources/vnbigram.bin
+      - path: iOS/Keyboard/Resources/vnlm.bin
         buildPhase: resources
       - path: iOS/Keyboard/Resources/enlexicon.bin
         buildPhase: resources

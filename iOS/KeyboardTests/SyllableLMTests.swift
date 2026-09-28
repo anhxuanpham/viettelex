@@ -1,6 +1,7 @@
-// SyllableLMTests.swift — mô hình trigram âm tiết tĩnh (vnlm.bin) + tác dụng lên gõ vuốt.
-// Song sinh android SyllableLMTests.kt. Đo trên cùng câu Tatoeba GIỮ LẠI với
-// SyllableBigramTests (bigram-heldout.txt, không nằm trong dữ liệu dựng mô hình).
+// SyllableLMTests.swift — mô hình trigram âm tiết tĩnh (vnlm.bin) + tác dụng lên gõ vuốt; cả phần
+// bigram PMI mà thanh gợi ý + Thêm dấu dùng (thay vnbigram.bin từ 28/09/2026). Song sinh android
+// SyllableLMTests.kt. Đo trên câu Tatoeba GIỮ LẠI (bigram-heldout.txt, không nằm trong dữ liệu
+// dựng mô hình).
 import XCTest
 
 final class SyllableLMTests: XCTestCase {
@@ -8,7 +9,7 @@ final class SyllableLMTests: XCTestCase {
     private var lm: SyllableLM { SyllableLM.shared! }
 
     private func id(_ w: String) -> Int {
-        guard let i = SyllableBigram.id(of: w) else { XCTFail("thiếu \(w)"); return -1 }
+        guard let i = SyllableLM.id(of: w) else { XCTFail("thiếu \(w)"); return -1 }
         return i
     }
     private func s(_ a: String?, _ b: String, _ c: String) -> Float {
@@ -25,7 +26,41 @@ final class SyllableLMTests: XCTestCase {
         XCTAssertEqual(m.count, VNLexicon2Data.count)
         XCTAssertTrue((100_000...600_000).contains(m.biEntries), "bigram \(m.biEntries)")
         XCTAssertTrue((100_000...600_000).contains(m.triEntries), "trigram \(m.triEntries)")
-        XCTAssertLessThanOrEqual(try blob().count, 3_000_000)
+        XCTAssertLessThanOrEqual(try blob().count, 2_700_000)
+    }
+
+    private func pmi(_ a: String, _ b: String) -> Float { lm.bigram(id(a)).pmi(id(b)) }
+
+    /// Bigram PMI (s2 + uniAdj) — thay vnbigram.bin cho thanh gợi ý + Thêm dấu.
+    func testBigramPmi() {
+        XCTAssertGreaterThan(pmi("hôm", "nay"), 2)
+        XCTAssertGreaterThan(pmi("không", "có"), pmi("không", "cô"))
+        XCTAssertGreaterThan(pmi("hôm", "nay"), pmi("hôm", "ngay"))
+        XCTAssertGreaterThan(pmi("ngay", "lập"), 2)
+        XCTAssertGreaterThan(pmi("điện", "thoại"), 3)
+        // bằng chứng âm (cặp hiếm) + lùi γ2 khi thiếu mục tường minh
+        XCTAssertLessThan(pmi("hôm", "xịch"), 0)
+        XCTAssertEqual(lm.bigram(id("hôm")).explicit(id("xịch")), 0)
+        XCTAssertEqual(lm.bigram(id("hôm")).explicit(id("nay")), pmi("hôm", "nay"))
+        // PMI = s2 + uniAdj (s2 = điểm bigram của decoder vuốt)
+        XCTAssertEqual(pmi("hôm", "nay"), s(nil, "hôm", "nay") + lm.uniAdj(id("nay")), accuracy: 1e-6)
+        XCTAssertEqual(lm.bigram(-1).size, 0)
+        XCTAssertEqual(lm.bigram(VNLexicon2Data.count).size, 0)
+        XCTAssertEqual(lm.bigram(-1).pmi(id("nay")), 0)
+        var n = 0, hasNay = false
+        lm.bigram(id("hôm")).forEach { c, v in
+            n += 1
+            if c == id("nay") { hasNay = true; XCTAssertEqual(v, pmi("hôm", "nay")) }
+        }
+        XCTAssertTrue(hasNay && n == lm.bigram(id("hôm")).size)
+    }
+
+    func testNormalizeOldStyleAndCase() {
+        XCTAssertEqual(SyllableLM.normalize("Hoà"), "hòa")
+        XCTAssertEqual(SyllableLM.normalize("thuỷ"), "thủy")
+        XCTAssertEqual(SyllableLM.normalize("quý"), "quý")
+        XCTAssertEqual(SyllableLM.id(of: "hòa"), SyllableLM.id(of: "HOÀ"))
+        XCTAssertNil(SyllableLM.id(of: "hello"))
     }
 
     func testTypicalScores() {
@@ -42,7 +77,7 @@ final class SyllableLMTests: XCTestCase {
 
     func testRejectsCorruptOrMismatched() throws {
         let d = try blob()
-        let h = SyllableBigram.fnv1a(VNLexicon2Data.blob)
+        let h = SyllableLM.fnv1a(VNLexicon2Data.blob)
         let n = VNLexicon2Data.count
         XCTAssertNotNil(SyllableLM.load(d, lexiconHash: h, lexiconCount: n))
         XCTAssertNil(SyllableLM.load(d, lexiconHash: h ^ 1, lexiconCount: n))
@@ -50,6 +85,8 @@ final class SyllableLMTests: XCTestCase {
         XCTAssertNil(SyllableLM.load(Data(d.dropLast()), lexiconHash: h, lexiconCount: n))
         var bad = d; bad[3] = UInt8(ascii: "X")
         XCTAssertNil(SyllableLM.load(bad, lexiconHash: h, lexiconCount: n))
+        var v1 = d; v1[4] = 1   // bản cũ (không có uniAdj) ⇒ từ chối
+        XCTAssertNil(SyllableLM.load(v1, lexiconHash: h, lexiconCount: n))
     }
 
     // MARK: gõ vuốt trong ngữ cảnh
@@ -138,15 +175,16 @@ final class SyllableLMTests: XCTestCase {
         try SlowTests.require()
         // 1/3 số chuỗi: Debug simulator chậm hơn JVM (bản Kotlin đo đủ)
         let chains = try heldout().enumerated().filter { $0.offset % 3 == 0 }.map(\.element)
-        let bigram = measure(chains, useLM: false)
+        let none = measure(chains, useLM: false)   // không LM tĩnh (vnbigram.bin cũ đã bỏ)
         let t0 = CFAbsoluteTimeGetCurrent()
         let tri = measure(chains, useLM: true)
         let ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000 / Double(tri.n)
-        print(String(format: "LM heldout iOS bigram: %@ | trigram: %@ | %.2f ms/vuốt (Debug)", f(bigram), f(tri), ms))
-        // cùng ngưỡng với Kotlin (đo 27/09/2026, decoder tầng 2: 0.861/0.951 → 0.894/0.962 trên toàn tập)
+        print(String(format: "LM heldout iOS không LM: %@ | trigram: %@ | %.2f ms/vuốt (Debug)", f(none), f(tri), ms))
+        // cùng ngưỡng với Kotlin (đo 27/09/2026, decoder tầng 2: 0.861/0.951 → 0.894/0.962 trên toàn tập;
+        // 28/09/2026 không LM 0.702/0.869)
         XCTAssertGreaterThanOrEqual(Double(tri.top1) / Double(tri.n), 0.877, f(tri))
         XCTAssertGreaterThanOrEqual(Double(tri.top3) / Double(tri.n), 0.950, f(tri))
-        XCTAssertGreaterThanOrEqual(Double(tri.top1 - bigram.top1) / Double(tri.n), 0.025)
+        XCTAssertGreaterThanOrEqual(Double(tri.top1 - none.top1) / Double(tri.n), 0.17)
     }
 
     func testHeldoutAccuracyWithEnglish() throws {

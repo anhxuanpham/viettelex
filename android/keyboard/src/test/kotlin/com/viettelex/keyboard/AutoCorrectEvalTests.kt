@@ -66,8 +66,8 @@ class AutoCorrectEvalTests {
         for (sent in sents) for (syl in sent) {
             val intended = TouchSim.pickVariant(syl, rng) ?: continue
             val (t, touches) = typeKeys(intended, pr, rng, router)
-            val want = SyllableBigram.normalize(compose(intended))
-            out.add(Rec(t, touches, candidatesFor(t), SyllableBigram.normalize(compose(t)) == want, want))
+            val want = SyllableLM.normalize(compose(intended))
+            out.add(Rec(t, touches, candidatesFor(t), SyllableLM.normalize(compose(t)) == want, want))
         }
         return out
     }
@@ -103,7 +103,7 @@ class AutoCorrectEvalTests {
             s.fix++
             when {
                 r.ok -> s.falseFix++
-                SyllableBigram.normalize(c.word) == r.want -> s.good++
+                SyllableLM.normalize(c.word) == r.want -> s.good++
                 else -> s.wrong++
             }
         }
@@ -144,7 +144,7 @@ class AutoCorrectEvalTests {
             }
         if (System.getenv("AUTOCORRECT_DUMP") != null) for (r0 in devRecs + devKeep) {
             val c = decide(r0, AutoCorrect.DEFAULT) ?: continue
-            if (!r0.ok && SyllableBigram.normalize(c.word) == r0.want) continue
+            if (!r0.ok && SyllableLM.normalize(c.word) == r0.want) continue
             println("DUMP ${r0.typed} → ${c.word} (muốn ${r0.want}) | " +
                 r0.cands!!.joinToString { "${it.word}:${it.freq}@${it.pos}${it.key}" })
         }

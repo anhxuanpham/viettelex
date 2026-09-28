@@ -38,7 +38,7 @@ final class SuggestBigramTests: XCTestCase {
     /// `useBigram` = false ⇒ như trước (không bigram tĩnh trên thanh gợi ý).
     private func measure(_ chains: [[String]], useBigram: Bool, learn: Bool = false) -> Acc {
         let m = seeded()
-        let big = useBigram ? SyllableBigram.shared : nil
+        let big = useBigram ? SyllableLM.shared : nil
         var a = Acc()
         for chain in chains {
             for i in 1..<chain.count {
@@ -47,7 +47,7 @@ final class SuggestBigramTests: XCTestCase {
                 let pool = VNSuggest.matches(typed, poolLimit: 24, excluding: typed)
                 let ctx = Set(m.nextWords(after: prev, prev2: prev2, limit: 24))
                 let ranked = SensitiveWords.filter(SuggestRank.rankInline(
-                    pool, pmi: SuggestRank.inlinePmi(pool, prev: prev, bigram: big),
+                    pool, pmi: SuggestRank.inlinePmi(pool, prev: prev, lm: big),
                     typedLen: typed.count, count: { m.count(of: $0) }, ctx: ctx), enabled: true)
                 a.n += 1
                 if w == typed || ranked.prefix(2).contains(w) { a.top3 += 1 }
@@ -55,7 +55,7 @@ final class SuggestBigramTests: XCTestCase {
                 let personal = Array(SensitiveWords.filter(m.nextWords(after: prev, prev2: prev2, limit: 6),
                                                            enabled: true).prefix(3))
                 let next = personal.count >= 3 || big == nil ? personal : SuggestionFill.pad(personal,
-                    with: SensitiveWords.filter(SuggestRank.bigramNext(prev, limit: 6, bigram: big), enabled: true),
+                    with: SensitiveWords.filter(SuggestRank.bigramNext(prev, limit: 6, lm: big), enabled: true),
                     need: 3)
                 let slots = SuggestionFill.pad(next, with: SensitiveWords.filter(m.topWords(limit: 15), enabled: true),
                                                need: 3)
@@ -111,7 +111,9 @@ final class SuggestBigramTests: XCTestCase {
         XCTAssertEqual(rank("đã", "bo").first, "bỏ")
         XCTAssertEqual(rank("bữa", "an").first, "ăn")
         XCTAssertEqual(rank("hình", "phat").first, "phạt")
-        XCTAssertEqual(rank("mọi", "giac").first, "giấc")
+        // (vnlm.bin thay vnbigram.bin 28/09/2026: "mọi giấc" bị cắt tỉa khỏi vnlm ⇒ đổi ví dụ)
+        XCTAssertEqual(rank("bệnh", "vien").first, "viện")
+        XCTAssertEqual(rank("thời", "tiet").first, "tiết")
         XCTAssertEqual(rank("vào", "thang").first, "tháng")
         // không âm tiết trước / âm tiết lạ ⇒ như cũ (tần suất + seed)
         let m = seeded()
@@ -140,7 +142,7 @@ final class SuggestBigramTests: XCTestCase {
 
     func testLexiconIdMatchesSwipeLookup() {
         for w in ["hòa", "hoà", "Thuỷ", "quý", "nghiêng", "a", "đ", "hello", ""] {
-            XCTAssertEqual(VNSuggest.lexiconId(of: w), SyllableBigram.id(of: w), w)
+            XCTAssertEqual(VNSuggest.lexiconId(of: w), SyllableLM.id(of: w), w)
         }
     }
 
@@ -150,7 +152,7 @@ final class SuggestBigramTests: XCTestCase {
         let chains = try heldout()
         let pairs = chains.flatMap { c in (1..<c.count).map { (c[$0 - 1], SwipeTyping.fold(c[$0])) } }
         let pools = pairs.map { VNSuggest.matches($0.1, poolLimit: 24, excluding: $0.1) }
-        _ = SyllableBigram.shared
+        _ = SyllableLM.shared
         var t = CFAbsoluteTimeGetCurrent()
         for i in pairs.indices { _ = SuggestRank.inlinePmi(pools[i], prev: pairs[i].0) }
         let inline = (CFAbsoluteTimeGetCurrent() - t) * 1e6 / Double(pairs.count)
@@ -158,15 +160,15 @@ final class SuggestBigramTests: XCTestCase {
         for i in pairs.indices { _ = SuggestRank.bigramNext(pairs[i].0, limit: 6) }
         let next = (CFAbsoluteTimeGetCurrent() - t) * 1e6 / Double(pairs.count)
 
-        // RAM bẩn: map một bản MỚI (như shared) rồi tra toàn bảng — phys_footprint không được
-        // tăng đáng kể (trang file-backed sạch, không giải mã vào heap).
-        let url = try XCTUnwrap(Bundle(for: SuggestBigramTests.self).url(forResource: "vnbigram", withExtension: "bin"))
+        // RAM bẩn: map một bản MỚI (như shared) rồi tra toàn bảng bigram — phys_footprint không
+        // được tăng đáng kể (trang file-backed sạch, không giải mã vào heap).
+        let url = try XCTUnwrap(Bundle(for: SuggestBigramTests.self).url(forResource: "vnlm", withExtension: "bin"))
         let m0 = Self.footprint()
         let d = try Data(contentsOf: url, options: .alwaysMapped)
-        let big = try XCTUnwrap(SyllableBigram.load(d, lexiconHash: SyllableBigram.fnv1a(VNLexicon2Data.blob),
-                                                   lexiconCount: VNLexicon2Data.count))
+        let big = try XCTUnwrap(SyllableLM.load(d, lexiconHash: SyllableLM.fnv1a(VNLexicon2Data.blob),
+                                               lexiconCount: VNLexicon2Data.count))
         var sink: Float = 0
-        for p in 0..<big.count { big.row(p).forEach { _, s in sink += s } }
+        for p in 0..<big.count { big.bigram(p).forEach { _, s in sink += s } }
         let dirty = Double(Self.footprint() - m0) / 1024
         print(String(format: "GỢI Ý CHẠM iOS (Debug sim): PMI pool %.1f µs | bigramNext %.1f µs | "
             + "RAM bẩn sau map + duyệt toàn bảng %.0f KB (file %d KB) sink=%.0f",

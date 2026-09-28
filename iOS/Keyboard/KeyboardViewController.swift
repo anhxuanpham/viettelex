@@ -312,16 +312,17 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
 
-    /// Nạp NỀN dữ liệu tính năng đang BẬT (tắt ⇒ không nạp gì): model cá nhân + bảng bigram
-    /// âm tiết cho thanh gợi ý / gõ vuốt; dạng không dấu (SwipeLexicon) chỉ cho gõ vuốt.
-    /// Bigram: lần chạm đầu hash vnlexicon (~150KB) — đừng để rơi vào main.
+    /// Nạp NỀN dữ liệu tính năng đang BẬT (tắt ⇒ không nạp gì): model cá nhân + mô hình âm
+    /// tiết vnlm.bin (bigram cho thanh gợi ý, trigram cho gõ vuốt — cùng một mmap); dạng không
+    /// dấu (SwipeLexicon) chỉ cho gõ vuốt. vnlm: lần chạm đầu hash vnlexicon (~150KB) — đừng để
+    /// rơi vào main.
     private func warmUpData() {
         let wantsLM = showSuggestionsSetting || swipeSetting || addTonesSetting
         if wantsLM { _ = langModel }
         let swipeOn = swipeSetting
         if showSuggestionsSetting || swipeOn {
             Self.suggestQueue.async {
-                _ = SyllableBigram.shared
+                _ = SyllableLM.shared
                 if swipeOn { _ = SwipeLexicon.forms }
             }
         }
@@ -1691,6 +1692,13 @@ extension KeyboardViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         pushSwipeLayout(prepare: true)
+        // Sáng/tối: iOS 27 đôi khi báo trait SÁNG lúc viewWillAppear/viewDidAppear dù máy
+        // tối ⇒ phím trắng trên backdrop tối, chữ gợi ý đen khó đọc (Phil 28/09/2026). Mỗi
+        // lần layout so lại với trait hiện tại (chỉ so 2 giá trị đã có — không đọc proxy);
+        // updateDark tự bỏ qua khi không đổi.
+        keyboard?.updateDark(AppearancePolicy.isDark(
+            appearance: fieldTraits?.appearance ?? .default,
+            style: view.traitCollection.userInterfaceStyle))
     }
 
     private func isRecentEnglish(_ w: String?) -> Bool {

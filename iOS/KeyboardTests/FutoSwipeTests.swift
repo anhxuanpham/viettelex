@@ -266,7 +266,7 @@ final class FutoSwipeTests: XCTestCase {
                 let w = chain[i]
                 let p = sim.path(SwipeTyping.fold(w), layout)
                 let prev2 = i >= 2 ? chain[i - 2] : nil
-                let ctx = SwipeTyping.Context(next: [], prev: chain[i - 1], bigram: SyllableBigram.shared,
+                let ctx = SwipeTyping.Context(next: [], prev: chain[i - 1],
                                               prev2: prev2, lm: SyllableLM.shared)
                 n += 1
                 for (k, mode) in [FutoSwipe.Mode?.none, .futo, .ensemble].enumerated() {

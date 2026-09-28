@@ -241,7 +241,7 @@ struct RootView: View {
             .font(.footnote).foregroundStyle(.secondary)
             Text(L("Không thu thập dữ liệu · Không theo dõi · Mã nguồn mở"))
                 .font(.footnote).foregroundStyle(.secondary)
-            // Ghi công theo giấy phép dữ liệu bigram gõ vuốt (vnbigram.bin) — docs/DATA-SOURCES.md
+            // Ghi công theo giấy phép dữ liệu bigram gõ vuốt (vnlm.bin) — docs/DATA-SOURCES.md
             Link(destination: URL(string: "https://github.com/ptrinh/viettelex/blob/main/docs/DATA-SOURCES.md")!) {
                 Text(L("Dữ liệu gõ vuốt: thống kê từ Wikipedia, Wikisource… tiếng Việt (CC BY-SA 4.0) và Tatoeba (CC BY 2.0 FR)"))
                     .multilineTextAlignment(.leading)

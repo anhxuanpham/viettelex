@@ -1,4 +1,4 @@
-# bigram-heldout v1 — câu Tatoeba (CC BY 2.0 FR, https://tatoeba.org) GIỮ LẠI khỏi dữ liệu dựng vnbigram.bin (hash % 20 == 0). Sinh bởi Scripts/gen-syllable-bigram.py chains. Mỗi dòng: chuỗi âm tiết liên tiếp trong vnlexicon.
+# bigram-heldout v1 — câu Tatoeba (CC BY 2.0 FR, https://tatoeba.org) GIỮ LẠI khỏi dữ liệu dựng vnlm.bin (hash % 20 == 0). Sinh bởi Scripts/gen-syllable-lm.py chains. Mỗi dòng: chuỗi âm tiết liên tiếp trong vnlexicon.
 chúc mừng sinh nhật
 phần nhiều người ta viết về chuyện cuộc đời hàng ngày
 tôi không biết ý của bạn là gì

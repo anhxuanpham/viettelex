@@ -15,8 +15,9 @@ import kotlin.math.min
  * vnlexicon (SwipeLexicon) → ứng viên = mọi âm tiết có dấu của dạng đó. Điểm (log, nat):
  *   phát xạ  = FREQ_W·freq/255 (freq byte = 255·ln(count)/ln(max) — tức ≈ log unigram)
  *              + PERSONAL_UNI·ln(1+count cá nhân)
- *   chuyển   = BIGRAM_W·PMI(âm tiết trước → âm tiết này) (vnbigram.bin; thiếu cặp khi âm tiết
- *              trước CÓ dải ⇒ MISSING) + PERSONAL_BI·ln(1+count cặp cá nhân)
+ *   chuyển   = BIGRAM_W·max(PMI_FLOOR, PMI(âm tiết trước → âm tiết này)) + PERSONAL_BI·ln(1+count
+ *              cặp cá nhân); PMI = bigram Kneser-Ney của vnlm.bin (SyllableLM.bigram — có điểm
+ *              ÂM, thiếu mục ⇒ lùi γ2); âm tiết trước không có dòng bigram nào ⇒ 0.
  * Chuỗi bị cắt ở dấu câu / token giữ nguyên. GIỮ NGUYÊN: token không phải dạng Việt (tiếng
  * Anh, tên riêng lạ, số, URL, email, chữ có số/ký hiệu bên trong, camelCase), token có dấu.
  * Token vừa là dạng Việt vừa là từ Anh (the, can, to…) giữ nguyên khi kề một từ chắc chắn
@@ -24,18 +25,22 @@ import kotlin.math.min
  * ASCII ↔ một chữ Việt dựng sẵn NFC).
  */
 object AddTones {
-    /** Trọng số — GIỮ Y HỆT bản Swift. Chọn bằng lưới trên heldout (AddTonesTests.tuneGrid). */
+    /**
+     * Trọng số — GIỮ Y HỆT bản Swift. Chọn bằng lưới trên heldout (AddTonesTests.tuneGrid);
+     * 28/09/2026 (bigram vnlm.bin thay vnbigram.bin) lưới lại trên tập dev: giữ freqW/bigramW,
+     * sàn PMI −2.5 (thay "thiếu cặp = −0.5").
+     */
     data class Params(
         val freqW: Double = FREQ_W,
         val bigramW: Double = BIGRAM_W,
-        val missing: Double = MISSING,
+        val floor: Double = PMI_FLOOR,
         val personalUni: Double = PERSONAL_UNI,
         val personalBi: Double = PERSONAL_BI,
     )
 
     const val FREQ_W = 10.0
     const val BIGRAM_W = 1.0
-    const val MISSING = -0.5
+    const val PMI_FLOOR = -2.5
     const val PERSONAL_UNI = 0.1
     const val PERSONAL_BI = 1.0
     /** Trần count cá nhân (đừng để một từ gõ nhiều lấn hết ngữ cảnh). */
@@ -164,7 +169,7 @@ object AddTones {
 
     /** Khôi phục dấu cho [text] (một đoạn — thường là [segment]). Độ dài giữ nguyên. */
     fun restore(text: String, personal: Personal? = null, p: Params = Params(),
-                bigram: SyllableBigram? = SyllableBigram.shared): Result {
+                lm: SyllableLM? = SyllableLM.shared): Result {
         val toks = tokenize(text)
         classify(toks)
         val forms = SwipeLexicon.forms
@@ -182,7 +187,7 @@ object AddTones {
                 e++
             }
             vn += e - k
-            viterbi(toks, k, e, forms, personal, p, bigram, chosen)
+            viterbi(toks, k, e, forms, personal, p, lm, chosen)
             k = e
         }
         val sb = StringBuilder(text)
@@ -201,7 +206,7 @@ object AddTones {
     }
 
     private fun viterbi(toks: List<Tok?>, from: Int, to: Int, forms: SwipeLexicon.Forms,
-                        personal: Personal?, p: Params, bigram: SyllableBigram?, chosen: Array<String?>) {
+                        personal: Personal?, p: Params, lm: SyllableLM?, chosen: Array<String?>) {
         val n = to - from
         val ids = Array(n) { i ->
             val f = toks[from + i]!!.form
@@ -211,7 +216,7 @@ object AddTones {
         val score = Array(n) { DoubleArray(ids[it].size) }
         val back = Array(n) { IntArray(ids[it].size) }
         for (i in 0 until n) {
-            val rows = if (i > 0 && bigram != null) Array(ids[i - 1].size) { bigram.row(ids[i - 1][it]) } else null
+            val rows = if (i > 0 && lm != null) Array(ids[i - 1].size) { lm.bigram(ids[i - 1][it]) } else null
             for (s in ids[i].indices) {
                 var emit = p.freqW * VNSuggest.freq(ids[i][s]) / 255.0
                 if (personal != null) {
@@ -224,10 +229,7 @@ object AddTones {
                     var tr = 0.0
                     if (rows != null) {
                         val row = rows[r]
-                        if (row.size > 0) {
-                            val pmi = row.score(ids[i][s])
-                            tr = if (pmi > 0f) p.bigramW * pmi else p.missing
-                        }
+                        if (row.size > 0) tr = p.bigramW * maxOf(p.floor, row.pmi(ids[i][s]).toDouble())
                     }
                     if (personal != null) {
                         val c = min(personal.pair(words[i - 1][r], words[i][s]), PERSONAL_CAP)

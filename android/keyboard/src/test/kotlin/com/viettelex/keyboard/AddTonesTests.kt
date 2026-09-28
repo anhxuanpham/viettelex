@@ -13,7 +13,7 @@ import java.util.Locale
 
 /**
  * Thêm dấu cho câu không dấu. Song sinh iOS AddTonesTests.swift. Đo độ chính xác trên câu
- * Tatoeba GIỮ LẠI (bigram-heldout.txt — không nằm trong dữ liệu dựng vnbigram.bin): bỏ dấu
+ * Tatoeba GIỮ LẠI (bigram-heldout.txt — không nằm trong dữ liệu dựng vnlm.bin): bỏ dấu
  * → khôi phục → tỉ lệ âm tiết đúng.
  */
 class AddTonesTests {
@@ -99,12 +99,12 @@ class AddTonesTests {
     }
 
     private fun measure(p: AddTones.Params, chains: List<List<String>> = heldout(),
-                        bigram: SyllableBigram? = SyllableBigram.shared,
+                        lm: SyllableLM? = SyllableLM.shared,
                         personal: AddTones.Personal? = null): Acc {
         var n = 0; var ok = 0; var sOk = 0
         for (c in chains) {
             val folded = c.joinToString(" ") { SwipeSuggest.fold(it) }
-            val out = AddTones.restore(folded, personal, p, bigram).text.split(' ')
+            val out = AddTones.restore(folded, personal, p, lm).text.split(' ')
             var all = true
             for (i in c.indices) { n++; if (out[i] == c[i]) ok++ else all = false }
             if (all) sOk++
@@ -113,7 +113,7 @@ class AddTonesTests {
     }
 
     @Test fun heldoutAccuracy() {
-        val uni = measure(AddTones.Params(), bigram = null)
+        val uni = measure(AddTones.Params(), lm = null)
         val full = measure(AddTones.Params())
         val m = UserLangModel().apply { isKnownWord = { VNSuggest.contains(it) }; seedIfEmpty() }
         val seeded = measure(AddTones.Params(), personal = AddTones.Personal(m::count, m::bigramCount))
@@ -125,15 +125,20 @@ class AddTonesTests {
         assertTrue(full.r - uni.r >= 0.15)
     }
 
-    /** Lưới chọn trọng số (in ra, không assert) — chạy tay khi đổi dữ liệu. */
+    /**
+     * Lưới chọn trọng số (in ra, không assert) — chạy tay khi đổi dữ liệu. Chọn trên tập DEV
+     * (ADDTONES_CHAINS = chuỗi dev sinh bởi Scripts/gen-syllable-lm.py chains --input dev.txt),
+     * không phải heldout.
+     */
     @Test fun tuneGrid() {
         if (System.getenv("ADDTONES_TUNE") == null) return
-        val chains = heldout()
-        for (fw in listOf(4.0, 6.0, 8.0, 10.0, 12.0, 15.0, 20.0))
-            for (bw in listOf(0.5, 0.75, 1.0, 1.5))
-                for (ms in listOf(0.0, -0.5, -1.0, -2.0)) {
-                    val a = measure(AddTones.Params(freqW = fw, bigramW = bw, missing = ms), chains)
-                    println(String.format(Locale.ROOT, "TUNE fw=%.1f bw=%.2f miss=%.1f → %s", fw, bw, ms, a.fmt()))
+        val chains = System.getenv("ADDTONES_CHAINS")?.let { f -> File(f).readLines()
+            .filter { it.isNotBlank() && !it.startsWith("#") }.map { it.split(' ') } } ?: heldout()
+        for (fw in listOf(6.0, 8.0, 10.0, 12.0))
+            for (bw in listOf(0.5, 0.75, 1.0, 1.25))
+                for (fl in listOf(-100.0, -3.0, -2.5, -2.0, -1.5, -0.5)) {
+                    val a = measure(AddTones.Params(freqW = fw, bigramW = bw, floor = fl), chains)
+                    println(String.format(Locale.ROOT, "TUNE fw=%.1f bw=%.2f floor=%.1f → %s", fw, bw, fl, a.fmt()))
                 }
     }
 

@@ -41,7 +41,7 @@ targets:
       - Keyboard/SwipeEnglish.swift
       - Keyboard/VNLexicon2.swift
       - Keyboard/VNSuggest.swift
-      - Keyboard/SyllableBigram.swift
+      - Keyboard/SyllableLM.swift
       - Keyboard/KeyGeometry.swift
       - Keyboard/TouchGeometry.swift
       - path: Keyboard/Resources/vnlexicon.bin
@@ -166,7 +166,6 @@ targets:
       - App/Backup/SyncCore.swift
       - App/Backup/BackupStore.swift
       - Keyboard/SwipeEnglish.swift
-      - Keyboard/SyllableBigram.swift
       - Keyboard/AddTones.swift
       - Keyboard/SyllableLM.swift
       - Keyboard/FutoSwipeModel.swift
@@ -194,8 +193,6 @@ targets:
       - path: Keyboard/Resources/emoji.bin
         buildPhase: resources
       - path: Keyboard/Resources/enlexicon.bin
-        buildPhase: resources
-      - path: Keyboard/Resources/vnbigram.bin
         buildPhase: resources
       - path: Keyboard/Resources/vnlm.bin
         buildPhase: resources
@@ -247,8 +244,6 @@ schemes:
             - SyllableLMTests/testHeldoutAccuracy
             - SyllableLMTests/testHeldoutAccuracyWithEnglish
             - SwipeReviseTests/testHeldoutRevisionGain
-            - SyllableBigramTests/testHeldoutAccuracy
-            - SyllableBigramTests/testHeldoutAccuracyWithEnglish
             - SuggestBigramTests/testHeldoutNewUser
             - SuggestBigramTests/testHeldoutLearningUserNotHurt
             - SuggestBigramTests/testLatencyAndDirtyMemory
