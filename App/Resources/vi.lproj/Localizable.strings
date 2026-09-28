@@ -309,6 +309,12 @@ Bấm “Sửa tự động”: VietTelex tự xoá mục bị kẹt của chín
 "Type a calculation followed by “=” (12*3=, 200+10%=) — the result shows next to the cursor; press Tab or Enter to insert it." = "Gõ phép tính rồi “=” (12*3=, 200+10%=) — kết quả hiện cạnh con trỏ, bấm Tab hoặc Enter để chèn.";
 "Number chips" = "Chip số";
 "Type an amount with k/tr/tỷ (50k, 1tr2, 2 tỷ) and a space — the money format (1.200.000 ₫) shows next to the cursor; press Tab to replace it." = "Gõ số tiền có k/tr/tỷ (50k, 1tr2, 2 tỷ) rồi dấu cách — dạng tiền (1.200.000 ₫) hiện cạnh con trỏ, bấm Tab để thay.";
+"Suggest typo fixes" = "Gợi ý sửa lỗi gõ sai";
+"After a word that isn’t Vietnamese or English (tpoi, nayd), a likely fix (tôi, này) shows next to the cursor; press Tab to replace it. Esc stops suggesting that word." = "Sau một từ không phải tiếng Việt hay tiếng Anh (tpoi, nayd), từ nhiều khả năng đúng (tôi, này) hiện cạnh con trỏ, bấm Tab để thay. Esc: thôi gợi ý từ đó.";
+"Suggest tones for unaccented sentences" = "Gợi ý thêm dấu cho câu không dấu";
+"After 3+ unaccented syllables (toi di hoc), when you type . ! ? or pause after a space, the toned text (tôi đi học) shows next to the cursor; press Tab to replace it." = "Sau từ 3 âm tiết không dấu trở lên (toi di hoc), khi gõ . ! ? hoặc dừng tay sau dấu cách, câu có dấu (tôi đi học) hiện cạnh con trỏ, bấm Tab để thay.";
+"Suggest dates and times" = "Gợi ý ngày giờ";
+"Type “hôm nay”, “ngày mai”, “hôm qua” or “bây giờ” (after an English word: today, tomorrow, yesterday, now) and a space — the date (28/09/2026) or time (21:35) shows next to the cursor; press Tab to replace the words with it." = "Gõ “hôm nay”, “ngày mai”, “hôm qua” hoặc “bây giờ” (sau một từ tiếng Anh: today, tomorrow, yesterday, now) rồi dấu cách — ngày (28/09/2026) hoặc giờ (21:35) hiện cạnh con trỏ, bấm Tab để thay cụm đó bằng ngày giờ.";
 "Add-tones hotkey" = "Phím tắt Thêm dấu";
 "Off" = "Tắt";
 "Works in any app, even when another input source is active. Needs Accessibility permission (copies the selection, then pastes the result — your clipboard is restored)." = "Dùng được ở mọi app, kể cả khi đang dùng bộ gõ khác. Cần quyền Trợ năng (copy vùng chọn rồi dán kết quả — clipboard của bạn được trả lại).";

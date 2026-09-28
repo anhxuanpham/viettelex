@@ -130,6 +130,9 @@ final class SettingsModel: ObservableObject {
     @Published var textToolsInMenu: Bool { didSet { AppState.shared.textToolsInMenu = textToolsInMenu } }
     @Published var mathResults: Bool { didSet { AppState.shared.mathResults = mathResults } }
     @Published var numberChips: Bool { didSet { AppState.shared.numberChips = numberChips } }
+    @Published var typoHints: Bool { didSet { AppState.shared.typoHints = typoHints } }
+    @Published var toneHints: Bool { didSet { AppState.shared.toneHints = toneHints } }
+    @Published var dateHints: Bool { didSet { AppState.shared.dateHints = dateHints } }
     @Published var addTonesHotkey: String {
         didSet {
             AppState.shared.addTonesHotkey = addTonesHotkey
@@ -220,6 +223,9 @@ final class SettingsModel: ObservableObject {
         textToolsInMenu = AppState.shared.textToolsInMenu
         mathResults = AppState.shared.mathResults
         numberChips = AppState.shared.numberChips
+        typoHints = AppState.shared.typoHints
+        toneHints = AppState.shared.toneHints
+        dateHints = AppState.shared.dateHints
         addTonesHotkey = AppState.shared.addTonesHotkey
         icloudSync = ICloudSync.shared.isEnabled
         menuIcon = AppState.shared.menuIcon
@@ -754,6 +760,15 @@ struct GeneralTab: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle(model.loc("Number chips"), isOn: $model.numberChips)
                 Text(model.loc("Type an amount with k/tr/tỷ (50k, 1tr2, 2 tỷ) and a space — the money format (1.200.000 ₫) shows next to the cursor; press Tab to replace it."))
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle(model.loc("Suggest typo fixes"), isOn: $model.typoHints)
+                Text(model.loc("After a word that isn’t Vietnamese or English (tpoi, nayd), a likely fix (tôi, này) shows next to the cursor; press Tab to replace it. Esc stops suggesting that word."))
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle(model.loc("Suggest tones for unaccented sentences"), isOn: $model.toneHints)
+                Text(model.loc("After 3+ unaccented syllables (toi di hoc), when you type . ! ? or pause after a space, the toned text (tôi đi học) shows next to the cursor; press Tab to replace it."))
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle(model.loc("Suggest dates and times"), isOn: $model.dateHints)
+                Text(model.loc("Type “hôm nay”, “ngày mai”, “hôm qua” or “bây giờ” (after an English word: today, tomorrow, yesterday, now) and a space — the date (28/09/2026) or time (21:35) shows next to the cursor; press Tab to replace the words with it."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section(header: Label(model.loc("iCloud sync"), systemImage: "icloud")) {

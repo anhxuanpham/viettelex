@@ -58,6 +58,11 @@ targets:
       #  • kết quả phép tính "…=" (MathHint.swift) — cùng quy tắc chip iOS/Android.
       - path: iOS/Keyboard/MathResults.swift
       - path: iOS/Keyboard/NumberChips.swift
+      #  • gợi ý sửa lỗi gõ sai (CaretSuggestions.swift) — cùng logic tự sửa iOS/Android
+      #    (AutoCorrect + AdjacentKeyFixer, phần UIKit/EngineBridge nằm trong #if) + từ chat seed.
+      - path: iOS/Keyboard/AutoCorrect.swift
+      - path: iOS/Keyboard/AdjacentKeyFixer.swift
+      - path: iOS/Keyboard/SeedData.swift
       - path: iOS/Keyboard/Resources/vnlexicon.bin
         buildPhase: resources
       - path: iOS/Keyboard/Resources/vnlm.bin

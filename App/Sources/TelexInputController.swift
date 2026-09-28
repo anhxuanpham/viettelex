@@ -47,6 +47,10 @@ final class TelexInputController: IMKInputController {
     private var shortcutTail = ShortcutTail()
     /// Cụm (shortcutTail.run) trước dấu cách gần nhất — chip số "2 tỷ" cần biết cụm số trước.
     private var numberPrevRun = ""
+    /// Phím thô của từ vừa chốt ở ranh giới gần nhất ("" = không có) — gợi ý sửa lỗi gõ.
+    private var lastCommitRaw = ""
+    /// Đếm âm tiết không dấu liên tiếp (gợi ý Thêm dấu) — chỉ cập nhật ở ranh giới khi bật.
+    private var toneRun = ToneRunLogic.Tracker()
     /// Controller vừa activate (main) — CaretHint mượn client của nó để lấy firstRect cho ô nổi.
     private(set) static weak var activeController: TelexInputController?
     /// ⌫ ngay sau khi nở gõ tắt → trả lại chữ đã gõ (một lần, chỉ in-place, verify màn
@@ -298,7 +302,7 @@ final class TelexInputController: IMKInputController {
                     return true
                 }
             case .dismissConsume:
-                CaretHint.shared.dismiss()
+                CaretHint.shared.decline()
                 return true
             case .dismissPass:
                 CaretHint.shared.dismiss()
@@ -745,6 +749,7 @@ final class TelexInputController: IMKInputController {
             // Enter: dòng mới — cụm bắt đầu lại sau xuống dòng. Tab/Esc: có thể dời
             // focus / không chèn gì ⇒ cụm không còn biết.
             if newlineKey { shortcutTail.append("\n") } else { shortcutTail.reset() }
+            toneRun.reset()
             // Return/Tab/Esc do not put ONE character after the word the way a space
             // does — Enter sends the message in a chat app, Tab moves focus, Esc
             // inserts nothing — so a following ⌫ is not deleting a boundary character
@@ -835,6 +840,20 @@ final class TelexInputController: IMKInputController {
             // Chip số (chỉ dạng tiền): dấu cách ngay sau cụm có chữ số ⇒ đọc màn hình MỘT lần
             // sau khi dấu cách tới app. Chỉ app đã chứng minh in-place (thay chữ đã chốt bằng
             // replacementRange an toàn) và không đang marked.
+            // Gợi ý ranh giới từ (CaretSuggestions.swift): sửa lỗi gõ / thêm dấu / ngày giờ.
+            // Tắt hết ⇒ một lần đọc cờ. Bật: chỉ so chuỗi ở đây, việc nặng chạy nền.
+            if let b = inserted, CaretHint.shared.wordHintsEnabled {
+                let tones = CaretHint.shared.tonesEnabled
+                    ? toneRun.feed(chunk: shortcutTail.run, boundary: b) : nil
+                CaretHint.shared.afterWord(
+                    .init(boundary: b, run: shortcutTail.run, prevRun: numberPrevRun,
+                          raw: expandedAtBoundary == nil ? lastCommitRaw : "",
+                          anchored: shortcutTail.anchored, tones: tones),
+                    client: client, controller: self,
+                    canReplace: !markedNow && Self.replacesCommittedText(id))
+            } else if inserted == nil {
+                toneRun.reset()
+            }
             if inserted == " " {
                 let run = shortcutTail.run
                 if CaretHint.shared.numberEnabled,
@@ -1747,6 +1766,7 @@ final class TelexInputController: IMKInputController {
                           commitSuffix: String = "") -> Bool {
         let wasEdge = edgeTapWord
         expandedAtBoundary = nil
+        lastCommitRaw = ""
         defer { tracking = false; onLen = 0; edgeTapWord = false }
         let id = AppState.shared.currentBundleID
         let marked = usesMarkedNow(id)
@@ -1792,6 +1812,7 @@ final class TelexInputController: IMKInputController {
         // Auto-restore non-Vietnamese words to their raw keystrokes (resets engine).
         // Suppressed next to brackets (code context).
         let autoRestore = AppState.shared.autoRestore && !suppressAutoRestore
+        lastCommitRaw = rawWord
         let restored = engine.commitText(autoRestore: autoRestore)
         if marked {
             // Commit the marked text (replaces it with the final word). Optional
