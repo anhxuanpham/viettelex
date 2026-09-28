@@ -29,11 +29,14 @@ class UserLangModel(
     ioExecutor: Executor? = null,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
-    private val io: Executor by lazy {
+    private val ioLazy = lazy {
         ioExecutor ?: Executors.newSingleThreadExecutor { r ->
             Thread(r, "vt-userlm-io").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }
         }
     }
+    private val io: Executor by ioLazy
+    private val ownsIo = ioExecutor == null
+    private var closed = false
 
     private var uni = HashMap<String, Int>()
     private var bi = HashMap<String, HashMap<String, Int>>()
@@ -220,6 +223,7 @@ class UserLangModel(
     }
 
     private fun loadAsync(f: File) {
+        if (closed) return
         val gen = loadGeneration
         io.execute {
             val t = readTables(f)
@@ -567,11 +571,32 @@ class UserLangModel(
     /** Có thay đổi đang chờ ghi (test/IME). */
     val hasPendingSave: Boolean get() = saveWork != null
 
+    /**
+     * Service IME bị huỷ (đổi bàn phím): ghi thay đổi đang chờ, bỏ bảng trong RAM (vỏ service
+     * cũ có thể bị framework giữ lâu — đừng kéo theo 0.2–1.5 MB bảng), dừng luồng IO sau khi
+     * ghi xong. Sau đó model không ghi/nạp nữa (không bao giờ ghi bảng rỗng đè file).
+     */
+    fun close() {
+        if (closed) return
+        saveNow()
+        closed = true
+        isLoaded = false
+        loadGeneration++
+        saveWork?.cancel(); saveWork = null
+        uni = HashMap(); bi = HashMap(); tri = HashMap(); manual = LinkedHashMap()
+        biPairs = 0; triPairs = 0; uniTotal = 0
+        pendingRecords.clear(); pendingSeed = null; seedSource = null
+        topCache = null; topKeys = null
+        knownCache.clear()
+        onReady = null
+        if (ownsIo && ioLazy.isInitialized()) (ioLazy.value as? java.util.concurrent.ExecutorService)?.shutdown()
+    }
+
     fun eraseAll() {
         dropInMemory()
         isLoaded = true
         val f = file
-        if (f != null) io.execute { f.delete() }
+        if (f != null) { if (closed) f.delete() else io.execute { f.delete() } }
     }
 
     private fun dropInMemory() {

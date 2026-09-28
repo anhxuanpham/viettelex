@@ -17,6 +17,8 @@ import kotlin.math.ln
  *  - chuỗi phím đang gõ không có trong trie (tên riêng, viết tắt, từ Anh lạ…) ⇒ không đổi.
  * Chữ đã chèn KHÔNG bao giờ bị thay: quyết định xảy ra đúng một lần lúc touchDown.
  * Tham số chọn bằng mô phỏng gõ chạm (TouchSimTests — câu Tatoeba giữ lại).
+ * Android đọc trie dựng SẴN (asset keyprior.bin, [KeyPriorBlob] — RAM-AUDIT #1); iOS vẫn dựng
+ * trong RAM từ lexicon — cùng thuật toán, cùng số (KeyPriorBlobTests chốt asset ≡ [TelexKeyPrior.fromLexicon]).
  */
 
 /** Chuỗi phím Telex cho một âm tiết tiếng Việt (để dựng trie ngữ cảnh). */
@@ -75,23 +77,18 @@ object TelexSpell {
     }
 }
 
-/** Trie chuỗi phím a–z, mỗi nút mang tổng trọng số các chuỗi đi qua (CSR gọn). */
-class KeyTrie private constructor(
-    private val edgeStart: IntArray,   // [node] → dải cạnh; size = nodes + 1
-    private val edgeKey: ByteArray,    // 0…25, tăng dần trong dải
-    private val edgeTo: IntArray,
-    private val weight: FloatArray,
-) {
-    val nodeCount: Int get() = weight.size
+/**
+ * Trie chuỗi phím a–z, mỗi nút mang tổng trọng số các chuỗi đi qua. Hai cách chứa, CÙNG kết
+ * quả: [Builder] (mảng CSR trên heap — test/sweep tham số) và [mapped] (asset keyprior.bin
+ * mmap — IME: 0 heap, trang sạch; xem [KeyPriorBlob]).
+ */
+abstract class KeyTrie {
+    abstract val nodeCount: Int
 
-    fun child(node: Int, key: Int): Int {
-        for (e in edgeStart[node] until edgeStart[node + 1]) {
-            val k = edgeKey[e].toInt()
-            if (k == key) return edgeTo[e]
-            if (k > key) return -1
-        }
-        return -1
-    }
+    /** Con của [node] theo phím [key] (0…25), -1 nếu không có. */
+    abstract fun child(node: Int, key: Int): Int
+
+    abstract fun weight(node: Int): Float
 
     /** Nút của chuỗi [raw] (chữ a–z, hoa thường như nhau), -1 nếu không có. */
     fun node(raw: CharSequence): Int {
@@ -105,7 +102,44 @@ class KeyTrie private constructor(
         return n
     }
 
-    fun weight(node: Int): Float = weight[node]
+    /** CSR trên heap (thứ tự nút = thứ tự chèn). */
+    private class Arrays(
+        val edgeStart: IntArray,   // [node] → dải cạnh; size = nodes + 1
+        val edgeKey: ByteArray,    // 0…25, tăng dần trong dải
+        val edgeTo: IntArray,
+        val weights: FloatArray,
+    ) : KeyTrie() {
+        override val nodeCount: Int get() = weights.size
+        override fun child(node: Int, key: Int): Int {
+            for (e in edgeStart[node] until edgeStart[node + 1]) {
+                val k = edgeKey[e].toInt()
+                if (k == key) return edgeTo[e]
+                if (k > key) return -1
+            }
+            return -1
+        }
+        override fun weight(node: Int): Float = weights[node]
+    }
+
+    /**
+     * Trie trên buffer [KeyPriorBlob] (little-endian, đọc absolute ⇒ thread-safe). Nút đánh số
+     * BFS nên con của cạnh e là nút e + 1 — khỏi lưu edgeTo.
+     */
+    private class Mapped(private val b: java.nio.ByteBuffer, override val nodeCount: Int,
+                         private val startOff: Int, private val weightOff: Int, private val keyOff: Int) : KeyTrie() {
+        override fun child(node: Int, key: Int): Int {
+            val end = b.getInt(startOff + 4 * (node + 1))
+            var e = b.getInt(startOff + 4 * node)
+            while (e < end) {
+                val k = b.get(keyOff + e).toInt()
+                if (k == key) return e + 1
+                if (k > key) return -1
+                e++
+            }
+            return -1
+        }
+        override fun weight(node: Int): Float = b.getFloat(weightOff + 4 * node)
+    }
 
     class Builder {
         private val children = HashMap<Long, Int>()
@@ -132,8 +166,81 @@ class KeyTrie private constructor(
             for (i in 0 until n) start[i + 1] += start[i]
             val key = ByteArray(edges.size); val to = IntArray(edges.size)
             for ((i, e) in edges.withIndex()) { key[i] = (e.first % 32).toByte(); to[i] = e.second }
-            return KeyTrie(start, key, to, FloatArray(n) { weights[it] })
+            return Arrays(start, key, to, FloatArray(n) { weights[it] })
         }
+    }
+
+    companion object {
+        /** Trie đọc tại chỗ từ blob [KeyPriorBlob] (null = sai magic/phiên bản/cỡ). */
+        fun mapped(buf: java.nio.ByteBuffer): KeyTrie? {
+            val b = buf.duplicate().order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            val h = KeyPriorBlob.header(b) ?: return null
+            return Mapped(b, h.nodes, KeyPriorBlob.HEADER, KeyPriorBlob.HEADER + 4 * (h.nodes + 1),
+                KeyPriorBlob.HEADER + 8 * h.nodes + 4)
+        }
+    }
+}
+
+/**
+ * keyprior.bin — trie [TelexKeyPrior] dựng SẴN (sinh bằng `VT_REGEN_KEYPRIOR=1 ./gradlew
+ * :keyboard:test --tests '*KeyPriorBlobTests*'`, test parity chặn asset lệch dữ liệu nguồn).
+ * Little-endian:
+ *   "VTKP" | version u32 | nodes u32 | edges u32 | crc32(vnlexicon ‖ enlexicon ‖ seed) u32 |
+ *   lambda f32 | englishShare f32 | 0 u32                                  (32 byte)
+ *   edgeStart[nodes + 1] u32 · weight[nodes] f32 · edgeKey[edges] u8
+ * Nút đánh số BFS (gốc 0, con theo thứ tự phím) ⇒ cạnh e (xếp theo cha rồi phím) trỏ tới
+ * nút e + 1. ~9 byte/nút (63k nút ≈ 570 KB), asset không nén ⇒ mmap.
+ */
+object KeyPriorBlob {
+    const val MAGIC = 0x504B5456 // "VTKP" LE
+    const val VERSION = 1
+    const val HEADER = 32
+
+    class Header(val nodes: Int, val edges: Int, val inputCrc: Int, val lambda: Float, val englishShare: Float)
+
+    fun header(b: java.nio.ByteBuffer): Header? {
+        if (b.capacity() < HEADER || b.getInt(0) != MAGIC || b.getInt(4) != VERSION) return null
+        val n = b.getInt(8); val e = b.getInt(12)
+        if (n <= 0 || e != n - 1 || b.capacity().toLong() < HEADER + 8L * n + 4 + e) return null
+        return Header(n, e, b.getInt(16), b.getFloat(20), b.getFloat(24))
+    }
+
+    /** Mã hoá [t] (bất kỳ cách chứa) sang blob — đánh số lại nút theo BFS. */
+    fun encode(t: KeyTrie, inputCrc: Int, lambda: Float, englishShare: Float): ByteArray {
+        val n = t.nodeCount
+        val order = IntArray(n)           // BFS id → nút gốc
+        val start = IntArray(n + 1)
+        val keys = java.io.ByteArrayOutputStream(n)
+        var tail = 1
+        for (id in 0 until n) {
+            require(id < tail) { "trie không liên thông" }
+            val node = order[id]
+            start[id] = tail - 1
+            for (k in 0 until 26) {
+                val c = t.child(node, k)
+                if (c >= 0) { order[tail++] = c; keys.write(k) }
+            }
+        }
+        start[n] = tail - 1
+        require(tail == n)
+        val e = n - 1
+        val out = java.nio.ByteBuffer.allocate(HEADER + 8 * n + 4 + e).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        out.putInt(MAGIC).putInt(VERSION).putInt(n).putInt(e).putInt(inputCrc)
+            .putFloat(lambda).putFloat(englishShare).putInt(0)
+        for (i in 0..n) out.putInt(start[i])
+        for (i in 0 until n) out.putFloat(t.weight(order[i]))
+        out.put(keys.toByteArray())
+        return out.array()
+    }
+
+    /** CRC32 các asset nguồn — asset keyprior.bin cũ hơn dữ liệu ⇒ test đỏ, sinh lại. */
+    fun inputCrc(): Int {
+        val crc = java.util.zip.CRC32()
+        for (name in listOf(Keys.ASSET_LEXICON, Keys.ASSET_EN_LEXICON, Keys.ASSET_SEED)) {
+            val d = KeyboardData.buffer(name).duplicate(); d.position(0)
+            val a = ByteArray(d.remaining()); d.get(a); crc.update(a)
+        }
+        return crc.value.toInt()
     }
 }
 
@@ -274,13 +381,25 @@ class TelexKeyPrior(val trie: KeyTrie) {
             )
         }
 
+        /**
+         * Trie dựng sẵn trong asset [Keys.ASSET_KEY_PRIOR] (mmap: 0 heap, không rác) — null nếu
+         * thiếu/hỏng hoặc sinh với tham số khác mặc định (khi đó [warmUp] dựng như cũ).
+         */
+        fun fromAsset(): TelexKeyPrior? = try {
+            val b = KeyboardData.buffer(Keys.ASSET_KEY_PRIOR)
+            val h = KeyPriorBlob.header(b)
+            if (h == null || h.lambda != LAMBDA || h.englishShare != ENGLISH) null
+            else KeyTrie.mapped(b)?.let { TelexKeyPrior(it) }
+        } catch (e: Exception) { null }
+
         @Volatile private var cached: TelexKeyPrior? = null
         /** Bảng dùng chung; null tới khi [warmUp] xong (router coi như tắt). */
         val sharedIfReady: TelexKeyPrior? get() = cached
+        /** Asset mmap (vài µs); asset thiếu ⇒ dựng từ lexicon (~31 MB rác, gọi ngoài main). */
         fun warmUp(): TelexKeyPrior = cached ?: synchronized(this) {
-            cached ?: fromLexicon().also { cached = it }
+            cached ?: (fromAsset() ?: fromLexicon()).also { cached = it }
         }
-        /** Tắt tính năng / thiếu RAM: bỏ bảng (GC được); [warmUp] dựng lại khi cần. */
+        /** Tắt tính năng: bỏ tham chiếu (trang mmap sạch, kernel tự thu); [warmUp] mở lại khi cần. */
         fun release() { cached = null }
     }
 }

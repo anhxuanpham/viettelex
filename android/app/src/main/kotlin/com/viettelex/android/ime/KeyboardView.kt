@@ -520,6 +520,9 @@ class KeyboardView(
     }
 
     /** Bàn phím ẩn: dọn mọi pointer/timer — không để Handler nào sống. */
+    /** Hẹn giờ ẩn (VietTelexIME.releaseIdle): nhả dữ liệu emoji nếu không đang ở lưới emoji. */
+    fun releaseIdleCaches() { if (plane != Plane.EMOJI) emojiPane.releaseData() }
+
     fun onHidden() {
         cancelAllTouches()
         badgeAnim?.cancel(); badgeAlpha = 0f

@@ -200,10 +200,36 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     override fun onDestroy() {
         prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
         accessibility?.removeTouchExplorationStateChangeListener(touchExplorationListener)
+        accessibility = null
         clipboard.release()
+        clipboard.onChanged = null
         feedback.releaseSound()
+        handler.removeCallbacksAndMessages(null)   // gợi ý / auto-shift / hẹn giờ ẩn còn chờ
         workerThread?.quitSafely()
         session.finishInput()
+        // Vỏ service cũ có thể bị framework giữ lâu sau khi đổi IME (pool RecordingCanvas giữ nav
+        // bar của IME → context = service này): thả mọi thứ nặng nó đang trỏ tới (RAM-AUDIT #2).
+        model.onReady = null
+        model.close()                                 // ghi nốt thay đổi chờ, bỏ bảng RAM
+        session.clipHistory = null                    // chỉ bản RAM (file giữ nguyên)
+        // (dữ liệu cấp process — từ điển Anh, trie, emoji — để service mới dùng tiếp)
+        root?.dropWallpaper()
+        clipPane?.listener = null
+        keyboard?.listener = null; keyboard?.letterPrior = null
+        strip?.listener = null
+        // Service (mInputView) + khung mInputFrame vẫn giữ cây view ⇒ thay bằng view rỗng, rồi đo lại
+        // khung (FrameLayout giữ con cũ trong mMatchParentChildren tới lần onMeasure kế) để cả cây GC được.
+        root?.let { r ->
+            val frame = r.parent as? View
+            runCatching {
+                setInputView(View(this))
+                val any = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                frame?.measure(any, any)
+            }
+        }
+        root = null; keyboard = null; strip = null; clipPane = null; theme = null
+        portCache = null
+        synchronized(swipeLock) { swipeDecoder = null; futo = null }
         super.onDestroy()
     }
 
@@ -247,6 +273,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         val t0 = SystemClock.elapsedRealtime()
         super.onStartInputView(info, restarting)
+        handler.removeCallbacks(idleRelease)
         // Đổi theme/ảnh nền trong app → dựng lại input view (màu/Paint tạo sẵn trong view).
         // Chỉ dựng ImeTheme để so khi pref đổi hoặc sáng/tối hệ thống đổi (không mỗi lần focus ô).
         val uiMode = resources.configuration.uiMode
@@ -257,6 +284,7 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
                 ((themeStale || uiMode != themeUiMode) && freshTheme().signature != theme?.signature)))
             setInputView(onCreateInputView())
         themeStale = false; themeUiMode = uiMode
+        rewarmAfterIdle()
         val kb = keyboard ?: return
         val st = strip ?: return
         val th = theme ?: return
@@ -373,7 +401,10 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         swipeFieldOk = false
-        synchronized(swipeLock) { futo?.release() }   // FUTO Swipe: nhả ~2.5 MB khi ẩn
+        // FUTO Swipe / từ điển Anh / ảnh nền / emoji: GIỮ qua các lần hiện (giải lại mỗi lần hiện
+        // tốn ~4.7 MB cấp phát) — nhả khi ẩn lâu ([idleRelease]; onTrimMemory hầu như không tới).
+        handler.removeCallbacks(idleRelease)
+        handler.postDelayed(idleRelease, IDLE_RELEASE_MS)
         handler.removeCallbacks(autoShiftRun); handler.removeCallbacks(suggestRun)
         trackpadMoved = false                  // ô đóng: không auto-shift/gợi ý lúc nhả trackpad
         keyboard?.onHidden()
@@ -387,21 +418,56 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     }
 
     /**
-     * Hệ thống thiếu RAM khi bàn phím đang ẩn: nhả dữ liệu dựng lại được (trie chọn phím thông
-     * minh, decoder gõ vuốt, cache mẫu câu) — lần hiện kế tự dựng lại trên worker.
+     * Hệ thống thiếu RAM: như hẹn giờ ẩn ([releaseIdle]) nhưng ngay. API 34+ gần như không gửi
+     * (IME đang chọn ở oom_adj 100) ⇒ đường chính là [idleRelease]. Trie chọn phím thông minh là
+     * asset mmap (0 heap) ⇒ KHÔNG nhả (trước đây nhả 0.86 MB, lần hiện sau tốn 31 MB rác).
      */
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        // FUTO Swipe (thử nghiệm): nhả ~2.5 MB khi áp lực bộ nhớ (tải lại lười ở lần vuốt/hiện sau)
-        @Suppress("DEPRECATION")
-        if (!inputShown || level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW)
-            synchronized(swipeLock) { futo?.release() }
-        @Suppress("DEPRECATION")
-        if (level < android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND || inputShown) return
-        TelexKeyPrior.release()
-        synchronized(swipeLock) { swipeDecoder = null }
-        templatesCache = null
+        // FUTO Swipe (thử nghiệm): nhả ~3.4 MB khi THIẾU RAM thật (tải lại lười ở lần vuốt/hiện sau).
+        // KHÔNG nhả ở UI_HIDDEN (gửi mỗi lần bàn phím ẩn ⇒ giải lại weights mỗi lần hiện).
+        if (ImeTrim.releaseFuto(level)) synchronized(swipeLock) { futo?.release() }
+        if (!ImeTrim.releaseIdle(level, inputShown)) return
+        releaseIdle()
         settingsCache = null
+    }
+
+    /** Hẹn giờ ẩn (RAM-AUDIT #6): bàn phím ẩn liền [IDLE_RELEASE_MS] ⇒ nhả dữ liệu nạp lại được. */
+    private val idleRelease = Runnable { if (!inputShown) releaseIdle() }
+
+    /** Đã nhả gì ở [releaseIdle] ⇒ lần hiện kế nạp lại NỀN ([rewarmAfterIdle]). */
+    private var englishReleased = false
+    private var wallpaperReleased = false
+
+    /**
+     * Nhả dữ liệu dựng lại được: model FUTO (~3.4 MB), từ điển Anh (~1.4 MB), template gõ vuốt,
+     * ảnh nền (bitmap), String emoji, bảng clipboard (view), cache mẫu câu. Tất cả có đường dự
+     * phòng khi chưa nạp lại xong (SHARK2, nền màu theme, …) — không chặn phím đầu.
+     */
+    private fun releaseIdle() {
+        synchronized(swipeLock) { futo?.release(); swipeDecoder = null }
+        if (SwipeEnglish.isLoaded) { SwipeEnglish.release(); englishReleased = true }
+        if (root?.dropWallpaper() == true) wallpaperReleased = true
+        WallpaperBitmap.drop()
+        EmojiData.releaseCategories()
+        keyboard?.releaseIdleCaches()
+        clipPane?.let { if (it.visibility != View.VISIBLE) { it.listener = null; root?.overlay = null; clipPane = null } }
+        templatesCache = null
+    }
+
+    /**
+     * Hiện lại sau [releaseIdle]: nạp lại những gì đã nhả trên MỘT luồng nền ưu tiên thấp riêng
+     * (không chen hàng đợi gợi ý của worker ⇒ phím/gợi ý đầu không chờ). Hiếm: ≤ 1 lần / 45 s ẩn.
+     */
+    private fun rewarmAfterIdle() {
+        val english = englishReleased; val wall = wallpaperReleased
+        if (!english && !wall) return
+        englishReleased = false; wallpaperReleased = false
+        val jobs = ArrayList<Runnable>(2)
+        if (english) jobs += Runnable { SwipeEnglish.lexicon }
+        if (wall) root?.reloadWallpaper { jobs += it }
+        if (jobs.isEmpty()) return
+        Thread({ jobs.forEach { it.run() } }, "vt-rewarm").apply { priority = Thread.MIN_PRIORITY + 1 }.start()
     }
 
     override fun onComputeInsets(outInsets: InputMethodService.Insets) {
@@ -619,11 +685,14 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     /** Bật khi: setting + ô hợp lệ + KHÔNG TalkBack/touch exploration. Tắt ⇒ bỏ decoder (template GC được). */
     private fun updateSwipeTyping() {
         updateAlternates()
-        val on = swipeSetting && swipeFieldOk && accessibility?.isTouchExplorationEnabled != true
+        val allowed = swipeSetting && accessibility?.isTouchExplorationEnabled != true
+        val on = allowed && swipeFieldOk
         if (!on) {
             keyboard?.swipeTyping = false
             if (::session.isInitialized) session.setSwipeTyping(false)
-            synchronized(swipeLock) { swipeDecoder = null; futo = null }
+            // Tắt hẳn ⇒ bỏ (0 RAM). Chỉ ô này không cho vuốt (mật khẩu, URL…) ⇒ giữ decoder + FUTO
+            // cho ô kế (khỏi giải lại weights); hẹn giờ ẩn vẫn nhả.
+            if (!allowed) synchronized(swipeLock) { swipeDecoder = null; futo = null }
             return
         }
         val fresh = swipeDecoder == null
@@ -1071,5 +1140,20 @@ class VietTelexIME : InputMethodService(), KeyboardView.Listener, StripView.List
     companion object {
         private const val TAG = "VTKB"
         const val SUGGEST_DELAY_MS = 30L
+        /** Bàn phím ẩn liền bấy lâu ⇒ [releaseIdle] (RAM-AUDIT #6: 30–60 s). */
+        const val IDLE_RELEASE_MS = 45_000L
     }
+}
+
+/** Chính sách onTrimMemory (hàm thuần để test; số = hằng ComponentCallbacks2). */
+object ImeTrim {
+    private const val RUNNING_LOW = 10
+    private const val RUNNING_CRITICAL = 15
+    private const val BACKGROUND = 40
+
+    /** Thiếu RAM thật (RUNNING_LOW/CRITICAL — API < 34 — hoặc BACKGROUND+); UI_HIDDEN (20) thì không. */
+    fun releaseFuto(level: Int): Boolean = level in RUNNING_LOW..RUNNING_CRITICAL || level >= BACKGROUND
+
+    /** Nhả như hẹn giờ ẩn: BACKGROUND+ và bàn phím đang ẩn. */
+    fun releaseIdle(level: Int, inputShown: Boolean): Boolean = level >= BACKGROUND && !inputShown
 }

@@ -26,9 +26,22 @@ object SwipeEnglish {
 
     private val EMPTY = Lexicon(emptyArray(), IntArray(0), ByteArray(0), IntArray(1), IntArray(0), IntArray(677))
 
-    val lexicon: Lexicon by lazy {
-        try { parse(KeyboardData.buffer(Keys.ASSET_EN_LEXICON)) ?: EMPTY } catch (e: Exception) { EMPTY }
-    }
+    @Volatile private var loaded: Lexicon? = null
+
+    /**
+     * Từ điển Anh (~1.4 MB heap: ~25k String) — nạp lười, thread-safe. IME [release] khi bàn
+     * phím ẩn lâu và nạp lại NỀN lúc hiện ([isLoaded] cho biết có cần hâm nóng).
+     */
+    val lexicon: Lexicon
+        get() = loaded ?: synchronized(this) {
+            loaded ?: (try { parse(KeyboardData.buffer(Keys.ASSET_EN_LEXICON)) ?: EMPTY } catch (e: Exception) { EMPTY })
+                .also { loaded = it }
+        }
+
+    val isLoaded: Boolean get() = loaded != null
+
+    /** Bỏ bảng (GC được); lần dùng sau nạp lại. Ai đang giữ tham chiếu cũ vẫn dùng được. */
+    fun release() { loaded = null }
 
     /** Giải mã enlexicon.bin ("VTE1" | count u32 | [len][freq][ASCII]…). null = hỏng. */
     fun parse(buf: java.nio.ByteBuffer): Lexicon? {

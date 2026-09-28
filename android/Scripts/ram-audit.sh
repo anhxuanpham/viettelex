@@ -9,6 +9,11 @@
 #   ram-audit.sh snap LABEL OUT_DIR     một ảnh meminfo (+ smaps asset + thống kê cấp phát ART)
 #   ram-audit.sh prefs default|all|off  ghi prefs (force-stop app trước)
 #   ram-audit.sh type N                 chạm N phím chữ/cách thật trên bàn phím (qua `input tap`)
+#   ram-audit.sh settings OUT_DIR       mở app cài đặt (cùng process IME) rồi Back: PSS trước/sau
+#   ram-audit.sh switch OUT_DIR         đổi IME Gboard ↔ VietTelex 3 lần, heap dump (-g), đếm VietTelexIME sống
+#
+# Ma trận: shown / 200keys / emoji / (clipboard) / hidden / hidden-idle (ẩn IDLE_WAIT=50 s — hẹn
+# giờ nhả của IME) / trim-bg / trim-complete / after20show (hiện/ẩn thêm 20 lần).
 #
 # Toạ độ phím mặc định cho màn 1080x2400 @420dpi (sdk_gphone64_arm64, bàn phím mặc định, hàng
 # số tắt). Máy khác: đặt ROW1_Y/ROW2_Y/ROW3_Y/KEY_W/... qua env.
@@ -136,7 +141,8 @@ snap() {  # LABEL OUT_DIR
   local apk; apk=$(awk '/base.apk/{on=1;next} /^[0-9a-f]+-[0-9a-f]+ /{on=0} on && /^Pss:/{s+=$2} END{print s+0}' "$out/$label.smaps.txt")
   local alloc; alloc=$(art_alloc)
   [[ -f "$out/summary.tsv" ]] || echo -e "label\tpss\tjava\tnative\tcode\tgraphics\tprivOther\tsystem\tdalvikAllocKB\tnativeAllocKB\tbaseApkPss\tviews\tartAllocKB\tgcCount" > "$out/summary.tsv"
-  echo -e "$label\t$total\t$java\t$native\t$code\t$gfx\t$other\t$sys\t$dalvikAlloc\t$nativeAlloc\t$apk\t$views\t${alloc// /$'\t'}" >> "$out/summary.tsv"
+  printf '%s\t' "$label" "$total" "$java" "$native" "$code" "$gfx" "$other" "$sys" "$dalvikAlloc" "$nativeAlloc" "$apk" "$views" >> "$out/summary.tsv"
+  echo "$alloc" | tr ' ' '\t' >> "$out/summary.tsv"
   echo "$label pss=$total java=$java native=$native code=$code apk=$apk alloc=$alloc" >&2
 }
 
@@ -159,6 +165,7 @@ run_config() {  # CFG OUT
     $ADB shell input tap $CLIP_X $CLIP_Y; sleep 1
   fi
   hide_kb; snap "$cfg-hidden" "$out"
+  sleep "${IDLE_WAIT:-50}"; snap "$cfg-hidden-idle" "$out"   # hẹn giờ ẩn của IME (45 s) đã chạy
   home; trim BACKGROUND; snap "$cfg-trim-bg" "$out"
   trim COMPLETE; snap "$cfg-trim-complete" "$out"
   # leak check: hiện/ẩn 20 lần
@@ -168,12 +175,54 @@ run_config() {  # CFG OUT
   hide_kb; home
 }
 
+# App cài đặt (Compose) chạy cùng process IME: mở rồi Back — PSS có trở về không (RAM-AUDIT #5).
+settings_check() {  # OUT
+  local out=$1
+  focus_field; hide_kb; home; sleep 3; snap "settings-before" "$out"
+  # như chạm icon launcher (task gốc ⇒ API 31+ Back KHÔNG finish, chỉ đưa task ra sau)
+  $ADB shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n $PKG/.ui.MainActivity >/dev/null; sleep 5
+  snap "settings-open" "$out"
+  $ADB shell input keyevent KEYCODE_BACK; sleep 5
+  snap "settings-after" "$out"
+  echo "MainActivity sống: $($ADB shell dumpsys activity activities | grep -c "ActivityRecord{.*$PKG/.ui.MainActivity")" >&2
+  sleep 30; snap "settings-after30s" "$out"
+}
+
+# Đổi IME 3 lần, heap dump sau GC, đếm instance VietTelexIME còn sống (RAM-AUDIT #2).
+switch_check() {  # OUT
+  local out=$1 other=${OTHER_IME:-com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME} i
+  focus_field
+  for i in 1 2 3; do
+    $ADB shell ime set "$other" >/dev/null; sleep 3
+    $ADB shell ime set $IME >/dev/null; sleep 2
+    $ADB shell input tap $FIELD_X $FIELD_Y; sleep 3
+  done
+  hide_kb; snap "switch3" "$out"
+  local p; p=$(pid)
+  $ADB shell am dumpheap -g $PKG /data/local/tmp/vt.hprof; sleep 3
+  $ADB pull /data/local/tmp/vt.hprof "$out/switch3.hprof" >/dev/null
+  "${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/hprof-conv" "$out/switch3.hprof" "$out/switch3-std.hprof"
+  python3 "$(dirname "$0")/hprof-summary.py" "$out/switch3-std.hprof" --filter com.viettelex.android.ime.VietTelexIME --top 5 >&2 || true
+  python3 "$(dirname "$0")/hprof-summary.py" "$out/switch3-std.hprof" --referrers com.viettelex.android.ime.VietTelexIME --path > "$out/switch3-referrers.txt" 2>&1 || true
+  head -40 "$out/switch3-referrers.txt" >&2
+}
+
+with_ime() {  # đặt VietTelex làm IME, trả lại IME cũ lúc thoát
+  prev=${RESTORE_IME:-$($ADB shell settings get secure default_input_method | tr -d '\r')}
+  [[ $prev == $IME ]] && prev=com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME
+  trap '$ADB shell ime set "$prev" >/dev/null; echo "IME trả lại: $prev" >&2' EXIT
+  $ADB root >/dev/null; $ADB wait-for-device
+  $ADB shell ime enable $IME >/dev/null; $ADB shell ime set $IME >/dev/null
+}
+
 cmd=${1:-}; shift || true
 case $cmd in
   snap) snap "$1" "$2" ;;
   prefs) write_prefs "$1" ;;
   type) type_keys "$1" ;;
   trim) trim "${1:-}" ;;
+  settings) mkdir -p "$1"; with_ime; settings_check "$1" ;;
+  switch) mkdir -p "$1"; with_ime; switch_check "$1" ;;
   matrix)
     out=$1; apk=${2:-}; mkdir -p "$out"
     prev=${RESTORE_IME:-$($ADB shell settings get secure default_input_method | tr -d '\r')}

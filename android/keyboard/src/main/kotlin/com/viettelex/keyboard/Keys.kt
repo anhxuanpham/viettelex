@@ -138,6 +138,8 @@ object Keys {
     const val ASSET_SEED = "seed.tsv"
     /** Emoji + khoá tìm tiếng Việt + kaomoji (Scripts/gen-emoji-data.py, chung iOS). */
     const val ASSET_EMOJI_DATA = "emoji.bin"
+    /** Trie chọn phím thông minh dựng sẵn (KeyPriorBlob; sinh bằng KeyPriorBlobTests). */
+    const val ASSET_KEY_PRIOR = "keyprior.bin"
     const val ASSET_TEMPLATES_YAML = "ios-mau-cau.yml"
     const val ASSET_SPACE_LOGO = "spacelogo.png"
 }
