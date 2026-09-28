@@ -109,9 +109,9 @@ class SyllableLM private constructor(private val buf: ByteBuffer) {
                                             @PublishedApi internal val lo: Int, @PublishedApi internal val hi: Int) {
         val size: Int get() = hi - lo
 
-        /** PMI (nat) của âm tiết sau id [next]; thiếu mục ⇒ lùi γ2(prev) + uniAdj. */
+        /** PMI (nat) của âm tiết sau id [next]; thiếu mục ⇒ lùi γ2(prev) + uniAdj; dải rỗng ⇒ 0. */
         fun pmi(next: Int): Float {
-            if (next < 0 || next >= count) return 0f
+            if (lo >= hi || next < 0 || next >= count) return 0f
             val j = find16(biNextBase, lo, hi, next)
             return (if (j >= 0) i8(biScoreBase + j) else g2) + uniAdj(next)
         }

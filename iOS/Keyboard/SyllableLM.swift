@@ -145,9 +145,9 @@ final class SyllableLM {
         fileprivate let lo: Int, hi: Int
         var size: Int { hi - lo }
 
-        /// PMI (nat) của âm tiết sau id `next`; thiếu mục ⇒ lùi γ2(prev) + uniAdj.
+        /// PMI (nat) của âm tiết sau id `next`; thiếu mục ⇒ lùi γ2(prev) + uniAdj; dải rỗng ⇒ 0.
         func pmi(_ next: Int) -> Float {
-            guard let lm, next >= 0, next < lm.count else { return 0 }
+            guard let lm, lo < hi, next >= 0, next < lm.count else { return 0 }
             return lm.blob.withUnsafeBytes { raw -> Float in
                 let j = SyllableLM.find16(raw, lm.biNextBase, lo, hi, next)
                 return (j >= 0 ? lm.i8(raw, lm.biScoreBase + j) : g2) + lm.i8(raw, lm.adjBase + next)
