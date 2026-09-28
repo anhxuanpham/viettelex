@@ -7,5 +7,31 @@
     "x64": "https://github.com/ptrinh/viettelex/releases/download/windows-v1.1.5/VietTelex-1.1.5-x64.msi",
     "arm64": "https://github.com/ptrinh/viettelex/releases/download/windows-v1.1.5/VietTelex-1.1.5-arm64.msi",
     "notes": "Sửa gõ trong Command Prompt; nhớ Việt/Anh theo từng ứng dụng."
+  },
+  "linux": {
+    "version": "1.0.3",
+    "url": "https://github.com/ptrinh/viettelex/releases/tag/linux-v1.0.3",
+    "download": "https://github.com/ptrinh/viettelex/releases/download/linux-v1.0.3/",
+    "series": [
+      "jammy",
+      "noble"
+    ],
+    "sha256": {
+      "libviettelex-core_1.0.3.jammy1_amd64.deb": "f8517174318cfeee10c9a2f7213992b8f658aa8f59fec188627a55103b83277a",
+      "libviettelex-core_1.0.3.jammy1_arm64.deb": "48fd60408bdd723aff2c4577e125944731cf328f22d47ff1b1735d07ddae2f0b",
+      "libviettelex-core_1.0.3.noble1_amd64.deb": "949943a882e1bc9db78f0b97c2afdb39d7c88bd8068d6f0fa87275d6d4029664",
+      "libviettelex-core_1.0.3.noble1_arm64.deb": "58ea9fd2b6f45dbf7fb0ee9707f51a5971696e757a452b6a8128fbe4bf0b148f",
+      "viettelex-fcitx5_1.0.3.jammy1_amd64.deb": "502990191ae8756f211add5f8b38de0924e46536ca59059a630de8d1a4670bb2",
+      "viettelex-fcitx5_1.0.3.jammy1_arm64.deb": "448483b7878328ffc155b8009ce65d0dcf0afa6234b2c3617104d3c5dc8c16e9",
+      "viettelex-fcitx5_1.0.3.noble1_amd64.deb": "6adcce75cc967e2360920c93038aed8210fdc0f55af072ee92bf804e4095a247",
+      "viettelex-fcitx5_1.0.3.noble1_arm64.deb": "a4b2cc6f0d853cb8c17013220e54d01fcaa88b65c883a938f1551a4edf02fa15",
+      "viettelex-ibus_1.0.3.jammy1_amd64.deb": "9ee16644aa07201b8a7d27ca5a78ae442a6a914ed9be4e1e7c31850a1a616051",
+      "viettelex-ibus_1.0.3.jammy1_arm64.deb": "a70b987ede972d9ed9e9ad68c937310912280758f482498b86ca9c45c5a8683f",
+      "viettelex-ibus_1.0.3.noble1_amd64.deb": "9ecc41a380eb40c11ad374ae83475ef349d6e2b731bf88d02bf66554c8f702fb",
+      "viettelex-ibus_1.0.3.noble1_arm64.deb": "3505bfc8b52ca61f4fee41bd9d8a5bcf2242e90484599f51ff705111c67fdf37",
+      "viettelex-settings_1.0.3.jammy1_all.deb": "14ed0f7417a28f35312f6d6a1e0d21db469f4b12f126d0af06fb12cfb8ad13db",
+      "viettelex-settings_1.0.3.noble1_all.deb": "7dffc250e1e025e639c121eb26caffc636b101ddf2e4366e3870eafb22b4cd6d"
+    },
+    "notes": "Gõ trong terminal không gạch chân; nhớ Việt/Anh theo ứng dụng trên GNOME Wayland."
   }
 }

@@ -8,7 +8,14 @@ Bộ gõ tiếng Việt VietTelex dạng input method chuẩn: **Fcitx5** (khuy�
 
 Ubuntu 22.04 (jammy) / 24.04 (noble), amd64 + arm64.
 
-**Cách 1 — kho APT (khuyên dùng, tự cập nhật qua `apt upgrade`):**
+**Nhanh nhất — một lệnh** (thêm kho APT đã ký, cài, bật Fcitx5; chạy lại = cập nhật; `--ibus`
+để giữ IBus, `--uninstall` để gỡ):
+
+```sh
+curl -fsSL https://viettelex.com/install.sh | bash
+```
+
+**Cách 1 — kho APT thủ công (tự cập nhật qua `apt upgrade`):**
 
 ```sh
 sudo install -d -m 0755 /etc/apt/keyrings
@@ -22,7 +29,8 @@ Components: main
 Signed-By: /etc/apt/keyrings/viettelex.gpg
 EOF
 sudo apt update
-sudo apt install viettelex-fcitx5        # hoặc: sudo apt install viettelex-ibus
+sudo apt install viettelex               # hoặc giữ IBus: sudo apt install viettelex viettelex-ibus
+# (kho chưa có gói viettelex: sudo apt install viettelex-fcitx5 viettelex-settings)
 ```
 
 **Cách 2 — tải .deb từ [GitHub Releases](https://github.com/ptrinh/viettelex/releases):**

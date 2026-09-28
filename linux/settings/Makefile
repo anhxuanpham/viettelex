@@ -17,6 +17,8 @@ check:
 
 install: all
 	install -Dm755 viettelex-settings $(DESTDIR)$(PREFIX)/bin/viettelex-settings
+	install -Dm755 viettelex-update $(DESTDIR)$(PREFIX)/libexec/viettelex/viettelex-update
+	install -Dm644 $(DATA)/org.viettelex.update.policy $(SHARE)/polkit-1/actions/org.viettelex.update.policy
 	install -d $(SHARE)/viettelex-settings/viettelex_settings
 	install -m644 viettelex_settings/*.py $(SHARE)/viettelex-settings/viettelex_settings/
 	install -Dm644 $(DATA)/com.viettelex.Settings.desktop $(SHARE)/applications/com.viettelex.Settings.desktop
@@ -27,6 +29,8 @@ install: all
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/viettelex-settings
+	rm -f $(DESTDIR)$(PREFIX)/libexec/viettelex/viettelex-update
+	rm -f $(SHARE)/polkit-1/actions/org.viettelex.update.policy
 	rm -rf $(SHARE)/viettelex-settings
 	rm -f $(SHARE)/applications/com.viettelex.Settings.desktop $(SHARE)/metainfo/com.viettelex.Settings.metainfo.xml
 	for s in $(ICON_SIZES); do rm -f $(SHARE)/icons/hicolor/$${s}x$${s}/apps/com.viettelex.Settings.png; done

@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tải ViệtTelex</title>
+<meta name="description" content="Tải ViệtTelex cho Linux (Ubuntu), macOS, Windows và iPhone — cài bằng một lệnh.">
+<link rel="canonical" href="https://viettelex.com/download/">
+<link rel="alternate" hreflang="vi" href="https://viettelex.com/download/">
+<link rel="alternate" hreflang="en" href="https://viettelex.com/en/download/">
+<link rel="icon" href="/assets/VietTelex-logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #17233d; --navy-2: #1e2d4e; --red: #a81f1f; --red-bright: #c22727; --gold: #d4a94a;
+    --paper: #fbfaf7; --card: #ffffff; --ink: #1c2333; --ink-soft: #55607a; --line: #e6e2d8;
+    --code-bg: #10192e; --code-ink: #e8ebf4;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+    --sans: "Be Vietnam Pro", -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --paper: #0f1626; --card: #17213a; --ink: #e8ebf4; --ink-soft: #9aa6c2; --line: #2a3654; --red: #ff7b7b; }
+  }
+  :root[data-theme="dark"] { --paper: #0f1626; --card: #17213a; --ink: #e8ebf4; --ink-soft: #9aa6c2; --line: #2a3654; --red: #ff7b7b; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: var(--sans); color: var(--ink); background: var(--paper); line-height: 1.6; }
+  a { color: var(--red); }
+  header { position: relative; background: linear-gradient(175deg, var(--navy) 0%, var(--navy-2) 100%); color: #f2f0ea; padding: 44px 16px 56px; text-align: center; }
+  header .home { position: absolute; top: 16px; left: 16px; color: #e7ebf4; text-decoration: none; font-weight: 700; font-size: .9rem; }
+  .langswitch { position: absolute; top: 14px; right: 16px; }
+  .langswitch a { display: inline-block; padding: 5px 12px; border: 1px solid rgba(255,255,255,.25); border-radius: 999px; color: #e7ebf4; text-decoration: none; font-size: .82rem; background: rgba(0,0,0,.2); }
+  header img { width: 72px; height: 72px; margin: 18px auto 10px; border-radius: 16px; }
+  h1 { font-size: clamp(1.6rem, 5vw, 2.2rem); font-weight: 800; }
+  header p { color: #c9d0e0; margin-top: 6px; }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 0 16px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: -22px auto 22px; position: relative; }
+  .tab { font: inherit; font-weight: 700; padding: 10px 18px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+  .tab[aria-selected="true"] { background: var(--red-bright); border-color: var(--red-bright); color: #fff; }
+  .panel { display: none; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px 18px; margin-bottom: 22px; }
+  .panel.on { display: block; }
+  .panel h2 { font-size: 1.25rem; margin-bottom: 4px; }
+  .panel .sub { color: var(--ink-soft); font-size: .92rem; margin-bottom: 14px; }
+  .cmd { display: flex; align-items: stretch; background: var(--code-bg); border-radius: 12px; overflow: hidden; margin: 10px 0 6px; }
+  .cmd code { flex: 1; min-width: 0; padding: 14px 14px; font-family: var(--mono); font-size: .88rem; color: var(--code-ink); overflow-x: auto; white-space: nowrap; }
+  .cmd button { font: inherit; font-weight: 700; font-size: .85rem; border: 0; padding: 0 16px; background: var(--gold); color: #1c2333; cursor: pointer; white-space: nowrap; }
+  .note { font-size: .88rem; color: var(--ink-soft); }
+  .alt { margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--line); }
+  .alt h3 { font-size: 1rem; margin-bottom: 4px; }
+  .btn { display: inline-block; margin: 8px 8px 0 0; padding: 11px 18px; border-radius: 10px; font-weight: 700; text-decoration: none; background: var(--red-bright); color: #fff; }
+  .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  details { margin-top: 16px; }
+  summary { cursor: pointer; font-weight: 700; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: .82rem; }
+  th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.sha { font-family: var(--mono); font-size: .7rem; word-break: break-all; color: var(--ink-soft); }
+  td a { word-break: break-all; }
+  ol { padding-left: 20px; margin-top: 6px; }
+  footer { text-align: center; color: var(--ink-soft); font-size: .85rem; padding: 10px 16px 40px; }
+</style>
+</head>
+<body>
+<header>
+  <a class="home" href="/" data-t="home">← ViệtTelex</a>
+  <div class="langswitch"><a href="/en/download/" hreflang="en">English</a></div>
+  <img src="/assets/VietTelex-logo.png" alt="">
+  <h1 data-t="title">Tải ViệtTelex</h1>
+  <p data-t="lead">Bộ gõ tiếng Việt miễn phí, mã nguồn mở — cài bằng một lệnh.</p>
+</header>
+
+<main class="wrap">
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-os="linux">🐧 Linux</button>
+    <button class="tab" role="tab" data-os="mac">🍎 macOS</button>
+    <button class="tab" role="tab" data-os="win">🪟 Windows</button>
+    <button class="tab" role="tab" data-os="ios">📱 iPhone</button>
+  </div>
+
+  <section class="panel" id="p-linux" role="tabpanel">
+    <h2 data-t="linuxH">Ubuntu 22.04 / 24.04 (và bản dựa trên Ubuntu)</h2>
+    <p class="sub" data-t="linuxSub">Dán vào Terminal. Lệnh thêm kho APT đã ký, cài VietTelex (Fcitx5 mặc định, hỏi nếu máy đang dùng IBus) và mở hướng dẫn bật bộ gõ. Chạy lại = cập nhật.</p>
+    <div class="cmd"><code>curl -fsSL https://viettelex.com/install.sh | bash</code><button type="button" data-copy="curl -fsSL https://viettelex.com/install.sh | bash" data-t="copy">Chép</button></div>
+    <p class="note" data-t="linuxOpts">Tuỳ chọn: <code>| bash -s -- --ibus</code> (giữ IBus) · <code>--uninstall</code> (gỡ) · <code>--dry-run</code> (chỉ xem các bước).</p>
+    <p class="note"><a href="/install.sh" data-t="readScript">Xem mã script trước khi chạy</a></p>
+    <details>
+      <summary data-t="manual">Tải thủ công (.deb)</summary>
+      <p class="note" data-t="manualNote">Chọn đúng series (~jammy1 = 22.04, ~noble1 = 24.04) và kiến trúc (amd64 = Intel/AMD, arm64 = ARM), rồi: <code>sudo apt install ./*.deb</code>. Cách này không tự cập nhật qua apt — nút “Kiểm tra cập nhật” trong app vẫn cập nhật được.</p>
+      <div id="debs"><p class="note" data-t="loading">Đang tải danh sách…</p></div>
+    </details>
+  </section>
+
+  <section class="panel" id="p-mac" role="tabpanel">
+    <h2>macOS 14+</h2>
+    <p class="sub" data-t="macSub">Dán vào Terminal. Có Homebrew thì dùng Homebrew; không thì tải .pkg bản ổn định, kiểm chữ ký Apple (Developer ID + notarize) rồi cài vào ~/Library/Input Methods.</p>
+    <div class="cmd"><code>curl -fsSL https://viettelex.com/install.sh | bash</code><button type="button" data-copy="curl -fsSL https://viettelex.com/install.sh | bash" data-t="copy">Chép</button></div>
+    <div class="alt">
+      <h3 data-t="brewH">Hoặc Homebrew</h3>
+      <div class="cmd"><code>brew install --cask ptrinh/viettelex/viettelex</code><button type="button" data-copy="brew install --cask ptrinh/viettelex/viettelex" data-t="copy">Chép</button></div>
+      <h3 style="margin-top:14px" data-t="pkgH">Hoặc tải .pkg</h3>
+      <a class="btn" id="pkgBtn" href="https://github.com/ptrinh/viettelex/releases/latest" rel="noopener">⬇︎ VietTelex .pkg</a>
+      <p class="note" style="margin-top:10px" data-t="macNext">Sau khi cài: System Settings → Keyboard → Input Sources → Edit… → + → Vietnamese → ViệtTelex. Bật quyền Trợ năng (Accessibility) khi được hỏi.</p>
+    </div>
+  </section>
+
+  <section class="panel" id="p-win" role="tabpanel">
+    <h2>Windows 10 / 11</h2>
+    <p class="sub" data-t="winSub">Tải bộ cài .msi (đã ký) rồi nhấp đúp.</p>
+    <a class="btn" id="winX64" href="https://github.com/ptrinh/viettelex/releases" rel="noopener">⬇︎ .msi x64</a>
+    <a class="btn ghost" id="winArm" href="https://github.com/ptrinh/viettelex/releases" rel="noopener">⬇︎ .msi ARM64</a>
+    <p class="note" style="margin-top:10px" id="winNotes"></p>
+  </section>
+
+  <section class="panel" id="p-ios" role="tabpanel">
+    <h2>iPhone / iPad</h2>
+    <p class="sub" data-t="iosSub">Bàn phím ViệtTelex trên App Store.</p>
+    <a class="btn" href="https://apps.apple.com/app/id6794425455" rel="noopener">App Store ↗</a>
+  </section>
+</main>
+<footer><a href="https://github.com/ptrinh/viettelex/releases" rel="noopener" data-t="allReleases">Mọi bản phát hành trên GitHub</a></footer>
+
+<script>
+(function () {
+  var EN = document.documentElement.lang === "en";
+  var T = EN ? {
+    home: "← ViệtTelex", title: "Download ViệtTelex",
+    lead: "Free, open-source Vietnamese input method — one command to install.",
+    linuxH: "Ubuntu 22.04 / 24.04 (and Ubuntu-based distros)",
+    linuxSub: "Paste into a terminal. It adds the signed APT repository, installs VietTelex (Fcitx5 by default; asks if you use IBus) and opens the setup guide. Run it again to update.",
+    linuxOpts: "Options: <code>| bash -s -- --ibus</code> (keep IBus) · <code>--uninstall</code> · <code>--dry-run</code> (show the steps only).",
+    readScript: "Read the script before running it", manual: "Manual download (.deb)",
+    manualNote: "Pick your series (~jammy1 = 22.04, ~noble1 = 24.04) and architecture (amd64 = Intel/AMD, arm64 = ARM), then run <code>sudo apt install ./*.deb</code>. This route does not update through apt; the app's “Check for updates” button still updates it.",
+    loading: "Loading…", copy: "Copy", copied: "Copied ✓",
+    macSub: "Paste into Terminal. Uses Homebrew when present; otherwise downloads the stable .pkg, checks Apple's signature (Developer ID + notarization) and installs it into ~/Library/Input Methods.",
+    brewH: "Or Homebrew", pkgH: "Or download the .pkg",
+    macNext: "Then: System Settings → Keyboard → Input Sources → Edit… → + → Vietnamese → ViệtTelex. Allow Accessibility when asked.",
+    winSub: "Download the signed .msi installer and double-click it.",
+    iosSub: "The ViệtTelex keyboard on the App Store.", allReleases: "All releases on GitHub",
+    file: "File", pkgs: "Package", none: "Could not load the list — see GitHub Releases."
+  } : { copy: "Chép", copied: "Đã chép ✓", file: "File", none: "Không tải được danh sách — xem GitHub Releases." };
+  if (EN) document.querySelectorAll("[data-t]").forEach(function (el) {
+    var k = el.getAttribute("data-t"); if (T[k]) el.innerHTML = T[k];
+  });
+
+  // --- tab theo hệ điều hành -----------------------------------------------------
+  function detect() {
+    var p = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "") + " " + navigator.userAgent;
+    if (/iPhone|iPad|iPod/i.test(p) || (/Mac/.test(p) && navigator.maxTouchPoints > 1)) return "ios";
+    if (/Mac/i.test(p)) return "mac";
+    if (/Win/i.test(p)) return "win";
+    if (/Linux|X11|CrOS/i.test(p)) return "linux";
+    return "linux";
+  }
+  function show(os) {
+    document.querySelectorAll(".tab").forEach(function (b) { b.setAttribute("aria-selected", b.dataset.os === os); });
+    document.querySelectorAll(".panel").forEach(function (p) { p.classList.toggle("on", p.id === "p-" + os); });
+    try { if (history.replaceState) history.replaceState(null, "", "#" + os); } catch (e) {}
+  }
+  document.querySelectorAll(".tab").forEach(function (b) { b.addEventListener("click", function () { show(b.dataset.os); }); });
+  var h = location.hash.replace("#", "");
+  show(["linux", "mac", "win", "ios"].indexOf(h) >= 0 ? h : detect());
+
+  // --- chép lệnh -------------------------------------------------------------------
+  document.querySelectorAll("[data-copy]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var done = function () { var o = b.textContent; b.textContent = T.copied; setTimeout(function () { b.textContent = o; }, 1800); };
+      if (navigator.clipboard) navigator.clipboard.writeText(b.dataset.copy).then(done, done); else done();
+    });
+  });
+
+  // --- link theo stable.json ---------------------------------------------------------
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  fetch("/stable.json").then(function (r) { return r.json(); }).then(function (d) {
+    if (d.version) {
+      var pb = document.getElementById("pkgBtn");
+      pb.href = "https://github.com/ptrinh/viettelex/releases/download/v" + d.version + "/VietTelex-" + d.version + ".pkg";
+      pb.textContent = "⬇︎ VietTelex " + d.version + " (.pkg)";
+    }
+    var w = d.windows || {};
+    if (w.x64) { var a = document.getElementById("winX64"); a.href = w.x64; a.textContent = "⬇︎ " + w.version + " x64 (.msi)"; }
+    if (w.arm64) { var b = document.getElementById("winArm"); b.href = w.arm64; b.textContent = "⬇︎ " + w.version + " ARM64 (.msi)"; }
+    if (w.notes) document.getElementById("winNotes").textContent = w.notes;
+    var l = d.linux, box = document.getElementById("debs");
+    if (!l || !l.sha256 || !l.download) { box.innerHTML = '<p class="note">' + esc(T.none) + "</p>"; return; }
+    var groups = {};
+    Object.keys(l.sha256).sort().forEach(function (n) {
+      var m = n.match(/\.([a-z]+)1_(amd64|arm64|all)\.deb$/); if (!m) return;
+      var arches = m[2] === "all" ? ["amd64", "arm64"] : [m[2]];
+      arches.forEach(function (a) { var k = m[1] + " · " + a; (groups[k] = groups[k] || []).push(n); });
+    });
+    var html = "";
+    Object.keys(groups).sort().forEach(function (k) {
+      html += "<table><tr><th>" + esc(k.replace("jammy", "Ubuntu 22.04 (jammy)").replace("noble", "Ubuntu 24.04 (noble)")) + " — " + esc(l.version) + "</th><th>SHA256</th></tr>";
+      groups[k].forEach(function (n) {
+        html += '<tr><td><a href="' + esc(l.download + n) + '" rel="noopener">' + esc(n) + '</a></td><td class="sha">' + esc(l.sha256[n]) + "</td></tr>";
+      });
+      html += "</table>";
+    });
+    box.innerHTML = html;
+  }).catch(function () { document.getElementById("debs").innerHTML = '<p class="note">' + esc(T.none) + "</p>"; });
+})();
+</script>
+</body>
+</html>

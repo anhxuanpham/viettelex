@@ -1,0 +1,79 @@
+#!/bin/bash
+# viettelex-update — helper root cho nút "Cập nhật" của viettelex-settings.
+# Chạy qua pkexec (polkit action org.viettelex.update); chỉ làm đúng hai việc:
+#
+#   viettelex-update apt <gói>...   apt-get update CHỈ kho VietTelex, rồi
+#                                   apt-get install --only-upgrade <gói>
+#   viettelex-update deb <thư mục>  cài các .deb VietTelex trong thư mục (đã kiểm SHA256
+#                                   bởi app) bằng apt-get install ./….deb
+#
+# Chỉ nhận gói trong danh sách trắng; file .deb được chép vào thư mục root-only rồi kiểm
+# tên gói bằng dpkg-deb trước khi cài. Mã thoát: 0 xong, 2 sai tham số, 3 apt/dpkg đang
+# bận, 4 apt lỗi.
+set -u
+export DEBIAN_FRONTEND=noninteractive
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export LC_ALL=C.UTF-8
+
+ALLOWED="libviettelex-core viettelex-fcitx5 viettelex-ibus viettelex-settings viettelex"
+SOURCES="/etc/apt/sources.list.d/viettelex.sources /etc/apt/sources.list.d/viettelex.list"
+LOCK_WAIT=${VT_LOCK_WAIT:-60}
+
+die() { echo "viettelex-update: $2" >&2; exit "$1"; }
+allowed() { case " $ALLOWED " in *" $1 "*) return 0 ;; esac; return 1; }
+
+[ "$(id -u)" = 0 ] || die 2 "cần chạy bằng root (pkexec)"
+[ $# -ge 1 ] || die 2 "usage: viettelex-update apt <pkg>... | deb <dir>"
+
+apt_run() {
+  out=$(mktemp)
+  apt-get -o DPkg::Lock::Timeout="$LOCK_WAIT" "$@" >"$out" 2>&1
+  rc=$?
+  cat "$out"
+  if [ $rc != 0 ]; then
+    if grep -qE "Could not get lock|Unable to acquire the dpkg frontend lock|Unable to lock" "$out"; then
+      rm -f "$out"; exit 3
+    fi
+    rm -f "$out"; exit 4
+  fi
+  rm -f "$out"
+}
+
+mode=$1; shift
+case "$mode" in
+  apt)
+    [ $# -ge 1 ] || die 2 "thiếu tên gói"
+    for p in "$@"; do allowed "$p" || die 2 "gói không được phép: $p"; done
+    src=""
+    for f in $SOURCES; do [ -f "$f" ] && { src=$f; break; }; done
+    [ -n "$src" ] || die 2 "chưa khai báo kho APT VietTelex"
+    echo "==> apt-get update ($src)"
+    apt_run update -o Dir::Etc::sourcelist="$src" -o Dir::Etc::sourceparts=- \
+      -o APT::Get::List-Cleanup=0
+    echo "==> apt-get install --only-upgrade $*"
+    apt_run install --only-upgrade -y "$@"
+    ;;
+  deb)
+    [ $# = 1 ] && [ -d "$1" ] || die 2 "thiếu thư mục .deb"
+    work=$(mktemp -d /tmp/viettelex-update.XXXXXX)   # root 0700
+    trap 'rm -rf "$work"' EXIT
+    n=0
+    for f in "$1"/*.deb; do
+      [ -f "$f" ] || continue
+      b=$(basename "$f")
+      [[ "$b" =~ ^[a-z0-9-]+_[0-9][0-9A-Za-z.~+-]*_(amd64|arm64|all)\.deb$ ]] \
+        || die 2 "tên file lạ: $b"
+      cp -- "$f" "$work/$b" || die 2 "không chép được $b"
+      pkg=$(dpkg-deb -f "$work/$b" Package 2>/dev/null) || die 2 "không phải .deb: $b"
+      allowed "$pkg" || die 2 "gói không được phép: $pkg"
+      n=$((n + 1))
+    done
+    [ $n -gt 0 ] || die 2 "không có .deb nào"
+    chmod 0755 "$work"; chmod 0644 "$work"/*.deb   # _apt đọc được khi sandbox tải gói
+    echo "==> apt-get install ($n .deb)"
+    apt_run install -y "$work"/*.deb
+    ;;
+  *) die 2 "chế độ lạ: $mode" ;;
+esac
+echo "==> xong"
+exit 0
