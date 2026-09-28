@@ -96,7 +96,7 @@ final class KeyboardViewController: UIInputViewController {
             // traitCollectionDidChange không còn được gọi tin cậy trên iOS 17+.
             registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (vc: Self, _: UITraitCollection) in
                 vc.keyboard?.updateDark(AppearancePolicy.isDark(
-                    appearance: vc.textDocumentProxy.keyboardAppearance ?? .default,
+                    appearance: vtSafe(.default) { vc.textDocumentProxy.keyboardAppearance ?? .default },
                     style: vc.traitCollection.userInterfaceStyle))
             }
         }
@@ -328,7 +328,7 @@ final class KeyboardViewController: UIInputViewController {
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
         super.traitCollectionDidChange(previousTraitCollection)
         if previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle {
-            keyboard?.applyAppearance(textDocumentProxy.keyboardAppearance ?? .default, style: traitCollection.userInterfaceStyle)
+            keyboard?.applyAppearance(vtSafe(.default) { self.textDocumentProxy.keyboardAppearance ?? .default }, style: traitCollection.userInterfaceStyle)
         }
     }
 
@@ -339,7 +339,7 @@ final class KeyboardViewController: UIInputViewController {
         if !autoCapitalizeSetting, autoShiftOn { autoShiftOn = false; keyboard.setAutoShift(false) }
         guard let auto = FieldPolicy.autoShift(
             enabled: autoCapitalizeSetting,
-            autocap: textDocumentProxy.autocapitalizationType ?? nil,
+            autocap: vtSafe(nil) { self.textDocumentProxy.autocapitalizationType ?? nil },
             before: { textDocumentProxy.documentContextBeforeInput ?? "" }) else { return }
         autoShiftOn = auto
         keyboard.setAutoShift(auto)
@@ -375,7 +375,7 @@ final class KeyboardViewController: UIInputViewController {
         guard autoSpaceSetting, s.count == 1, let c = s.first,
               carry || AutoSpace.triggers.contains(c) else { return }
         guard fieldTraits?.allowsAutoSpace ?? true, !bridge.passthrough,
-              (textDocumentProxy as UITextInputTraits).isSecureTextEntry != true else { return }
+              vtSafe(false, { (self.textDocumentProxy as UITextInputTraits).isSecureTextEntry == true }) != true else { return }
         if !carry {
             guard AutoSpace.shouldAdd(punct: s, before: textDocumentProxy.documentContextBeforeInput ?? "",
                                       after: textDocumentProxy.documentContextAfterInput) else { return }
@@ -387,15 +387,33 @@ final class KeyboardViewController: UIInputViewController {
     /// Đọc trait ô và cấu hình lại bàn phím CHỈ khi trait đổi (hoặc `force` ở
     /// viewWillAppear). Host đổi ô trong cùng app không gọi viewWillAppear → gọi
     /// thêm ở textDidChange / selectionDidChange. KHÔNG đọc documentIdentifier.
+    private var traitsRetryPending = false
     private func refreshFieldTraits(force: Bool = false) {
         let p = textDocumentProxy
-        let t = FieldTraits(
-            keyboardType: p.keyboardType ?? .default,
-            returnKeyType: p.returnKeyType ?? .default,
-            appearance: p.keyboardAppearance ?? .default,
-            autocorrection: p.autocorrectionType ?? .default,
-            contentType: p.textContentType ?? nil,
-            secure: (p as UITextInputTraits).isSecureTextEntry == true)
+        // iOS 27.0: đọc trait lúc proxy chưa sẵn sàng làm UIKit NÉM NSException
+        // (_controllerState unrecognized selector) → bàn phím chết. Bắt lỗi, giữ trait
+        // cũ và đọc lại sau một nhịp (crash thật 28/09/2026, build 1.2(7)).
+        var read: FieldTraits?
+        if let e = VTCatchException({
+            read = FieldTraits(
+                keyboardType: p.keyboardType ?? .default,
+                returnKeyType: p.returnKeyType ?? .default,
+                appearance: p.keyboardAppearance ?? .default,
+                autocorrection: p.autocorrectionType ?? .default,
+                contentType: p.textContentType ?? nil,
+                secure: (p as UITextInputTraits).isSecureTextEntry == true)
+        }) {
+            TouchLog.write("traits: UIKit exception \(e.name.rawValue) — thử lại sau")
+            if !traitsRetryPending {
+                traitsRetryPending = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                    self?.traitsRetryPending = false
+                    self?.refreshFieldTraits(force: force)
+                }
+            }
+            return
+        }
+        guard let t = read else { return }
         let old = fieldTraits
         guard force || FieldTraits.needsReconfigure(old: old, new: t) else { return }
         fieldTraits = t
@@ -520,7 +538,7 @@ final class KeyboardViewController: UIInputViewController {
         let p: UITextDocumentProxy
         func insertText(_ text: String) { p.insertText(text) }
         func deleteBackward() { p.deleteBackward() }
-        var isSecure: Bool { (p as UITextInputTraits).isSecureTextEntry == true }
+        var isSecure: Bool { vtSafe(false) { (p as UITextInputTraits).isSecureTextEntry == true } }
         var contextBeforeInput: String? { p.documentContextBeforeInput }
         var contextAfterInput: String? { p.documentContextAfterInput }
         var hasSelection: Bool {
@@ -934,7 +952,7 @@ final class KeyboardViewController: UIInputViewController {
         // Trait host đã resolve khi view vào window — sửa sáng/tối nếu lúc
         // viewWillAppear đoán sai (phím sáng trên nền tối).
         keyboard?.updateDark(AppearancePolicy.isDark(
-            appearance: textDocumentProxy.keyboardAppearance ?? .default,
+            appearance: vtSafe(.default) { self.textDocumentProxy.keyboardAppearance ?? .default },
             style: traitCollection.userInterfaceStyle))
         keyboard?.setNeedsGlobe(needsInputModeSwitchKey)
         pushSwipeLayout(prepare: true)       // frame phím đã thật → dựng template ở nền
@@ -2045,3 +2063,13 @@ extension KeyboardViewController {
     }
 }
 
+
+
+/// Đọc một thuộc tính của textDocumentProxy mà UIKit có thể NÉM NSException (iOS 27.0,
+/// proxy chưa sẵn sàng) — trả `fallback` thay vì để bàn phím crash.
+@inline(__always)
+func vtSafe<T>(_ fallback: T, _ read: () -> T) -> T {
+    var value = fallback
+    if VTCatchException({ value = read() }) != nil { return fallback }
+    return value
+}
