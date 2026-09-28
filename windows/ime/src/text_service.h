@@ -6,9 +6,15 @@
 #include "hotkey.h"
 #include "session.h"
 #include "settings.h"
+#include "text_tool_ipc.h"
 #include "tsf_compat.h"
 
+#include <string>
+
 namespace vtx::tip {
+
+// DllCanUnloadNow: unregister the text-tool window class of this module load.
+void UnregisterToolWindowClass();
 
 class TextService final : public ITfTextInputProcessorEx,
                           public ITfThreadMgrEventSink,
@@ -85,6 +91,19 @@ private:
     void flushAsync(ITfContext* ctx);
     void endCompositionAsync();
     bool fieldIsLiteral(ITfContext* ctx, TfEditCookie ec);
+    UINT inputScopesAtSelection(ITfContext* ctx, TfEditCookie ec, int* buf, UINT cap);
+
+    // Công cụ văn bản (text_tool_ipc.h): a message-only window per thread manager that
+    // VietTelex.exe asks for the selection; one pending request at a time.
+    static LRESULT CALLBACK toolWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp);
+    void createToolWindow();
+    void destroyToolWindow();
+    void dropTextToolPending();
+    ITfContext* textToolContext(TextToolStatus& why);
+    void onTextToolRequest(unsigned tool, uint32_t request);
+    int readToolSelection(ITfContext* ctx, TfEditCookie ec);
+    void sendTextToolSelection();
+    void applyTextToolResult();
     void evaluateHost(ITfContext* ctx);
     void resolveActiveApp();
 
@@ -122,6 +141,16 @@ private:
     unsigned long settingsGen_ = 0;
     SwitchHotkey hotkey_ = SwitchHotkey::CtrlShift;
     ModifierChord chord_;
+
+    HWND toolWnd_ = nullptr;
+    struct ToolPending {
+        uint32_t request = 0;       // 0 = none
+        unsigned tool = 0;
+        int status = 0;             // read result: 0 = have text, else TextToolStatus
+        ITfContext* ctx = nullptr;  // owned references
+        ITfRange* range = nullptr;  // the selection that was read
+        std::u16string text, result;
+    } tool_;
 
 };
 

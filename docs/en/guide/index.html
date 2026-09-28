@@ -527,11 +527,19 @@ sudo apt install viettelex-fcitx5   # or: sudo apt install viettelex-ibus</pre>
       </ul>
     </div>
     <div class="card">
+      <h3>Text tools</h3>
+      <ul>
+        <li>Select text in any app, then right-click the VietTelex tray icon → <b>Text tools</b>: <b>Add tones to selection</b> (<code>toi di hoc</code> → tôi đi học), UPPERCASE, lowercase, Title Case, Sentence case, Remove tones. Needs <b>Show icon in the notification area</b>; hide the submenu with Spelling tab → <b>Show text tools in the menu</b>.</li>
+        <li><b>Add-tones hotkey</b> (Spelling tab, off by default): <kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>T</kbd>, <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>T</kbd> or <kbd>Win</kbd><kbd>Alt</kbd><kbd>T</kbd> — adds tones to the selected text in any app, even while another input method is active.</li>
+        <li>VietTelex reads and replaces the selection directly through the input method where the app supports it; elsewhere (older Qt/Java apps, or another keyboard active) it copies the selection and pastes the result — your clipboard is restored. Never in password fields, terminals, remote-desktop apps or apps running as administrator.</li>
+      </ul>
+    </div>
+    <div class="card">
       <h3>Icons, updates, other</h3>
       <ul>
         <li><b>Keyboard icon</b> (taskbar and the <kbd>Win</kbd><kbd>Space</kbd> list): Vᴛ, Star, Vietnam flag, Logo or “VI” text — changing it needs administrator rights.</li>
         <li><b>Notification-area (tray) icon</b> (off by default): shows the current app's Vietnamese/English state (dimmed = English).</li>
-        <li><b>Language</b> of the settings window and tray menu: Tiếng Việt or English.</li>
+        <li><b>Ngôn ngữ / Language</b> of the settings window and tray menu: Tiếng Việt (the default, whatever the Windows display language) or English — applies immediately.</li>
         <li><b>Updates</b>: click Check now, or turn on the automatic check (once a day). A downloaded installer is only run if it's validly signed.</li>
         <li><b>Debug log</b>: records events to <code>%LOCALAPPDATA%\VietTelex\debug.log</code>, never what you type.</li>
         <li><b>Uninstall…</b> in VietTelex settings, or Windows Settings → Apps.</li>

@@ -24,6 +24,18 @@ else()
   target_compile_options(viettelex_engine PRIVATE -Wall -Wextra -Wpedantic -fno-exceptions -fno-rtti)
 endif()
 
+# Text tools (HOA/thường/…, NFC/NFD, case mapping) + Thêm dấu (vnlexicon/enlexicon/vnlm
+# readers). Separate library: only VietTelex.exe links it — the TIP stays small.
+add_library(viettelex_text STATIC
+  src/text_tools.cpp
+  src/add_tones.cpp)
+target_include_directories(viettelex_text PUBLIC include PRIVATE src)
+if(MSVC)
+  target_compile_options(viettelex_text PRIVATE /W4 /permissive- /utf-8 /GR- /EHs-c- /D_HAS_EXCEPTIONS=0)
+else()
+  target_compile_options(viettelex_text PRIVATE -Wall -Wextra -Wpedantic -fno-exceptions -fno-rtti)
+endif()
+
 if(VTX_BUILD_TESTS)
   enable_testing()
   find_package(ZLIB)
@@ -54,4 +66,15 @@ if(VTX_BUILD_TESTS)
     set_target_properties(vtx_c_smoke PROPERTIES LINKER_LANGUAGE CXX)
   endif()
   add_test(NAME c_abi COMMAND vtx_c_smoke)
+
+  # Shared fixtures (iOS/Android parity) + the data files the app embeds.
+  set(VTX_FIXTURES "${CMAKE_CURRENT_SOURCE_DIR}/../../iOS/KeyboardTests/Fixtures")
+  set(VTX_KB_RESOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../../iOS/Keyboard/Resources")
+  add_executable(vtx_text_tests tests/text_tests.cpp)
+  target_link_libraries(vtx_text_tests PRIVATE viettelex_text)
+  if(MSVC)
+    target_compile_options(vtx_text_tests PRIVATE /utf-8)
+  endif()
+  add_test(NAME text_tools COMMAND vtx_text_tests "${VTX_FIXTURES}" "${VTX_KB_RESOURCES}"
+                                   "${CMAKE_CURRENT_SOURCE_DIR}/tests/unicode-sample.txt")
 endif()

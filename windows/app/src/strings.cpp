@@ -93,8 +93,10 @@ const Pair kStrings[] = {
     {L"Hiện biểu tượng ở khay hệ thống", L"Show icon in the notification area"},
     {L"Hiện trạng thái Việt/Anh của ứng dụng đang dùng (biểu tượng mờ = tiếng Anh). Tắt thì mở lại Cài đặt bằng VietTelex trong menu Start.",
      L"Shows Vietnamese/English for the app in use (dimmed icon = English). When off, reopen Settings from VietTelex in the Start menu."},
-    {L"Ngôn ngữ", L"Language"},
-    {L"Ngôn ngữ của cửa sổ này và menu khay.", L"Language of this window and the tray menu."},
+    // Bilingual on purpose: findable whichever language the window is in.
+    {L"Ngôn ngữ / Language", L"Ngôn ngữ / Language"},
+    {L"Ngôn ngữ của cửa sổ này và menu khay. Mặc định tiếng Việt.",
+     L"Language of this window and the tray menu. Vietnamese by default."},
     {L"Tự kiểm tra cập nhật", L"Check for updates automatically"},
     {L"Mỗi ngày một lần hỏi viettelex.com có bản mới không. Không gửi dữ liệu nào khác.",
      L"Asks viettelex.com once a day whether a new version exists. Nothing else is sent."},
@@ -163,6 +165,26 @@ const Pair kStrings[] = {
      L"Could not read this option. Open Settings → Typing → Advanced keyboard settings to check."},
     {L"Bật", L"Turn on"},
     {L"Mở cài đặt", L"Open Settings"},
+
+    {L"Công cụ văn bản", L"Text tools"},
+    {L"Hiện công cụ văn bản trong menu", L"Show text tools in the menu"},
+    {L"Bôi đen chữ ở ứng dụng bất kỳ rồi bấm chuột phải biểu tượng VietTelex ở khay → Công cụ văn bản: thêm dấu cho "
+     L"đoạn không dấu (toi di hoc → tôi đi học), HOA, thường, Hoa Đầu Từ, Hoa đầu câu, xoá dấu. Cần bật biểu tượng ở khay.",
+     L"Select text in any app, then right-click the VietTelex tray icon → Text tools: add tones to unaccented text "
+     L"(toi di hoc → tôi đi học), UPPERCASE, lowercase, Title Case, Sentence case, remove tones. Needs the tray icon."},
+    {L"Phím tắt Thêm dấu", L"Add-tones hotkey"},
+    {L"Thêm dấu cho vùng chọn ở mọi ứng dụng, kể cả khi đang dùng bộ gõ khác. Nơi không đọc được vùng chọn, VietTelex "
+     L"sao chép rồi dán kết quả — clipboard của bạn được trả lại. Không chạy trong ô mật khẩu và cửa sổ dòng lệnh.",
+     L"Adds tones to the selection in any app, even with another input method active. Where the selection can’t be "
+     L"read directly, VietTelex copies it and pastes the result — your clipboard is restored. Never in password "
+     L"fields or terminals."},
+    {L"Công cụ văn bản", L"Text tools"},
+    {L"Thêm dấu cho vùng chọn", L"Add tones to selection"},
+    {L"HOA", L"UPPERCASE"},
+    {L"thường", L"lowercase"},
+    {L"Hoa Đầu Từ", L"Title Case"},
+    {L"Hoa đầu câu", L"Sentence case"},
+    {L"Xoá dấu", L"Remove tones"},
 };
 static_assert(sizeof(kStrings) / sizeof(kStrings[0]) == static_cast<size_t>(S::Count), "string table size");
 }  // namespace

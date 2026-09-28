@@ -64,7 +64,14 @@ extern "C" HRESULT __stdcall DllGetClassObject(REFCLSID clsid, REFIID riid, void
     return g_factory.QueryInterface(riid, ppv);
 }
 
-extern "C" HRESULT __stdcall DllCanUnloadNow() { return g_dllRefCount > 0 ? S_FALSE : S_OK; }
+extern "C" HRESULT __stdcall DllCanUnloadNow() {
+    if (g_dllRefCount > 0) return S_FALSE;
+    // About to be unloaded: drop the text-tool window class (outside the loader lock; its
+    // name is unique per module load, so even a missed unregister can never hand a later
+    // load a stale window procedure — see TextService::createToolWindow).
+    UnregisterToolWindowClass();
+    return S_OK;
+}
 
 extern "C" HRESULT __stdcall DllRegisterServer() {
     HRESULT hr = RegisterServer();
