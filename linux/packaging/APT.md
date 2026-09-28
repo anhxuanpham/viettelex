@@ -29,7 +29,7 @@ sudo apt install viettelex-fcitx5     # khuyên dùng (KDE, hoặc GNOME sau khi
 Sau khi cài: mở **VietTelex** trong menu ứng dụng (hoặc `viettelex-settings --onboarding`)
 và làm theo hướng dẫn bật bộ gõ. Cập nhật về sau: `sudo apt update && sudo apt upgrade`.
 
-Gỡ: `sudo apt remove viettelex-fcitx5 viettelex-ibus viettelex-settings libviettelex-core`,
+Gỡ: `sudo apt remove viettelex-fcitx5 viettelex-ibus viettelex-text-tools viettelex-settings libviettelex-core`,
 rồi xoá `/etc/apt/sources.list.d/viettelex.sources` và `/etc/apt/keyrings/viettelex.gpg`.
 
 ## English — install
@@ -50,7 +50,8 @@ set, then install it with one command:
 
 ```sh
 sudo apt install ./libviettelex-core_*_amd64.deb ./viettelex-fcitx5_*_amd64.deb \
-                 ./viettelex-settings_*_all.deb
+                 ./viettelex-text-tools_*_amd64.deb ./viettelex-settings_*_all.deb
+
 ```
 
 Cách này không tự cập nhật; nút *Kiểm tra cập nhật* trong app báo khi có bản mới.

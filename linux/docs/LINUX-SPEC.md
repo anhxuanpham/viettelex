@@ -151,8 +151,27 @@ Rủi ro còn lại: `IBUS_ENABLE_SYNC_MODE=1` (không mặc định) + gõ rấ
   `QT_IM_MODULE`, terminal luôn preedit.
 - Lưu `~/.config/viettelex/config.toml` + `shortcuts.yml`; frontend nghe inotify → áp ngay,
   không cần khởi động lại IM (bài học Android: đổi setting phải có hiệu lực tức thì).
+- Ngôn ngữ giao diện vi/en (`i18n.py`, chữ Việt là khoá như iOS `L10n`; mặc định `vi` bất kể
+  locale) — cùng key `ui_language` đổi nhãn menu Fcitx5/IBus (`common/src/text_tools.cpp`
+  `uiText`).
+
+### 5.4 Công cụ văn bản (28/09/2026) — ngang bản macOS `TextActions.swift`
+- Menu bộ gõ → **Công cụ…** (Fcitx5: `SimpleAction` + `Menu` ở status area; IBus:
+  `PROP_TYPE_MENU` "Tools" → `Tool.<id>`) + phím tắt Thêm dấu tuỳ chọn (`add_tones_hotkey`,
+  `Session::isAddTonesHotkey`). Hợp đồng: `common/SETTINGS.md` §7.
+- Biến đổi = process con `viettelex-text-tool` (SwiftPM `engine-capi`, target `TextToolCLI`:
+  SYMLINK tới `iOS/Keyboard/{TextTools,AddTones,SyllableLM,VNLexicon2,VNSuggest,SwipeLexicon,
+  SwipeEnglish}.swift` + package TelexCore; `#if VIETTELEX_CLI` chỉ đổi chỗ tìm dữ liệu).
+  ctest `text_tool_fixtures` chạy fixture chung `iOS/KeyboardTests/Fixtures/{text-tools,
+  add-tones}.txt`. Có Foundation (static) — nằm ngoài `.so` engine và ngoài process IM.
+- Lấy chữ: surrounding có vùng chọn → PRIMARY (addon clipboard Fcitx5 / `wl-paste`, `xclip`,
+  `xsel` nếu có). Thay: commit đè vùng chọn; không đụng clipboard. Chạy nền
+  (`TextToolRunner`), kết quả về main loop; mất focus (menu) → commit khi focus lại ≤ 3 s.
+- Icon khay theo Việt/Anh: Fcitx5 `subModeIconImpl` (`viettelex` / `viettelex-off`), IBus
+  icon + symbol property InputMode (`VT` / `E`).
 
 ## 6. Riêng Linux cần xử lý
+
 
 | Vấn đề | Cách xử lý |
 |---|---|

@@ -31,7 +31,8 @@ chọn đúng series (`~jammy1` = 22.04, `~noble1` = 24.04) và kiến trúc (`a
 
 ```sh
 sudo apt install ./libviettelex-core_*_amd64.deb ./viettelex-fcitx5_*_amd64.deb \
-                 ./viettelex-settings_*_all.deb     # IBus: thay viettelex-fcitx5 bằng viettelex-ibus
+                 ./viettelex-text-tools_*_amd64.deb ./viettelex-settings_*_all.deb
+                 # IBus: thay viettelex-fcitx5 bằng viettelex-ibus
 ```
 
 **Sau khi cài:** mở **VietTelex** trong menu ứng dụng (hoặc chạy `viettelex-settings --onboarding`)
@@ -55,10 +56,37 @@ Ubuntu 22.04 / 24.04, amd64 and arm64.
    `sudo apt install viettelex-fcitx5`, or `viettelex-ibus` for IBus.
 2. **Single download** from GitHub Releases. Pick your series (`~jammy1` = 22.04,
    `~noble1` = 24.04) and architecture, then run `sudo apt install ./libviettelex-core_*.deb
-   ./viettelex-fcitx5_*.deb ./viettelex-settings_*_all.deb`. This route does not auto-update.
+   ./viettelex-fcitx5_*.deb ./viettelex-text-tools_*.deb ./viettelex-settings_*_all.deb`.
+   This route does not auto-update.
 
 Then open **VietTelex** from the app menu and follow the setup guide. `Ctrl+Space` switches
 between Vietnamese and English.
+
+## Biểu tượng khay, ngôn ngữ, công cụ văn bản / Tray icon, language, text tools
+
+- **Biểu tượng khay / Tray icon** — giống thanh menu macOS: **Vᴛ** trong ô vuông bo góc khi gõ
+  tiếng Việt, **E** (cùng kiểu, như logo EN phím cách iOS) khi chuyển sang English. Fcitx5: icon
+  bộ gõ theo trạng thái (tray / kimpanel); IBus: icon + ký hiệu của property InputMode (GNOME
+  Shell chỉ hiện chữ: `VT` / `E`). Có bản `-symbolic` để GNOME/KDE tự đổi màu theo theme sáng/tối.
+  Nguồn: `Scripts/make_linux_status_icons.swift` (cùng hình học `make_space_logo.swift`).
+  / *Same as the macOS menu bar: Vᴛ in a rounded square for Vietnamese, E for English (the iOS
+  space-bar EN logo). GNOME Shell shows the text symbol `VT` / `E`.*
+- **Ngôn ngữ / Language** — Tuỳ chỉnh → "Ngôn ngữ / Language": Tiếng Việt (mặc định, kể cả máy
+  cài tiếng Anh) hoặc English; áp dụng ngay cho app cài đặt và menu bộ gõ. / *Settings →
+  Tuỳ chỉnh → "Ngôn ngữ / Language": Vietnamese (default, whatever the system locale) or
+  English; applies at once to the settings app and the input-method menu.*
+- **Công cụ văn bản / Text tools** — bôi đen chữ ở app bất kỳ rồi mở menu bộ gõ → **Công cụ…**:
+  Thêm dấu cho vùng chọn (toi di hoc → tôi đi học), HOA, thường, Hoa Đầu Từ, Hoa đầu câu, Xoá
+  dấu. Phím tắt Thêm dấu tuỳ chọn (mặc định tắt) ở Tuỳ chỉnh → Công cụ văn bản. Cần gói
+  `viettelex-text-tools` (được cài kèm theo mặc định). Chữ lấy từ surrounding text của app; app
+  không báo surrounding thì dùng vùng chọn PRIMARY (Fcitx5 tự đọc; IBus cần `wl-clipboard` hoặc
+  `xclip`/`xsel` đã cài sẵn). Không đụng clipboard. Không chạy ở ô mật khẩu và terminal.
+  / *Select text anywhere, then input-method menu → **Tools…**: add tones to unaccented text,
+  UPPERCASE, lowercase, Title Case, Sentence case, remove tones. Optional Add-tones hotkey (off
+  by default). Needs `viettelex-text-tools` (installed as a recommended package). The selection
+  comes from the app's surrounding text, else the PRIMARY selection (Fcitx5 built in; IBus via
+  an already installed `wl-clipboard` / `xclip` / `xsel`). The clipboard is never touched.
+  Disabled in password fields and terminals.*
 
 ## Tương thích ứng dụng / App compatibility
 
@@ -108,7 +136,7 @@ to your machine, each with a copy button.
 
 | Thư mục | Nội dung |
 |---|---|
-| `engine-capi/` | `libtelexcore` — TelexCore Swift xuất C ABI |
+| `engine-capi/` | `libtelexcore` — TelexCore Swift xuất C ABI; `viettelex-text-tool` — công cụ văn bản (symlink nguồn iOS `TextTools`/`AddTones`, fixture chung) |
 | `common/` | logic dùng chung của frontend + [hợp đồng cài đặt](common/SETTINGS.md) |
 | `fcitx5/`, `ibus/` | frontend |
 | `settings/` | `viettelex-settings` (Python + PyGObject, GTK4 + libadwaita ≥ 1.1) |
@@ -116,7 +144,9 @@ to your machine, each with a copy button.
 
 ## App cài đặt (`settings/`)
 
-Tab: Kiểu gõ · Tuỳ chỉnh · Gõ tắt · Bảng cơ chế gõ · Tương thích · Giới thiệu. Ghi
+Tab: Kiểu gõ · Tuỳ chỉnh · Gõ tắt · Bảng cơ chế gõ · Tương thích · Giới thiệu (giao diện tiếng
+Việt mặc định, có English — bảng dịch `viettelex_settings/i18n.py`). Ghi
+
 `~/.config/viettelex/config.toml` + `shortcuts.yml` (ghi nguyên tử); frontend nghe inotify
 nên đổi là có hiệu lực ngay. Gõ tắt và bảng cơ chế gõ nhập/xuất cùng định dạng YAML với
 bản macOS (nhận cả JSON / txt `key:value`).

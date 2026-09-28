@@ -8,6 +8,11 @@ apt-get install -y -qq /debs/*.deb fcitx5 ibus python3-gi dbus >/tmp/apt.log 2>&
 export HOME=/tmp/h; mkdir -p "$HOME"
 dbus-run-session -- bash -c '
   fail=0
+  # Công cụ văn bản: helper cài đúng chỗ, tự tìm /usr/share/viettelex, thêm dấu được.
+  tool=$(ls /usr/lib/*/viettelex/viettelex-text-tool 2>/dev/null | head -1)
+  out=$(printf "toi di hoc" | "$tool" addTones 2>&1)
+  if [ "$out" = "tôi đi học" ]; then echo "text-tool: OK"; else echo "text-tool: FAIL ($out)"; fail=1; fi
+
   fcitx5 --disable=wayland,xim,x11 >/tmp/f.log 2>&1 & sleep 4
   python3 - <<PY || fail=1
 import sys

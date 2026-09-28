@@ -10,6 +10,8 @@ import glob
 import os
 import shutil
 
+from .i18n import _
+
 WAYLAND_IME_FLAGS = "--enable-wayland-ime --wayland-text-input-version=3"
 WAYLAND_IME_FLAGS_KDE = "--enable-wayland-ime --wayland-text-input-version=1"  # KWin: text-input-v1
 X11_FLAG = "--ozone-platform=x11"
@@ -60,7 +62,7 @@ def _has_ime_flag(text):
 
 def _os_version(os_release):
     for line in os_release.splitlines():
-        k, _, v = line.partition("=")
+        k, _sep, v = line.partition("=")
         if k.strip() == "VERSION_ID":
             return v.strip().strip('"')
     return ""
@@ -161,7 +163,7 @@ def im_config_mode(xinputrc):
 def chromium_fix(apps, desktop):
     """Lệnh copy được cho các app Chromium/Electron chưa cấu hình."""
     flags = WAYLAND_IME_FLAGS_KDE if _is_kde(desktop) else WAYLAND_IME_FLAGS
-    lines = ["# Chạy thử một lần:"]
+    lines = [_("# Chạy thử một lần:")]
     first = next(iter(apps.values()))
     exe = {"Google Chrome": "google-chrome", "Chromium": "chromium", "VS Code": "code",
            "Slack": "slack", "Discord": "discord"}[first["name"]]
@@ -169,13 +171,13 @@ def chromium_fix(apps, desktop):
     lines.append("")
     ff = [a for a in apps.values() if a["flags_file"] and a["kind"] == "deb"]
     if ff:
-        lines.append("# Cố định, cách A — file cờ (app đọc khi khởi động):")
+        lines.append(_("# Cố định, cách A — file cờ (app đọc khi khởi động):"))
     for a in ff:
         lines.append("printf -- '%s\\n' >> ~/.config/%s" % (
             "\\n".join(flags.split()), a["flags_file"]))
     desk = [a for a in apps.values() if a["kind"] == "deb" and a["desktop"].startswith("/usr/")]
     if desk:
-        lines.append("# Cố định, cách B — sửa dòng Exec của file .desktop (mọi app):")
+        lines.append(_("# Cố định, cách B — sửa dòng Exec của file .desktop (mọi app):"))
         lines.append("mkdir -p ~/.local/share/applications")
         for a in desk:
             base = os.path.basename(a["desktop"])
@@ -183,10 +185,10 @@ def chromium_fix(apps, desktop):
                          % (flags, a["desktop"], base))
     others = [a["name"] for a in apps.values() if a["kind"] != "deb"]
     if others:
-        lines.append("# %s (snap/flatpak): thêm cờ trên vào dòng Exec= của file .desktop" %
+        lines.append(_("# %s (snap/flatpak): thêm cờ trên vào dòng Exec= của file .desktop") %
                      ", ".join(others))
     lines.append("")
-    lines.append("# Hoặc chạy qua XWayland (chắc ăn nhất):  … %s" % X11_FLAG)
+    lines.append(_("# Hoặc chạy qua XWayland (chắc ăn nhất):  … %s") % X11_FLAG)
     return "\n".join(lines)
 
 
@@ -202,64 +204,64 @@ def assess(snap):
     todo = {k: v for k, v in snap.get("apps", {}).items() if not v.get("configured")}
     if wayland and todo:
         names = ", ".join(a["name"] for a in todo.values())
-        body = ("Chrome ≥ 140 và app Electron ≥ 38 mặc định chạy Wayland gốc và không nhận bộ gõ "
-                "nếu thiếu cờ %s." % (WAYLAND_IME_FLAGS_KDE if _is_kde(desktop) else WAYLAND_IME_FLAGS))
+        body = (_("Chrome ≥ 140 và app Electron ≥ 38 mặc định chạy Wayland gốc và không nhận bộ gõ "
+                "nếu thiếu cờ %s.") % (WAYLAND_IME_FLAGS_KDE if _is_kde(desktop) else WAYLAND_IME_FLAGS))
         if _is_gnome(desktop):
-            body += " Cờ này chạy tốt với GNOME + IBus."
-        body += " Cách khác: %s (chạy qua XWayland)." % X11_FLAG
+            body += _(" Cờ này chạy tốt với GNOME + IBus.")
+        body += _(" Cách khác: %s (chạy qua XWayland).") % X11_FLAG
         out.append({"id": "chromium_wayland", "level": "warn",
-                    "title": "%s: cần cờ bật bộ gõ trên Wayland" % names,
+                    "title": _("%s: cần cờ bật bộ gõ trên Wayland") % names,
                     "body": body, "fix": chromium_fix(todo, desktop)})
 
     if x11 and snap.get("kitty") and snap.get("glfw_im_module", "").lower() != "ibus":
         out.append({"id": "kitty_x11", "level": "warn",
-                    "title": "kitty: cần GLFW_IM_MODULE=ibus",
-                    "body": "Trên X11, kitty chỉ nhận bộ gõ khi có biến này (dùng cho cả IBus lẫn "
-                            "Fcitx5). Đăng nhập lại sau khi thêm.",
+                    "title": _("kitty: cần GLFW_IM_MODULE=ibus"),
+                    "body": _("Trên X11, kitty chỉ nhận bộ gõ khi có biến này (dùng cho cả IBus lẫn "
+                            "Fcitx5). Đăng nhập lại sau khi thêm."),
                     "fix": "echo 'export GLFW_IM_MODULE=ibus' >> ~/.profile"})
 
     if x11 and snap.get("jetbrains") and not snap.get("jetbrains_configured"):
         out.append({"id": "jetbrains_x11", "level": "warn",
-                    "title": "JetBrains IDE: thêm tuỳ chọn JVM",
-                    "body": "Trên X11, IntelliJ/PyCharm… có thể mất bộ gõ sau khi đổi cửa sổ. "
-                            "Help → Edit Custom VM Options…, thêm dòng dưới rồi khởi động lại IDE.",
+                    "title": _("JetBrains IDE: thêm tuỳ chọn JVM"),
+                    "body": _("Trên X11, IntelliJ/PyCharm… có thể mất bộ gõ sau khi đổi cửa sổ. "
+                            "Help → Edit Custom VM Options…, thêm dòng dưới rồi khởi động lại IDE."),
                     "fix": JETBRAINS_OPT})
 
     if snap.get("rofi"):
         out.append({"id": "rofi", "level": "info",
-                    "title": "rofi không hỗ trợ bộ gõ",
-                    "body": "rofi không gõ được tiếng Việt có dấu. Dùng Ulauncher hoặc KRunner "
-                            "(KDE) nếu cần tìm bằng tiếng Việt.", "fix": ""})
+                    "title": _("rofi không hỗ trợ bộ gõ"),
+                    "body": _("rofi không gõ được tiếng Việt có dấu. Dùng Ulauncher hoặc KRunner "
+                            "(KDE) nếu cần tìm bằng tiếng Việt."), "fix": ""})
 
     if _is_gnome(desktop):
         out.append({"id": "gnome_overview", "level": "info",
-                    "title": "Ô tìm kiếm Tổng quan GNOME có thể mất chữ đầu",
-                    "body": "Gõ ngay khi vừa mở Tổng quan, chữ đầu tiên có thể bị rơi (lỗi IBus "
-                            "upstream ibus#2246). Mở Tổng quan, chờ một nhịp rồi gõ.", "fix": ""})
+                    "title": _("Ô tìm kiếm Tổng quan GNOME có thể mất chữ đầu"),
+                    "body": _("Gõ ngay khi vừa mở Tổng quan, chữ đầu tiên có thể bị rơi (lỗi IBus "
+                            "upstream ibus#2246). Mở Tổng quan, chờ một nhịp rồi gõ."), "fix": ""})
 
     if fw == "fcitx5" and snap.get("os_version") == "22.04" and snap.get("snap_apps"):
         out.append({"id": "snap_fcitx5_jammy", "level": "warn",
-                    "title": "App Snap + Fcitx5 trên Ubuntu 22.04",
-                    "body": "Trên 22.04, app dạng Snap (Firefox, Chromium…) thường không nhận "
-                            "Fcitx5. Dùng IBus (viettelex-ibus), hoặc cài bản .deb/Flatpak của app.",
+                    "title": _("App Snap + Fcitx5 trên Ubuntu 22.04"),
+                    "body": _("Trên 22.04, app dạng Snap (Firefox, Chromium…) thường không nhận "
+                            "Fcitx5. Dùng IBus (viettelex-ibus), hoặc cài bản .deb/Flatpak của app."),
                     "fix": "sudo apt install viettelex-ibus && im-config -n ibus"})
 
     if (not _is_gnome(desktop) and snap.get("fcitx5_installed") and snap.get("ibus_installed")
             and snap.get("fcitx5_addon") and im_config_mode(snap.get("xinputrc", "")) == "auto"):
         out.append({"id": "imconfig_auto", "level": "warn",
-                    "title": "im-config đang để tự động: IBus sẽ thắng Fcitx5",
-                    "body": "Máy có cả IBus lẫn Fcitx5; ngoài GNOME, im-config chế độ auto chọn "
+                    "title": _("im-config đang để tự động: IBus sẽ thắng Fcitx5"),
+                    "body": _("Máy có cả IBus lẫn Fcitx5; ngoài GNOME, im-config chế độ auto chọn "
                             "IBus. Muốn dùng VietTelex qua Fcitx5 thì chọn hẳn Fcitx5 rồi đăng "
-                            "nhập lại.",
+                            "nhập lại."),
                     "fix": "im-config -n fcitx5"})
 
     if wayland and snap.get("qt5") and not snap.get("qt_im_module"):
         mod = "ibus" if fw == "ibus" else "fcitx"
         out.append({"id": "qt5_wayland", "level": "warn",
-                    "title": "App Qt5 trên Wayland: thiếu QT_IM_MODULE",
-                    "body": "App Qt5 chạy Wayland gốc không có bộ gõ nếu thiếu QT_IM_MODULE. "
+                    "title": _("App Qt5 trên Wayland: thiếu QT_IM_MODULE"),
+                    "body": _("App Qt5 chạy Wayland gốc không có bộ gõ nếu thiếu QT_IM_MODULE. "
                             "Qt ≥ 6.8.2 đọc QT_IM_MODULES (danh sách thử lần lượt). Đăng nhập "
-                            "lại sau khi thêm.",
+                            "lại sau khi thêm."),
                     "fix": "mkdir -p ~/.config/environment.d\n"
                            "printf 'QT_IM_MODULE=%s\\nQT_IM_MODULES=wayland;%s\\n' "
                            ">> ~/.config/environment.d/90-viettelex.conf" %
@@ -267,11 +269,11 @@ def assess(snap):
 
     if snap.get("terminals"):
         out.append({"id": "terminal_preedit", "level": "info",
-                    "title": "Terminal: gõ thẳng khi được, còn lại preedit",
-                    "body": "Terminal nhận phím qua IBus GTK3 hoặc Fcitx5 (fcitx5-gtk3, fcitx5-qt) — "
+                    "title": _("Terminal: gõ thẳng khi được, còn lại preedit"),
+                    "body": _("Terminal nhận phím qua IBus GTK3 hoặc Fcitx5 (fcitx5-gtk3, fcitx5-qt) — "
                             "gnome-terminal, tilix, konsole… trên X11 — được gõ thẳng như UniKey "
                             "(sửa dấu bằng Backspace, không gạch chân). Terminal GTK4 (Ptyxis, "
                             "Console), phiên Wayland GNOME, kitty/alacritty/foot và terminal của "
                             "VS Code dùng preedit: ở đó Backspace gửi đi không chắc đến trước chữ "
-                            "mới.", "fix": ""})
+                            "mới."), "fix": ""})
     return out

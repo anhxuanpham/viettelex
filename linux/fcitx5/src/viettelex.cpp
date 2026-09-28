@@ -6,12 +6,16 @@
 // Compatible with Fcitx5 5.0.x (Ubuntu 22.04) through 5.1.x (24.04/26.04).
 // On GNOME Wayland, Fcitx5 < 5.1.22 names every app "gnome-shell" (one shared context);
 // the focused app is then read from gnome-shell over the session bus (GnomeAppMonitor).
+// Text tools ("Công cụ…" in the status area + the optional Thêm dấu hotkey) run the helper
+// viettelex-text-tool off the main thread (viettelex::TextToolRunner) and commit the result
+// over the selection. Menu labels follow Settings::uiLanguage; the tray icon follows Việt/Anh.
 
 #include "viettelex/app.h"
 #include "viettelex/gnome.h"
 #include "viettelex/gnome_monitor.h"
 #include "viettelex/session.h"
 #include "viettelex/settings.h"
+#include "viettelex/text_tools.h"
 #include "viettelex/watcher.h"
 
 #include <fcitx-config/configuration.h>
@@ -32,12 +36,26 @@
 #include <fcitx/inputmethodengine.h>
 #include <fcitx/inputpanel.h>
 #include <fcitx/instance.h>
+#include <fcitx/menu.h>
 #include <fcitx/statusarea.h>
 #include <fcitx/text.h>
 #include <fcitx/userinterfacemanager.h>
 
+#include <array>
+#include <chrono>
 #include <memory>
 #include <string>
+
+// Fcitx5 clipboard addon (fcitx5-modules-dev): PRIMARY selection without external tools.
+#if defined(VT_HAVE_FCITX_CLIPBOARD)
+#if __has_include(<clipboard_public.h>)
+#include <clipboard_public.h>
+#elif __has_include(<fcitx-module/clipboard/clipboard_public.h>)
+#include <fcitx-module/clipboard/clipboard_public.h>
+#else
+#undef VT_HAVE_FCITX_CLIPBOARD
+#endif
+#endif
 
 namespace {
 
@@ -145,16 +163,22 @@ public:
     std::string clientId;  // ic->program()
     bool stateLoaded = false;
     bool rememberState = true;  // AppPolicy.rememberState of the current field
+    // Text tool result that arrived while this context had no focus (the tray menu took
+    // it): committed on the next activation if still fresh.
+    std::string pendingResult;
+    std::chrono::steady_clock::time_point pendingUntil;
 };
 
-class VietTelexEngine final : public fcitx::InputMethodEngine {
+class VietTelexEngine final : public fcitx::InputMethodEngineV2 {
 public:
     explicit VietTelexEngine(fcitx::Instance *instance)
         : instance_(instance), appState_(vt::appStatePath()),
-          factory_([this](fcitx::InputContext &ic) { return new VietTelexState(this, &ic); }) {
+          factory_([this](fcitx::InputContext &ic) { return new VietTelexState(this, &ic); }),
+          runner_([this](std::function<void()> f) { dispatcher_.schedule(std::move(f)); }) {
         appState_.load();
+        dispatcher_.attach(&instance_->eventLoop());
         instance_->inputContextManager().registerProperty("viettelexState", &factory_);
-        modeAction_.setShortText("Tiếng Việt");
+        modeAction_.setShortText(tr("Tiếng Việt"));
         modeAction_.connect<fcitx::SimpleAction::Activated>([this](fcitx::InputContext *ic) {
             if (!ic) return;
             auto *st = state(ic);
@@ -163,6 +187,23 @@ public:
             onToggled(st, st->session.vietnamese());
         });
         instance_->userInterfaceManager().registerAction("viettelex-mode", &modeAction_);
+        // "Công cụ…" → the six text tools (like macOS: VietTelex menu → Công cụ…).
+        for (int i = 0; i < vt::kTextToolCount; ++i) {
+            vt::TextTool tool = vt::textToolAt(i);
+            auto &a = toolActions_[size_t(i)];
+            a.connect<fcitx::SimpleAction::Activated>([this, tool](fcitx::InputContext *ic) {
+                try {
+                    if (ic) runTextTool(ic, tool);
+                } catch (...) {
+                }
+            });
+            instance_->userInterfaceManager().registerAction(std::string("viettelex-tool-") + vt::textToolId(tool),
+                                                             &a);
+            toolsMenu_.addAction(&a);
+        }
+        toolsAction_.setMenu(&toolsMenu_);
+        instance_->userInterfaceManager().registerAction("viettelex-tools", &toolsAction_);
+        updateLabels();
         if (watcher_.fd() >= 0) {
             ioEvent_ = instance_->eventLoop().addIOEvent(
                 watcher_.fd(), fcitx::IOEventFlag::In,
@@ -228,7 +269,14 @@ public:
             ensureAppState(st);
             FcitxClient client(ic);
             refreshFieldFlags(st, client);
-            if (st->session.processKey(toVt(event), client)) event.filterAndAccept();
+            vt::KeyEvent ev = toVt(event);
+            if (st->session.isAddTonesHotkey(ev)) {
+                // Consumed even when nothing is selected: the chord belongs to this tool.
+                runTextTool(ic, vt::TextTool::AddTones);
+                event.filterAndAccept();
+                return;
+            }
+            if (st->session.processKey(ev, client)) event.filterAndAccept();
         } catch (...) {
             // never take fcitx5 down with us: the key simply reaches the app
         }
@@ -243,7 +291,9 @@ public:
             ensureAppState(st);
             st->session.focusIn();
             ic->statusArea().addAction(fcitx::StatusGroup::InputMethod, &modeAction_);
+            updateToolsAction(ic);
             updateAction(st);
+            commitPendingResult(st);
         } catch (...) {
         }
     }
@@ -266,7 +316,16 @@ public:
     }
 
     std::string subMode(const fcitx::InputMethodEntry &, fcitx::InputContext &ic) override {
-        return state(&ic)->session.vietnamese() ? "Tiếng Việt" : "English";
+        return tr(state(&ic)->session.vietnamese() ? "Tiếng Việt" : "English");
+    }
+
+    // Tray / panel icon follows Việt/Anh like the macOS menu bar: Vᴛ or E
+    // (linux/packaging/data/icons — Scripts/make_linux_status_icons.swift).
+    std::string subModeIconImpl(const fcitx::InputMethodEntry &, fcitx::InputContext &ic) override {
+        return state(&ic)->session.vietnamese() ? "viettelex" : "viettelex-off";
+    }
+    std::string subModeLabelImpl(const fcitx::InputMethodEntry &, fcitx::InputContext &ic) override {
+        return state(&ic)->session.vietnamese() ? "VT" : "E";
     }
 
     // MARK: config (Fcitx5 config UI → config.toml; the watcher then applies it)
@@ -320,8 +379,8 @@ private:
     std::string effectiveAppId(const std::string &clientId) {
         if (!gnomeSession_ || !vt::gnome::isSharedShellClientId(clientId)) return clientId;
         if (!gnome_) {
-            dispatcher_.attach(&instance_->eventLoop());
-            gnome_ = std::make_unique<vt::GnomeAppMonitor>();
+            gnome_
+ = std::make_unique<vt::GnomeAppMonitor>();
             gnome_->setOnChange([this] { dispatcher_.schedule([this] { onGnomeFocusChanged(); }); });
             gnome_->start();
         }
@@ -376,11 +435,113 @@ private:
     void applySettingsToAll() {
         const auto &s = watcher_.reload();
         syncConfigFromSettings();
+        updateLabels();
         instance_->inputContextManager().foreach([this, &s](fcitx::InputContext *ic) {
             auto *st = state(ic);
             st->session.applySettings(s);
+            if (ic->hasFocus() && instance_->inputMethod(ic) == "viettelex") {
+                updateToolsAction(ic);
+                updateAction(st);
+                ic->updateUserInterface(fcitx::UserInterfaceComponent::StatusArea);
+            }
             return true;
         });
+    }
+
+    bool english() const { return vt::isEnglishUi(settings().uiLanguage); }
+    std::string tr(const char *vi) const { return vt::uiText(vi, english()); }
+
+    void updateLabels() {
+        toolsAction_.setShortText(tr("Công cụ…"));
+        toolsAction_.setLongText(tr("Công cụ văn bản cho chữ đang bôi đen"));
+        for (int i = 0; i < vt::kTextToolCount; ++i)
+            toolActions_[size_t(i)].setShortText(vt::textToolLabel(vt::textToolAt(i), english()));
+    }
+
+    // "Hiện công cụ văn bản trong menu" (and only when the helper is installed).
+    void updateToolsAction(fcitx::InputContext *ic) {
+        auto &area = ic->statusArea();
+        area.removeAction(&toolsAction_);
+        if (settings().textToolsMenu && vt::textToolAvailable())
+            area.addAction(fcitx::StatusGroup::InputMethod, &toolsAction_);
+    }
+
+    // MARK: text tools (Công cụ…) — see linux/common/include/viettelex/text_tools.h
+
+    void runTextTool(fcitx::InputContext *ic, vt::TextTool tool) {
+        auto *st = state(ic);
+        ensureAppState(st);
+        auto caps = ic->capabilityFlags();
+        // Password / sensitive fields: never read them. Terminals: typing over a selection
+        // replaces nothing there — the result would land at the prompt.
+        if (caps.test(fcitx::CapabilityFlag::Password) || caps.test(fcitx::CapabilityFlag::Sensitive) ||
+            caps.test(fcitx::CapabilityFlag::Terminal) || vt::isTerminalApp(st->appId) || runner_.busy())
+            return;
+        FcitxClient client(ic);
+        st->session.finish(client, true);
+        vt::TextToolRunner::Source source;
+        const auto &sur = ic->surroundingText();
+        if (caps.test(fcitx::CapabilityFlag::SurroundingText) && sur.isValid()) {
+            // The app reports its text: its selection is authoritative (none = nothing to do).
+            std::string sel = sur.selectedText();
+            if (sel.empty()) return;
+            source = [sel](std::string &out) {
+                out = sel;
+                return true;
+            };
+        } else {
+            std::string primary;
+#if defined(VT_HAVE_FCITX_CLIPBOARD)
+            if (auto *clip = clipboard()) primary = clip->call<fcitx::IClipboard::primary>(ic);
+#endif
+            if (!primary.empty()) {
+                source = [primary](std::string &out) {
+                    out = primary;
+                    return true;
+                };
+            } else {
+                source = [](std::string &out) { return vt::readPrimarySelection(out); };
+            }
+        }
+        auto ref = ic->watch();
+        runner_.start(tool, std::move(source),
+                      [this, ref](bool changed, const std::string &input, const std::string &result) {
+                          try {
+                              onToolResult(ref.get(), changed, input, result);
+                          } catch (...) {
+                          }
+                      });
+    }
+
+    void onToolResult(fcitx::InputContext *ic, bool changed, const std::string &input, const std::string &result) {
+        if (!ic || !changed) return;
+        auto *st = state(ic);
+        // The selection changed while the helper ran: never overwrite something else.
+        const auto &sur = ic->surroundingText();
+        if (ic->capabilityFlags().test(fcitx::CapabilityFlag::SurroundingText) && sur.isValid() &&
+            !sur.selectedText().empty() && sur.selectedText() != input)
+            return;
+        if (ic->hasFocus()) {
+            commitToolResult(st, result);
+        } else {
+            st->pendingResult = result;
+            st->pendingUntil = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+        }
+    }
+
+    void commitToolResult(VietTelexState *st, const std::string &result) {
+        FcitxClient client(st->ic);
+        st->session.finish(client, true);
+        // Typing over the selection replaces it (GTK, Qt, Chromium, LibreOffice…).
+        st->ic->commitString(result);
+        st->session.focusIn();  // the text around the caret changed: forget the old word context
+    }
+
+    void commitPendingResult(VietTelexState *st) {
+        if (st->pendingResult.empty()) return;
+        std::string r;
+        r.swap(st->pendingResult);
+        if (std::chrono::steady_clock::now() <= st->pendingUntil) commitToolResult(st, r);
     }
 
     void syncConfigFromSettings() {
@@ -399,9 +560,9 @@ private:
 
     void updateAction(VietTelexState *st) {
         bool vi = st->session.vietnamese();
-        modeAction_.setShortText(vi ? "Tiếng Việt" : "English");
-        modeAction_.setLongText(vi ? "Đang gõ tiếng Việt — bấm để chuyển sang English"
-                                   : "Đang gõ English — bấm để chuyển sang tiếng Việt");
+        modeAction_.setShortText(tr(vi ? "Tiếng Việt" : "English"));
+        modeAction_.setLongText(tr(vi ? "Đang gõ tiếng Việt — bấm để chuyển sang English"
+                                      : "Đang gõ English — bấm để chuyển sang tiếng Việt"));
         modeAction_.setIcon(vi ? "viettelex" : "viettelex-off");
         modeAction_.update(st->ic);
     }
@@ -411,12 +572,19 @@ private:
     vt::AppStateStore appState_;
     fcitx::FactoryFor<VietTelexState> factory_;
     fcitx::SimpleAction modeAction_;
+    fcitx::SimpleAction toolsAction_;
+    fcitx::Menu toolsMenu_;
+    std::array<fcitx::SimpleAction, vt::kTextToolCount> toolActions_;
     std::unique_ptr<fcitx::EventSourceIO> ioEvent_;
     std::unique_ptr<fcitx::HandlerTableEntry<fcitx::EventHandler>> hotkeyWatcher_;
     VietTelexConfig config_;
     bool gnomeSession_ = false;
     fcitx::EventDispatcher dispatcher_;               // declared before gnome_: outlives it
     std::unique_ptr<vt::GnomeAppMonitor> gnome_;
+    vt::TextToolRunner runner_;                       // after dispatcher_: destroyed before it
+#if defined(VT_HAVE_FCITX_CLIPBOARD)
+    FCITX_ADDON_DEPENDENCY_LOADER(clipboard, instance_->addonManager());
+#endif
 };
 
 VietTelexState::VietTelexState(VietTelexEngine *engine, fcitx::InputContext *ic_) : ic(ic_) {
