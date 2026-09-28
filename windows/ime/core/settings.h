@@ -47,6 +47,13 @@ struct Settings {
     // the TIP snapshot, not compared by operator==).
     bool textToolsInMenu = true;
     std::string addTonesHotkey = "off";
+    // Gợi ý cạnh con trỏ (macOS 1.8.2 mathResults / numberChips / typoHints / toneHints /
+    // dateHints; caret_hints.h). All off = the TIP does one flag read per key, nothing else.
+    bool mathResults = true;
+    bool numberChips = true;
+    bool typoHints = true;
+    bool toneHints = false;
+    bool dateHints = true;
     // Data
     std::map<std::u16string, std::u16string> shortcuts;   // gõ tắt
     std::map<std::string, AppMode> appModes;              // user override, key = lowercase exe

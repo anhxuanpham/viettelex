@@ -3,10 +3,13 @@
 #pragma once
 #include "globals.h"
 #include "app_policy.h"
+#include "caret_hints.h"
+#include "hint_popup.h"
 #include "hotkey.h"
 #include "session.h"
 #include "settings.h"
 #include "text_tool_ipc.h"
+#include "caret_hint_ipc.h"
 #include "tsf_compat.h"
 
 #include <string>
@@ -107,6 +110,27 @@ private:
     void evaluateHost(ITfContext* ctx);
     void resolveActiveApp();
 
+    // Gợi ý cạnh con trỏ (ime/core/caret_hints.h). Keys feed a tracker only while a hint is
+    // enabled; a trigger arms a timer on toolWnd_ (the app inserts the key first), then an
+    // async READ session takes the text before the caret + the caret rectangle; typo fixes
+    // and tones go through VietTelex.exe (caret_hint_ipc.h). Tab applies in OnKeyDown.
+    enum class HintStage : uint8_t { None, Show, TypoAsk, TypoShow, TonesRun, TonesShow };
+    bool hintsUsable() const;
+    ITfContext* keyTarget(ITfContext* ctx) const;  // context holding the text (parent for Edit)
+    void noteHintKey(const KeyInput& k, ITfContext* target, bool handled);
+    void scheduleHint(const hints::Trigger& t, ITfContext* target);
+    void onHintTimer();
+    void readForHint(HintStage stage, int window);
+    void onHintRead();
+    void askApp(HintJob job, const std::u16string& text);
+    void onHintReply();
+    void presentHint(const hints::Suggestion& s);
+    void hideHint();
+    void dropHintWork();
+    bool applyHint(ITfContext* ctx);
+    void declineHint();
+    bool hintKeyTest(WPARAM wp, BOOL* eaten);  // true = handled (eaten set)
+
     bool initThreadMgrSink();
     void uninitThreadMgrSink();
     bool initKeySink();
@@ -151,6 +175,32 @@ private:
         ITfRange* range = nullptr;  // the selection that was read
         std::u16string text, result;
     } tool_;
+
+    // caret hints
+    hints::Enabled hintsOn_;
+    bool hintsAny_ = false;
+    hints::HintTracker hintTracker_;
+    uint32_t keyGen_ = 0;               // +1 per key: background hint work shows only if unchanged
+    hints::Trigger hintTrig_;           // armed trigger (timer)
+    uint32_t hintGen_ = 0;              // keyGen_ when armed
+    HintStage hintStage_ = HintStage::None;
+    ITfContext* hintCtx_ = nullptr;     // owned: context to read
+    struct HintRead {
+        bool ok = false;
+        std::u16string before;
+        RECT caret = {0, 0, 0, 0};
+        bool caretOk = false;
+    } hintRead_;
+    std::u32string hintAnswer_;         // from VietTelex.exe (typo fix / toned run)
+    std::u32string hintRun_;            // tones: the run sent to the app
+    bool hintAwaitingApp_ = false;
+    std::optional<hints::Suggestion> hint_;  // shown
+    std::u16string hintShownBefore_;    // tail of the screen when shown (caret moved -> hide)
+    RECT hintCaret_ = {0, 0, 0, 0};
+    int hintKeyAct_ = -1;               // hints::KeyAction decided in OnTestKeyDown
+    hints::Rejected rejectedTypos_;
+    std::u32string declinedTones_;
+    HintPopup popup_;
 
 };
 

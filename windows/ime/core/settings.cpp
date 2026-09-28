@@ -25,6 +25,11 @@ const BoolKey kBoolKeys[] = {
     {"debugLogging", &Settings::debugLogging},
     {"showTrayIcon", &Settings::showTrayIcon},
     {"textToolsInMenu", &Settings::textToolsInMenu},
+    {"mathResults", &Settings::mathResults},
+    {"numberChips", &Settings::numberChips},
+    {"typoHints", &Settings::typoHints},
+    {"toneHints", &Settings::toneHints},
+    {"dateHints", &Settings::dateHints},
 };
 constexpr size_t kBoolCount = sizeof(kBoolKeys) / sizeof(kBoolKeys[0]);
 constexpr uint32_t kMagic = 0x53585456;  // "VTXS"

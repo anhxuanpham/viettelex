@@ -47,6 +47,7 @@ namespace {
 constexpr wchar_t kAppWindowClass[] = L"VietTelexAppWindow";
 constexpr UINT kAppCommandMsg = WM_APP + 0x56;
 constexpr UINT kTrayMsg = WM_APP + 0x57;
+static_assert(kAppCommandMsg == kAppCommand && kTrayMsg == kTrayCallback, "app_messages.h is the list");
 constexpr UINT kTrayId = 1;
 UINT g_taskbarCreated = 0;
 

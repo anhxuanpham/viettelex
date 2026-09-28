@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <vector>
 
+#include "app_messages.h"
 #include "breaker.h"
 #include "test.h"
 #include "text_action_logic.h"
@@ -622,3 +623,16 @@ TEST(text_action_clipboard_policy) {
     CHECK(isShellSurfaceClass("Shell_TrayWnd") && isShellSurfaceClass("NotifyIconOverflowWindow"));
     CHECK(!isShellSurfaceClass("Notepad") && !isShellSurfaceClass("Chrome_WidgetWin_1"));
 }
+
+// Regression (text tools, not yet released): Công cụ văn bản's WM_APP + 0x61/0x62 were the updater's "check finished"
+// / "download finished" too, and text_actions sees every main-window message first — the
+// in-app update never got its result. One list, no duplicates.
+TEST(main_window_messages_are_distinct) {
+    using namespace vtx::app;
+    const size_t n = sizeof kMainWindowMessages / sizeof kMainWindowMessages[0];
+    for (size_t i = 0; i < n; ++i) {
+        CHECK(kMainWindowMessages[i] >= kWmApp && kMainWindowMessages[i] < 0xC000u);
+        for (size_t j = i + 1; j < n; ++j) CHECK(kMainWindowMessages[i] != kMainWindowMessages[j]);
+    }
+}
+

@@ -107,6 +107,7 @@ bool Lexicon::load(const uint8_t* d, size_t n) {
     count_ = static_cast<int>(count);
     folded_ = base[0];
     display_ = base[1];
+    attrs_ = base[2];
     offsets_ = base[3];
     dispOffsets_ = base[4];
     freqs_ = base[5];
@@ -136,6 +137,19 @@ std::string_view Lexicon::display(int id) const {
     const uint32_t lo = id == 0 ? 0 : u32(dispOffsets_ + static_cast<size_t>(id) * 4);
     const uint32_t hi = u32(dispOffsets_ + static_cast<size_t>(id + 1) * 4);
     return std::string_view(reinterpret_cast<const char*>(data_ + display_ + lo), hi - lo);
+}
+
+std::string_view Lexicon::folded(int id) const {
+    if (!data_ || id < 0 || id >= count_) return {};
+    const uint32_t a = u32(offsets_ + static_cast<size_t>(id) * 4), b = u32(offsets_ + static_cast<size_t>(id + 1) * 4);
+    return std::string_view(reinterpret_cast<const char*>(data_ + folded_ + a), b - a);
+}
+
+uint8_t Lexicon::attr(int id, int i) const {
+    if (!data_ || id < 0 || id >= count_ || i < 0) return 0;
+    const uint32_t a = u32(offsets_ + static_cast<size_t>(id) * 4), b = u32(offsets_ + static_cast<size_t>(id + 1) * 4);
+    if (static_cast<uint32_t>(i) >= b - a) return 0;
+    return data_[attrs_ + a + static_cast<uint32_t>(i)];
 }
 
 int Lexicon::formIndex(std::string_view folded) const {

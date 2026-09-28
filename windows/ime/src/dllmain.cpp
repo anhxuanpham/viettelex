@@ -70,6 +70,7 @@ extern "C" HRESULT __stdcall DllCanUnloadNow() {
     // name is unique per module load, so even a missed unregister can never hand a later
     // load a stale window procedure — see TextService::createToolWindow).
     UnregisterToolWindowClass();
+    UnregisterHintPopupClass();
     return S_OK;
 }
 

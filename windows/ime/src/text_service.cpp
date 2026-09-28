@@ -141,6 +141,9 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* ptim, TfClientId tid, DWORD f
 }
 
 STDMETHODIMP TextService::Deactivate() {
+    hideHint();
+    dropHintWork();
+    popup_.destroy();
     destroyToolWindow();
     clearLangProp();
     if (composition_ && compositionContext_) {
@@ -299,6 +302,18 @@ void TextService::applyConfig(bool force) {
     if (want != session_.outputMode()) {
         if (composition_) endCompositionAsync();
         session_.setOutputMode(want);
+    }
+
+    hintsOn_.math = settings_.mathResults;
+    hintsOn_.number = settings_.numberChips;
+    hintsOn_.typo = settings_.typoHints;
+    hintsOn_.tones = settings_.toneHints;
+    hintsOn_.date = settings_.dateHints;
+    hintsAny_ = hintsOn_.any() && !config::secureMode();
+    if (!hintsAny_) {
+        hideHint();
+        dropHintWork();
+        hintTracker_.reset();
     }
 
     hotkey_ = parseSwitchHotkey(settings_.switchHotkey);
@@ -592,6 +607,10 @@ UINT TextService::inputScopesAtSelection(ITfContext* ctx, TfEditCookie ec, int* 
 
 STDMETHODIMP TextService::OnSetFocus(ITfDocumentMgr* focus, ITfDocumentMgr*) {
     dropTextToolPending();  // a text-tool request belongs to the field it was made in
+    ++keyGen_;              // caret hints belong to the field too
+    hideHint();
+    dropHintWork();
+    hintTracker_.reset();
     if (composition_) endCompositionAsync();
     session_.resetContext();
     chord_.disarm();
@@ -674,6 +693,12 @@ STDMETHODIMP TextService::OnEndEdit(ITfContext* ctx, TfEditCookie ecReadOnly, IT
     if (FAILED(record->GetSelectionStatus(&selChanged)) || !selChanged) return S_OK;
     chord_.disarm();  // a click between Ctrl+Shift press and release is not a toggle
     TsfTextSink ro(this, ctx, ecReadOnly);
+    if (hint_ && host_ != HostText::NormalViaParent) {
+        // A caret hint belongs to the text it was made for: a click / app-side move hides it.
+        if (ro.hasSelection() ||
+            ro.textBeforeCaret(static_cast<int>(hintShownBefore_.size())) != hintShownBefore_)
+            hideHint();
+    }
     if (composition_) {
         // Caret left our composition (click, app-side move): the word is done as is.
         if (!ro.selectionInsideComposition()) {
@@ -731,12 +756,20 @@ bool TextService::prepareKey(WPARAM wp, bool down, KeyInput& out) {
     return true;
 }
 
-STDMETHODIMP TextService::OnSetFocus(BOOL) { return S_OK; }
+STDMETHODIMP TextService::OnSetFocus(BOOL foreground) {
+    if (!foreground) {
+        ++keyGen_;
+        hideHint();
+    }
+    return S_OK;
+}
 
 STDMETHODIMP TextService::OnTestKeyDown(ITfContext* ctx, WPARAM wp, LPARAM, BOOL* eaten) {
     if (!eaten) return E_INVALIDARG;
     *eaten = FALSE;
     if (isOwnInjected(static_cast<uintptr_t>(GetMessageExtraInfo()))) return S_OK;  // typed by our hook
+    if (!isModifierVk(static_cast<uint32_t>(wp))) ++keyGen_;  // background hint work: "typing on cancels"
+    if (hint_ && hintKeyTest(wp, eaten)) return S_OK;         // Tab / Esc while a caret hint shows
     KeyInput k;
     if (!prepareKey(wp, true, k)) return S_OK;
     if (!session_.wordActive()) {
@@ -751,11 +784,18 @@ STDMETHODIMP TextService::OnTestKeyDown(ITfContext* ctx, WPARAM wp, LPARAM, BOOL
             config::log("handover acked: the hook types in this field");
         }
     }
-    if (directActive_) return S_OK;  // the hook types in this field
+    if (directActive_) {  // the hook types in this field
+        noteHintKey(k, ctx, false);
+        return S_OK;
+    }
     // No focused context, keyboard disabled (games, canvases), read-only, ANSI window:
     // never eat a key there (SampleIME _IsKeyboardDisabled).
-    if (host_ == HostText::Ignore || host_ == HostText::Literal) return S_OK;
+    if (host_ == HostText::Ignore || host_ == HostText::Literal) {
+        noteHintKey(k, ctx, false);
+        return S_OK;
+    }
     *eaten = session_.wantsKey(k) ? TRUE : FALSE;
+    if (!*eaten) noteHintKey(k, keyTarget(ctx), false);  // OnKeyDown will not see this key
     return S_OK;
 }
 
@@ -763,6 +803,24 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* ctx, WPARAM wp, LPARAM, BOOL* ea
     if (!eaten) return E_INVALIDARG;
     *eaten = FALSE;
     if (isOwnInjected(static_cast<uintptr_t>(GetMessageExtraInfo()))) return S_OK;
+    if (hintKeyAct_ >= 0 || hint_) {
+        int act = hintKeyAct_;
+        hintKeyAct_ = -1;
+        if (act < 0) {  // a host that skipped OnTestKeyDown
+            BOOL dummy = FALSE;
+            if (hintKeyTest(wp, &dummy)) act = hintKeyAct_;
+            hintKeyAct_ = -1;
+        }
+        if (act == static_cast<int>(hints::KeyAction::Accept)) {
+            *eaten = applyHint(ctx) ? TRUE : FALSE;  // screen changed: Tab goes to the app
+            return S_OK;
+        }
+        if (act == static_cast<int>(hints::KeyAction::DismissConsume)) {
+            declineHint();
+            *eaten = TRUE;
+            return S_OK;
+        }
+    }
     KeyInput k;
     if (!ctx || !prepareKey(wp, true, k)) return S_OK;
     if (!session_.wordActive()) {
@@ -812,6 +870,7 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* ctx, WPARAM wp, LPARAM, BOOL* ea
     // hand it to the hook rather than composing with an underline.
     if (session_.contextFellBack() && !result) requestDirect("in-place failed in this field -> direct (hook)");
     *eaten = result;
+    noteHintKey(k, keyTarget(ctx), hr == S_OK);  // (target may be released by the fallback)
     return S_OK;
 }
 
@@ -870,6 +929,10 @@ STDMETHODIMP TextService::GetDisplayAttributeInfo(REFGUID guid, ITfDisplayAttrib
 namespace {
 constexpr UINT kMsgToolRead = WM_APP + 0x59;   // read session finished (possibly async)
 constexpr UINT kMsgToolApply = WM_APP + 0x5A;  // result arrived (WM_COPYDATA) -> replace
+constexpr UINT kMsgHintRead = WM_APP + 0x5B;   // caret hint: read session done (wParam = key generation)
+constexpr UINT kMsgHintReply = WM_APP + 0x5C;  // caret hint: VietTelex.exe answered (wParam = generation)
+constexpr UINT_PTR kTimerHint = 0x5648;        // caret hint: read the screen now
+constexpr UINT_PTR kTimerHintHide = 0x5649;    // caret hint: auto-hide
 
 void postToolReply(uint32_t request, TextToolStatus s) {
     if (HWND app = FindWindowW(kAppWindowClass, nullptr))
@@ -905,6 +968,23 @@ LRESULT CALLBACK TextService::toolWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp
         return 0;
     }
     switch (msg) {
+        case WM_TIMER:
+            if (!self) return 0;
+            if (wp == kTimerHint) {
+                self->onHintTimer();
+            } else if (wp == kTimerHintHide) {
+                KillTimer(h, kTimerHintHide);
+                self->hideHint();
+            }
+            return 0;
+        case kMsgHintRead:
+            if (self && static_cast<uint32_t>(wp) == self->keyGen_) self->onHintRead();
+            else if (self) self->dropHintWork();
+            return 0;
+        case kMsgHintReply:
+            if (self && static_cast<uint32_t>(wp) == self->keyGen_) self->onHintReply();
+            else if (self) self->dropHintWork();
+            return 0;
         case kMsgToolRead:
             if (self) self->sendTextToolSelection();
             return 0;
@@ -913,6 +993,17 @@ LRESULT CALLBACK TextService::toolWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp
             return 0;
         case WM_COPYDATA: {
             const auto* cds = reinterpret_cast<const COPYDATASTRUCT*>(lp);
+            if (self && cds && cds->dwData == kCopyHintReply) {
+                // Only VietTelex.exe answers, only the job still pending (no key since).
+                if (reinterpret_cast<HWND>(wp) != FindWindowW(kAppWindowClass, nullptr)) return FALSE;
+                HintMessage m;
+                if (!unpackHintMessage(cds->lpData, cds->cbData, m) || !self->hintAwaitingApp_ ||
+                    m.request != self->hintGen_)
+                    return FALSE;
+                self->hintAnswer_ = hints::toU32(m.text);
+                PostMessageW(h, kMsgHintReply, m.request, 0);  // continue outside the sent message
+                return TRUE;
+            }
             if (!self || !cds || cds->dwData != kCopyResult) return FALSE;
             // Only VietTelex.exe answers a request, and only the pending one.
             if (reinterpret_cast<HWND>(wp) != FindWindowW(kAppWindowClass, nullptr)) return FALSE;
@@ -1165,6 +1256,358 @@ void TextService::applyTextToolResult() {
         if (tool_.request == request) dropTextToolPending();
         postToolReply(request, TextToolStatus::Failed);
     }
+}
+
+// ---------------------------------------------------------------- Gợi ý cạnh con trỏ
+// ime/core/caret_hints.h has the rules. Per key: one flag read (hintsAny_) and, when on, a
+// few string operations on the chunk being typed. Only a trigger (= after a number, space
+// after a word worth it, . ! ?) arms a 40 ms timer (0.9 s for the tones pause) — the app has
+// inserted the key by then — and one async read session. Nothing is ever replaced without
+// Tab, and the screen is re-checked right before replacing.
+
+namespace {
+constexpr int kHintWindow = hints::kMathMaxLength + 2;
+constexpr UINT kHintHideMs = 8000;
+
+hints::LocalTime localNow() {
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    return hints::LocalTime{st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute};
+}
+
+bool isEnglishForDates(const std::u32string& w) { return hints::opensEnglishRun(w); }
+
+// Classic Edit with ES_PASSWORD (its TSF context may not carry IS_PASSWORD).
+bool focusIsPasswordEdit() {
+    HWND f = GetFocus();
+    if (!f) return false;
+    wchar_t cls[32] = {};
+    GetClassNameW(f, cls, 32);
+    return lstrcmpiW(cls, L"Edit") == 0 && (GetWindowLongW(f, GWL_STYLE) & ES_PASSWORD) != 0;
+}
+
+hints::Rect toRect(const RECT& r) { return hints::Rect{r.left, r.top, r.right, r.bottom}; }
+
+bool plausible(const RECT& r) {
+    const hints::Rect screen{GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN),
+                             GetSystemMetrics(SM_XVIRTUALSCREEN) + GetSystemMetrics(SM_CXVIRTUALSCREEN),
+                             GetSystemMetrics(SM_YVIRTUALSCREEN) + GetSystemMetrics(SM_CYVIRTUALSCREEN)};
+    HDC dc = GetDC(nullptr);
+    const int dpi = dc ? GetDeviceCaps(dc, LOGPIXELSY) : 96;
+    if (dc) ReleaseDC(nullptr, dc);
+    return hints::plausibleCaret(toRect(r), screen, dpi);
+}
+
+// Caret rectangle (screen coordinates) from the context's view: the empty selection, else
+// the right edge of the character before it (hosts that report nothing for an empty range).
+bool caretRectFromView(ITfContext* ctx, TfEditCookie ec, RECT& out) {
+    ITfContextView* view = nullptr;
+    if (FAILED(ctx->GetActiveView(&view)) || !view) return false;
+    bool ok = false;
+    TF_SELECTION sel;
+    ULONG fetched = 0;
+    if (SUCCEEDED(ctx->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &fetched)) && fetched == 1 && sel.range) {
+        RECT rc = {};
+        BOOL clipped = FALSE;
+        if (SUCCEEDED(view->GetTextExt(ec, sel.range, &rc, &clipped)) && plausible(rc)) {
+            out = rc;
+            ok = true;
+        } else {
+            ITfRange* prev = nullptr;
+            LONG shifted = 0;
+            if (SUCCEEDED(sel.range->Clone(&prev)) && prev) {
+                prev->Collapse(ec, TF_ANCHOR_START);
+                if (SUCCEEDED(prev->ShiftStart(ec, -1, &shifted, nullptr)) && shifted == -1 &&
+                    SUCCEEDED(view->GetTextExt(ec, prev, &rc, &clipped))) {
+                    RECT edge = {rc.right, rc.top, rc.right, rc.bottom};
+                    if (plausible(edge)) {
+                        out = edge;
+                        ok = true;
+                    }
+                }
+                prev->Release();
+            }
+        }
+        sel.range->Release();
+    }
+    view->Release();
+    return ok;
+}
+
+// Fallback: the Win32 caret of this thread (GetGUIThreadInfo).
+bool caretRectFromWin32(RECT& out) {
+    GUITHREADINFO gi = {};
+    gi.cbSize = sizeof gi;
+    if (!GetGUIThreadInfo(GetCurrentThreadId(), &gi) || !gi.hwndCaret) return false;
+    RECT r = gi.rcCaret;
+    if (r.bottom <= r.top) return false;
+    MapWindowPoints(gi.hwndCaret, nullptr, reinterpret_cast<POINT*>(&r), 2);
+    if (!plausible(r)) return false;
+    out = r;
+    return true;
+}
+
+const char* hintKindName(hints::Kind k) {
+    switch (k) {
+        case hints::Kind::Math: return "math";
+        case hints::Kind::Number: return "number";
+        case hints::Kind::Typo: return "typo";
+        case hints::Kind::Tones: return "tones";
+        case hints::Kind::Date: return "date";
+    }
+    return "?";
+}
+}  // namespace
+
+bool TextService::hintsUsable() const {
+    return hintsAny_ && toolWnd_ && !config::secureMode() && !consoleHost_ && !directActive_ && !directWanted_ &&
+           host_ != HostText::Ignore && host_ != HostText::Literal && host_ != HostText::CompositionOnly &&
+           !session_.contextFellBack();
+}
+
+ITfContext* TextService::keyTarget(ITfContext* ctx) const {
+    return (host_ == HostText::NormalViaParent && targetCtx_) ? targetCtx_ : ctx;
+}
+
+// Once per key, after the session handled it (OnTestKeyDown for keys it passes on,
+// OnKeyDown otherwise).
+// `handled` = the session saw this key (its lastCommit*() describe THIS key).
+void TextService::noteHintKey(const KeyInput& k, ITfContext* target, bool handled) {
+    if (!hintsAny_) return;
+    if (!hintsUsable() || !target) {
+        hintTracker_.reset();
+        return;
+    }
+    switch (k.kind) {
+        case KeyKind::Char: {
+            hints::Commit c;  // only read at a boundary (the hot path is a letter)
+            if (handled && !hints::isLetter(k.ch) && !hints::isDigit(k.ch))
+                c = hints::Commit{hints::toU32(session_.lastCommitRaw()), hints::toU32(session_.lastCommitText())};
+            const hints::Trigger t = hintTracker_.onChar(k.ch, c, hintsOn_);
+            if (t.kind != hints::TriggerKind::None) scheduleHint(t, target);
+            break;
+        }
+        case KeyKind::Backspace: hintTracker_.onBackspace(); break;
+        case KeyKind::Modifier:
+        case KeyKind::Other: break;
+        default: hintTracker_.reset(); break;  // Enter, Tab, arrows, chords
+    }
+}
+
+void TextService::scheduleHint(const hints::Trigger& t, ITfContext* target) {
+    if (t.kind == hints::TriggerKind::Typo && rejectedTypos_.contains(t.word)) return;
+    dropHintWork();
+    hintTrig_ = t;
+    hintGen_ = keyGen_;
+    hintCtx_ = target;
+    hintCtx_->AddRef();
+    hintStage_ = t.kind == hints::TriggerKind::Typo    ? HintStage::TypoAsk
+                 : t.kind == hints::TriggerKind::Tones ? HintStage::TonesRun
+                                                        : HintStage::Show;
+    SetTimer(toolWnd_, kTimerHint, static_cast<UINT>(t.delayMs), nullptr);
+}
+
+void TextService::onHintTimer() {
+    KillTimer(toolWnd_, kTimerHint);
+    if (hintGen_ != keyGen_ || hintStage_ == HintStage::None || !hintCtx_ || focusIsPasswordEdit()) {
+        dropHintWork();
+        return;
+    }
+    switch (hintStage_) {
+        case HintStage::TypoAsk: askApp(HintJob::Typo, hints::toU16(hintTrig_.raw)); break;
+        case HintStage::TonesRun: readForHint(HintStage::TonesRun, hints::kToneWindow); break;
+        default: readForHint(HintStage::Show, kHintWindow); break;
+    }
+}
+
+void TextService::readForHint(HintStage stage, int window) {
+    hintStage_ = stage;
+    if (!hintCtx_) return dropHintWork();
+    Ref<TextService> self(this);
+    Ref<ITfContext> c(hintCtx_);
+    const uint32_t gen = hintGen_;
+    const HRESULT hr = RunEditSession(hintCtx_, clientId_, TF_ES_ASYNCDONTCARE | TF_ES_READ,
+                                      [self, c, gen, window](TfEditCookie ec) -> HRESULT {
+                                          TextService* s = self.get();
+                                          if (s->hintGen_ != gen) return S_OK;
+                                          HintRead r;
+                                          int scopes[32];
+                                          const UINT n = s->inputScopesAtSelection(c.get(), ec, scopes, 32);
+                                          bool secret = false;
+                                          for (UINT i = 0; i < n; ++i) secret = secret || isSecretInputScope(scopes[i]);
+                                          TsfTextSink ro(s, c.get(), ec);
+                                          if (!secret && !ro.hasSelection()) {
+                                              r.before = ro.textBeforeCaret(window);
+                                              r.ok = !r.before.empty();
+                                              if (r.ok) r.caretOk = caretRectFromView(c.get(), ec, r.caret);
+                                          }
+                                          s->hintRead_ = r;
+                                          if (s->toolWnd_) PostMessageW(s->toolWnd_, kMsgHintRead, gen, 0);
+                                          return S_OK;
+                                      });
+    if (FAILED(hr)) dropHintWork();
+}
+
+void TextService::onHintRead() {
+    if (hintGen_ != keyGen_ || !hintRead_.ok) return dropHintWork();
+    const std::u32string before = hints::toU32(hintRead_.before);
+    std::optional<hints::Suggestion> sug;
+    switch (hintStage_) {
+        case HintStage::Show:
+            if (hintTrig_.kind == hints::TriggerKind::Math) {
+                if (auto r = hints::mathChip(before))
+                    sug = hints::Suggestion{hints::Kind::Math, hints::toU16(hints::mathLabel(*r)), u"", hints::toU16(*r)};
+            } else if (hintTrig_.kind == hints::TriggerKind::Number) {
+                sug = hints::moneyChip(before);
+            } else if (hintTrig_.kind == hints::TriggerKind::Date) {
+                std::u32string prev, run;
+                if (hints::lastRuns(before, prev, run)) {
+                    if (auto ph = hints::detectDate(U' ', prev, run, &isEnglishForDates))
+                        sug = hints::dateSuggestion(before, prev, run, *ph, localNow());
+                }
+            }
+            break;
+        case HintStage::TypoShow:
+            sug = hints::typoSuggestion(before, hintTrig_.word, hintTrig_.boundary, hintTrig_.raw, hintAnswer_);
+            break;
+        case HintStage::TonesRun: {
+            auto run = hints::toneRun(before);
+            if (!run || (!declinedTones_.empty() && run->compare(0, declinedTones_.size(), declinedTones_) == 0))
+                return dropHintWork();
+            hintRun_ = *run;
+            askApp(HintJob::Tones, hints::toU16(*run));
+            return;
+        }
+        case HintStage::TonesShow:
+            if (hints::standsAlone(before, hintRun_)) sug = hints::toneSuggestion(hintRun_, hintAnswer_);
+            break;
+        default: break;
+    }
+    if (sug) presentHint(*sug);
+    dropHintWork();
+}
+
+void TextService::askApp(HintJob job, const std::u16string& text) {
+    HWND app = FindWindowW(kAppWindowClass, nullptr);
+    if (!app || !toolWnd_ || text.empty()) return dropHintWork();
+    HintMessage m;
+    m.request = hintGen_;
+    m.job = static_cast<uint32_t>(job);
+    m.flags = settings_.engineFlags();
+    m.text = text;
+    const std::vector<uint8_t> b = packHintMessage(m);
+    COPYDATASTRUCT cds;
+    cds.dwData = kCopyHintRequest;
+    cds.cbData = static_cast<DWORD>(b.size());
+    cds.lpData = const_cast<uint8_t*>(b.data());
+    hintAwaitingApp_ = true;
+    hintStage_ = job == HintJob::Typo ? HintStage::TypoShow : HintStage::TonesShow;
+    DWORD_PTR r = 0;
+    // The app only queues the job; SMTO_ABORTIFHUNG: a hung app never stalls this thread.
+    if (!SendMessageTimeoutW(app, WM_COPYDATA, reinterpret_cast<WPARAM>(toolWnd_), reinterpret_cast<LPARAM>(&cds),
+                             SMTO_ABORTIFHUNG, 250, &r) ||
+        !r) {
+        config::log("caret hint: VietTelex.exe did not take the job");
+        dropHintWork();
+    }
+}
+
+void TextService::onHintReply() {
+    if (hintGen_ != keyGen_ || !hintAwaitingApp_) return dropHintWork();
+    hintAwaitingApp_ = false;
+    if (hintAnswer_.empty()) return dropHintWork();
+    readForHint(hintStage_, hintStage_ == HintStage::TonesShow ? hints::kToneWindow : kHintWindow);
+}
+
+void TextService::presentHint(const hints::Suggestion& s) {
+    RECT caret = hintRead_.caret;
+    const bool haveCaret = hintRead_.caretOk || caretRectFromWin32(caret);
+    if (!haveCaret) {
+        config::log(std::string("caret hint ") + hintKindName(s.kind) + ": no caret position -> not shown");
+        return;
+    }
+    hideHint();
+    std::wstring text(s.display.begin(), s.display.end());
+    if (!popup_.show(text, caret)) return;
+    hint_ = s;
+    hintCaret_ = caret;
+    const std::u16string& b = hintRead_.before;
+    hintShownBefore_ = b.size() > 32 ? b.substr(b.size() - 32) : b;
+    SetTimer(toolWnd_, kTimerHintHide, kHintHideMs, nullptr);
+    config::log(std::string("caret hint ") + hintKindName(s.kind) + ": shown, len=" + std::to_string(s.insert.size()) +
+                (hintRead_.caretOk ? " (view)" : " (win32 caret)"));
+}
+
+void TextService::hideHint() {
+    hintKeyAct_ = -1;
+    if (!hint_) return;
+    hint_.reset();
+    hintShownBefore_.clear();
+    popup_.hide();
+    if (toolWnd_) KillTimer(toolWnd_, kTimerHintHide);
+}
+
+void TextService::dropHintWork() {
+    if (toolWnd_) KillTimer(toolWnd_, kTimerHint);
+    hintStage_ = HintStage::None;
+    hintAwaitingApp_ = false;
+    hintAnswer_.clear();
+    hintRun_.clear();
+    SafeRelease(hintCtx_);
+}
+
+// While a hint shows: Tab (Enter for math) applies, Esc declines — both eaten; any other
+// key hides it and goes on. Modifiers alone change nothing.
+bool TextService::hintKeyTest(WPARAM wp, BOOL* eaten) {
+    const uint32_t vkey = static_cast<uint32_t>(wp);
+    if (!hint_ || isModifierVk(vkey)) return false;
+    const bool plain = !keyDown(VK_SHIFT) && !keyDown(VK_CONTROL) && !keyDown(VK_MENU) && !keyDown(VK_LWIN) &&
+                       !keyDown(VK_RWIN);
+    const hints::KeyAction a = hints::action(hint_->kind, vkey, plain);
+    if (a == hints::KeyAction::DismissPass) {
+        hideHint();
+        return false;
+    }
+    hintKeyAct_ = static_cast<int>(a);
+    *eaten = TRUE;
+    return true;
+}
+
+// Tab: replace `replace` (just before the caret, re-read now) with `insert`. False = the
+// screen no longer matches (nothing changed; the Tab goes to the app).
+bool TextService::applyHint(ITfContext* ctx) {
+    if (!hint_) return false;
+    const hints::Suggestion s = *hint_;
+    hideHint();
+    ITfContext* target = ctx ? keyTarget(ctx) : nullptr;
+    if (!target || composition_) return false;
+    bool ok = false;
+    const HRESULT hr = RunEditSession(target, clientId_, TF_ES_SYNC | TF_ES_READWRITE, [&](TfEditCookie ec) -> HRESULT {
+        TsfTextSink sink(this, target, ec);
+        if (sink.hasSelection()) return S_OK;
+        const std::u16string before = sink.textBeforeCaret(static_cast<int>(s.replace.size()) + 2);
+        const bool valid = s.kind == hints::Kind::Math
+                               ? (!before.empty() && before.back() == u'=')
+                               : hints::standsAlone(hints::toU32(before), hints::toU32(s.replace));
+        ok = valid && sink.replaceBeforeCaret(s.replace, s.insert);
+        return S_OK;
+    });
+    if (hr != S_OK) ok = false;
+    session_.reset();
+    hintTracker_.reset();
+    config::log(std::string("caret hint ") + hintKindName(s.kind) + (ok ? ": applied" : ": screen changed -> not applied"));
+    return ok;
+}
+
+// Esc: typo -> never suggest that word again (this session); tones -> not again for a run
+// starting with the declined one (typing on in the same sentence).
+void TextService::declineHint() {
+    if (!hint_) return;
+    if (hint_->kind == hints::Kind::Typo && !hint_->replace.empty())
+        rejectedTypos_.add(hints::toU32(hint_->replace.substr(0, hint_->replace.size() - 1)));
+    else if (hint_->kind == hints::Kind::Tones)
+        declinedTones_ = hints::toU32(hint_->replace);
+    hideHint();
 }
 
 }  // namespace vtx::tip

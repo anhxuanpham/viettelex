@@ -171,3 +171,10 @@ bool isValidPrefix(const char32_t* word, int length, bool teencode) {
 }
 
 }} // namespace vtx::SyllableValidator
+
+namespace vtx { namespace EnglishContextLookup {
+bool opensEnglishRun(const char* word, int length) {
+    return word && length > 0 && length <= gen::kEnglishContextMaxLength &&
+           tables::contains(gen::kEnglishContextWords, word, length);
+}
+}} // namespace vtx::EnglishContextLookup

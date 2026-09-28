@@ -113,6 +113,11 @@ const ToggleDef kToggles[] = {
     {&Settings::debugLogging, S::DebugLogging, S::DebugLoggingDesc},                   // 12
     {&Settings::showTrayIcon, S::ShowTray, S::ShowTrayDesc},                           // 13
     {&Settings::textToolsInMenu, S::TextToolsInMenu, S::TextToolsInMenuDesc},          // 14
+    {&Settings::mathResults, S::MathResults, S::MathResultsDesc},                      // 15
+    {&Settings::numberChips, S::NumberChips, S::NumberChipsDesc},                      // 16
+    {&Settings::typoHints, S::TypoHints, S::TypoHintsDesc},                            // 17
+    {&Settings::toneHints, S::ToneHints, S::ToneHintsDesc},                            // 18
+    {&Settings::dateHints, S::DateHints, S::DateHintsDesc},                            // 19
 };
 constexpr int kToggleCount = static_cast<int>(sizeof(kToggles) / sizeof(kToggles[0]));
 
@@ -314,6 +319,7 @@ struct Item {
     int toggle = -1;           // index into kToggles
     int ctlId = 0;             // combo / button id
     int blockHeight = 0;       // Block: content height (DIP) below the title
+    bool collapsible = false;  // Section: header toggles its items (chevron, summary when closed)
     // layout results (px, page coordinates before scrolling)
     RECT rc = {0, 0, 0, 0};
     HWND hwnd = nullptr;       // the control, if any
@@ -328,6 +334,10 @@ HWND g_wnd = nullptr, g_page = nullptr;
 int g_tab = 0, g_hoverNav = -1;
 std::vector<Item> g_items;
 std::vector<LinkHit> g_links;
+// "Công cụ văn bản" (macOS: collapsible header, collapsed by default, a summary line when
+// closed). Remembered while the app runs.
+bool g_textToolsOpen = false;
+RECT g_collapseHit = {0, 0, 0, 0};  // page coordinates of the clickable header
 int g_scroll = 0, g_contentH = 0;
 bool g_syncing = false;
 HICON g_appIcon = nullptr, g_bigIcon = nullptr;
@@ -454,10 +464,19 @@ std::vector<Item> pageItems(int tab) {
         case 1:
             v.push_back(section(S::SecSpelling));
             for (int i = 5; i <= 10; ++i) v.push_back(toggleItem(i));
-            // Công cụ văn bản (macOS: same place, after the spelling options)
-            v.push_back(section(S::SecTextTools));
-            v.push_back(toggleItem(14));
-            v.push_back(comboItem(S::AddTonesHotkey, S::AddTonesHotkeyDesc, IdComboAddTones));
+            // Công cụ văn bản (macOS: same place, after the spelling options; collapsible,
+            // collapsed by default)
+            {
+                Item sec = section(S::SecTextTools);
+                sec.collapsible = true;
+                sec.desc = g_textToolsOpen ? S::Count : S::TextToolsSummary;
+                v.push_back(sec);
+            }
+            if (g_textToolsOpen) {
+                v.push_back(toggleItem(14));
+                v.push_back(comboItem(S::AddTonesHotkey, S::AddTonesHotkeyDesc, IdComboAddTones));
+                for (int i = 15; i <= 19; ++i) v.push_back(toggleItem(i));  // caret hints
+            }
             break;
         case 2: v.push_back(blockItem(S::SecShortcuts, S::ShortcutsDesc, 360)); break;
         case 3: v.push_back(blockItem(S::SecApps, S::AppsDesc, 360)); break;
@@ -874,6 +893,7 @@ void layout() {
             case ItemKind::Section:
                 y += (&it == &g_items.front()) ? 0 : px(kSectionGap - kCardGap);
                 it.rc = {x0, y, x1, y + px(32)};
+                if (it.desc != S::Count) it.rc.bottom += textHeight(tr(it.desc), cardW - px(32), g_fCaption) + px(8);
                 y = it.rc.bottom;
                 break;
             case ItemKind::Setting: {
@@ -1079,6 +1099,7 @@ void paintControlFrames(HDC dc, Gdiplus::Graphics& g);
 void paintPage(HDC dc, const RECT& client) {
     FillRect(dc, &client, g_brBg);
     g_links.clear();
+    g_collapseHit = {0, 0, 0, 0};
     Gdiplus::Graphics g(dc);
     g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
     const float radius = g_win11 ? static_cast<float>(px(6)) : 0.0f;
@@ -1090,9 +1111,26 @@ void paintPage(HDC dc, const RECT& client) {
         OffsetRect(&r, 0, off);
         if (r.bottom < 0 || r.top > client.bottom) continue;
         switch (it.kind) {
-            case ItemKind::Section:
-                text(dc, tr(it.title), r, g_fSection, g_pal.text, DT_SINGLELINE | DT_VCENTER);
+            case ItemKind::Section: {
+                RECT head = {r.left, r.top, r.right, r.top + px(32)};
+                if (it.collapsible) {
+                    // Chevron right (closed) / down (open): Segoe Fluent/MDL2, else a text triangle.
+                    RECT cr = {head.right - px(28), head.top, head.right, head.bottom};
+                    if (g_fIcon)
+                        text(dc, std::wstring(1, g_textToolsOpen ? wchar_t(0xE70D) : wchar_t(0xE76C)), cr, g_fIcon,
+                             g_pal.subtext, DT_SINGLELINE | DT_VCENTER | DT_CENTER);
+                    else
+                        text(dc, g_textToolsOpen ? L"\u25BE" : L"\u25B8", cr, g_fBody, g_pal.subtext,
+                             DT_SINGLELINE | DT_VCENTER | DT_CENTER);
+                    g_collapseHit = it.rc;  // page coordinates (it.rc, not the scrolled r)
+                }
+                text(dc, tr(it.title), head, g_fSection, g_pal.text, DT_SINGLELINE | DT_VCENTER);
+                if (it.desc != S::Count) {
+                    RECT dr = {r.left, head.bottom, r.right - px(32), r.bottom};
+                    text(dc, tr(it.desc), dr, g_fCaption, g_pal.subtext, DT_WORDBREAK);
+                }
                 break;
+            }
             case ItemKind::Setting: {
                 fillRound(g, r, radius, g_pal.card, g_pal.cardBorder, true);
                 const int ctlW = it.ctl == Ctl::Toggle ? px(kToggleW + 56) : it.ctl == Ctl::None ? 0 : px(kControlW);
@@ -1552,6 +1590,13 @@ LRESULT CALLBACK pageProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_LBUTTONUP: {
             POINT pt = {static_cast<short>(LOWORD(lp)), static_cast<short>(HIWORD(lp)) + g_scroll};
+            if (PtInRect(&g_collapseHit, pt)) {
+                g_textToolsOpen = !g_textToolsOpen;
+                const int keep = g_scroll;
+                buildPage();
+                scrollTo(keep);
+                return 0;
+            }
             for (const LinkHit& l : g_links)
                 if (PtInRect(&l.rc, pt)) ShellExecuteW(nullptr, L"open", l.url, nullptr, nullptr, SW_SHOWNORMAL);
             return 0;
@@ -1561,6 +1606,10 @@ LRESULT CALLBACK pageProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             GetCursorPos(&pt);
             ScreenToClient(h, &pt);
             pt.y += g_scroll;
+            if (PtInRect(&g_collapseHit, pt)) {
+                SetCursor(LoadCursorW(nullptr, IDC_HAND));
+                return TRUE;
+            }
             for (const LinkHit& l : g_links)
                 if (PtInRect(&l.rc, pt)) {
                     SetCursor(LoadCursorW(nullptr, IDC_HAND));
