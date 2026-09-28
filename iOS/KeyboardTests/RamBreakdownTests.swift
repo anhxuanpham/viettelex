@@ -130,7 +130,7 @@ final class RamBreakdownTests: XCTestCase {
 
         // --- rò rỉ: mở/đóng controller mới 20 lần (iOS tạo controller mới mỗi lần hiện) ---
         // 3 vòng làm ấm (sau cảnh báo bộ nhớ UIKit vừa xả cache CA/ảnh — nạp lại một lần) rồi đo.
-        var cycle: [Double] = []
+        var cycle: [Double] = [], heapAt: [Int] = []
         for i in -3..<20 {
             autoreleasepool {
                 let r = KeyboardBenchTests.Rig()
@@ -139,12 +139,16 @@ final class RamBreakdownTests: XCTestCase {
                 r.close()
             }
             Self.spin(0.3)
-            if i >= 0, i % 5 == 4 { cycle.append(KeyboardBenchTests.footprintMB()) }
+            if i >= 0, i % 5 == 4 { cycle.append(KeyboardBenchTests.footprintMB()); heapAt.append(Self.heapBytes()) }
         }
-        print("RAMPART leak-cycles footprint every 5: \(cycle.map { String(format: "%.1f", $0) })")
+        let heapGrowMB = Double((heapAt.last ?? 0) - (heapAt.first ?? 0)) / 1_048_576
+        print("RAMPART leak-cycles footprint every 5: \(cycle.map { String(format: "%.1f", $0) }) heap +\(String(format: "%.2f", heapGrowMB))MB")
         // Rò rỉ #1 RAM-AUDIT.md (UIKit giữ UIInputView cũ ⇒ cây view cũ): đã sửa bằng xé cây ở
-        // viewDidDisappear — footprint phải phẳng qua 20 vòng.
-        XCTAssertLessThan((cycle.last ?? 0) - (cycle.first ?? 0), 3, "RAM tăng đều qua 20 vòng mở/đóng")
+        // viewDidDisappear. Heap (malloc, ổn định) là thước chính: giờ chỉ còn vỏ UIKit ~80
+        // KB/vòng. Footprint dao động theo cache CA/ảnh của UIKit (vừa xả ở cảnh báo bộ nhớ) nên
+        // chỉ chặn lỏng — trước khi sửa +17 MB / 20 vòng.
+        XCTAssertLessThan(heapGrowMB, 3, "heap tăng đều qua 15 vòng mở/đóng")
+        XCTAssertLessThan((cycle.last ?? 0) - (cycle.first ?? 0), 8, "RAM tăng đều qua 15 vòng mở/đóng")
     }
 
     /// Emoji màu: CoreText giải PNG (sbix) của Apple Color Emoji ra bitmap và GIỮ trong cache
