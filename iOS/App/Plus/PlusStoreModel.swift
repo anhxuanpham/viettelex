@@ -49,16 +49,21 @@ final class PlusStoreModel: ObservableObject {
     @Published private(set) var busyProductID: String?
     @Published private(set) var isRestoring = false
     @Published var message: String?
+    /// Vừa mua / khôi phục Plus + chip "Thêm dấu" đang tắt ⇒ màn Plus hỏi có bật không (một lần).
+    @Published var offerAddTones = false
 
     private let backend: PlusStoreBackend
     private let writeFlag: (Bool) -> Void
+    private let onboarding: PlusOnboarding
 
     init(backend: PlusStoreBackend,
          initialPurchased: Bool = PlusGate.purchased,
-         writeFlag: @escaping (Bool) -> Void = { PlusGate.setPurchased($0) }) {
+         writeFlag: @escaping (Bool) -> Void = { PlusGate.setPurchased($0) },
+         onboardingDefaults: UserDefaults? = UserDefaults(suiteName: PlusConfig.appGroup)) {
         self.backend = backend
         self.purchased = initialPurchased
         self.writeFlag = writeFlag
+        self.onboarding = PlusOnboarding(defaults: onboardingDefaults)
         backend.observeUpdates { [weak self] in await self?.refreshEntitlements() }
     }
 
@@ -94,6 +99,7 @@ final class PlusStoreModel: ObservableObject {
                 if id == PlusConfig.plusProductID {
                     await refreshEntitlements()
                     message = purchased ? L("Đã mở khoá VietTelex Plus. Cảm ơn bạn!") : nil
+                    offerOnboardingIfNeeded()
                 } else {
                     message = L("Cảm ơn bạn đã ủng hộ VietTelex! ❤️")
                 }
@@ -116,6 +122,20 @@ final class PlusStoreModel: ObservableObject {
         }
         await refreshEntitlements()
         message = purchased ? L("Đã khôi phục VietTelex Plus.") : L("Không tìm thấy giao dịch Plus nào với Apple ID này.")
+        offerOnboardingIfNeeded()
+    }
+
+    /// Hỏi bật chip "Thêm dấu" — chỉ sau mua/khôi phục thành công, chỉ một lần.
+    private func offerOnboardingIfNeeded() {
+        guard purchased, onboarding.shouldOfferAddTones else { return }
+        onboarding.markOffered()
+        offerAddTones = true
+    }
+
+    /// Người dùng chọn "Bật" trong lời mời.
+    func acceptAddTonesOffer() {
+        onboarding.enableAddTones()
+        offerAddTones = false
     }
 
     private func apply(_ entitled: Bool) {

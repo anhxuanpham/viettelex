@@ -180,9 +180,11 @@ struct RootView: View {
             // KHÔNG .autocorrectionDisabled(): bàn phím coi ô autocorrection == .no là
             // ô mã/username → passthrough (literal, tắt Telex) — ô thử gõ mất tác dụng
             // (log Debug mode 25/09/2026: composing=0 mọi phím).
+            // .sentences: để thử được "Tự động viết hoa đầu câu" (.never làm bàn phím tôn
+            // trọng ô và không bao giờ tự bật shift — Phil 28/09).
             TextField(L("Thử gõ tại đây…"), text: $tryItText, axis: .vertical)
                 .lineLimit(1...4)
-                .textInputAutocapitalization(.never)
+                .textInputAutocapitalization(.sentences)
         } header: { Text(L("Thử gõ")) } footer: {
             Text(L("Bấm 🌐 dưới bàn phím để chuyển sang Tiếng Việt (VietTelex), rồi gõ thử: vieejt → việt."))
         }

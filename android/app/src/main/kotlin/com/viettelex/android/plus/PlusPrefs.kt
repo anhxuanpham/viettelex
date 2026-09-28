@@ -17,4 +17,16 @@ object PlusPrefs {
     fun writePurchased(ctx: Context, on: Boolean) {
         VTPrefs.of(ctx).edit().putBoolean(Keys.PLUS_UNLOCKED, on).apply()
     }
+
+    /** Key đánh dấu đã mời bật chip "Thêm dấu" sau khi mua (một lần). */
+    const val ADD_TONES_OFFERED = "plusAddTonesOffered"
+
+    /** [com.viettelex.android.plus.PlusOnboarding] trên SharedPreferences chung app ↔ IME. */
+    fun onboarding(ctx: Context): PlusOnboarding = object : PlusOnboarding {
+        private val p = VTPrefs.of(ctx)
+        override fun shouldOfferAddTones() =
+            !p.getBoolean(Keys.ADD_TONES_CHIP, false) && !p.getBoolean(ADD_TONES_OFFERED, false)
+        override fun markOffered() { p.edit().putBoolean(ADD_TONES_OFFERED, true).apply() }
+        override fun enableAddTones() { p.edit().putBoolean(Keys.ADD_TONES_CHIP, true).apply() }
+    }
 }

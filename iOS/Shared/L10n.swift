@@ -191,7 +191,7 @@ enum L10n {
         "Emoji hợp với từ đang gõ (yêu → ❤️).": "Emoji matching the word you’re typing (yêu → ❤️).",
         "Đọc số thành chữ, định dạng tiền, tính nhanh (2+3 → 5).": "Spell out numbers, format amounts, quick math (2+3 → 5).",
         "Vừa copy xong thì hiện nút Dán (cần Toàn quyền).": "Show a Paste button right after you copy (needs Full Access).",
-        "Câu vừa gõ không dấu → một chạm thêm dấu cả câu. Tắt mặc định cho nhẹ máy.": "Typed a sentence without tones → one tap adds them all. Off by default to save resources.",
+        "Gõ không dấu cả câu (hom nay troi dep), gõ dấu cách → chip “Thêm dấu” hiện ở đầu thanh gợi ý, chạm để thành “hôm nay trời đẹp”; chạm “Hoàn tác” để trả lại. Tắt mặc định cho nhẹ máy.": "Type a whole sentence without tones (hom nay troi dep), press space → an “Add tones” chip appears at the start of the suggestion bar; tap it to get “hôm nay trời đẹp”, tap “Undo” to revert. Off by default to save resources.",
         "Không chủ động gợi ý từ tục — gõ tay vẫn bình thường.": "Never suggest vulgar words — typing them yourself still works.",
         "Xem, tìm, xoá từ đã học; thêm tên riêng.": "View, search and delete learned words; add names.",
         "Từ đã học": "Learned words",
@@ -206,7 +206,10 @@ enum L10n {
         "Giữ phím hàng 2, 3 để ra ký tự đặc biệt": "Hold row 2, 3 keys for symbols",
         "Giữ a … l, z … m để gõ @ # $ _ & - + ( ) … Giữ , để ra dấu chấm.": "Hold a … l, z … m to type @ # $ _ & - + ( ) … Hold , for a period.",
         "Phím": "Keys",
-        "Vuốt nhanh phím cách sang trái/phải. Tiếng Anh gõ nguyên văn, logo thành E. Giữ rồi kéo vẫn là di con trỏ.": "Flick the space bar left/right. English types literally and the logo turns into E. Hold and drag still moves the cursor.",
+        "Vuốt nhanh phím cách sang trái/phải. Góc phím cách hiện VI / EN. Tiếng Anh gõ nguyên văn. Giữ rồi kéo vẫn là di con trỏ.": "Flick the space bar left/right. The space bar corner shows VI / EN. English types as-is. Hold and drag still moves the cursor.",
+        "Tự thêm dấu cách sau dấu câu": "Add space after punctuation",
+        "Gõ . , ? ! ; : tự có dấu cách phía sau. Không thêm trong số (3.5, 1,000), email, đường dẫn. Gõ dấu cách ngay sau không thành hai dấu cách; ⌫ ngay sau chỉ xoá dấu cách đó.": "Typing . , ? ! ; : adds a space after it. Not inside numbers (3.5, 1,000), emails or links. A space typed right after doesn't double up; ⌫ right after removes just that space.",
+        "Cách sau dấu câu": "Space after punctuation",
         "Tắt": "Off",
         "Trái": "Left",
         "Phải": "Right",
@@ -251,6 +254,7 @@ enum L10n {
         "Từ tiếng Anh — vuốt đúng từng chữ.": "English word — swipe every letter.",
         "Vuốt qua các chữ không dấu rồi nhấc tay.": "Swipe across the letters without tones, then lift.",
         "Lưu nét vuốt trên máy": "Save swipe paths on device",
+        "Bật \"Lưu nét vuốt trên máy\" rồi vuốt vài từ để xuất được.": "Turn on \"Save swipe paths on device\" and swipe a few words to export.",
         "Đã lưu %@ nét.": "%@ paths saved.",
         "Tắt: chỉ luyện, không lưu gì.": "Off: practice only, nothing is saved.",
         "Xuất JSON…": "Export JSON…",
@@ -260,7 +264,7 @@ enum L10n {
         "Nét vuốt chỉ nằm trên máy này (không sao lưu iCloud, không tự gửi đi). Xuất JSON để gửi cho nhà phát triển nếu bạn muốn giúp gõ vuốt chính xác hơn.": "Swipe paths stay on this device (no iCloud backup, never sent automatically). Export JSON to send to the developer if you’d like to help make swipe typing more accurate.",
 
         // Riêng tư
-        "Nút clipboard trên thanh gợi ý mở 20 mục vừa copy; ghim để giữ lâu. Mục không ghim tự xoá sau 1 giờ (mật khẩu/OTP: 2 phút). Chỉ lưu trên máy.": "The clipboard button on the suggestion bar opens your last 20 copies; pin items to keep them. Unpinned items are deleted after 1 hour (passwords/OTP: 2 minutes). Stored on device only.",
+        "Nút clipboard trên thanh gợi ý mở 20 mục vừa copy; ghim để giữ lâu. Mục không ghim tự xoá sau 1 giờ (mật khẩu/OTP: 2 phút). Chỉ lưu trên máy. Plus: vừa copy STK/SĐT/OTP → chip “Dán …” hiện trên thanh gợi ý.": "The clipboard button on the suggestion bar opens your last 20 copies; pin items to keep them. Unpinned items are deleted after 1 hour (passwords/OTP: 2 minutes). Stored on device only. Plus: copy an account/phone number or OTP → a “Paste …” chip appears on the suggestion bar.",
         "iOS chỉ cho bàn phím đọc clipboard khi đang hiện và có Toàn quyền. Để tự ghi mục mới mà không bị hỏi: Cài đặt → VietTelex → Dán từ ứng dụng khác → Cho phép. Bỏ qua ô mật khẩu.": "iOS only lets the keyboard read the clipboard while it’s showing and has Full Access. To record new items without being asked: Settings → VietTelex → Paste from Other Apps → Allow. Password fields are skipped.",
         "Tắt Lịch sử clipboard sẽ xoá toàn bộ mục đã lưu ở lần mở bàn phím kế tiếp.": "Turning off Clipboard history deletes all saved items the next time the keyboard opens.",
         "Bàn phím không học từ bạn gõ và không lưu clipboard.": "The keyboard doesn’t learn from what you type and doesn’t save the clipboard.",
@@ -494,6 +498,18 @@ enum L10n {
         "Cài đặt, gõ tắt và từ đã học theo bạn sang máy khác.": "Settings, shortcuts and learned words follow you to other devices.",
         "Đổi HOA/thường, hoa đầu từ/đầu câu, xoá dấu tiếng Việt.": "Switch UPPER/lower case, title/sentence case, strip Vietnamese tones.",
         "Dấu ★ nhỏ trong app — lời cảm ơn vì đã ủng hộ.": "A small ★ in the app — a thank-you for your support.",
+        // Plus — cách dùng (28/09/2026)
+        "Cách dùng: Tính Năng → Giao diện → chọn theme hoặc ảnh nền.": "How to use: Features → Appearance → pick a theme or a wallpaper.",
+        "Cách dùng: gõ không dấu cả câu (hom nay troi dep), gõ dấu cách rồi chạm chip “Thêm dấu” ở đầu thanh gợi ý. Cần bật chip bên dưới.": "How to use: type a whole sentence without tones (hom nay troi dep), press space, then tap the “Add tones” chip at the start of the suggestion bar. Turn the chip on below.",
+        "Cách dùng: bật Lịch sử clipboard (Tính Năng → Riêng tư & clipboard), chạm nút clipboard trên thanh gợi ý. Copy STK/SĐT/OTP → chip “Dán …” hiện trên thanh gợi ý.": "How to use: turn on Clipboard history (Features → Privacy & clipboard), then tap the clipboard button on the suggestion bar. Copy an account/phone number or OTP → a “Paste …” chip appears on the suggestion bar.",
+        "Cách dùng: Tính Năng → Sao lưu & đồng bộ → bật Đồng bộ iCloud.": "How to use: Features → Backup & sync → turn on iCloud sync.",
+        "Cách dùng: chạm ☰ trên thanh gợi ý → chip “Aa Công cụ văn bản” đầu lưới mẫu câu. Áp lên đoạn đang chọn hoặc câu trước con trỏ.": "How to use: tap ☰ on the suggestion bar → the “Aa Text tools” chip at the top of the templates grid. Applies to the selection or the sentence before the cursor.",
+        "Tự hiện sau khi mua.": "Shows up automatically after purchase.",
+        "Bật chip “Thêm dấu”": "Turn on the “Add tones” chip",
+        "Bật chip “Thêm dấu”?": "Turn on the “Add tones” chip?",
+        "Bật ngay": "Turn on",
+        "Để sau": "Later",
+        "Gõ không dấu cả câu, gõ dấu cách rồi chạm chip “Thêm dấu” ở đầu thanh gợi ý. Chip đang tắt — bật ngay? (Đổi lại ở Tính Năng → Gợi ý & từ điển.)": "Type a whole sentence without tones, press space, then tap the “Add tones” chip at the start of the suggestion bar. The chip is off — turn it on now? (Change it later in Features → Suggestions & dictionary.)",
     ]
     // swiftlint:enable line_length
 }

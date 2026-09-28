@@ -14,8 +14,8 @@ settings:
     DEVELOPMENT_TEAM: 84T567KMYD
     SWIFT_VERSION: "5.9"
     TARGETED_DEVICE_FAMILY: "1,2"
-    MARKETING_VERSION: "1.2"
-    CURRENT_PROJECT_VERSION: "8"
+    MARKETING_VERSION: "1.2.1"
+    CURRENT_PROJECT_VERSION: "9"
   configs:
     Release:
       SWIFT_OPTIMIZATION_LEVEL: "-Osize"
@@ -91,6 +91,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.viettelex.ios.keyboard
         CODE_SIGN_ENTITLEMENTS: Keyboard/Keyboard.entitlements
+        SWIFT_OBJC_BRIDGING_HEADER: Keyboard/ObjC/VietTelexKeyboard-Bridging-Header.h
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: "Tiếng Việt (VietTelex)"
     info:
@@ -184,6 +185,7 @@ targets:
       - Keyboard/ClipboardFeature.swift
       # Bench đường nóng qua controller thật (KeyboardBenchTests, bộ chậm).
       - Keyboard/KeyboardViewController.swift
+      - Keyboard/ObjC/VTCatch.m
       - Keyboard/ClipboardPanel.swift
       - path: Keyboard/Resources/vnlexicon.bin
         buildPhase: resources
@@ -200,6 +202,7 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
+        SWIFT_OBJC_BRIDGING_HEADER: Keyboard/ObjC/VietTelexKeyboard-Bridging-Header.h
     dependencies:
       - package: TelexCore
 

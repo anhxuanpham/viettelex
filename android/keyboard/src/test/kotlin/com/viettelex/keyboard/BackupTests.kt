@@ -60,7 +60,8 @@ class BackupTests {
         val p = BackupCodec.decode(fixture("backup-ios-v1"))
         assertEquals("ios", p.platform)
         assertEquals(Instant.parse("2026-09-27T08:00:00Z"), p.createdAt)
-        assertEquals(31, p.settings!!.size)             // emojiSuggest/pasteButton chỉ iOS, bị bỏ qua
+        assertEquals(32, p.settings!!.size)             // emojiSuggest/pasteButton chỉ iOS, bị bỏ qua
+        assertEquals(true, p.settings!!["autoSpaceAfterPunct"])
         assertEquals("en", p.settings!![Keys.UI_LANGUAGE])   // ngôn ngữ giao diện (chuỗi) đi qua sao lưu
         assertEquals(40, p.settings!!["keyboardTransparency"])
         assertEquals(20, p.settings!!["keyLabelTransparency"])
@@ -120,7 +121,7 @@ class BackupTests {
             "keyboardTransparency" to 250, "keyLabelTransparency" to 35,
             BackupPrefs.SHORTCUTS_KEY to "# VietTelex — bảng gõ tắt\nko: không\n")
         val p = BackupPrefs.snapshot({ prefs[it] }, listOf(TemplateItem("", "a")), null)
-        assertEquals(32, p.settings!!.size)
+        assertEquals(33, p.settings!!.size)
         assertEquals("vi", p.settings!![Keys.UI_LANGUAGE])   // chưa chọn ⇒ mặc định Tiếng Việt
         assertEquals(100, p.settings!!["keyboardTransparency"])   // kẹp 0…100
         assertEquals(35, p.settings!!["keyLabelTransparency"])
@@ -128,6 +129,7 @@ class BackupTests {
         assertEquals(false, p.settings!!["autoCorrect"])
         assertEquals(true, p.settings!!["autoCapitalize"])
         assertEquals(false, p.settings!!["spaceSwipeLanguage"])
+        assertEquals(false, p.settings!!["autoSpaceAfterPunct"])
         assertEquals(true, p.settings!!["quickTelex"])
         assertEquals(true, p.settings!!["simpleTelex"])
         assertEquals(10, p.settings!!["rowHeightAdjust"])

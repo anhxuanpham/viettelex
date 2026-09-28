@@ -263,6 +263,12 @@ class KeyboardSession(
     var spaceFlickEnabled = false; private set
     /** Ngôn ngữ đang gõ; công tắc tắt ⇒ luôn VI. */
     var language = KeyboardLanguage.VI; private set
+    /** "Tự thêm dấu cách sau dấu câu" bật VÀ ô cho phép (không mật khẩu/email/URL/số). */
+    private var autoSpaceOn = false
+    /** Dấu câu/ngoặc vừa được thêm dấu cách tự động ([AutoSpace]) — sống tới phím kế. */
+    private var autoSpacePunct: Char? = null
+    /** Phím chữ gõ ngay sau dấu cách tự thêm — giữ phím ra dấu câu huỷ phím chữ đó. */
+    private var autoSpaceUnderLetter: Char? = null
 
     /**
      * Tự sửa (Thử nghiệm): điểm chạm từng phím của từ đang gõ ([AutoCorrect.Touch]). Hỏng
@@ -315,6 +321,8 @@ class KeyboardSession(
         numberChipsOn = settings.numberChips
         spaceFlickEnabled = settings.spaceSwipeLanguage
         language = KeyboardLanguage.VI
+        autoSpaceOn = settings.autoSpaceAfterPunct && !field.isSecure && !field.passthrough && !field.urlField
+        autoSpacePunct = null; autoSpaceUnderLetter = null
         // Tự sửa: không ở ô mật khẩu/email/URL/không-gợi-ý, ô tên (viết hoa mỗi từ), VNI.
         autoCorrectOn = settings.autoCorrect && !settings.vniMode && AutoCorrect.fieldAllows(field)
         wordTouches.clear(); wordTouchesOk = false
@@ -408,6 +416,27 @@ class KeyboardSession(
         lastCommit = null
         clearSwipe()
         tonesUndo = null
+        autoSpacePunct = null; autoSpaceUnderLetter = null
+    }
+
+    /** Dấu cách tự thêm sau [p] còn ngay trước con trỏ? Không đọc được ⇒ tin state. */
+    private fun autoSpaceStillThere(p: Char, proxy: TextProxy): Boolean =
+        proxy.contextBeforeInput()?.endsWith("$p ") ?: true
+
+    /**
+     * Sau phím chèn [s]: thêm dấu cách nếu bật + ô cho phép + [AutoSpace.shouldAdd]; [carry] =
+     * dời dấu cách tự thêm ra sau ngoặc đóng vừa gõ. Tắt ⇒ không đọc context.
+     */
+    private fun applyAutoSpace(s: String, carry: Boolean, proxy: TextProxy) {
+        if (!autoSpaceOn) return
+        val c = s.singleOrNull() ?: return
+        if (!carry) {
+            if (c !in AutoSpace.TRIGGERS) return
+            val before = proxy.contextBeforeInput() ?: return
+            if (!AutoSpace.shouldAdd(s, before, proxy.contextAfterInput())) return
+        }
+        proxy.insertText(" ")
+        autoSpacePunct = c
     }
 
     /**
@@ -461,9 +490,35 @@ class KeyboardSession(
     /** [touch]: điểm chạm của phím chữ (bàn phím cảm ứng) — cho tự sửa; null = không biết. */
     fun handle(key: Key, proxy: TextProxy, touch: AutoCorrect.Touch? = null): KeyOutcome {
         val t0 = if (TouchLog.enabled) System.nanoTime() else 0L
+        val underLetter = autoSpaceUnderLetter
+        val pendingSpace = autoSpacePunct
+        autoSpaceUnderLetter = null; autoSpacePunct = null
         // Giữ phím ra ký tự phụ: gỡ phím chữ bằng checkpoint (không ⌫ — phím dấu Telex đã đổi
         // từ); không được (ô đổi / thao tác xen) thì ⌫ như iOS.
         if (key is Key.Text && key.replacesLetter && !undoLastLetter(proxy)) bridge.backspace(proxy)
+        // Tự thêm dấu cách sau dấu câu: phím ngay sau quyết định số phận dấu cách đó.
+        var autoSpaceCarry = false
+        val sp = pendingSpace ?: underLetter?.takeIf { key is Key.Text && key.replacesLetter }
+        if (sp != null && autoSpaceStillThere(sp, proxy)) when (key) {
+            Key.Space, Key.DoubleSpacePeriod -> {          // đã có dấu cách: nuốt, không thành 2
+                generation++
+                return KeyOutcome(false, generation)
+            }
+            Key.Backspace -> {                              // ⌫ chỉ xoá dấu cách tự thêm
+                proxy.deleteCodePoints(1)
+                lastInsertWasSpace = false
+                generation++
+                return KeyOutcome(autoCapitalize, generation)
+            }
+            Key.Newline, Key.LineBreak -> proxy.deleteCodePoints(1)
+            is Key.Text -> when (AutoSpace.reaction(key.text)) {
+                AutoSpace.Reaction.KEEP -> {}
+                AutoSpace.Reaction.REMOVE -> proxy.deleteCodePoints(1)
+                AutoSpace.Reaction.CARRY -> { proxy.deleteCodePoints(1); autoSpaceCarry = true }
+            }
+            is Key.Letter -> autoSpaceUnderLetter = sp
+            else -> {}
+        }
         // ⌫ NGAY SAU khi thêm dấu = hoàn tác (một lần); phím khác bỏ lời mời hoàn tác.
         if (key == Key.Backspace && tonesUndo != null && !bridge.isComposing && openSwipeWord() == null) {
             undoAddTones(proxy)
@@ -510,6 +565,7 @@ class KeyboardSession(
                     lastWord = null; lastWord2 = null
                     clearUndo()
                     typedCommit = committed to key.text
+                    applyAutoSpace(key.text, autoSpaceCarry, proxy)
                 }
             }
             Key.Space -> {
@@ -592,8 +648,8 @@ class KeyboardSession(
         initialCapsPending = false
         val needsAutoShift = autoCapitalize && when (key) {
             Key.Space, Key.Newline, Key.LineBreak, Key.DoubleSpacePeriod, Key.Backspace, is Key.MoveCursor, Key.ClearField -> true
-            // CAP_CHARACTERS: shift ON bị bàn phím hạ sau mỗi chữ → bật lại.
-            else -> traits.capCharacters
+            // CAP_CHARACTERS: shift ON bị bàn phím hạ sau mỗi chữ → bật lại. ". " tự thêm ⇒ tính lại.
+            else -> traits.capCharacters || autoSpacePunct != null
         }
         if (TouchLog.enabled) {
             val (kind, ch) = when (key) {

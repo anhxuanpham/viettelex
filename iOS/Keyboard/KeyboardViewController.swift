@@ -96,7 +96,7 @@ final class KeyboardViewController: UIInputViewController {
             // traitCollectionDidChange không còn được gọi tin cậy trên iOS 17+.
             registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (vc: Self, _: UITraitCollection) in
                 vc.keyboard?.updateDark(AppearancePolicy.isDark(
-                    appearance: vc.textDocumentProxy.keyboardAppearance ?? .default,
+                    appearance: vtSafe(.default) { vc.textDocumentProxy.keyboardAppearance ?? .default },
                     style: vc.traitCollection.userInterfaceStyle))
             }
         }
@@ -138,6 +138,8 @@ final class KeyboardViewController: UIInputViewController {
     var debugProxy: UITextDocumentProxy?
     override var textDocumentProxy: UITextDocumentProxy { debugProxy ?? super.textDocumentProxy }
     var debugKeyboard: KeyboardView { keyboard }
+    /// Test: gửi thẳng một phím vào handle() (dấu câu, ⌫…) như KeyboardView gửi.
+    func debugHandle(_ key: KeyboardView.Key) { handle(key) }
     #endif
 
     #if DEBUG
@@ -174,6 +176,8 @@ final class KeyboardViewController: UIInputViewController {
         filterSensitive = settings.filterSensitive
         showSuggestionsSetting = settings.showSuggestions
         autoCapitalizeSetting = settings.autoCapitalize
+        autoSpaceSetting = settings.autoSpaceAfterPunct
+        autoSpacePunct = nil; autoSpaceUnderLetter = nil
         swipeSetting = settings.swipeTyping
         swipeEnglishSetting = settings.swipeEnglish
         swipeFutoSetting = settings.swipeFuto
@@ -208,6 +212,7 @@ final class KeyboardViewController: UIInputViewController {
         // Rung phím: cần cả toggle trong app LẪN Toàn quyền Truy cập (iOS
         // vô hiệu haptics trong extension không có Full Access).
         KeyboardView.hapticsEnabled = settings.hapticFeedback && hasFullAccess
+        KeyboardView.attachHaptics(to: keyboard)
         // Báo trạng thái Full Access cho app chứa (ẩn banner nhắc cấp quyền).
         // Không Full Access thì iOS chặn GHI App Group → cờ giữ nguyên/vắng,
         // banner vẫn hiện — đúng ý.
@@ -323,7 +328,7 @@ final class KeyboardViewController: UIInputViewController {
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
         super.traitCollectionDidChange(previousTraitCollection)
         if previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle {
-            keyboard?.applyAppearance(textDocumentProxy.keyboardAppearance ?? .default, style: traitCollection.userInterfaceStyle)
+            keyboard?.applyAppearance(vtSafe(.default) { self.textDocumentProxy.keyboardAppearance ?? .default }, style: traitCollection.userInterfaceStyle)
         }
     }
 
@@ -334,7 +339,7 @@ final class KeyboardViewController: UIInputViewController {
         if !autoCapitalizeSetting, autoShiftOn { autoShiftOn = false; keyboard.setAutoShift(false) }
         guard let auto = FieldPolicy.autoShift(
             enabled: autoCapitalizeSetting,
-            autocap: textDocumentProxy.autocapitalizationType ?? nil,
+            autocap: vtSafe(nil) { self.textDocumentProxy.autocapitalizationType ?? nil },
             before: { textDocumentProxy.documentContextBeforeInput ?? "" }) else { return }
         autoShiftOn = auto
         keyboard.setAutoShift(auto)
@@ -344,19 +349,71 @@ final class KeyboardViewController: UIInputViewController {
     private var fieldTraits: FieldTraits?
     private var showSuggestionsSetting = true
     private var autoCapitalizeSetting = true
+    /// "Tự thêm dấu cách sau dấu câu" (AutoSpace) — tắt ⇒ không đọc context, không state.
+    private var autoSpaceSetting = false
+    /// Dấu câu/ngoặc vừa được thêm dấu cách tự động (sống tới phím kế).
+    private var autoSpacePunct: Character?
+    /// Phím chữ gõ ngay sau dấu cách tự thêm — iPad vuốt xuống / giữ ra dấu câu huỷ phím
+    /// chữ đó (replaceLastLetter) thì dấu cách tự thêm lại nằm ngay trước con trỏ.
+    private var autoSpaceUnderLetter: Character?
+
+    /// Dấu cách tự thêm sau `p` còn nằm ngay trước con trỏ (host/người dùng chưa đổi gì)?
+    private func autoSpaceStillThere(_ p: Character) -> Bool {
+        (textDocumentProxy.documentContextBeforeInput ?? "").hasSuffix(String(p) + " ")
+    }
+
+    private func removeAutoSpace() {
+        let was = applyingEdit
+        applyingEdit = true
+        textDocumentProxy.deleteBackward()
+        applyingEdit = was
+    }
+
+    /// Sau phím chèn `s` (dấu câu, ký hiệu): thêm dấu cách nếu công tắc bật + ô cho phép
+    /// + AutoSpace.shouldAdd; `carry` = dời dấu cách tự thêm ra sau ngoặc đóng vừa gõ.
+    private func applyAutoSpace(after s: String, carry: Bool) {
+        guard autoSpaceSetting, s.count == 1, let c = s.first,
+              carry || AutoSpace.triggers.contains(c) else { return }
+        guard fieldTraits?.allowsAutoSpace ?? true, !bridge.passthrough,
+              vtSafe(false, { (self.textDocumentProxy as UITextInputTraits).isSecureTextEntry == true }) != true else { return }
+        if !carry {
+            guard AutoSpace.shouldAdd(punct: s, before: textDocumentProxy.documentContextBeforeInput ?? "",
+                                      after: textDocumentProxy.documentContextAfterInput) else { return }
+        }
+        textDocumentProxy.insertText(" ")
+        autoSpacePunct = c
+    }
 
     /// Đọc trait ô và cấu hình lại bàn phím CHỈ khi trait đổi (hoặc `force` ở
     /// viewWillAppear). Host đổi ô trong cùng app không gọi viewWillAppear → gọi
     /// thêm ở textDidChange / selectionDidChange. KHÔNG đọc documentIdentifier.
+    private var traitsRetryPending = false
     private func refreshFieldTraits(force: Bool = false) {
         let p = textDocumentProxy
-        let t = FieldTraits(
-            keyboardType: p.keyboardType ?? .default,
-            returnKeyType: p.returnKeyType ?? .default,
-            appearance: p.keyboardAppearance ?? .default,
-            autocorrection: p.autocorrectionType ?? .default,
-            contentType: p.textContentType ?? nil,
-            secure: (p as UITextInputTraits).isSecureTextEntry == true)
+        // iOS 27.0: đọc trait lúc proxy chưa sẵn sàng làm UIKit NÉM NSException
+        // (_controllerState unrecognized selector) → bàn phím chết. Bắt lỗi, giữ trait
+        // cũ và đọc lại sau một nhịp (crash thật 28/09/2026, build 1.2(7)).
+        var read: FieldTraits?
+        if let e = VTCatchException({
+            read = FieldTraits(
+                keyboardType: p.keyboardType ?? .default,
+                returnKeyType: p.returnKeyType ?? .default,
+                appearance: p.keyboardAppearance ?? .default,
+                autocorrection: p.autocorrectionType ?? .default,
+                contentType: p.textContentType ?? nil,
+                secure: (p as UITextInputTraits).isSecureTextEntry == true)
+        }) {
+            TouchLog.write("traits: UIKit exception \(e.name.rawValue) — thử lại sau")
+            if !traitsRetryPending {
+                traitsRetryPending = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                    self?.traitsRetryPending = false
+                    self?.refreshFieldTraits(force: force)
+                }
+            }
+            return
+        }
+        guard let t = read else { return }
         let old = fieldTraits
         guard force || FieldTraits.needsReconfigure(old: old, new: t) else { return }
         fieldTraits = t
@@ -481,7 +538,7 @@ final class KeyboardViewController: UIInputViewController {
         let p: UITextDocumentProxy
         func insertText(_ text: String) { p.insertText(text) }
         func deleteBackward() { p.deleteBackward() }
-        var isSecure: Bool { (p as UITextInputTraits).isSecureTextEntry == true }
+        var isSecure: Bool { vtSafe(false) { (p as UITextInputTraits).isSecureTextEntry == true } }
         var contextBeforeInput: String? { p.documentContextBeforeInput }
         var contextAfterInput: String? { p.documentContextAfterInput }
         var hasSelection: Bool {
@@ -511,6 +568,41 @@ final class KeyboardViewController: UIInputViewController {
         let proxy = Proxy(p: textDocumentProxy)
         // textWillChange tới mà textDidChange chưa kịp → đối chiếu ngay trước phím.
         if externalChangePending, !trackpadActive { syncComposition("key") }
+        // Tự thêm dấu cách sau dấu câu: phím ngay sau quyết định số phận dấu cách đó.
+        var autoSpaceCarry = false
+        let underLetter = autoSpaceUnderLetter
+        autoSpaceUnderLetter = nil
+        if let p = autoSpacePunct {
+            autoSpacePunct = nil
+            if autoSpaceStillThere(p) {
+                switch key {
+                case .space, .doubleSpacePeriod:
+                    return                                // đã có dấu cách: nuốt, không thành 2
+                case .backspace:
+                    removeAutoSpace()                     // ⌫ chỉ xoá dấu cách tự thêm
+                    lastInsertWasSpace = false
+                    suggestionGen += 1
+                    let gen = suggestionGen
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, gen == self.suggestionGen else { return }
+                        self.updateAutoShift()
+                        if self.suggestionsActive { self.updateSuggestions() }
+                    }
+                    return
+                case .newline:
+                    removeAutoSpace()
+                case .text(let s):
+                    switch AutoSpace.reaction(toText: s) {
+                    case .keep: break
+                    case .remove: removeAutoSpace()
+                    case .carry: removeAutoSpace(); autoSpaceCarry = true
+                    }
+                case .letter:
+                    autoSpaceUnderLetter = p
+                default: break
+                }
+            }
+        }
         if textToolUndo != nil {               // ⌫ ngay sau công cụ văn bản = hoàn tác
             if case .backspace = key { undoTextTool(); return }
             textToolUndo = nil
@@ -568,11 +660,16 @@ final class KeyboardViewController: UIInputViewController {
         case .replaceLastLetter(let s):
             // Huỷ đúng phím chữ vừa gõ (không được thì ⌫ như cũ) rồi chèn như ký hiệu.
             if !bridge.undoLastLetter(proxy: proxy) { bridge.backspace(proxy: proxy) }
+            if let q = underLetter, autoSpaceSetting {
+                let r = AutoSpace.reaction(toText: s)
+                if r != .keep, autoSpaceStillThere(q) { removeAutoSpace(); autoSpaceCarry = r == .carry }
+            }
             if let d = Self.singleDigit(s), bridge.vniDigit(d, proxy: proxy) {
                 // VNI: số vuốt xuống (iPad) trong từ = phím dấu
             } else {
                 commitAndLearn(bridge.boundary(s, proxy: proxy), accepted: openAccepted)
                 lastWord = nil; lastWord2 = nil
+                applyAutoSpace(after: s, carry: autoSpaceCarry)
             }
             restoreUndo = nil; undoOfferActive = false
         case .text(let s):                            // numbers, symbols
@@ -583,6 +680,7 @@ final class KeyboardViewController: UIInputViewController {
                 commitAndLearn(final, accepted: openAccepted)
                 lastWord = nil; lastWord2 = nil            // dấu câu/ký hiệu = ngắt câu
                 typedCommit = (final, s)
+                applyAutoSpace(after: s, carry: autoSpaceCarry)
             }
             restoreUndo = nil; undoOfferActive = false
         case .space:
@@ -702,7 +800,7 @@ final class KeyboardViewController: UIInputViewController {
         let needsAutoShift: Bool
         switch key {
         case .space, .newline, .doubleSpacePeriod, .backspace, .moveCursor, .moveLine, .clearField: needsAutoShift = true
-        default: needsAutoShift = false
+        default: needsAutoShift = autoSpacePunct != nil      // ". " tự thêm ⇒ viết hoa chữ kế
         }
         suggestionGen += 1
         let gen = suggestionGen
@@ -854,7 +952,7 @@ final class KeyboardViewController: UIInputViewController {
         // Trait host đã resolve khi view vào window — sửa sáng/tối nếu lúc
         // viewWillAppear đoán sai (phím sáng trên nền tối).
         keyboard?.updateDark(AppearancePolicy.isDark(
-            appearance: textDocumentProxy.keyboardAppearance ?? .default,
+            appearance: vtSafe(.default) { self.textDocumentProxy.keyboardAppearance ?? .default },
             style: traitCollection.userInterfaceStyle))
         keyboard?.setNeedsGlobe(needsInputModeSwitchKey)
         pushSwipeLayout(prepare: true)       // frame phím đã thật → dựng template ở nền
@@ -1501,8 +1599,7 @@ extension KeyboardViewController {
         p.onDelete = { [weak self] t in self?.clip.remove(t); self?.reloadClipboardPanel() }
         p.onClearAll = { [weak self] in self?.clip.clearUnpinned(); self?.reloadClipboardPanel() }
         p.onClose = { [weak self] in self?.closeClipboardPanel() }
-        p.frame = keyboard.keyAreaFrame
-        p.autoresizingMask = [.flexibleWidth, .flexibleTopMargin]
+        p.frame = keyboard.keyAreaFrame   // KeyboardView.layoutOverlayPanel bám vùng phím mỗi lượt layout
         keyboard.addSubview(p)
         keyboard.overlayPanel = p
         clipPanel = p
@@ -1966,3 +2063,13 @@ extension KeyboardViewController {
     }
 }
 
+
+
+/// Đọc một thuộc tính của textDocumentProxy mà UIKit có thể NÉM NSException (iOS 27.0,
+/// proxy chưa sẵn sàng) — trả `fallback` thay vì để bàn phím crash.
+@inline(__always)
+func vtSafe<T>(_ fallback: T, _ read: () -> T) -> T {
+    var value = fallback
+    if VTCatchException({ value = read() }) != nil { return fallback }
+    return value
+}

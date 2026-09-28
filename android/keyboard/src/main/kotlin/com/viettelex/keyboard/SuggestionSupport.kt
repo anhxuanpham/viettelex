@@ -101,6 +101,55 @@ object TypingHeuristics {
     }
 }
 
+/**
+ * "Tự thêm dấu cách sau dấu câu" ([KeyboardSettings.autoSpaceAfterPunct], mặc định TẮT). Phần
+ * THUẦN, port 1:1 iOS SuggestionSupport.swift (AutoSpace) — test hai bên cùng số liệu. Session:
+ * sau phím . , ? ! ; : chèn " " và nhớ lại; phím kế là dấu cách ⇒ nuốt, ⌫ ⇒ chỉ xoá dấu cách
+ * tự thêm, dấu câu / "/" / xuống dòng ⇒ gỡ dấu cách trước nó, ngoặc/nháy đóng ⇒ gỡ rồi dời
+ * dấu cách ra sau ngoặc ("hi." + ")" → "hi.) ").
+ */
+object AutoSpace {
+    const val TRIGGERS = ".,?!;:"
+    const val CLOSERS = ")]}\"'”’»›"
+
+    enum class Reaction { KEEP, REMOVE, CARRY }
+
+    /** Phím chèn chữ [s] ngay sau dấu cách tự thêm. */
+    fun reaction(s: String): Reaction {
+        val c = s.singleOrNull() ?: return Reaction.KEEP
+        return when {
+            c in CLOSERS -> Reaction.CARRY
+            c in TRIGGERS || c == '/' -> Reaction.REMOVE
+            else -> Reaction.KEEP
+        }
+    }
+
+    /**
+     * Vừa chèn [punct]: có thêm dấu cách không. [before] = chữ trước con trỏ SAU khi chèn (phải
+     * kết thúc bằng [punct]), [after] = chữ sau con trỏ (null = không đọc được).
+     */
+    fun shouldAdd(punct: String, before: String, after: String?): Boolean {
+        val p = punct.singleOrNull() ?: return false
+        if (p !in TRIGGERS || before.lastOrNull() != p) return false
+        // Đã có khoảng trắng / dấu câu / ngoặc đóng ngay sau con trỏ (sửa giữa câu).
+        after?.firstOrNull()?.let { if (it.isWhitespace() || it in TRIGGERS || it in CLOSERS) return false }
+        val rest = before.dropLast(1)
+        val token = rest.substring(rest.indexOfLast { it.isWhitespace() } + 1)
+        val prev = token.lastOrNull() ?: return false            // dấu câu đứng riêng (" :)")
+        if (prev.isDigit() && (p == '.' || p == ',' || p == ':')) return false   // 3.5 · 1,000 · 10:30
+        if ('@' in token || '/' in token) return false            // email, URL, đường dẫn
+        return !looksLikeDomain(token)
+    }
+
+    /** "www.google", "vnexpress.net", "a.b-c.io": đoạn cuối sau dấu chấm ≥ 2 ký tự. "e.g", "hi.." thì không. */
+    fun looksLikeDomain(token: String): Boolean {
+        if (token.lowercase().startsWith("www")) return true
+        val parts = token.split('.')
+        if (parts.size < 2 || parts.last().length < 2) return false
+        return parts.all { part -> part.isNotEmpty() && part.all { it.isLetterOrDigit() || it == '-' } }
+    }
+}
+
 /** Nhịp thời gian iOS (giây) cho IME. */
 object TypingTimings {
     const val DOUBLE_SPACE_S = 0.35
