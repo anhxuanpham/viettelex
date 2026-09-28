@@ -162,6 +162,7 @@
 		8DE8F0376AD4F1CB2382F531 /* Trackpad.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58D98494210ACD4B0ED51A92 /* Trackpad.swift */; };
 		925E9207BD1E9E7D10D7310B /* VTCatch.m in Sources */ = {isa = PBXBuildFile; fileRef = 4F35DEB1416616443DB332E0 /* VTCatch.m */; };
 		9260F02C1EE77FA0A069A54A /* SwipeDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 705734FC03226DA179E14A71 /* SwipeDecoder.swift */; };
+		93E768311710062913552601 /* suggest-dev.txt in Resources */ = {isa = PBXBuildFile; fileRef = F0FC8F0608409E1FDA1707BD /* suggest-dev.txt */; };
 		944A23F2D0860BD58E042D08 /* KeyAlternates.swift in Sources */ = {isa = PBXBuildFile; fileRef = A34BA298D30DC3B98633F154 /* KeyAlternates.swift */; };
 		94A691F9529B238D09AF0AB8 /* SwipeLexicon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3994C0C17115101811283049 /* SwipeLexicon.swift */; };
 		96079B0EDE4A4FF7DF34406E /* KeyboardTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81B2DDC0E24D11BD96525161 /* KeyboardTheme.swift */; };
@@ -180,6 +181,7 @@
 		A354F35BE23603DF53A32A80 /* SpaceLogoEN@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 0B0AEDFB5FDC699CA97C4DE2 /* SpaceLogoEN@2x.png */; };
 		A3ACE14C8F0F55490A23732E /* FutoSwipeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FA4464DCB74D34A8A55E14B /* FutoSwipeTests.swift */; };
 		A502757FCDB7FBD09FE8CD1D /* ClipboardPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42E3B1AEEBA29C8D4693932 /* ClipboardPanel.swift */; };
+		A5D63AF8B31BCC530FDD52B0 /* SuggestTrigramTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D61FEE31733E89BE49DAF48E /* SuggestTrigramTests.swift */; };
 		A612DF363A05FED5AFB1C7B4 /* PlusConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0F66BB47D978962BA91434 /* PlusConfig.swift */; };
 		A755E9F920E0111F7E89F9DC /* SuggestionSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9A392056B54E623933F9CD3 /* SuggestionSupport.swift */; };
 		A7D0016FA22EF6C3EE8E20CB /* TextToolRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EAE46AEF3EF71266329303C /* TextToolRunner.swift */; };
@@ -205,6 +207,7 @@
 		B7ABF18E21AA806DFDB67928 /* NumberChips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DF8BE49B914D1B4B31116F3 /* NumberChips.swift */; };
 		B7B107E0D177438E5EACCFAC /* SlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB94721D99CEB3A5D2CA8A8B /* SlowTests.swift */; };
 		B87943E26F538BEF419FBEC4 /* BackupFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02937CC02BE49C39A5A7933D /* BackupFormat.swift */; };
+		B92E282E8D0ABE8BEBD693E7 /* suggest-trigram-parity.txt in Resources */ = {isa = PBXBuildFile; fileRef = C39CAE56C7A6C95E09637270 /* suggest-trigram-parity.txt */; };
 		BC7C55450CA36CBF6D0F8297 /* vnlexicon.bin in Resources */ = {isa = PBXBuildFile; fileRef = 915FC9A836F82E797FA0AEA1 /* vnlexicon.bin */; };
 		C0F883065272FE06DAE56D0E /* WordDeleteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0599154D3A43772DC7456968 /* WordDeleteTests.swift */; };
 		C1206085EB6077DC29ECB44C /* FutoSwipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76444B4521814651DA2C026A /* FutoSwipe.swift */; };
@@ -431,6 +434,7 @@
 		C0D2E54E996214AA4F8CB065 /* TrackpadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackpadTests.swift; sourceTree = "<group>"; };
 		C23B10293CBF99CC16B1E908 /* ClipboardHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardHistory.swift; sourceTree = "<group>"; };
 		C38772D47D6B779FA5C58271 /* L10nTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = L10nTests.swift; sourceTree = "<group>"; };
+		C39CAE56C7A6C95E09637270 /* suggest-trigram-parity.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "suggest-trigram-parity.txt"; sourceTree = "<group>"; };
 		C445BEBA75DFC20101EC3BA9 /* VNSuggest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VNSuggest.swift; sourceTree = "<group>"; };
 		C4D95DF2E5846D5F65882073 /* TemplateEdit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemplateEdit.swift; sourceTree = "<group>"; };
 		C5BC327E13C13C9D09229C0F /* SyllableLMTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyllableLMTests.swift; sourceTree = "<group>"; };
@@ -446,6 +450,7 @@
 		D44937FCA0854428DB368FC7 /* AutoCorrectTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoCorrectTests.swift; sourceTree = "<group>"; };
 		D488C3ADF837AC9FCDD9EC1D /* PlusGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlusGate.swift; sourceTree = "<group>"; };
 		D4F06F2D8BF071889A8590BF /* add-tones.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "add-tones.txt"; sourceTree = "<group>"; };
+		D61FEE31733E89BE49DAF48E /* SuggestTrigramTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestTrigramTests.swift; sourceTree = "<group>"; };
 		D705942B9BA084047E7A7EF1 /* EmojiPlane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPlane.swift; sourceTree = "<group>"; };
 		D93CDC9D2CEA8A91A576B183 /* FeatureRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureRegressionTests.swift; sourceTree = "<group>"; };
 		DB52CD432640348306317A7C /* vnlm-parity.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "vnlm-parity.txt"; sourceTree = "<group>"; };
@@ -465,6 +470,7 @@
 		E8E2E27B46842AE6F5EB0A74 /* SyncMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMerge.swift; sourceTree = "<group>"; };
 		EE4C2C271F18A006B9967589 /* SwipePractice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipePractice.swift; sourceTree = "<group>"; };
 		EE8993F83A60C653C26799EC /* NumberRowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NumberRowTests.swift; sourceTree = "<group>"; };
+		F0FC8F0608409E1FDA1707BD /* suggest-dev.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "suggest-dev.txt"; sourceTree = "<group>"; };
 		F2C9781CE8B936C962B3EBA8 /* TelexCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TelexCore; path = ../TelexCore; sourceTree = SOURCE_ROOT; };
 		F316CA910C58A9377DC754A0 /* UserLangModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserLangModel.swift; sourceTree = "<group>"; };
 		F98CF75D5CF9E5845F830381 /* backup-ios-v1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "backup-ios-v1.json"; sourceTree = "<group>"; };
@@ -542,6 +548,8 @@
 				DF447D2ACACB4E96B9438498 /* key-alternates.txt */,
 				209C000B31A56F2E72663A5D /* math-results.txt */,
 				2B96A58C6EE35D288C488202 /* number-chips.txt */,
+				F0FC8F0608409E1FDA1707BD /* suggest-dev.txt */,
+				C39CAE56C7A6C95E09637270 /* suggest-trigram-parity.txt */,
 				CFEF10E3C02C542D5C49792E /* swipe-lang-sentences.txt */,
 				38966B5E3DF4C19B07287B0C /* swipe-paths-en.txt */,
 				A42C0808FA2107FC8B2A9D05 /* swipe-paths-timed.txt */,
@@ -642,6 +650,7 @@
 				11DFA0E70EB963455C306748 /* SpaceFlickTests.swift */,
 				BF6388E96DDD2233A554472A /* SuggestBigramTests.swift */,
 				BA0F7617C32E2C08352F2220 /* SuggestionSlotsTests.swift */,
+				D61FEE31733E89BE49DAF48E /* SuggestTrigramTests.swift */,
 				0A6B5A4EF96EB6E3DFBA7109 /* SwipeDecoderTests.swift */,
 				FC4C7AA642979C79BA435C61 /* SwipeEnglishTests.swift */,
 				5D0C7CC44A57FCB3E41047D7 /* SwipePracticeTests.swift */,
@@ -946,6 +955,8 @@
 				9E05D33874006BB326EDC4C6 /* math-results.txt in Resources */,
 				DF225D04D7CF81C8C54070B8 /* number-chips.txt in Resources */,
 				59C66E8A96CED913A07EA832 /* sample-shortcuts.yml in Resources */,
+				93E768311710062913552601 /* suggest-dev.txt in Resources */,
+				B92E282E8D0ABE8BEBD693E7 /* suggest-trigram-parity.txt in Resources */,
 				2ADC518FE5C55961C93038B7 /* swipe-lang-sentences.txt in Resources */,
 				28C579703223D53D46A60F0D /* swipe-paths-en.txt in Resources */,
 				A2CEEACB594EB47AF40541A3 /* swipe-paths-timed.txt in Resources */,
@@ -1169,6 +1180,7 @@
 				3D60F41E59C5877D893E1088 /* SpaceFlick.swift in Sources */,
 				8C36E56F67059CC68F98AA21 /* SpaceFlickTests.swift in Sources */,
 				68638B723D1A630DC68B3727 /* SuggestBigramTests.swift in Sources */,
+				A5D63AF8B31BCC530FDD52B0 /* SuggestTrigramTests.swift in Sources */,
 				7535E3D6E42FAAF982A6BC34 /* SuggestionSlots.swift in Sources */,
 				50E3CBBD5E6ED6042524F78C /* SuggestionSlotsTests.swift in Sources */,
 				A755E9F920E0111F7E89F9DC /* SuggestionSupport.swift in Sources */,

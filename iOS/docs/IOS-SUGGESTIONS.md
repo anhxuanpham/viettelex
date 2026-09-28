@@ -14,8 +14,8 @@ cao 246pt khi bật, 216pt khi tắt) có **ba trạng thái** theo ngữ cảnh
 | Trạng thái | Hiển thị | Nguồn dữ liệu |
 |---|---|---|
 | Field trống, chưa gõ | 3 từ user hay mở đầu nhất | `UserLangModel.topWords` |
-| Vừa space sau một từ ("Anh ␣") | 3 từ **kế tiếp** dự đoán | `UserLangModel.nextWords` (trigram ⊕ bigram ⊕ seed), thiếu thì lấp bằng bigram tĩnh `SyllableLM.bigram` (tầng 7) |
-| Đang gõ dở một từ | `["nguyên văn"] \| ứng viên 1 \| ứng viên 2 (hoặc ≤3 emoji)` | `VNSuggest` (inline) + bigram tĩnh (tầng 7) + `EmojiSuggest` |
+| Vừa space sau một từ ("Anh ␣") | 3 từ **kế tiếp** dự đoán | `SuggestRank.nextFill`: có trigram tĩnh (prev2, prev) ⇒ bộ ba người dùng đã gõ → trigram tĩnh → `UserLangModel.nextWords`; không ⇒ nextWords (trigram ⊕ bigram ⊕ seed) rồi lấp bằng bigram tĩnh (tầng 7) |
+| Đang gõ dở một từ | `["nguyên văn"] \| ứng viên 1 \| ứng viên 2 (hoặc ≤3 emoji)` | `VNSuggest` (inline) + trigram/bigram tĩnh (tầng 7) + `EmojiSuggest` |
 
 Rule ngữ cảnh cứng chạy trước cả ba: token trước con trỏ kết thúc bằng `@` →
 gợi `gmail.com / yahoo.com / outlook.com`; kết thúc bằng `.` sau chữ/số → gợi
@@ -128,7 +128,7 @@ App Store review) giấu chúng khỏi thanh. Phân tầng: chỉ token thô (l�
 đời thường (cướp, giết, đánh rắm, mày/má) KHÔNG lọc. Khi lọc, over-fetch 6
 lấy top-3 nên slot luôn được lấp.
 
-### 7. Bigram âm tiết tĩnh — `SyllableLM.bigram` (27/09/2026; vnlm.bin từ 28/09/2026)
+### 7. LM âm tiết tĩnh — `SyllableLM` (bigram 27/09/2026; vnlm.bin + trigram từ 28/09/2026)
 
 Phần bigram của `Resources/vnlm.bin` (Kneser-Ney, cùng file với trigram gõ vuốt; nguồn/giấy phép
 `docs/DATA-SOURCES.md`) — CÙNG một instance `SyllableLM.shared` với gõ vuốt (map một lần). PMI =
@@ -136,13 +136,23 @@ s2(b, c) + uniAdj(c) ≈ ln(P(c|b) / P(c)); thanh gợi ý chỉ dùng mục TƯ
 bảng vnbigram.bin cũ — đã bỏ, tiết kiệm 1,2 MB/app). Mục đích: người dùng MỚI (UserLangModel chỉ
 có seed) vẫn được gợi ý theo ngữ cảnh.
 
-- **Inline**: `bigram = min(8, 2.5·PMI(âm tiết trước → ứng viên))`, nhân **0.45** khi có ứng
+- **Inline**: `LM = min(12, 3·PMI(ngữ cảnh → ứng viên))`, nhân **0.33** khi có ứng
   viên nào của pool nằm trong nextWords (cá nhân/seed đã có ý kiến về lượt này) ⇒ trần hiệu
-  dụng 3.6 < 4 (điểm nextWords) — **cá nhân thắng** khi còn lại ngang nhau (golden: user gõ
-  "sao có" 3 lần ⇒ "co" ra có, dù bigram nghiêng cô). Không âm tiết trước / từ lạ ⇒ 0.
-- **Từ kế tiếp**: nextWords (cá nhân/seed) giữ trước; còn < 3 thì lấp bằng top âm tiết theo
-  `PMI + 10·freq/255` sau từ trước (PMI thuần nghiêng cặp hiếm), qua lọc nhạy cảm + DisplayCase
-  + viết hoa đầu câu như mọi gợi ý; cuối cùng mới đệm topWords.
+  dụng 3.96 < 4 (điểm nextWords) — **cá nhân thắng** khi còn lại ngang nhau (golden: user gõ
+  "sao có" 3 lần ⇒ "co" ra có, dù bigram nghiêng cô). PMI = mục trigram (prev2, prev → ứng
+  viên) nếu có, không thì mục bigram (`Context.explicitAll`, cả pool một lượt). Không âm tiết
+  trước / từ lạ ⇒ 0. (Trước 28/09: bigram, 2.5 / 8 / 0.45.)
+- **Từ kế tiếp** (`SuggestRank.nextFill`): có dòng trigram (prev2, prev) (cùng câu — ngữ cảnh
+  đã xoá ở dấu câu) ⇒ từ người dùng đã gõ ĐÚNG bộ ba này ≥ 2 lượt (`UserLangModel.trigramCount`,
+  tối đa 2) trước, rồi top trigram tĩnh (`Context.forEachNext`: KN lùi γ3 + s2 cho mục chỉ có
+  ở bigram; dòng trigram ≥ 6 mục thì chỉ dòng đó), rồi nextWords cá nhân/seed. Không có dòng
+  trigram ⇒ như cũ: nextWords giữ trước, còn < 3 thì lấp bằng top bigram. Điểm tĩnh
+  `PMI + 10·freq/255` (PMI thuần nghiêng cặp hiếm), qua lọc nhạy cảm + DisplayCase + viết hoa
+  đầu câu như mọi gợi ý; cuối cùng mới đệm topWords. Seed đứng sau trigram vì đo cho thấy
+  seed/bigram cá nhân đoán kém trigram tĩnh kể cả với người dùng đã học dần (xem Đo).
+- **Cụm nhiều âm tiết trong một ô** ("Việt" → "Việt Nam", "thành phố" → "Hồ Chí Minh"): đã
+  đo (android `SuggestTrigramTests.tuneDev`), KHÔNG làm — tốt nhất +0,07 điểm phím tiết kiệm
+  (ngang nhiễu) mà mất 0,5–3 điểm từ kế tiếp top-3 (ô đơn bị thay).
 - **Hiệu năng**: PMI cho pool tính ở `suggestQueue` (nền, cùng generation token); từ kế tiếp
   tra trên main ~µs. Bảng mmap `.alwaysMapped`, đọc tại chỗ: RAM bẩn ≈ 0 (test đo
   phys_footprint sau khi duyệt toàn bảng). Map + hash kiểm lexicon chạy nền ở `viewDidLoad`.
@@ -150,7 +160,10 @@ có seed) vẫn được gợi ý theo ngữ cảnh.
   slot1 0.747 → 0.829, 3 slot 0.880 → 0.938, từ kế tiếp top3 0.111 → 0.271; người dùng đã học
   dần cũng tăng (không tụt). Trọng số chọn bằng lưới `tuneGrid` (Android, `VT_TUNE=1`).
   Chuyển sang vnlm.bin (28/09/2026, lưới lại trên tập dev): slot1 0.830, 3 slot 0.939, từ kế
-  tiếp 0.270 — ngang bảng cũ (±0.1 điểm).
+  tiếp 0.270 — ngang bảng cũ (±0.1 điểm). Thêm trigram (28/09/2026, `SuggestTrigramTests`,
+  chọn trên tập dev `suggest-dev.txt`, đo một lần trên heldout — bảng ở docs/DATA-SOURCES.md
+  mục "Trigram trên thanh gợi ý"): từ kế tiếp top-1 13,3 → 22,3 %, top-3 27,0 → 37,2 %, slot1
+  83,0 → 85,4 %, 3 slot 93,9 → 94,7 %, phím tiết kiệm 52,7 → 57,2 %.
 
 ### 8. `NumberChips` — đọc số, định dạng tiền (kết quả phép tính: mục 8b)
 
@@ -282,6 +295,9 @@ Tests: `ios/KeyboardTests/EngineBridgeTests.swift` — goldens cho compat-match
 ngưỡng học từ lạ, seed contract (max weight ≤50), filter tiers, display-case.
 `ios/KeyboardTests/SuggestBigramTests.swift` (≡ android `SuggestBigramTests.kt`) — số đo heldout
 trước/sau làm ngưỡng hồi quy, cá nhân thắng, độ trễ, RAM bẩn.
+`ios/KeyboardTests/SuggestTrigramTests.swift` (≡ android `SuggestTrigramTests.kt`) — trigram: duyệt
+dòng ≡ `score`, bộ ba đã học đứng trước, fixture parity `suggest-trigram-parity.txt` (Kotlin sinh),
+heldout trước/sau (từ kế tiếp top-1/3, slot, phím tiết kiệm, học dần), độ trễ cả lượt ≤ +20 %.
 `ios/KeyboardTests/NumberChipsTests.swift` + android `NumberChipsTests.kt` — cùng
 fixture `number-chips.txt` (đọc số, viết tắt k/tr/tỷ, biểu thức, chip theo context).
 `ios/KeyboardTests/SuggestionSlotsTests.swift` + android `SuggestionSlotsTests.kt` — cùng bảng

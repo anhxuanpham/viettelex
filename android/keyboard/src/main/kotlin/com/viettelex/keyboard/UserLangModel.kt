@@ -498,6 +498,10 @@ class UserLangModel(
     /** Số lần cặp (prev → word) đã gặp (bigram cá nhân + seed) — AddTones chấm lưới âm tiết. */
     fun bigramCount(prev: String, word: String): Int = bi[prev.lowercase()]?.get(word) ?: 0
 
+    /** Số lần bộ ba (prev2, prev → word) người dùng đã gõ (không có seed) — thanh gợi ý ưu tiên. */
+    fun trigramCount(prev2: String, prev: String, word: String): Int =
+        tri[prev2.lowercase() + SEP + prev.lowercase()]?.let { it[word] ?: it[word.lowercase()] } ?: 0
+
     /**
      * Seed khi store trống. [seed] chỉ được gọi khi thật sự seed; đang chờ load thì
      * giữ lại quyết sau swap-in.

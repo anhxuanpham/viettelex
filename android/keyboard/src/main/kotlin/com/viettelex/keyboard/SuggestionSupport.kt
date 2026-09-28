@@ -22,13 +22,16 @@ object SuggestionFill {
  * sửa ở đây thì sửa y hệt bên kia). Hợp đồng: iOS/docs/IOS-SUGGESTIONS.md (tầng 1, 2, 7).
  *
  * Inline (đang gõ dở): `ln(freq+1) + 2.5·ln(count+1) + 4·[trong nextWords] + 1.5·[chỉ thiếu dấu]
- * + bigram`, bigram = min(cap, weight·PMI(âm tiết trước → ứng viên)) — nhân [Params.bigramDamp]
- * khi UserLangModel đã có ý kiến về chính lượt này (một ứng viên nằm trong nextWords): khi đó
- * cap·damp = 3.6 < 4 ⇒ ứng viên trong nextWords luôn hơn ứng viên chỉ có bigram (còn lại ngang
- * nhau) — cá nhân thắng. Không ứng viên nào trong nextWords (người dùng mới, prev lạ) ⇒ bigram đủ mạnh.
+ * + LM`, LM = min(cap, weight·PMI(ngữ cảnh → ứng viên)) — nhân [Params.bigramDamp] khi
+ * UserLangModel đã có ý kiến về chính lượt này (một ứng viên nằm trong nextWords): khi đó
+ * cap·damp = 3.96 < 4 ⇒ ứng viên trong nextWords luôn hơn ứng viên chỉ có LM (còn lại ngang
+ * nhau) — cá nhân thắng. Không ứng viên nào trong nextWords (người dùng mới, prev lạ) ⇒ LM đủ mạnh.
+ * PMI: có dòng trigram (prev2, prev) và ứng viên có mục trigram ⇒ PMI trigram, không thì bigram.
  *
- * Từ kế tiếp (sau dấu cách): nextWords cá nhân/seed trước; thiếu thì lấp bằng top âm tiết theo
- * bigram tĩnh sau từ trước (PMI + nextFreqWeight·freq/255 — PMI thuần nghiêng về cặp hiếm).
+ * Từ kế tiếp (sau dấu cách, [nextFill]): có dòng trigram (prev2, prev) ⇒ từ người dùng đã gõ
+ * ĐÚNG bộ ba này (≥ [LEARNED_TRI_MIN] lượt) trước, rồi top trigram tĩnh, rồi nextWords cá nhân/seed;
+ * không có ⇒ như cũ: nextWords cá nhân/seed trước, thiếu thì lấp bằng top bigram tĩnh.
+ * Điểm tĩnh = PMI + nextFreqWeight·freq/255 (PMI thuần nghiêng về cặp hiếm).
  */
 object SuggestRank {
     data class Params(
@@ -36,19 +39,25 @@ object SuggestRank {
         val bigramCap: Double = BIGRAM_CAP,
         val bigramDamp: Double = BIGRAM_DAMP,
         val nextFreqWeight: Double = NEXT_FREQ_WEIGHT,
+        /** false ⇒ chỉ bigram (như trước 28/09/2026 — đo so sánh). */
+        val useTrigram: Boolean = true,
+        val learnedTriMin: Int = LEARNED_TRI_MIN,
+        val triOnlyRow: Int = TRI_ONLY_ROW,
     )
 
-    // chọn trên heldout (27/09/2026, lưới trong SuggestBigramTests.tuneGrid); cap·damp = 3.6 < 4.
-    // 28/09/2026 chuyển sang bigram của vnlm.bin: lưới lại trên tập dev — giữ w/cap/damp,
-    // nextFreqWeight 12 → 10 (PMI KN có thang khác chút).
-    const val BIGRAM_WEIGHT = 2.5
-    const val BIGRAM_CAP = 8.0
-    const val BIGRAM_DAMP = 0.45
+    // chọn trên heldout (27/09/2026, lưới trong SuggestBigramTests.tuneGrid); cap·damp < 4.
+    // 28/09/2026 chuyển sang bigram của vnlm.bin: nextFreqWeight 12 → 10. Cùng ngày thêm trigram
+    // (SuggestTrigramTests.tuneDev, tập DEV suggest-dev.txt): w 2.5 → 3, cap 8 → 12, damp 0.45 → 0.33.
+    const val BIGRAM_WEIGHT = 3.0
+    const val BIGRAM_CAP = 12.0
+    const val BIGRAM_DAMP = 0.33
     const val NEXT_FREQ_WEIGHT = 10.0
+    const val LEARNED_TRI_MIN = 2
+    const val TRI_ONLY_ROW = 6
     val DEFAULT = Params()
 
     /**
-     * Xếp pool VNSuggest (chưa lọc nhạy cảm). [pmi]\[i] = PMI bigram của pool\[i] (null = không
+     * Xếp pool VNSuggest (chưa lọc nhạy cảm). [pmi]\[i] = PMI của pool\[i] (null = không
      * có âm tiết trước / bảng). Hoà điểm giữ thứ tự pool (tần suất tĩnh) — iOS y hệt.
      */
     fun rankInline(pool: List<VNSuggest.Match>, pmi: FloatArray?, typedLen: Int,
@@ -66,32 +75,84 @@ object SuggestRank {
     }
 
     /**
-     * PMI bigram (vnlm.bin, chỉ mục tường minh — thiếu = 0) của từng ứng viên sau âm tiết [prev]
-     * (null nếu không có dữ liệu). Chạy nền.
+     * PMI (vnlm.bin, chỉ mục tường minh — thiếu = 0) của từng ứng viên sau ([prev2], [prev]):
+     * mục trigram nếu có, không thì mục bigram (null nếu prev không có dòng bigram). Chạy nền.
      */
     fun inlinePmi(pool: List<VNSuggest.Match>, prev: String?,
-                  lm: SyllableLM? = SyllableLM.shared): FloatArray? {
+                  lm: SyllableLM? = SyllableLM.shared, prev2: String? = null, p: Params = DEFAULT): FloatArray? {
         if (prev == null || lm == null || pool.isEmpty()) return null
-        val row = lm.bigram(VNSuggest.lexiconId(prev))
-        if (row.size == 0) return null
-        return FloatArray(pool.size) { if (pool[it].id >= 0) row.explicit(pool[it].id) else 0f }
+        val ctx = lm.context(if (prev2 != null && p.useTrigram) VNSuggest.lexiconId(prev2) else -1,
+            VNSuggest.lexiconId(prev)) ?: return null
+        if (ctx.bigramSize == 0) return null
+        return ctx.explicitAll(IntArray(pool.size) { pool[it].id })
     }
 
     /** Top [limit] âm tiết hay theo sau [prev] theo bigram tĩnh vnlm.bin (chữ thường, dạng lexicon). */
     fun bigramNext(prev: String, limit: Int, lm: SyllableLM? = SyllableLM.shared,
-                   p: Params = DEFAULT): List<String> {
-        if (lm == null || limit <= 0) return emptyList()
-        val row = lm.bigram(VNSuggest.lexiconId(prev))
-        if (row.size == 0) return emptyList()
-        val ids = IntArray(limit); val sc = DoubleArray(limit); var n = 0
-        row.forEach { id, pmi ->
-            val s = pmi + p.nextFreqWeight * VNSuggest.freq(id) / 255.0
-            if (n == limit && s <= sc[n - 1]) return@forEach
-            var j = if (n < limit) n++ else n - 1
+                   p: Params = DEFAULT): List<String> = contextNext(prev, null, limit, lm, p)
+
+    /**
+     * Top [limit] âm tiết sau ([prev2], [prev]) theo vnlm.bin: có dòng trigram (prev2, prev) ⇒
+     * chấm bằng trigram (KN lùi bigram cho mục chỉ có ở bigram — [SyllableLM.Context.forEachNext]),
+     * không thì bigram như [bigramNext].
+     */
+    fun contextNext(prev: String, prev2: String?, limit: Int, lm: SyllableLM? = SyllableLM.shared,
+                    p: Params = DEFAULT): List<String> = topNext(prev, prev2, limit, lm, p)?.words() ?: emptyList()
+
+    /**
+     * Từ kế tiếp sau dấu cách (≤ 3, CHƯA đệm topWords). [personal] = nextWords cá nhân/seed
+     * đã lọc nhạy cảm (≤ 6), [triCount] = số lượt người dùng gõ (prev2, prev → w), [filter] lọc
+     * nhạy cảm cho phần tĩnh.
+     */
+    fun nextFill(prev: String, prev2: String?, personal: List<String>, triCount: (String) -> Int,
+                 filter: (List<String>) -> List<String> = { it }, lm: SyllableLM? = SyllableLM.shared,
+                 p: Params = DEFAULT): List<String> {
+        val tri = if (prev2 != null && p.useTrigram && lm != null) topNext(prev, prev2, 6, lm, p) else null
+        if (tri != null && tri.trigram) {
+            val learned = personal.filter { triCount(it) >= p.learnedTriMin }.take(2)
+            return SuggestionFill.pad(learned, filter(tri.words()) + personal, 3)
+        }
+        val base = personal.take(3)
+        if (base.size >= 3) return base
+        val st = tri?.words() ?: bigramNext(prev, 6, lm, p)
+        return SuggestionFill.pad(base, filter(st), 3)
+    }
+
+    /** Kết quả [topNext]: [n] id đầu (điểm giảm dần) + điểm; [trigram] = chấm bằng dòng trigram. */
+    class Top(@JvmField val ids: IntArray, @JvmField val scores: DoubleArray, @JvmField var n: Int,
+              @JvmField val trigram: Boolean) {
+        fun words(): List<String> = List(n) { VNSuggest.display(ids[it]) }
+    }
+
+    /** Top [limit] (id, điểm) sau ([prev2], [prev]) — null nếu không có dữ liệu. Chèn vào mảng cỡ limit, không sort. */
+    fun topNext(prev: String, prev2: String?, limit: Int, lm: SyllableLM? = SyllableLM.shared,
+                p: Params = DEFAULT): Top? {
+        if (lm == null || limit <= 0) return null
+        val pid = VNSuggest.lexiconId(prev)
+        val ctx = if (prev2 != null && p.useTrigram) lm.context(VNSuggest.lexiconId(prev2), pid) else null
+        val tri = ctx != null && ctx.hasTrigram
+        val top = Top(IntArray(limit), DoubleArray(limit), 0, tri)
+        val ids = top.ids; val sc = top.scores
+        val fw = p.nextFreqWeight / 255.0
+        fun push(id: Int, pmi: Float) {
+            val s = pmi + fw * VNSuggest.freq(id)
+            val n = top.n
+            if (n == limit && s <= sc[n - 1]) return
+            var j = if (n < limit) top.n++ else n - 1
             while (j > 0 && sc[j - 1] < s) { sc[j] = sc[j - 1]; ids[j] = ids[j - 1]; j-- }
             sc[j] = s; ids[j] = id
         }
-        return List(n) { VNSuggest.display(ids[it]) }
+        // dòng trigram đủ dài ⇒ chỉ nó (bỏ duyệt cả dòng bigram prev — dòng "của"/"và" hàng nghìn
+        // mục); ngắn ⇒ trộn đủ hai dòng (KN lùi γ3 + s2)
+        if (tri && ctx!!.forEachTrigram { id, pmi -> push(id, pmi) } < p.triOnlyRow) {
+            top.n = 0
+            ctx.forEachNext { id, pmi -> push(id, pmi) }
+        } else if (!tri) {
+            val row = lm.bigram(pid)
+            if (row.size == 0) return null
+            row.forEach { id, pmi -> push(id, pmi) }
+        }
+        return if (top.n == 0) null else top
     }
 }
 

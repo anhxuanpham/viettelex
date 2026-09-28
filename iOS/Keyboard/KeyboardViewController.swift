@@ -1287,7 +1287,7 @@ final class KeyboardViewController: UIInputViewController {
             // không có phím mới (suggestionGen), cùng bridge + cùng từ đang gõ.
             let req = suggestReq, gen = suggestionGen, b = bridge
             let raw = b.rawWord, predicted = b.predictedCommit, wantFix = b.autoFixAdjacent
-            let prev = lastWord, english = b.englishMode
+            let prev = lastWord, prev2 = lastWord2, english = b.englishMode
             Self.suggestQueue.async { [weak self] in
                 // Chế độ Tiếng Anh: hoàn thành từ enlexicon, không sửa chạm trượt / bigram Việt.
                 let pool = english ? SwipeEnglish.completions(composed, limit: 24)
@@ -1296,8 +1296,8 @@ final class KeyboardViewController: UIInputViewController {
                     ? AdjacentKeyFixer.lexiconCorrection(raw: raw, bridge: b) : nil
                 // trượt vào phím thanh mà vẫn ra từ ("casn" → cán, ý là cân)
                 let slip = fix == nil && wantFix ? AdjacentKeyFixer.lexiconToneSlip(raw: raw, bridge: b) : nil
-                // bigram âm tiết tĩnh theo từ trước (mmap dùng chung với gõ vuốt; tra ~µs)
-                let pmi = english ? nil : SuggestRank.inlinePmi(pool, prev: prev)
+                // trigram/bigram âm tiết tĩnh theo 1–2 từ trước (mmap dùng chung với gõ vuốt; tra ~µs)
+                let pmi = english ? nil : SuggestRank.inlinePmi(pool, prev: prev, prev2: prev2)
                 DispatchQueue.main.async {
                     guard let self, req == self.suggestReq, gen == self.suggestionGen,
                           self.bridge === b, b.composedWord == composed,
@@ -1315,16 +1315,14 @@ final class KeyboardViewController: UIInputViewController {
                                            enabled: filterSensitive).prefix(3)
             set.nextWords = padWords(en.map { caseForContext($0) }, need: 3)
         } else if let prev = lastWord {
-            // vừa space sau một từ → gợi từ KẾ TIẾP (trigram/bigram cá nhân
-            // interpolate với seed); thiếu thì lấp bằng bigram tĩnh (người dùng mới)
-            // rồi mới tới topWords
-            let personal = Array(SensitiveWords.filter(
-                langModel.nextWords(after: prev, prev2: lastWord2, limit: 6),
-                enabled: filterSensitive
-            ).prefix(3))
-            let next = personal.count >= 3 ? personal : SuggestionFill.pad(personal,
-                with: SensitiveWords.filter(SuggestRank.bigramNext(prev, limit: 6), enabled: filterSensitive),
-                need: 3)
+            // vừa space sau một từ → gợi từ KẾ TIẾP (SuggestRank.nextFill): có trigram tĩnh
+            // (prev2, prev) ⇒ bộ ba người dùng đã gõ, rồi trigram, rồi cá nhân/seed; không ⇒
+            // cá nhân/seed trước, lấp bằng bigram tĩnh; rồi mới tới topWords
+            let p2 = lastWord2, lm = langModel, fs = filterSensitive
+            let personal = SensitiveWords.filter(lm.nextWords(after: prev, prev2: p2, limit: 6), enabled: fs)
+            let next = SuggestRank.nextFill(prev, prev2: p2, personal: personal,
+                                            triCount: { w in p2.map { lm.trigramCount($0, prev, w) } ?? 0 },
+                                            filter: { SensitiveWords.filter($0, enabled: fs) })
             set.nextWords = padWords(next.map { caseForContext(DisplayCase.apply($0, after: prev)) }, need: 3)
         } else {
             // field trống chưa gõ gì → từ user hay mở đầu nhất

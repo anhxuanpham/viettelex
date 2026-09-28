@@ -210,6 +210,53 @@ Kích thước bản Release (main 28/09 → nhánh này): iOS .app 8.248 → 7.
 `noCompress`), AAB 7.413.577 → 6.928.781 B (AAB nén asset — dữ liệu EF ít nén hơn mảng thô),
 APK debug 16.142.435 → 14.932.923 B.
 
+### Trigram trên thanh gợi ý (28/09/2026, `SuggestTrigramTests`)
+
+Thanh gợi ý gõ chạm dùng thêm phần TRIGRAM của vnlm.bin (định dạng không đổi; API reader thêm
+`Context.forEachNext` / `forEachTrigram` / `explicit` / `explicitAll`, Swift ≡ Kotlin):
+
+- **Từ kế tiếp**: có dòng trigram (prev2, prev) trong cùng câu ⇒ top trigram (KN lùi γ3 + s2 cho
+  mục chỉ có ở bigram; dòng ≥ 6 mục thì chỉ duyệt dòng trigram — khỏi quét cả dòng bigram của
+  "của"/"và"). Ưu tiên người dùng: từ đã gõ ĐÚNG bộ ba này ≥ 2 lượt đứng trước, sau trigram tĩnh
+  mới tới nextWords cá nhân/seed. Không có dòng trigram ⇒ như cũ (cá nhân/seed rồi bigram).
+- **Đang gõ** (chọn dấu cho âm tiết đang gõ): PMI của mục trigram nếu có, không thì bigram;
+  trọng số lưới lại 2.5/8/0.45 → 3/12/0.33 (trần hiệu dụng 3.96 < 4 ⇒ cá nhân vẫn thắng).
+- Tập DEV mới `iOS/KeyboardTests/Fixtures/suggest-dev.txt` (chuỗi Tatoeba `hash % 20 == 1`,
+  sinh bằng `chains` từ vie_sentences.tsv — tái tạo đúng từng dòng bigram-heldout.txt với
+  `% 20 == 0`). Mọi tham số chọn trên dev, đo MỘT lần trên tập kiểm thử.
+
+Tập kiểm thử (JVM, 12.027 vị trí; iOS đo 1/3 chuỗi cho cùng xu hướng: top-1 13,4 → 22,1, top-3
+26,3 → 37,0, slot1 82,6 → 85,3, phím tiết kiệm 52,8 → 57,3 %). "Phím tiết kiệm" = ước lượng phím
+Telex (chữ + phím dấu/mũ/móc, đ = 2, + dấu cách) bớt được khi chạm chip (từ kế tiếp = 1 chạm,
+ứng viên sau tiền tố k chữ = k + 1):
+
+| | trước (bigram) | sau (trigram) |
+|---|---|---|
+| Từ kế tiếp top-1 / top-3, người dùng mới | 13,3 / 27,0 % | **22,3 / 37,2 %** |
+| Đang gõ slot1 / 3 slot, người dùng mới | 83,0 / 93,9 % | **85,4 / 94,7 %** |
+| Phím tiết kiệm, người dùng mới | 52,7 % | **57,2 %** |
+| Học dần: từ kế tiếp top-1 / top-3 | 15,7 / 29,0 % | **23,3 / 38,1 %** |
+| Học dần: slot1 / 3 slot / phím tiết kiệm | 86,1 / 94,8 / 54,1 % | **88,2 / 95,5 / 57,9 %** |
+
+Trên dev (cùng thứ tự): trigram cho từ kế tiếp +4,5 / +6,4 điểm khi vẫn để cá nhân/seed đứng trước;
+đưa trigram lên trước seed thêm +4,1 / +3,5 (người dùng học dần cũng tăng: top-1 17,2 → 23,1 %);
+PMI trigram cho âm tiết đang gõ +1,0 slot1, lưới lại trọng số thêm +1,5. Cộng γ3 vào mục chỉ có ở
+bigram khi chấm âm tiết đang gõ: kém hơn (−0,6) ⇒ không. Ngưỡng bộ ba đã học 1/2/3 lượt: ngang
+nhau (±0,3) ⇒ 2.
+
+**Không làm — cụm nhiều âm tiết trong một ô** ("Việt" → "Việt Nam", nối âm tiết kế khi điểm
+trigram và lề với hạng 2 đủ lớn; chạm = chèn cả cụm): tốt nhất +0,07 điểm phím tiết kiệm (57,29 →
+57,36 %, 52/884 lần hiện là trúng) đổi lấy −0,6 điểm từ kế tiếp top-1; ngưỡng lỏng hơn thì tụt tới
+−1,7 điểm phím. Ô đơn bị thay mất nhiều hơn cụm đem lại.
+
+**Thêm dấu** không đổi (Viterbi trigram đã thử trước đây: −0,6 điểm).
+
+Độ trễ (min nhiều vòng xen kẽ trước/sau, 10.116 vị trí heldout có 2 âm tiết trước): JVM top từ
+kế tiếp 3,3 → 2,6 µs, PMI pool 0,56 → 0,91 µs; **cả lượt** gợi ý như bàn phím — đang gõ (pool +
+PMI + xếp) 3,24 → 3,66 µs (×1,13), sau dấu cách (nextWords + lấp + đệm) 2,85 → 3,26 µs (×1,14).
+iOS sim Debug: top từ kế tiếp 69 → 40 µs, PMI pool 8,8 → 15,5 µs; cả lượt đang gõ 58,6 → 63,6 µs
+(×1,08), sau dấu cách 52,4 → 47,0 µs (×0,90). Đọc tại chỗ, không bảng/cache mới: RAM bẩn 0.
+
 ### Sửa lại từ vuốt trước — ngữ cảnh hai phía (27/09/2026, `SwipeRevise`)
 
 Cú vuốt w2 chấm lại ứng viên của từ vuốt liền trước w1 (≤ 8 âm tiết: 3 dạng × 4 dấu) bằng

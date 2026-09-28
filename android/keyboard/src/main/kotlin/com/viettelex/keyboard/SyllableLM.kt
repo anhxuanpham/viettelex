@@ -119,7 +119,7 @@ class SyllableLM private constructor(@PublishedApi internal val buf: ByteBuffer,
 
     // trigram: EF toàn cục (khoá k·count + c)
 
-    private fun triLowAt(m: Int): Int = bits(triLow, m * triL, triL)
+    @PublishedApi internal fun triLowAt(m: Int): Int = bits(triLow, m * triL, triL)
 
     /** Chỉ số khoá [x] trong trigram, -1 nếu không có (select0 + tìm nhị phân trong xô). */
     private fun triFind(x: Int): Int {
@@ -238,9 +238,10 @@ class SyllableLM private constructor(@PublishedApi internal val buf: ByteBuffer,
      * (prev2, prev1) định vị một lần; mỗi [score] chỉ còn tìm trong dòng.
      */
     inner class Context internal constructor(
-        private val g2: Float, private val bi: BiRow,
+        private val g2: Float, @PublishedApi internal val bi: BiRow,
         /** Khoá đầu dòng trigram (k·count); < 0 ⇒ không có dòng trigram cho (prev2, prev1). */
-        private val triBase: Int, private val triLo: Int, private val triPos: Int, private val g3: Float,
+        @PublishedApi internal val triBase: Int, @PublishedApi internal val triLo: Int,
+        @PublishedApi internal val triPos: Int, @PublishedApi internal val g3: Float,
     ) {
         /** s (nat) của âm tiết id [w]. */
         fun score(w: Int): Float {
@@ -253,6 +254,134 @@ class SyllableLM private constructor(@PublishedApi internal val buf: ByteBuffer,
             val s2 = if (j >= 0) biScoreAt(j) else g2
             return if (triBase >= 0) g3 + s2 else s2
         }
+
+        /**
+         * PMI của mục TƯỜNG MINH (thanh gợi ý chấm ứng viên đang gõ): có mục trigram → s3 + uniAdj;
+         * không thì mục bigram → s2 + uniAdj (không cộng γ3 — đo trên dev: cộng γ3 kém hơn);
+         * thiếu cả hai → 0. Không dòng trigram ⇒ = [Bigram.explicit].
+         */
+        fun explicit(w: Int): Float {
+            if (w < 0 || w >= count) return 0f
+            if (triBase >= 0) {
+                val t = triScanFind(triLo, triPos, triBase + w)
+                if (t >= 0) return q(cbValue(cb3Base, triScore, t, bits3)) + adj(w)
+            }
+            val j = biFind(bi, w)
+            return if (j >= 0) biScoreAt(j) + adj(w) else 0f
+        }
+
+        /**
+         * [explicit] cho nhiều id một lượt (pool ứng viên đang gõ; id < 0 ⇒ 0): xếp id tăng dần
+         * (chèn, pool ≤ 24) rồi đi song song với dòng trigram — mỗi mục dòng đọc MỘT lần, dừng ở id
+         * lớn nhất (dòng trung vị 1 mục); dòng dài quá [LONG_TRI_ROW] mục thì phần còn lại tìm từng id.
+         */
+        fun explicitAll(ids: IntArray): FloatArray {
+            val n = ids.size
+            if (n > 64) return FloatArray(n) { explicit(ids[it]) }   // khoá gói chỉ số 6 bit
+            val out = FloatArray(n)
+            if (n == 0) return out
+            // khoá id·64 + chỉ số (pool ≤ 64), id không hợp lệ ⇒ bỏ
+            val ord = IntArray(n); var k = 0
+            for (i in 0 until n) {
+                val w = ids[i]
+                if (w < 0 || w >= count) continue
+                val j = biFind(bi, w)
+                if (j >= 0) out[i] = biScoreAt(j) + adj(w)
+                val key = (w shl 6) or i
+                var p = k
+                while (p > 0 && ord[p - 1] > key) { ord[p] = ord[p - 1]; p-- }
+                ord[p] = key; k++
+            }
+            if (triBase < 0 || k == 0) return out
+            val t = TriCursor(triLo, triBase, triBase + count)
+            triStart(t, triPos)
+            var qi = 0; var steps = 0
+            while (qi < k && t.c != Int.MAX_VALUE) {
+                val w = ord[qi] ushr 6
+                if (t.c < w) {
+                    if (++steps > LONG_TRI_ROW) {
+                        while (qi < k) {
+                            val w2 = ord[qi] ushr 6
+                            val m = triFind(triBase + w2)
+                            if (m >= 0) out[ord[qi] and 63] = q(cbValue(cb3Base, triScore, m, bits3)) + adj(w2)
+                            qi++
+                        }
+                        return out
+                    }
+                    triNext(t)
+                } else {
+                    if (t.c == w) out[ord[qi] and 63] = t.v + adj(w)
+                    qi++
+                }
+            }
+            return out
+        }
+
+        /**
+         * Duyệt CHỈ các mục trigram tường minh của (prev2, prev1) theo id tăng dần: action(id, pmi),
+         * pmi = s3 + uniAdj. Trả số mục (0 nếu không có dòng trigram).
+         */
+        inline fun forEachTrigram(action: (next: Int, pmi: Float) -> Unit): Int {
+            if (triBase < 0) return 0
+            val t = TriCursor(triLo, triBase, triBase + count)
+            triStart(t, triPos)
+            var n = 0
+            while (t.c != Int.MAX_VALUE) { action(t.c, t.v + adj(t.c)); n++; triNext(t) }
+            return n
+        }
+
+        /** Số mục dòng bigram prev1 (0 ⇒ không biết gì về prev1 — như [Bigram.size]). */
+        val bigramSize: Int get() = bi.hi - bi.lo
+
+        /** Có dòng trigram cho (prev2, prev1) không. */
+        val hasTrigram: Boolean get() = triBase >= 0
+
+        /**
+         * Duyệt mọi âm tiết sau có mục TƯỜNG MINH — dòng bigram prev1 ∪ dòng trigram (prev2, prev1)
+         * — theo id tăng dần: action(id, pmi), pmi = [score] + uniAdj ≈ ln(P(c | prev2, prev1) / P(c))
+         * (mục chỉ có ở bigram lùi γ3 + s2 như [score]). Không dòng trigram ⇒ y hệt
+         * [Bigram.forEach]. Trộn hai dãy tăng dần tại chỗ (dòng trigram duyệt tuần tự, không
+         * select0 lại), không cấp phát mảng. Song sinh Swift `Context.forEachNext`.
+         */
+        inline fun forEachNext(action: (next: Int, pmi: Float) -> Unit) {
+            val t = TriCursor(triLo, triBase, triBase + count)
+            if (triBase >= 0) triStart(t, triPos)
+            val back = if (triBase >= 0) g3 else 0f
+            biScan(bi) { m, c ->
+                while (t.c < c) { action(t.c, t.v + adj(t.c)); triNext(t) }
+                if (t.c == c) { action(c, t.v + adj(c)); triNext(t) }
+                else action(c, back + biScoreAt(m) + adj(c))
+            }
+            while (t.c != Int.MAX_VALUE) { action(t.c, t.v + adj(t.c)); triNext(t) }
+        }
+    }
+
+    /**
+     * Con trỏ duyệt tuần tự một dòng trigram (khoá [base] ≤ k < [end]): phần tử [m], từ bit high
+     * [wi]/[w]; [c] = id âm tiết kế (MAX = hết dòng), [v] = s3 của nó.
+     */
+    @PublishedApi internal class TriCursor(@JvmField var m: Int, @JvmField val base: Int, @JvmField val end: Int) {
+        @JvmField var wi = 0
+        @JvmField var w = 0L
+        @JvmField var c = Int.MAX_VALUE
+        @JvmField var v = 0f
+    }
+
+    @PublishedApi internal fun triStart(t: TriCursor, pos: Int) {
+        t.wi = pos ushr 6
+        if (t.wi >= triWords) return
+        t.w = u64(triHigh, t.wi) and (-1L shl (pos and 63))
+        triNext(t)
+    }
+
+    @PublishedApi internal fun triNext(t: TriCursor) {
+        t.c = Int.MAX_VALUE
+        if (t.m >= triEntries) return
+        while (t.w == 0L) { t.wi++; if (t.wi >= triWords) return; t.w = u64(triHigh, t.wi) }
+        val k = (((t.wi shl 6) + java.lang.Long.numberOfTrailingZeros(t.w) - t.m) shl triL) or triLowAt(t.m)
+        if (k >= t.end) return
+        t.c = k - t.base; t.v = q(cbValue(cb3Base, triScore, t.m, bits3))
+        t.w = t.w and (t.w - 1); t.m++
     }
 
     /** Ngữ cảnh sau ([prev2], [prev1]) — id vnlexicon, -1 = không có. null nếu prev1 không hợp lệ. */
@@ -371,6 +500,8 @@ class SyllableLM private constructor(@PublishedApi internal val buf: ByteBuffer,
         private const val SECTIONS = 18
         /** Dòng ≤ chừng này mục ⇒ quét tuần tự thay vì select0. */
         private const val SHORT_ROW = 8
+        /** Dòng trigram dài hơn ⇒ [Context.explicitAll] tìm từng id thay vì duyệt cả dòng. */
+        private const val LONG_TRI_ROW = 48
         @PublishedApi internal val EMPTY_ROW = BiRow(0, 0, 0, 0, 0)
 
         /** ⌊log2(u/n)⌋ (0 nếu n = 0 hoặc u < n) — số bit thấp EF. */

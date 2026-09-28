@@ -79,6 +79,12 @@
                   Identifier = "SuggestBigramTests/testLatencyAndDirtyMemory">
                </Test>
                <Test
+                  Identifier = "SuggestTrigramTests/testHeldoutBeforeAfter">
+               </Test>
+               <Test
+                  Identifier = "SuggestTrigramTests/testLatency">
+               </Test>
+               <Test
                   Identifier = "SwipeDecoderTests/testBenchmark">
                </Test>
                <Test

@@ -411,6 +411,12 @@ final class UserLangModel {
     /// Số lần cặp (prev → word) đã gặp (bigram cá nhân + seed) — AddTones chấm lưới âm tiết.
     func bigramCount(_ prev: String, _ word: String) -> Int { bi[prev.lowercased()]?[word] ?? 0 }
 
+    /// Số lần bộ ba (prev2, prev → word) người dùng đã gõ (không có seed) — thanh gợi ý ưu tiên.
+    func trigramCount(_ prev2: String, _ prev: String, _ word: String) -> Int {
+        guard let t = tri[prev2.lowercased() + Self.sep + prev.lowercased()] else { return 0 }
+        return t[word] ?? t[word.lowercased()] ?? 0
+    }
+
     /// Seed ban đầu — chỉ khi datastore trống (lần đầu / sau reset).
     /// @autoclosure: literal seed (~1400 entries) KHÔNG được build khi store
     /// đã có dữ liệu; đang chờ load thì giữ closure lại, quyết sau swap-in.

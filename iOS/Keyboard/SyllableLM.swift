@@ -45,6 +45,8 @@ final class SyllableLM {
     private static let sectionCount = 18
     /// Dòng ngắn hơn ⇒ quét tuần tự thay vì select0.
     private static let shortRow = 8
+    /// Dòng trigram dài hơn ⇒ `Context.explicitAll` tìm từng id thay vì duyệt cả dòng.
+    fileprivate static let longTriRow = 48
 
     /// Một dãy khoá tăng ngặt mã hoá Elias–Fano (đọc tại chỗ).
     fileprivate struct EF {
@@ -353,6 +355,143 @@ final class SyllableLM {
                 return triBase >= 0 ? g3 + s2 : s2
             }
         }
+
+        /// Có dòng trigram cho (prev2, prev1) không.
+        var hasTrigram: Bool { triBase >= 0 }
+
+        /// Số mục dòng bigram prev1 (0 ⇒ không biết gì về prev1 — như `Bigram.size`).
+        var bigramSize: Int { bi.hi - bi.lo }
+
+        /// PMI của mục TƯỜNG MINH (thanh gợi ý chấm ứng viên đang gõ): có mục trigram → s3 + uniAdj;
+        /// không thì mục bigram → s2 + uniAdj (không cộng γ3 — đo trên dev: cộng γ3 kém hơn);
+        /// thiếu cả hai → 0. Không dòng trigram ⇒ = `Bigram.explicit`.
+        func explicit(_ w: Int) -> Float {
+            guard w >= 0, w < lm.count else { return 0 }
+            return lm.blob.withUnsafeBytes { raw -> Float in
+                if triBase >= 0 {
+                    let t = SyllableLM.scanFind(raw, lm.tri, triLo, triPos, triBase + w)
+                    if t >= 0 { return lm.q(lm.cbValue(raw, lm.cb3Base, lm.triScore, t, lm.bits3)) + lm.adj(raw, w) }
+                }
+                let j = lm.biFind(raw, bi, w)
+                return j >= 0 ? lm.biScoreAt(raw, j) + lm.adj(raw, w) : 0
+            }
+        }
+
+        /// `explicit` cho nhiều id một lượt (pool ứng viên đang gõ; id < 0 ⇒ 0): xếp id tăng dần
+        /// (chèn, pool ≤ 24) rồi đi song song với dòng trigram — mỗi mục dòng đọc MỘT lần, dừng ở
+        /// id lớn nhất (dòng trung vị 1 mục); dòng dài quá `longTriRow` mục thì phần còn lại tìm
+        /// từng id.
+        func explicitAll(_ ids: [Int]) -> [Float] {
+            let n = ids.count
+            if n > 64 { return ids.map { explicit($0) } }       // khoá gói chỉ số 6 bit
+            var out = [Float](repeating: 0, count: n)
+            guard n > 0 else { return out }
+            let count = lm.count
+            // khoá id·64 + chỉ số (pool ≤ 64), id không hợp lệ ⇒ bỏ
+            var ord = [Int](repeating: 0, count: n)
+            var k = 0
+            lm.blob.withUnsafeBytes { raw in
+                var i = 0
+                while i < n {
+                    let w = ids[i]
+                    if w >= 0 && w < count {
+                        let j = lm.biFind(raw, bi, w)
+                        if j >= 0 { out[i] = lm.biScoreAt(raw, j) + lm.adj(raw, w) }
+                        let key = w &<< 6 | i
+                        var p = k
+                        while p > 0 && ord[p - 1] > key { ord[p] = ord[p - 1]; p -= 1 }
+                        ord[p] = key; k += 1
+                    }
+                    i += 1
+                }
+                guard triBase >= 0, k > 0 else { return }
+                var t = lm.triStart(raw, lo: triLo, pos: triPos, base: triBase)
+                var q = 0, steps = 0
+                while q < k && t.c != Int.max {
+                    let w = ord[q] &>> 6
+                    if t.c < w {
+                        steps += 1
+                        if steps > SyllableLM.longTriRow {
+                            while q < k {
+                                let w2 = ord[q] &>> 6
+                                let m = SyllableLM.find(raw, lm.tri, triBase + w2)
+                                if m >= 0 { out[ord[q] & 63] = lm.q(lm.cbValue(raw, lm.cb3Base, lm.triScore, m, lm.bits3)) + lm.adj(raw, w2) }
+                                q += 1
+                            }
+                            return
+                        }
+                        lm.triNext(raw, &t)
+                    } else {
+                        if t.c == w { out[ord[q] & 63] = t.v + lm.adj(raw, w) }
+                        q += 1
+                    }
+                }
+            }
+            return out
+        }
+
+        /// Duyệt CHỈ các mục trigram tường minh của (prev2, prev1) theo id tăng dần: body(id, pmi),
+        /// pmi = s3 + uniAdj. Trả số mục (0 nếu không có dòng trigram).
+        @discardableResult
+        func forEachTrigram(_ body: (_ next: Int, _ pmi: Float) -> Void) -> Int {
+            guard triBase >= 0 else { return 0 }
+            return lm.blob.withUnsafeBytes { raw -> Int in
+                var t = lm.triStart(raw, lo: triLo, pos: triPos, base: triBase)
+                var n = 0
+                while t.c != Int.max { body(t.c, t.v + lm.adj(raw, t.c)); n += 1; lm.triNext(raw, &t) }
+                return n
+            }
+        }
+
+        /// Duyệt mọi âm tiết sau có mục TƯỜNG MINH — dòng bigram prev1 ∪ dòng trigram (prev2, prev1)
+        /// — theo id tăng dần: body(id, pmi), pmi = `score` + uniAdj ≈ ln(P(c | prev2, prev1) / P(c))
+        /// (mục chỉ có ở bigram lùi γ3 + s2 như `score`). Không dòng trigram ⇒ y hệt
+        /// `Bigram.forEach`. Trộn hai dãy tăng dần tại chỗ (dòng trigram duyệt tuần tự, không
+        /// select0 lại), không cấp phát. Song sinh Kotlin `Context.forEachNext`.
+        func forEachNext(_ body: (_ next: Int, _ pmi: Float) -> Void) {
+            lm.blob.withUnsafeBytes { raw in
+                var t = triBase >= 0 ? lm.triStart(raw, lo: triLo, pos: triPos, base: triBase)
+                    : TriCursor(m: 0, base: 0, end: 0)
+                let back: Float = triBase >= 0 ? g3 : 0
+                lm.biScan(raw, bi) { m, c in
+                    while t.c < c { body(t.c, t.v + lm.adj(raw, t.c)); lm.triNext(raw, &t) }
+                    if t.c == c { body(c, t.v + lm.adj(raw, c)); lm.triNext(raw, &t) }
+                    else { body(c, back + lm.biScoreAt(raw, m) + lm.adj(raw, c)) }
+                }
+                while t.c != Int.max { body(t.c, t.v + lm.adj(raw, t.c)); lm.triNext(raw, &t) }
+            }
+        }
+    }
+
+    /// Con trỏ duyệt tuần tự một dòng trigram (khoá `base` ≤ k < `end`): phần tử `m`, từ bit high
+    /// `wi`/`w`; `c` = id âm tiết kế (Int.max = hết dòng), `v` = s3 của nó.
+    fileprivate struct TriCursor {
+        var m: Int
+        let base: Int, end: Int
+        var wi = 0, w: UInt64 = 0
+        var c = Int.max
+        var v: Float = 0
+        init(m: Int, base: Int, end: Int) { self.m = m; self.base = base; self.end = end }
+    }
+
+    /// Dòng trigram có khoá đầu `base` (phần tử `lo`, bit high `pos` — từ lowerBound).
+    fileprivate func triStart(_ raw: UnsafeRawBufferPointer, lo: Int, pos: Int, base: Int) -> TriCursor {
+        var t = TriCursor(m: lo, base: base, end: base + count)
+        t.wi = pos >> 6
+        guard t.wi < tri.words else { return t }
+        t.w = Self.u64(raw, tri.high, t.wi) & (~0 &<< UInt64(pos & 63))
+        triNext(raw, &t)
+        return t
+    }
+
+    @inline(__always) fileprivate func triNext(_ raw: UnsafeRawBufferPointer, _ t: inout TriCursor) {
+        t.c = Int.max
+        guard t.m < tri.n else { return }
+        while t.w == 0 { t.wi += 1; if t.wi >= tri.words { return }; t.w = Self.u64(raw, tri.high, t.wi) }
+        let k = (t.wi << 6 + t.w.trailingZeroBitCount - t.m) &<< tri.l | Self.low(raw, tri, t.m)
+        guard k < t.end else { return }
+        t.c = k - t.base; t.v = q(cbValue(raw, cb3Base, triScore, t.m, bits3))
+        t.w &= t.w &- 1; t.m += 1
     }
 
     /// Ngữ cảnh sau (`prev2`, `prev1`) — id vnlexicon, -1 = không có. nil nếu prev1 không

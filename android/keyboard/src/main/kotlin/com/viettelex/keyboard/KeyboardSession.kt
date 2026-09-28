@@ -156,6 +156,8 @@ class SuggestJob internal constructor(
     private val prev: String? = null,
     internal val number: String? = null,
     internal val math: String? = null,
+    /** Âm tiết trước nữa (trigram tĩnh). */
+    private val prev2: String? = null,
 ) {
     class Result(val pool: List<VNSuggest.Match>, val fix: String?, val pmi: FloatArray? = null,
                  /** Trượt vào phím thanh mà vẫn ra từ ("casn" → cân) — slot 3. */
@@ -166,7 +168,7 @@ class SuggestJob internal constructor(
         val pool = VNSuggest.matches(composed, poolLimit = 24, excluding = composed.lowercase())
         val fix = if (pool.isEmpty() && wantFix) AdjacentKeyFixer.lexiconCorrection(raw, bridge) else null
         val slip = if (fix == null && wantFix) AdjacentKeyFixer.lexiconToneSlip(raw, bridge) else null
-        return Result(pool, fix, SuggestRank.inlinePmi(pool, prev), slip)
+        return Result(pool, fix, SuggestRank.inlinePmi(pool, prev, prev2 = prev2), slip)
     }
 }
 
@@ -923,7 +925,8 @@ class KeyboardSession(
         if (composed.isNotEmpty()) {
             val b = bridge
             return SuggestionPlan.Background(SuggestJob(suggestReq, generation, b, composed,
-                b.rawWord, b.predictedCommit, b.autoFixAdjacent, lastWord, refreshNumberChip(proxy), refreshMathChip(proxy)))
+                b.rawWord, b.predictedCommit, b.autoFixAdjacent, lastWord, refreshNumberChip(proxy), refreshMathChip(proxy),
+                lastWord2))
         }
         val prev = lastWord
         val next: List<String> = if (bridge.englishMode) {
@@ -932,10 +935,12 @@ class KeyboardSession(
             padWords(SensitiveWords.filter(personal.filter { SwipeEnglish.contains(it.lowercase()) }, filterSensitive)
                 .take(3).map { caseForContext(it) }, 3)
         } else if (prev != null) {
-            // cá nhân/seed trước; thiếu thì lấp bằng bigram tĩnh (người dùng mới) rồi mới topWords
-            val personal = SensitiveWords.filter(langModel.nextWords(prev, lastWord2, 6), filterSensitive).take(3)
-            val n = if (personal.size >= 3) personal else SuggestionFill.pad(personal,
-                SensitiveWords.filter(SuggestRank.bigramNext(prev, 6), filterSensitive), 3)
+            // SuggestRank.nextFill: có trigram tĩnh (prev2, prev) ⇒ bộ ba người dùng đã gõ, rồi trigram,
+            // rồi cá nhân/seed; không ⇒ cá nhân/seed trước, lấp bằng bigram tĩnh; rồi mới topWords
+            val p2 = lastWord2
+            val personal = SensitiveWords.filter(langModel.nextWords(prev, p2, 6), filterSensitive)
+            val n = SuggestRank.nextFill(prev, p2, personal, { w -> if (p2 == null) 0 else langModel.trigramCount(p2, prev, w) },
+                { SensitiveWords.filter(it, filterSensitive) })
             padWords(n.map { caseForContext(DisplayCase.apply(it, prev)) }, 3)
         } else {
             val top = SensitiveWords.filter(langModel.topWords(6), filterSensitive)
