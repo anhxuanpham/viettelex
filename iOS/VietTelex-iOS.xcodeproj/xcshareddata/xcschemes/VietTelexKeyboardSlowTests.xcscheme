@@ -64,6 +64,9 @@
                   Identifier = "SyllableLMTests/testHeldoutAccuracyWithEnglish">
                </Test>
                <Test
+                  Identifier = "SyllableLMTests/testLookupLatency">
+               </Test>
+               <Test
                   Identifier = "SwipeReviseTests/testHeldoutRevisionGain">
                </Test>
                <Test
@@ -83,6 +86,9 @@
                </Test>
                <Test
                   Identifier = "KeyboardBenchTests/testHotPathBench">
+               </Test>
+               <Test
+                  Identifier = "RamBreakdownTests/testComponentBreakdown">
                </Test>
                <Test
                   Identifier = "KeyboardThemeTests/testKeyboardDecodeMemoryFootprint">

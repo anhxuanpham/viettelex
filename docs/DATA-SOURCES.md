@@ -5,11 +5,12 @@ nguồn và giấy phép riêng, ghi dưới đây.
 
 ## vnlm.bin — mô hình n-gram âm tiết (gõ vuốt, thanh gợi ý, Thêm dấu)
 
-`iOS/Keyboard/Resources/vnlm.bin` = `android/app/src/main/assets/vnlm.bin` (2.652.944 byte ≈
-2,5 MiB: 332.396 bigram, 92.541 ngữ cảnh trigram, 259.909 trigram, + 7.184 byte `uniAdj`); app
-macOS đóng gói cùng file cho Thêm dấu. Sinh bởi `Scripts/gen-syllable-lm.py` (lệnh + định dạng
-ở docstring). Chỉ chứa **số liệu thống kê** (điểm log-xác suất lượng tử 1 byte theo cặp/bộ ba
-âm tiết), không chứa câu hay đoạn văn nào của nguồn.
+`iOS/Keyboard/Resources/vnlm.bin` = `android/app/src/main/assets/vnlm.bin` (định dạng v3 từ
+28/09/2026: 1.427.048 byte ≈ 1,36 MiB — trước là 2.652.944 byte; 332.411 bigram, 92.272 ngữ
+cảnh trigram, 260.134 trigram, + 7.184 byte `uniAdj`); app macOS đóng gói cùng file cho Thêm
+dấu. Sinh bởi `Scripts/gen-syllable-lm.py` (lệnh + định dạng ở docstring; mục "Nén v3" dưới).
+Chỉ chứa **số liệu thống kê** (điểm log-xác suất lượng tử theo cặp/bộ ba âm tiết), không chứa
+câu hay đoạn văn nào của nguồn.
 
 Dùng bởi: gõ vuốt (trigram, `SwipeTyping` + `SwipeRevise`), thanh gợi ý gõ chạm (bigram PMI —
 chọn dấu inline + từ kế tiếp, `SuggestRank`), Thêm dấu cả câu (bigram PMI, `AddTones`; iOS,
@@ -45,8 +46,8 @@ phép gộp vào tác phẩm CC BY-SA khi ghi công). Hệ quả:
 > vnlm.bin chứa số liệu thống kê n-gram âm tiết suy ra từ nội dung Wikipedia,
 > Wikisource, Wikibooks, Wikivoyage và Wikiquote tiếng Việt (© các tác giả Wikimedia,
 > CC BY-SA 4.0) và từ câu tiếng Việt của Tatoeba (© các thành viên Tatoeba, CC BY 2.0 FR).
-> Đã biến đổi: tách âm tiết, đếm n-gram, làm trơn Kneser-Ney, cắt tỉa, lượng tử hoá
-> 1 byte. vnlm.bin phát hành theo CC BY-SA 4.0.
+> Đã biến đổi: tách âm tiết, đếm n-gram, làm trơn Kneser-Ney, cắt tỉa, lượng tử hoá,
+> nén. vnlm.bin phát hành theo CC BY-SA 4.0.
 
 ### Nguồn KHÔNG dùng (và lý do)
 
@@ -121,7 +122,7 @@ tập kiểm thử:
 | KN bigram (không cắt tỉa) | — | 87,9 % | 96,0 % |
 | KN trigram (không cắt tỉa, float) | ~ 31 MB | 90,1 % | 96,5 % |
 | KN 4-gram (không cắt tỉa) | — | 90,0 % | 96,5 % |
-| **KN trigram cắt tỉa + lượng tử (vnlm.bin)** | **2,6 MB** | **89,2 %** | **96,0 %** |
+| **KN trigram cắt tỉa + lượng tử (vnlm.bin)** | **2,6 MB** (v3: 1,43 MB) | **89,2 %** | **96,0 %** |
 
 Bảng trên đo với decoder giai đoạn 2. Sau khi decoder có tầng 2 (σ thích nghi, độ dài,
 chấm lại top-16 — commit 7cf48ae): bigram 86,1 % / 95,1 % → **trigram 89,4 % / 96,2 %**
@@ -131,6 +132,83 @@ chấm lại top-16 — commit 7cf48ae): bigram 86,1 % / 95,1 % → **trigram 89
 LM), simulator Debug 1,91 vs 1,85 ms/vuốt (bigram) — LM gần như không tốn thêm. Test hồi
 quy: `SyllableLMTests` (iOS + Android) — top-1 ≥ 87,7 %, top-3 ≥ 95 %, hơn bigram ≥ 2,5
 điểm, bật tiếng Anh không tụt quá 1 điểm, câu trộn Việt–Anh không kém bigram.
+
+### Nén v3 (28/09/2026): 2,65 MB → 1,43 MB
+
+Cùng cache đếm, cùng ngưỡng cắt tỉa; chỉ đổi cách lưu. Chọn trên tập DEV (chuỗi Tatoeba
+`hash % 20 == 1`) bằng file v2 "giả lập" (điểm đã lượng tử nhưng lưu định dạng cũ ⇒ đo bằng
+reader cũ), rồi đo MỘT lần trên tập kiểm thử:
+
+- **Lượng tử codebook** (k-means 1-D tối ưu bằng quy hoạch động, trọng số √đếm, tâm là số
+  nguyên i8 để giải mã ra đúng giá trị i8 — parity dễ kiểm; cắt tỉa chạy lại trên điểm ĐÃ
+  lượng tử). Dev: 4 bit cho cả bigram làm hỏng câu mẫu ("cho tôi một ly cà phê" → "cho tới",
+  thứ tự từ kế tiếp "điện → thoại, tử, ảnh"); 5 bit bigram / 4 bit trigram qua hết test nhưng
+  từ kế tiếp −0,3 điểm; **6 bit bigram + 4 bit trigram + 4 bit γ3** không tụt gì (≤ 0,1 điểm).
+  Bigram lưu i8 thô (64 mức) thay mã 6 bit: +83 KB đổi lấy một lần đọc byte ở đường tra
+  nóng nhất.
+- **Elias–Fano**: bigram EF THEO DÒNG (L_b riêng ⇒ bit 1 ≈ bit 0 ở mọi dòng, select0 theo
+  mẫu 64 số 0 luôn quét ~1 từ; EF toàn cục L = 7–8 dày đặc ở dòng lớn "của"/"và" ⇒ quét
+  hàng nghìn bit, chậm 2–3×); dòng ≤ 8 mục quét tuần tự. Trigram: EF toàn cục khoá
+  k·count + c (dòng trung vị 1 mục ⇒ bỏ được ctxKey/ctxOff 8 byte/ngữ cảnh); ngữ cảnh k =
+  rank cờ `hasTri` trên mục bigram (a, b). Delta + varint (phương án 1) lớn hơn EF (bigram
+  373 KB vs 268 KB id, trigram 447 KB vs 364 KB) và phải giải mã tuần tự để có chỉ số mục ⇒
+  không dùng.
+- **Cắt tỉa mạnh hơn** (đường cong đo trên dev, cùng lượng tử 6/4/4): ngưỡng ×1,5 (bigram
+  15 / trigram 30) → ~0,99 MB nhưng sửa chung cặp −0,3–0,8 điểm, câu trộn Việt–Anh 230 → 213–221
+  /270, hỏng câu mẫu ("mấy giờ rồi bạn", "bị mất ví"); ×2 → ~0,80 MB, tệ hơn; chỉ trigram ×2 →
+  ~0,99 MB, sửa chung cặp −0,4. Tiêu chí "relative entropy" kiểu Stolcke (bỏ kẹp của
+  decoder) ở cùng cỡ: không hơn (0,82 MB: sửa chung cặp −0,8, trộn 221/270). ⇒ GIỮ ngưỡng
+  10/20 — mọi byte bớt thêm đều mất độ chính xác thấy được.
+
+Bố cục + checksum: docstring `Scripts/gen-syllable-lm.py`. Script tự kiểm sau khi sinh (reader
+Python cùng thuật toán ≡ dict mô hình) và ghi `iOS/KeyboardTests/Fixtures/vnlm-parity.txt`
+(~2.800 truy vấn score/pmi/explicit/size ×16 + checksum duyệt toàn bộ mô hình + hash file);
+`SyllableLMTests.parityFixtureAndChecksum` (Kotlin) / `testParityFixtureAndChecksum` (Swift)
+khớp từng số. Build hai lần cho file y hệt từng byte.
+
+| Kích thước | v2 | v3 |
+|---|---|---|
+| vnlm.bin | 2.652.944 B | **1.427.048 B** (−46 %) |
+| — id bigram (+chỉ số dòng) / điểm bigram | 693 / 332 KB | 405 / 332 KB |
+| — trigram (khoá, offset, γ3, id, điểm) | 1.613 KB | 674 KB |
+| RAM bẩn sau map + duyệt cả bảng (iOS test) | 0 KB | 0 KB |
+
+Độ chính xác tập kiểm thử (JVM; iOS cho cùng số trên các tập con của nó):
+
+| Người dùng | v2 | v3 |
+|---|---|---|
+| Thêm dấu — âm tiết / câu đúng hết | 95,56 % / 76,9 % | 95,50 % / 76,7 % |
+| Thêm dấu + seed UserLangModel | 95,65 % | 95,60 % |
+| Thanh gợi ý — slot1 / 3 slot / từ kế tiếp top3 | 83,0 / 93,9 / 27,0 % | 83,0 / 93,9 / 27,0 % |
+| Thanh gợi ý, người dùng học dần (slot1) | 86,1 % | 86,1 % |
+| Gõ vuốt heldout trigram top1 / top3 | 89,4 / 96,1 % | 89,4 / 96,1 % |
+| Nét vuốt thật (500 nét) top1 / top3 | 77,2 / 94,8 % | 77,2 / 94,8 % |
+| Vuốt tuần tự cả câu + sửa chung cặp | 80,91 → 91,36 % | 80,98 → 91,32 % |
+| Vuốt xen gõ + sửa theo từ gõ | 94,42 % | 94,47 % |
+| Câu trộn Việt–Anh top1 / top3 (n=270) | 230 / 267 | 230 / 267 |
+
+Độ trễ (ns/truy vấn, min nhiều vòng, cùng 2.665 truy vấn heldout; `SyllableLMTests.lookupLatency`
+Kotlin/Swift). "Vị trí" = context + 32 điểm ứng viên (một cú vuốt), "dòng" = bigram + 32 pmi
+(Thêm dấu), forEach = cả dòng (từ kế tiếp). v2 → v3:
+
+| | JVM | Swift Release (arm64) | iOS sim Debug |
+|---|---|---|---|
+| vị trí (context + 32 score) | 1.537 → 1.928 (×1,25) | 999 → 1.292 (×1,3) | 9.420 → 12.631 (×1,34) |
+| dòng (bigram + 32 pmi) | 647 → 634 (×1,0) | 384 → 566 (×1,47) | 7.257 → 7.096 (×1,0) |
+| forEach dòng | 514 → 767 (×1,49) | 2.000 → 2.506 (×1,25) | 41.281 → 40.518 (×1,0) |
+| context + score (lẻ) | 102 → 112 (×1,1) | 50 → 67 (×1,3) | 604 → 786 (×1,3) |
+| score / pmi lẻ (mỗi truy vấn một dòng khác) | 25 → 34 (×1,36) | 8 → 17 (×2,1) | 288 → 392 (×1,36) |
+
+Mức consumer: JVM Thêm dấu 30 âm tiết 0,133 → 0,158 ms, bigramNext 9,7 → 11,0 µs, PMI pool
+1,5 → 0,7 µs, vuốt heldout 0,062 → 0,064 ms/vuốt; iOS sim PMI pool 8,5 → 8,5 µs, bigramNext
+62,7 → 53,6 µs. Tra lẻ trên Swift Release chậm ×2 (+9 ns: select0 + đọc bit thay cho tìm nhị
+phân u16) — không consumer nào tra lẻ kiểu đó. Dòng ≤ 8 mục quét tuần tự; `bigram()` O(1) (biRow)
+nhanh hơn v2. RAM bẩn sau map + duyệt toàn bảng: 0 KB (iOS `SuggestBigramTests`).
+
+Kích thước bản Release (main 28/09 → nhánh này): iOS .app 8.248 → 7.068 KB (appex 5.820 →
+4.640 KB), macOS .app 5.492 → 4.296 KB, Android APK release 6.520.434 → 5.294.538 B (asset
+`noCompress`), AAB 7.413.577 → 6.928.781 B (AAB nén asset — dữ liệu EF ít nén hơn mảng thô),
+APK debug 16.142.435 → 14.932.923 B.
 
 ### Sửa lại từ vuốt trước — ngữ cảnh hai phía (27/09/2026, `SwipeRevise`)
 
@@ -273,6 +351,50 @@ Còn sai trên tập giữ lại: chưa → của ×4 (nét thẳng), chọn →
 (thẳng hàng — chỉ ngữ cảnh gỡ được), chú → chỉ ×2, trượt vài từ Anh (qua→wits, own→owen, good→fog/
 golf, felt→left). Có ngữ cảnh (vuốt tuần tự): chưa cuối câu hỏi ("…đài loan chưa") và "không cho"
 → "không có" vẫn thua LM — việc của trọng số LM, chưa đụng.
+
+### Liên tục ngôn ngữ — đang gõ tiếng Anh thì từ kế là tiếng Anh (28/09/2026, `SwipeLangContext.prior(kinds)`)
+
+Ngữ cảnh = ngôn ngữ ≤ 3 từ trước con trỏ (từ đang soạn + vòng 3 từ đã chốt, gõ hay vuốt; **không
+xoá ở dấu câu** — câu sau của đoạn tiếng Anh vẫn là tiếng Anh; xoá khi đổi ô / chữ trước con trỏ đổi
+từ ngoài; chỉ ghi khi bật vuốt + vuốt tiếng Anh). Mỗi từ: `classify` (nhãn "vừa vuốt ra tiếng Anh" >
+dấu tiếng Việt > từ mượn trung tính > EnglishContextWords > từ điển Việt/Anh; trùng cả hai = trung
+tính). Mạch Anh s = Σ 0,6^i trên từ Anh, đi từ gần ra xa, dừng ở từ Việt đầu tiên: s ≥ 1 ⇒ bias
+0,2 + 0,5·(min(s, 2) − 1) (một / hai / ba từ Anh: 0,2 / 0,5 / 0,68), margin 0; 0 < s < 1 (từ Anh
+cách từ trung tính) nội suy từ DEFAULT. Không có từ nào rõ ngôn ngữ, hoặc mạch Việt ⇒ đúng DEFAULT
+(−0,9 / 0,3) ⇒ từ rời không đổi. Chế độ Tiếng Anh (vuốt phím cách) vẫn `onlyEnglishPrior`.
+
+**Mạch Việt không cộng thêm**: DEFAULT đã nghiêng Việt; quét viMargin/viBias 0,1…0,8 (dev) chỉ +0,1
+điểm câu Việt (lỗi ngôn ngữ trong câu Việt chỉ còn 5/1 160 từ) mà −1,4…−7 điểm từ Anh chen sau từ
+Việt ⇒ 0 (khớp lần thử trước với bias −1,2…−1,5). Chỉnh trên dev; decay 0,4/0,8, enGain 0,3…1,2,
+enBias 0…0,4: cao hơn thì câu Anh +0,3 mà từ Việt sau từ Anh −2…−5.
+
+Tập (`Fixtures/swipe-lang-sentences.txt`, `Scripts/gen-swipe-lang-eval.py`): 1 200 câu tiếng Anh
+Tatoeba 3–8 từ (chỉ a–z trong enlexicon, không tên riêng; [CC BY 2.0 FR](https://creativecommons.org/licenses/by/2.0/fr/),
+© các thành viên Tatoeba, `downloads.tatoeba.org/exports/per_language/eng/eng_sentences.tsv.bz2`
+09/2026) + 573 câu trộn (93 câu tự soạn kiểu chat/công sở, câu Việt giữ lại ghép câu Anh hai chiều,
+câu Việt chèn một từ Anh hay chen); câu Việt = bigram-heldout. Tách dev/test cố định; đoạn văn = 3
+câu liền cùng tập (câu 2–3 chỉ có ngữ cảnh NGÔN NGỮ của câu trước, LM thì mất như thật). Vuốt tuần tự
+như bàn phím (`SwipeLangTuneTests`, ngữ cảnh = từ đã giải mã, sửa từ trước, bật vuốt tiếng Anh,
+layout iPhone), tập kiểm thử, top-1 đường tự nhiên / đều:
+
+| tập (test) | trước | sau |
+|---|---|---|
+| câu Việt thuần (n = 1 184) | 84,2 / 87,4 | 84,1 / 87,3 |
+| **câu Anh thuần** (n = 3 160) | 86,3 / 89,0 | **91,8 / 94,4** |
+| — từ đầu câu 2–3 của đoạn Anh (n = 311) | 61,8 / 63,5 | **95,2 / 99,0** |
+| — từ Anh sau từ Anh trong câu | 90,6 / 93,4 | 93,0 / 95,6 |
+| câu trộn, cả câu (n = 2 164) | 82,6 / 86,7 | 83,5 / 87,2 |
+| — từ Anh ngay sau từ Việt | 77,8 / 81,8 | 78,3 / 81,8 |
+| — từ Việt ngay sau từ Anh | 71,0 / 73,1 | 70,4 / 71,0 |
+| — từ Anh sau từ Anh | 90,5 / 93,7 | 92,4 / 95,2 |
+| từ rời: nét thật giữ lại / giả tự nhiên / giả đều | 0,780 / 0,875 / 0,903 | y hệt |
+
+Giá phải trả: từ Việt đầu tiên sau một mạch Anh dài (−0,6 / −2,1 điểm; "…the house bạn" → "ban").
+Lỗi còn lại trong câu Anh phần lớn là Anh↔Anh (our→or, too→to, in→on — cần LM tiếng Anh), lỗi
+ngôn ngữ trong câu Anh giảm 135 → 75 (dev). Chi phí: ≤ 3 lần `classify` (tra nhị phân) mỗi cú vuốt,
+một phép thêm vào mảng 3 phần tử mỗi từ chốt khi bật vuốt; tắt vuốt = 0.
+Chạy lại: `SWIPE_LANG_TUNE=1 SWIPE_LANG_CFGS='old;base' [SWIPE_TEST=1] ./gradlew --offline
+:keyboard:test --tests '*SwipeLangTuneTests*' --rerun -i | grep LANG`.
 
 ## enlexicon.bin — từ điển tiếng Anh cho gõ vuốt (giai đoạn 3)
 
