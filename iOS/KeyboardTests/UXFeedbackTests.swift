@@ -115,9 +115,42 @@ final class UXFeedbackTests: XCTestCase {
         XCTAssertTrue(searched)
     }
 
-    /// Tester 1.2.x: hàng category phải trải hết bề ngang như stock — ABC sát trái, icon chia
-    /// đều, ⌫ sát phải (trước: ABC ở cột phím emoji ⇒ icon dồn ~25pt ở nửa phải).
-    @MainActor func testEmojiCategoryRowSpansFullWidth() throws {
+    /// Hàng category (Phil chốt 30/09/2026, giữ quy tắc 26/09): mở bằng phím emoji ⇒ ABC nằm
+    /// ĐÚNG cột phím emoji (chạm lại chỗ cũ là về chữ), icon chia ĐỀU phần còn lại tới ⌫
+    /// sát phải. Mở không qua phím (không biết chỗ) ⇒ ABC sát trái như stock.
+    @MainActor func testEmojiCategoryRowABCAtEmojiKeyColumn() throws {
+        let pad = UIDevice.current.userInterfaceIdiom == .pad
+        let (kb, host) = makeKeyboard()
+        _ = host
+        let key = try XCTUnwrap(kb.debugEmojiKeyFrame)
+        let emojiKey = try XCTUnwrap(kb.debugControl("Emoji"))
+        emojiKey.sendActions(for: .touchDown)
+        emojiKey.sendActions(for: .touchUpInside)
+        kb.setNeedsLayout(); kb.layoutIfNeeded()
+        func find(_ v: UIView) -> EmojiPlane? {
+            if let p = v as? EmojiPlane { return p }
+            for s in v.subviews { if let p = find(s) { return p } }
+            return nil
+        }
+        let plane = try XCTUnwrap(find(kb))
+        plane.layoutIfNeeded()
+        let r = try XCTUnwrap(plane.debugCategoryRow)
+        let abc = kb.convert(r.abc, from: plane)
+        XCTAssertEqual(abc.minX, key.minX, accuracy: 0.5, "ABC đúng cột phím emoji")
+        XCTAssertEqual(abc.maxX, key.maxX, accuracy: 0.5)
+        // Chạm lại đúng chỗ phím emoji cũ (giữa phím) ⇒ trúng ABC.
+        let tap = plane.convert(CGPoint(x: key.midX, y: key.midY), from: kb)
+        XCTAssertTrue(plane.hitTest(tap, with: nil) === plane.abcButton, "chạm chỗ cũ = về chữ")
+        let icons = r.icons
+        XCTAssertEqual(icons.count, 10)
+        XCTAssertGreaterThanOrEqual(icons[0].minX, abc.maxX - 0.5, "icon không chui dưới ABC")
+        for f in icons { XCTAssertEqual(f.width, icons[0].width, accuracy: 0.5, "chia đều") }
+        XCTAssertGreaterThanOrEqual(r.delete.maxX, kb.bounds.width - 8)
+        XCTAssertLessThanOrEqual(r.delete.minX - (icons.last?.maxX ?? 0), 1, "icon trải tới sát ⌫")
+        if !pad { XCTAssertGreaterThanOrEqual(icons[0].width, 24) }
+    }
+
+    @MainActor func testEmojiCategoryRowWithoutSlotIsStock() throws {
         for (pad, width, height) in [(false, CGFloat(402), CGFloat(246)), (true, CGFloat(834), CGFloat(274))] {
             let plane = EmojiPlane(dark: false, pad: pad)
             plane.frame = CGRect(x: 0, y: 0, width: width, height: height)
@@ -127,12 +160,7 @@ final class UXFeedbackTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(r.delete.maxX, width - 8, "pad \(pad)")
             let icons = r.icons
             XCTAssertEqual(icons.count, 10)
-            let first = try XCTUnwrap(icons.first), last = try XCTUnwrap(icons.last)
-            let span = last.maxX - first.minX
-            // Vùng icon chiếm gần hết phần giữa ABC và ⌫ (iPad: trừ nút 🔍).
-            XCTAssertGreaterThan(span, width - 2 * EmojiPlane.edgeKeyWidth(pad: pad) - (pad ? 60 : 12))
             for f in icons { XCTAssertEqual(f.width, icons[0].width, accuracy: 0.5, "chia đều") }
-            if !pad { XCTAssertGreaterThanOrEqual(icons[0].width, 28, "icon không bị dồn") }
         }
     }
 
@@ -148,11 +176,15 @@ final class UXFeedbackTests: XCTestCase {
             plane.layoutIfNeeded()
             plane.frame.size.height = 274
             plane.layoutIfNeeded()
-            RunLoop.main.run(until: Date().addingTimeInterval(0.05))   // lượt xếp lại ở nhịp kế
             let grid = try XCTUnwrap(plane.subviews.compactMap { $0 as? UICollectionView }.first)
             let spec = plane.spec
             let m = EmojiGridMetrics.compute(
                 gridHeight: EmojiGridMetrics.gridHeight(planeHeight: 274, spec: spec, pad: pad), spec: spec)
+            // Lượt xếp lại chạy ở nhịp main kế (tối đa 1s khi máy test bận).
+            let deadline = Date().addingTimeInterval(1)
+            while Set(grid.visibleCells.map { $0.frame.minY.rounded() }).count != m.rows, Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
             XCTAssertEqual(grid.bounds.height, EmojiGridMetrics.gridHeight(planeHeight: 274, spec: spec, pad: pad),
                            accuracy: 0.5, "pad \(pad): gridHeight khớp constraint")
             let ys = Set(grid.visibleCells.map { $0.frame.minY.rounded() })
