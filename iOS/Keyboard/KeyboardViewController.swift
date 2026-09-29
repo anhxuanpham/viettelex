@@ -263,6 +263,7 @@ final class KeyboardViewController: UIInputViewController {
         keyboard.onSuggestion = { [weak self] item in
             guard let self else { return }
             if item == KeyboardView.toolUndoToken { self.undoTextTool(); return }
+            if let c = self.emailChips.first(where: { $0.label == item }) { self.acceptEmailChip(c); return }
             self.textToolUndo = nil
             if item == KeyboardView.restoreToken { self.restoreWordSwipe() }
             else if item.hasPrefix(KeyboardView.clipTokenPrefix) {
@@ -1024,6 +1025,8 @@ final class KeyboardViewController: UIInputViewController {
     private var mathArmed = false
     /// Chip kết quả phép tính đang hiện — payload KeyboardView.mathToken.
     private var mathChip: NumberChip?
+    /// Chip đuôi mail đang hiện (ô email — EmailDomains); rỗng ở ô khác.
+    private var emailChips: [EmailDomains.Chip] = []
     /// (raw đã chốt, dạng có dấu) khi auto-restore ghi đè — backspace ngay sau đó
     /// mở lại lối thoát: slot literal hiện dạng có dấu để 1 tap đổi từ.
     private var restoreUndo: (raw: String, composed: String)?
@@ -1275,7 +1278,15 @@ final class KeyboardViewController: UIInputViewController {
         guard suggestionsActive, keyboard?.isBarCollapsed != true else { return }
         let composed = bridge.composedWord
         var set = KeyboardView.SuggestionSet()
-        numberChip = nil; mathChip = nil
+        numberChip = nil; mathChip = nil; emailChips = []
+        // Ô email (literal): thanh chỉ hiện chip đuôi mail sau "@" ("@gmail.com" trước) —
+        // đọc context mỗi phím CHỈ ở ô email; ô khác không qua nhánh này.
+        if fieldTraits?.inputKind == .email {
+            emailChips = textDocumentProxy.documentContextBeforeInput
+                .map { EmailDomains.chips(before: $0) } ?? []
+            keyboard.showSuggestions(.init(nextWords: emailChips.map(\.label)))
+            return
+        }
         // Ngay sau vuốt: phương án khác (biến thể dấu + dạng không dấu hạng 2/3) —
         // chỉ khi từ vuốt còn mở và chưa bị sửa.
         if let s = swipeSuggest {
@@ -1642,6 +1653,24 @@ extension KeyboardViewController {
 
 extension KeyboardViewController {
     /// Chạm chip số: thay đúng đuôi đã tính (kiểm lại context trước khi xoá — lệch thì bỏ).
+    /// Chạm chip đuôi mail: chèn phần còn thiếu — tính lại từ context lúc chạm, lệch thì bỏ.
+    fileprivate func acceptEmailChip(_ c: EmailDomains.Chip) {
+        applyingEdit = true
+        defer {
+            applyingEdit = false
+            KeyboardView.clickModifier()
+            updateSuggestions()
+        }
+        let before = textDocumentProxy.documentContextBeforeInput ?? ""
+        guard EmailDomains.chips(before: before, limit: EmailDomains.providers.count).contains(c) else {
+            TouchLog.write("failsafe: email chip context mismatch → skip")
+            return
+        }
+        textDocumentProxy.insertText(c.insert)
+        bridge.reset()
+        lastWord = nil; lastWord2 = nil
+    }
+
     fileprivate func acceptNumberChip() {
         defer {
             KeyboardView.clickModifier()

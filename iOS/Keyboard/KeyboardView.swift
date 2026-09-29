@@ -2267,6 +2267,9 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             if !Self.isPad, p.title == ",", planeKey == "123", KeyAlternates.commaHold(alternates: activeAlts) {
                 armCommaHold(b)
             }
+            // Ô địa chỉ / URL: giữ "." (".com") ra hàng đuôi tên miền như stock (DomainPopup).
+            let tlds = DomainPopup.choices(kind: inputKind, key: p.title, lettersPlane: planeKey == "123")
+            if !tlds.isEmpty { armDomainHold(b, choices: tlds) }
             views.append(b)
             punctKeys.append((b, p.mult))
         }
@@ -3665,6 +3668,171 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private var commaTimer: DispatchWorkItem?
     private var commaFired = false
 
+    // MARK: giữ "." / ".com" ⇒ popup đuôi tên miền (ô .search / .url, bàn chữ)
+
+    /// Hẹn giờ `holdDelay` như giữ ","; hết giờ mà phím còn chờ chốt ⇒ dựng popup (lần đầu
+    /// mới tạo view), phím chờ chốt đổi thành "chèn đuôi đang chọn" — chốt lúc nhấc / khi ngón
+    /// khác chạm y như "." ⇒ từ đang gõ được chốt cùng đường. Trượt xa ⇒ không chọn ⇒ nhấc
+    /// không chèn gì.
+    private func armDomainHold(_ b: KeyButton, choices: [String]) {
+        b.addTarget(self, action: #selector(domainTouch(_:event:)),
+                    for: [.touchDown, .touchDragInside, .touchDragOutside])
+        b.addAction(UIAction { [weak self, weak b] _ in
+            guard let self, let b, !UIAccessibility.isVoiceOverRunning else { return }
+            self.domainTimer?.cancel()
+            let w = DispatchWorkItem { [weak self, weak b] in
+                guard let self, let b, b.isTracking else { return }
+                self.fireDomainHold(b, choices: choices)
+            }
+            self.domainTimer = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + KeyAlternates.holdDelay, execute: w)
+        }, for: .touchDown)
+        // Sau armCommit (release chạy trước ⇒ đuôi đã chèn), rồi dọn popup.
+        b.addAction(UIAction { [weak self] _ in
+            self?.domainTimer?.cancel(); self?.domainTimer = nil
+            self?.closeDomainPopup()
+        }, for: [.touchUpInside, .touchUpOutside, .touchCancel])
+    }
+
+    @objc private func domainTouch(_ sender: UIControl, event: UIEvent) {
+        guard let t = event.allTouches?.first(where: { $0.view === sender }) else { return }
+        let p = t.location(in: self)
+        domainLastPoint = p
+        if domainHold?.button === sender { domainMoved(to: p) }
+    }
+
+    private func fireDomainHold(_ b: KeyButton, choices: [String]) {
+        domainTimer = nil
+        let id = ObjectIdentifier(b)
+        guard commits.isArmed(id) else { return }       // "." đã chốt (ngón khác chạm trước)
+        commits.disarm(id)
+        commits.arm(id) { [weak self] in
+            guard let self else { return }
+            let s = self.domainHold.flatMap { h in h.sel.map { h.choices[$0] } }
+            self.closeDomainPopup()
+            if let s { self.tapped(.text(s)) }
+        }
+        let key = convert(b.bounds, from: b)
+        let itemW: CGFloat = Self.isPad ? 68 : 56
+        let l = DomainPopup.layout(keyMidX: key.midX, itemWidth: itemW, count: choices.count,
+                                   containerWidth: bounds.width)
+        let panelH: CGFloat = Self.isPad ? 52 : 46
+        let topLimit: CGFloat = (rowsTopConstraint?.constant ?? 0) > 0 ? 0 : -6
+        let top = max(key.minY - 8 - panelH, topLimit)
+        let p = domainLastPoint ?? CGPoint(x: key.midX, y: key.midY)
+        let sel = DomainPopup.index(at: p, startX: p.x, layout: l, top: top, bottom: key.maxY)
+        domainHold = (b, choices, l, p.x, top, key.maxY, sel)
+        debugLastDomainLayout = l
+        hideBalloon()
+        domainPopupMade = true
+        if domainPopup == nil { domainPopup = DomainPopupView() }
+        guard let v = domainPopup else { return }
+        if v.superview == nil { addSubview(v) }
+        v.present(layout: l, key: key, top: top, panelH: panelH, choices: choices,
+                  fill: palette.balloon.ui, ink: palette.ink.ui, pad: Self.isPad)
+        v.select(sel)
+        Self.flickFeedback()
+    }
+
+    private func domainMoved(to p: CGPoint) {
+        guard var h = domainHold else { return }
+        let sel = DomainPopup.index(at: p, startX: h.startX, layout: h.layout, top: h.top, bottom: h.bottom)
+        guard sel != h.sel else { return }
+        h.sel = sel
+        domainHold = h
+        domainPopup?.select(sel)
+        if sel != nil { Self.flickFeedback() }
+    }
+
+    private func closeDomainPopup() {
+        domainHold = nil
+        domainLastPoint = nil
+        domainPopup?.isHidden = true
+    }
+
+    private var domainTimer: DispatchWorkItem?
+    private var domainLastPoint: CGPoint?
+    private var domainHold: (button: KeyButton, choices: [String], layout: DomainPopup.Layout,
+                             startX: CGFloat, top: CGFloat, bottom: CGFloat, sel: Int?)?
+    private var domainPopup: DomainPopupView?
+    private var domainPopupMade = false
+    var debugDomainPopupMade: Bool { domainPopupMade }
+    private(set) var debugLastDomainLayout: DomainPopup.Layout?
+    /// Đuôi đang chọn khi popup mở (nil = đóng / không chọn).
+    var debugDomainSelection: String? { domainHold.flatMap { h in h.sel.map { h.choices[$0] } } }
+    var debugDomainPopupVisible: Bool { domainPopup.map { !$0.isHidden && $0.superview != nil } ?? false }
+
+    /// Popup đuôi tên miền: panel bo góc liền khối với phím (cùng nền balloon, bóng như
+    /// balloon), ô đang chọn nền xanh hệ thống chữ trắng như stock.
+    private final class DomainPopupView: UIView {
+        private let shape = CAShapeLayer()
+        private let highlight = CALayer()
+        private var labels: [UILabel] = []
+        private var slots: [CGRect] = []
+        private var ink: UIColor = .label
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isUserInteractionEnabled = false
+            layer.zPosition = 11
+            layer.shadowColor = UIColor.black.cgColor
+            layer.shadowOffset = CGSize(width: 0, height: 1)
+            layer.shadowRadius = 3
+            layer.shadowOpacity = 0.3
+            layer.addSublayer(shape)
+            highlight.backgroundColor = UIColor.systemBlue.cgColor
+            highlight.cornerRadius = 7
+            highlight.actions = ["position": NSNull(), "bounds": NSNull(), "hidden": NSNull()]
+            layer.addSublayer(highlight)
+        }
+        required init?(coder: NSCoder) { fatalError() }
+
+        /// Toạ độ `key`, `layout`, `top` theo superview (KeyboardView).
+        func present(layout l: DomainPopup.Layout, key: CGRect, top: CGFloat, panelH: CGFloat,
+                     choices: [String], fill: UIColor, ink: UIColor, pad: Bool) {
+            let inset: CGFloat = 4
+            let panel = CGRect(x: l.originX - inset, y: top, width: l.width + inset * 2, height: panelH)
+            let f = panel.union(key)
+            frame = f
+            let lp = panel.offsetBy(dx: -f.minX, dy: -f.minY)
+            let lk = key.offsetBy(dx: -f.minX, dy: -f.minY)
+            let path = UIBezierPath(roundedRect: lp, cornerRadius: 10)
+            // Cổ nối panel xuống trọn phím (phủ phím như balloon).
+            let neck = CGRect(x: lk.minX, y: lp.maxY - 10, width: lk.width, height: lk.maxY - lp.maxY + 10)
+            path.append(UIBezierPath(roundedRect: neck, cornerRadius: KeyboardView.keyRadius))
+            shape.path = path.cgPath
+            shape.fillColor = fill.cgColor
+            layer.shadowPath = path.cgPath
+            self.ink = ink
+            while labels.count < choices.count {
+                let lb = UILabel()
+                lb.textAlignment = .center
+                lb.adjustsFontSizeToFitWidth = true
+                lb.minimumScaleFactor = 0.7
+                addSubview(lb)
+                labels.append(lb)
+            }
+            slots = []
+            for (i, lb) in labels.enumerated() {
+                guard i < choices.count else { lb.isHidden = true; continue }
+                let r = CGRect(x: l.slotMinX(i) - f.minX, y: lp.minY + inset,
+                               width: l.itemWidth, height: panelH - inset * 2)
+                slots.append(r)
+                lb.isHidden = false
+                lb.text = choices[i]
+                lb.font = .systemFont(ofSize: pad ? 20 : 18)
+                lb.frame = r
+            }
+            isHidden = false
+        }
+
+        func select(_ i: Int?) {
+            for (j, lb) in labels.enumerated() { lb.textColor = j == i ? .white : ink }
+            guard let i, i < slots.count else { highlight.isHidden = true; return }
+            highlight.frame = slots[i].insetBy(dx: 1, dy: 0)
+            highlight.isHidden = false
+        }
+    }
+
     private func commitAlt(_ alt: String) {
         hideBalloon()
         if shiftBeforeLastLetter == .on, shift == .off { shift = .on; applyShiftAppearance() }
@@ -4067,6 +4235,36 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         if !secondBeforeFire { second() }
         b.sendActions(for: .touchUpInside)
         return armed
+    }
+    /// Test hook giữ phím "." / ".com" ô địa chỉ/URL: chạm tâm phím, (tuỳ) hết giờ giữ, trượt
+    /// (dx, dy), (tuỳ) ngón khác chạm phím chữ, rồi nhấc — đường action thật. Trả có hẹn giờ không.
+    @discardableResult
+    func debugDomainHold(_ title: String, fire: Bool = true, dx: CGFloat = 0, dy: CGFloat = 0,
+                         secondTouch: String? = nil, keepOpen: Bool = false) -> Bool {
+        guard let b = debugButton(title) else { return false }
+        let key = convert(b.bounds, from: b)
+        domainLastPoint = CGPoint(x: key.midX, y: key.midY)
+        b.sendActions(for: .touchDown)
+        let armed = domainTimer != nil
+        if fire, armed { domainTimer?.cancel(); fireDomainHold(b, choices: DomainPopup.choices(
+            kind: inputKind, key: title, lettersPlane: plane == .letters)) }
+        if dx != 0 || dy != 0 { domainMoved(to: CGPoint(x: key.midX + dx, y: key.midY + dy)) }
+        if let s2 = secondTouch, let f2 = debugLetterFrame(s2) {
+            let t2 = NSObject(), id2 = ObjectIdentifier(t2)
+            routeDown(id2, at: CGPoint(x: f2.midX, y: f2.midY), time: 1.1, batch: 1)
+            routeUp(id2, at: CGPoint(x: f2.midX, y: f2.midY), time: 1.2, cancelled: false)
+            withExtendedLifetime(t2) {}
+        }
+        if !keepOpen { b.sendActions(for: .touchUpInside) }
+        return armed
+    }
+    private func debugButton(_ title: String) -> KeyButton? {
+        func find(_ v: UIView) -> KeyButton? {
+            if let b = v as? KeyButton, b.currentTitle == title { return b }
+            for s in v.subviews { if let b = find(s) { return b } }
+            return nil
+        }
+        return find(rowsContainer)
     }
     private var debugCommaButton: KeyButton? {
         func find(_ v: UIView) -> KeyButton? {

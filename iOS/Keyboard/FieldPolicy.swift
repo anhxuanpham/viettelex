@@ -73,8 +73,9 @@ struct FieldTraits: Equatable {
     /// OTP (ô literal); ô số vẫn có.
     var allowsMathResults: Bool { !passthrough && !secure }
 
-    /// Ô cho phép thanh gợi ý (stock tắt ở ô mật khẩu / autocorrection = .no).
-    var allowsSuggestions: Bool { autocorrection != .no && !secure }
+    /// Ô cho phép thanh gợi ý (stock tắt ở ô mật khẩu / autocorrection = .no). Ô email
+    /// luôn có (chỉ hiện chip đuôi mail — EmailDomains), vì ô email hầu như đều tắt autocorrect.
+    var allowsSuggestions: Bool { !secure && (autocorrection != .no || inputKind == .email) }
 
     /// Tự thêm dấu cách sau dấu câu: chỉ ô chữ thường (không email/URL/số/mật khẩu/omnibox).
     var allowsAutoSpace: Bool {
