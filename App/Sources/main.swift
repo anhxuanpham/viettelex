@@ -72,7 +72,8 @@ inputSourceObserver = DistributedNotificationCenter.default().addObserver(
     // Hotkey chuyển bộ gõ: nhớ source non-VietTelex gần nhất làm đích cho chiều
     // VietTelex → khác (xem SwitchHotkey.toggle).
     SwitchHotkey.noteSelection(isVietTelex: isVietTelex,
-                               currentID: SwitchHotkey.currentInputSourceID())
+                               currentID: SwitchHotkey.currentInputSourceID(),
+                               latin: isVietTelex || SwitchHotkey.currentInputSourceIsLatin())
 }
 
 // "VietTelex bị mờ không rõ nguyên nhân" (field report 14/08/2026): khi có process

@@ -59,8 +59,18 @@ enum SwitchHotkey {
     private(set) static var lastOtherSourceID: String?
 
     /// Gọi từ observer kTISNotifySelectedKeyboardInputSourceChanged (main thread).
-    static func noteSelection(isVietTelex: Bool, currentID: String?) {
-        if !isVietTelex, let currentID { lastOtherSourceID = currentID }
+    /// Chỉ nhớ bộ gõ Latinh (ASCII-capable: ABC, US, Unicode Hex…): user trộn tiếng
+    /// Trung/Nhật/Hàn thì hotkey vẫn cycle Việt ↔ Anh, không kẹt ở bộ gõ CJK (#103).
+    static func noteSelection(isVietTelex: Bool, currentID: String?, latin: Bool = true) {
+        if !isVietTelex, latin, let currentID { lastOtherSourceID = currentID }
+    }
+
+    /// Source đang chọn gõ được ASCII (bộ Latinh) — false với Pinyin/Kana/2-Set Korean.
+    static func currentInputSourceIsLatin() -> Bool {
+        guard let src = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue(),
+              let ptr = TISGetInputSourceProperty(src, kTISPropertyInputSourceIsASCIICapable)
+        else { return true }
+        return CFBooleanGetValue(Unmanaged<CFBoolean>.fromOpaque(ptr).takeUnretainedValue())
     }
 
     /// ABC làm đích dự phòng khi chưa từng thấy source khác (máy chỉ dùng VietTelex

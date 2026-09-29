@@ -73,4 +73,14 @@ final class SwitchHotkeyTests: XCTestCase {
         SwitchHotkey.noteSelection(isVietTelex: false, currentID: nil)
         XCTAssertEqual(SwitchHotkey.lastOtherSourceID, "com.apple.keylayout.ABC")
     }
+
+    /// #103: Anh → Việt → (chuyển nhanh) Trung → hotkey về Việt → hotkey phải ra Anh, không
+    /// quay lại Trung. Bộ gõ không Latinh không thành đích quay-về.
+    func testNonLatinSourceIsNotReturnTarget() {
+        SwitchHotkey.noteSelection(isVietTelex: false, currentID: "com.apple.keylayout.US")
+        SwitchHotkey.noteSelection(isVietTelex: true, currentID: "com.viettelex.inputmethod.telex.vi")
+        SwitchHotkey.noteSelection(isVietTelex: false, currentID: "com.apple.inputmethod.SCIM.ITABC", latin: false)
+        SwitchHotkey.noteSelection(isVietTelex: true, currentID: "com.viettelex.inputmethod.telex.vi")
+        XCTAssertEqual(SwitchHotkey.lastOtherSourceID, "com.apple.keylayout.US")
+    }
 }
