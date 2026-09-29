@@ -175,6 +175,8 @@ enum ShortcutMatch: Equatable {
 struct ShortcutTail: Equatable {
     /// Dài hơn khoá dài nhất (64) thì không khoá nào khớp được cho tới khoảng trắng kế.
     static let maxRun = 64
+    /// Trần `recent` (> MathResults.maxLength + cụm số hai từ): đủ cho gợi ý cạnh con trỏ.
+    static let maxRecent = 96
     private(set) var run = ""
     private(set) var anchored = false
     /// Cụm (chưa neo) bắt đầu NGAY tại chỗ con trỏ vừa dời tới (click / điều hướng /
@@ -182,12 +184,22 @@ struct ShortcutTail: Equatable {
     /// được (ShortcutMatch.findForTap) — issue #99 follow-up (Lark, Photoshop).
     private(set) var afterJump = false
     private var runCount = 0
+    /// Văn bản mình thấy hiện ra trước con trỏ từ lần reset/dời con trỏ gần nhất (kể cả
+    /// khoảng trắng), ít nhất `maxRecent` ký tự cuối (cắt theo mẻ 32) — nguồn văn bản của gợi ý cạnh con
+    /// trỏ khi AX không đọc được (Firefox, issue #104). `recentWhole` = `recent` là TOÀN
+    /// BỘ văn bản kể từ một lần dời con trỏ (không bị cắt đầu).
+    private(set) var recent = ""
+    private(set) var recentWhole = false
+    private var recentCount = 0          // = recent.count (String.count là O(n) — phím nóng)
 
-    mutating func reset() { run = ""; runCount = 0; anchored = false; afterJump = false }
+    mutating func reset() {
+        run = ""; runCount = 0; anchored = false; afterJump = false
+        recent = ""; recentCount = 0; recentWhole = false
+    }
 
     /// Con trỏ vừa dời (click, phím điều hướng, ⌘/⌃-tổ hợp, Tab đổi ô): bỏ cụm, đánh
     /// dấu chỗ mới là điểm bắt đầu cụm.
-    mutating func caretMoved() { reset(); afterJump = true }
+    mutating func caretMoved() { reset(); afterJump = true; recentWhole = true }
 
     /// Văn bản vừa hiện ra trước con trỏ (từ đã chốt, ký tự ranh giới, nội dung nở).
     mutating func append(_ s: String) {
@@ -196,8 +208,14 @@ struct ShortcutTail: Equatable {
                 run = ""; runCount = 0; anchored = true; afterJump = false
             } else if runCount >= Self.maxRun {
                 reset()                       // quá dài: đầu cụm không còn biết
+                continue
             } else {
                 run.append(ch); runCount += 1
+            }
+            recent.append(ch); recentCount += 1
+            if recentCount > Self.maxRecent + 32 {             // cắt theo mẻ: không memmove mỗi ký tự
+                recent.removeFirst(recentCount - Self.maxRecent); recentCount = Self.maxRecent
+                recentWhole = false
             }
         }
     }
@@ -206,12 +224,37 @@ struct ShortcutTail: Equatable {
     /// trắng, phần trước nó không biết ⇒ mất neo.
     mutating func backspace() {
         if run.isEmpty { anchored = false; afterJump = false } else { run.removeLast(); runCount -= 1 }
+        if recent.isEmpty { recentWhole = false } else { recent.removeLast(); recentCount -= 1 }
     }
 
     /// Cụm vừa bị thay (khoá ký hiệu nở): bỏ cụm, giữ neo, rồi nối nội dung mới.
     mutating func replaceRun(with s: String) {
+        if recentCount >= runCount { recent.removeLast(runCount); recentCount -= runCount }
+        else { recent = ""; recentCount = 0; recentWhole = false }
         run = ""; runCount = 0
         append(s)
+    }
+
+    /// Đuôi `old` (mình vừa thấy gõ) vừa được thay bằng `new` (áp dụng gợi ý cạnh con
+    /// trỏ). Đuôi không khớp ⇒ không còn biết gì phía trước: chỉ còn `new`.
+    mutating func replaceSuffix(_ old: String, with new: String) {
+        guard !old.isEmpty, recent.hasSuffix(old), recentCount >= old.count else {
+            reset(); append(new); return
+        }
+        let base = String(recent.dropLast(old.count))
+        let whole = recentWhole
+        if whole { caretMoved() } else { reset() }
+        append(base + new)
+    }
+
+    /// Văn bản CHẮC CHẮN nằm ngay trước con trỏ, dựng từ dòng phím (không đọc màn hình):
+    /// cả `recent` khi nó bắt đầu đúng ở chỗ con trỏ dời tới (coi đó là đầu văn bản —
+    /// cùng đánh đổi #99 Phil đã duyệt), không thì phần từ khoảng trắng ĐẦU TIÊN mình
+    /// thấy gõ (phía trước nó là chữ không biết). nil = không biết gì.
+    var knownText: String? {
+        if recentWhole { return recent }
+        guard let i = recent.firstIndex(where: { $0.isWhitespace || $0.isNewline }) else { return nil }
+        return String(recent[i...])
     }
 }
 

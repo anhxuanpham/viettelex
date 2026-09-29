@@ -65,13 +65,76 @@ enum TextToolsPanelLogic {
     }
 
     /// Rect con trỏ có dùng được không (nhiều app trả rect rỗng ở gốc toạ độ, hoặc
-    /// khổng lồ / NaN). Toạ độ màn hình Cocoa (gốc dưới-trái).
+    /// khổng lồ / NaN). Toạ độ màn hình Cocoa (gốc dưới-trái). Góc TRÊN-trái của một màn
+    /// hình = (0,0) toạ độ AX/CG lật sang Cocoa — Electron (Zalo, #105) trả thế khi không
+    /// biết con trỏ; không con trỏ thật nào nằm dưới thanh menu ở đúng góc đó.
     static func isUsableCaretRect(_ r: NSRect, screens: [NSRect]) -> Bool {
         guard r.origin.x.isFinite, r.origin.y.isFinite, r.width.isFinite, r.height.isFinite,
               r.width >= 0, r.height >= 0, r.height < 400, r.width < 4000 else { return false }
         if r.origin == .zero && r.size == .zero { return false }
+        if screens.contains(where: { abs(r.minX - $0.minX) <= 1 && abs(r.maxY - $0.maxY) <= 1 }) { return false }
         let probe = NSPoint(x: r.minX, y: r.midY)
         return screens.contains { $0.insetBy(dx: -1, dy: -1).contains(probe) }
+    }
+
+    /// Rect con trỏ cho bảng Công cụ: dùng được (trên) VÀ, nếu biết cửa sổ đang trước,
+    /// nằm trong cửa sổ đó nhưng không dính góc trên-trái của nó (Chromium/Electron trả
+    /// gốc view khi không biết con trỏ — #105: bảng hiện ở góc trên-trái màn hình).
+    static func plausibleCaret(_ r: NSRect, window: NSRect?, screens: [NSRect]) -> Bool {
+        guard isUsableCaretRect(r, screens: screens) else { return false }
+        guard let w = window, w.width > 0, w.height > 0 else { return true }
+        let probe = NSPoint(x: r.minX, y: r.midY)
+        guard w.insetBy(dx: -2, dy: -2).contains(probe) else { return false }
+        let atTopLeft = abs(r.minX - w.minX) <= 2 && r.maxY >= w.maxY - 2
+        return !atTopLeft
+    }
+
+    /// Bảng được đặt theo gì (thứ tự ưu tiên, cố định).
+    enum Basis: Equatable { case caret, window, screen }
+
+    /// Quy tắc đặt bảng Công cụ (#105), một thứ tự cố định:
+    ///  1. rect con trỏ đầu tiên hợp lệ trong `carets` (firstRect IMK → rect dòng IMK) —
+    ///     ngay dưới con trỏ (`origin`);
+    ///  2. không có ⇒ cửa sổ đang trước của app: giữa theo chiều ngang, TÂM bảng ở một
+    ///     phần ba phía trên cửa sổ;
+    ///  3. không biết cửa sổ ⇒ màn hình có chuột, cùng cách đặt trên vùng visibleFrame.
+    /// Luôn kẹp TRỌN trong visibleFrame của màn hình chứa điểm neo.
+    static func placement(carets: [NSRect], window: NSRect?, mouse: NSPoint,
+                          screens: [(frame: NSRect, visible: NSRect)],
+                          panelSize: NSSize) -> (origin: NSPoint, basis: Basis) {
+        let frames = screens.map(\.frame)
+        let fallbackVisible = screens.first?.visible ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        func visible(at p: NSPoint) -> NSRect {
+            screens.first { $0.frame.insetBy(dx: -1, dy: -1).contains(p) }?.visible ?? fallbackVisible
+        }
+        let win = window.flatMap { w -> NSRect? in
+            guard w.width >= 50, w.height >= 50, w.origin.x.isFinite, w.origin.y.isFinite,
+                  frames.contains(where: { $0.intersects(w) }) else { return nil }
+            return w
+        }
+        if let c = carets.first(where: { plausibleCaret($0, window: win, screens: frames) }) {
+            return (origin(caret: c, panelSize: panelSize, visible: visible(at: NSPoint(x: c.minX, y: c.midY))), .caret)
+        }
+        func topThird(of area: NSRect, clampTo vis: NSRect) -> NSPoint {
+            let center = NSPoint(x: area.midX, y: area.maxY - area.height / 3)
+            return clamp(NSPoint(x: center.x - panelSize.width / 2, y: center.y - panelSize.height / 2),
+                         panelSize: panelSize, visible: vis)
+        }
+        if let w = win {
+            let vis = visible(at: NSPoint(x: w.midX, y: w.midY))
+            return (topThird(of: w.intersection(vis).isEmpty ? w : w.intersection(vis), clampTo: vis), .window)
+        }
+        let vis = visible(at: mouse)
+        return (topThird(of: vis, clampTo: vis), .screen)
+    }
+
+    /// Kẹp góc dưới-trái để bảng nằm trọn trong `visible` (lề `margin`).
+    static func clamp(_ o: NSPoint, panelSize: NSSize, visible: NSRect, margin: CGFloat = 6) -> NSPoint {
+        var x = min(max(o.x, visible.minX + margin), visible.maxX - margin - panelSize.width)
+        var y = min(max(o.y, visible.minY + margin), visible.maxY - margin - panelSize.height)
+        if panelSize.width + 2 * margin > visible.width { x = visible.minX }
+        if panelSize.height + 2 * margin > visible.height { y = visible.minY }
+        return NSPoint(x: x, y: y)
     }
 
     /// Góc dưới-trái của panel: ngay DƯỚI con trỏ, canh trái theo con trỏ; không đủ chỗ
@@ -178,30 +241,41 @@ final class TextToolsPanel {
     }
 
     private static func anchorOrigin(client: IMKTextInput?, panelSize: NSSize) -> NSPoint {
-        let screens = NSScreen.screens
-        let frames = screens.map(\.frame)
-        var caret: NSRect?
+        var carets: [NSRect] = []
         if let client {
             let sel = client.selectedRange()
             if sel.location != NSNotFound {
                 var actual = NSRange(location: NSNotFound, length: 0)
-                let r = client.firstRect(forCharacterRange: NSRange(location: sel.location, length: 0),
-                                         actualRange: &actual)
-                if TextToolsPanelLogic.isUsableCaretRect(r, screens: frames) { caret = r }
-            }
-            if caret == nil {
+                carets.append(client.firstRect(forCharacterRange: NSRange(location: sel.location, length: 0),
+                                               actualRange: &actual))
                 var line = NSRect.zero
-                _ = client.attributes(forCharacterIndex: max(0, sel.location == NSNotFound ? 0 : sel.location),
-                                      lineHeightRectangle: &line)
-                if TextToolsPanelLogic.isUsableCaretRect(line, screens: frames) { caret = line }
+                _ = client.attributes(forCharacterIndex: sel.location, lineHeightRectangle: &line)
+                carets.append(line)
             }
         }
-        let m = NSEvent.mouseLocation
-        let anchor = caret ?? NSRect(x: m.x, y: m.y, width: 0, height: 0)
-        let probe = NSPoint(x: anchor.minX, y: anchor.midY)
-        let screen = screens.first { $0.frame.insetBy(dx: -1, dy: -1).contains(probe) } ?? NSScreen.main
-        let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        return TextToolsPanelLogic.origin(caret: anchor, panelSize: panelSize, visible: visible)
+        let screens = NSScreen.screens.map { (frame: $0.frame, visible: $0.visibleFrame) }
+        let r = TextToolsPanelLogic.placement(carets: carets, window: frontWindowFrame(),
+                                              mouse: NSEvent.mouseLocation, screens: screens,
+                                              panelSize: panelSize)
+        DebugLog.log("tools panel: placed by \(r.basis)")
+        return r.origin
+    }
+
+    /// Khung cửa sổ trên cùng (lớp thường) của app đang trước, toạ độ Cocoa. Đọc qua
+    /// CGWindowList (chỉ khung — không cần AX, không cần quyền ghi màn hình), nên dùng
+    /// được cả ở app Electron không lộ AX (Zalo).
+    private static func frontWindowFrame() -> NSRect? {
+        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+              let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                                    kCGNullWindowID) as? [[String: Any]] else { return nil }
+        for info in list {                                   // thứ tự trước → sau
+            guard (info[kCGWindowOwnerPID as String] as? Int32) == pid,
+                  (info[kCGWindowLayer as String] as? Int) == 0,
+                  let b = info[kCGWindowBounds as String] as? NSDictionary,
+                  let cg = CGRect(dictionaryRepresentation: b), cg.width >= 50, cg.height >= 50 else { continue }
+            return AXTextEdit.flip(cg)
+        }
+        return nil
     }
 
     // MARK: Selection / run

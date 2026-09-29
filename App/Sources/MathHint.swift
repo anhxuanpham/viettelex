@@ -8,9 +8,14 @@
 //    báo được rect con trỏ (firstRect) hợp lệ: cửa sổ ứng viên chuẩn của macOS, đặt
 //    ngay dưới con trỏ bàn phím.
 //  • Ô nổi riêng (NSPanel không lấy focus) — đường tap (terminal, Chromium, Office) và
-//    app IMK có firstRect hỏng. Vị trí: firstRect của client IMK (nếu cùng app) → AX
-//    bounds con trỏ → AX bounds ký tự trước con trỏ → ước lượng theo số dòng AX → góc
-//    TRÁI-dưới của ô đang gõ. Không bao giờ đặt theo chuột; không tìm được ⇒ không hiện.
+//    app IMK có firstRect hỏng. Vị trí: firstRect của client IMK (nếu cùng app) → rect
+//    dòng của client IMK → AX bounds con trỏ → AX bounds ký tự trước con trỏ → ước lượng
+//    theo số dòng AX → góc TRÁI-dưới của ô đang gõ (không bao giờ khung CẢ CỬA SỔ). Không
+//    bao giờ đặt theo chuột; không tìm được ⇒ không hiện.
+//
+// Ô AX không đọc được (Firefox: Gecko không bật AX cho process ngoài — #104): văn bản
+// trước con trỏ dựng từ chính dòng phím mình thấy gõ kể từ lần dời con trỏ gần nhất
+// (ShortcutTail.knownText); Tab chỉ thay khi dòng phím còn xác nhận (keyStreamConfirms).
 //
 // Chi phí: chỉ chạy NGAY SAU phím "=" / dấu cách sau một cụm có chữ số (một lần đọc
 // ~64 ký tự trước con trỏ qua IMK hoặc AX) — phím khác chỉ đọc một cờ dưới khoá.
@@ -102,10 +107,34 @@ enum CaretHintLogic {
         return (prevRun.isEmpty ? "" : prevRun + " ") + run + " "
     }
 
+    /// Văn bản dựng lại từ dòng phím (AX không đọc được: terminal, Firefox #104):
+    /// `known` = ShortcutTail.knownText (chữ chắc chắn trước con trỏ), `pending` = phần
+    /// sắp tới app (từ đang soạn, ranh giới vừa gõ). nil khi không biết gì.
+    static func keyStreamBefore(known: String?, pending: String) -> String? {
+        guard let known else { return nil }
+        let s = known + pending
+        return s.isEmpty ? nil : s
+    }
+
+    /// Tab trong ô AX không đọc được: chỉ thay khi dòng phím còn xác nhận chữ sắp bị
+    /// thay nằm NGAY trước con trỏ và đứng riêng (đầu phần đã biết / sau khoảng trắng).
+    static func keyStreamConfirms(replace: String, known: String?) -> Bool {
+        guard !replace.isEmpty, let known else { return false }
+        return standsAlone(before: known, token: replace)
+    }
+
+    /// Phần tử AX đang focus có phải "ô" để neo không: Firefox (Gecko không bật AX) báo
+    /// focus là CẢ CỬA SỔ (roles=[AXWindow→AXApplication], #104) — khung cửa sổ không
+    /// phải ô gõ, neo vào đó là gợi ý nhảy xuống góc dưới cửa sổ.
+    static func isFieldRole(_ role: String?) -> Bool {
+        role != "AXWindow" && role != "AXApplication"
+    }
+
     // MARK: Vị trí
 
     enum CaretSource: Equatable, CaseIterable {
         case imkFirstRect     // client IMK: firstRect(forCharacterRange: selectedRange)
+        case imkLineRect      // client IMK: attributes(forCharacterIndex:lineHeightRectangle:)
         case axCaret          // AXBoundsForRange (caret, 0)
         case axPrevChar       // AXBoundsForRange (caret-1, 1) → mép phải ký tự trước
         case axLineEstimate   // AXInsertionPointLineNumber + cột → ước lượng
@@ -233,12 +262,14 @@ final class CaretHint {
 
     // MARK: Kích hoạt
 
-    /// MAIN. Gọi sau khi phím "=" đã vào app. `client` nil ⇒ đường tap (đọc AX).
-    func afterEquals(client: IMKTextInput?, controller: TelexInputController?) {
+    /// Bất kỳ thread. Gọi khi phím "=" vừa gõ. `client` nil ⇒ đường tap (đọc AX; AX
+    /// không đọc được ⇒ `keyStream` = văn bản dựng từ dòng phím, đã gồm "=" — #104).
+    func afterEquals(client: IMKTextInput?, controller: TelexInputController?, keyStream: String? = nil) {
         guard mathEnabled, !dedupe() else { return }
         // Đợi app nhận "=" (tap: phím đi native; IMK: insertText vừa gọi) rồi mới đọc.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self] in
-            guard let self, let before = Self.textBeforeCaret(client: client),
+            guard let self,
+                  let before = Self.textBeforeCaret(client: client) ?? (client == nil ? keyStream : nil),
                   let r = MathHintLogic.result(beforeCaret: before) else { return }
             let s = CaretSuggestion(kind: .math, display: MathHintLogic.label(r), replace: "", insert: r)
             self.present(s, before: before, client: client, controller: controller)
@@ -272,6 +303,19 @@ final class CaretHint {
         var raw: String
         var anchored: Bool
         var tones: ToneRunLogic.Trigger?
+        /// ShortcutTail.knownText TRƯỚC ranh giới (tap; nil = không biết / đường IMK).
+        var known: String? = nil
+
+        /// Văn bản dựng từ dòng phím khi AX không đọc được — sửa lỗi gõ: phần đã biết
+        /// (đủ để xét đầu câu), không thì cụm đã neo.
+        var typoStream: String? {
+            known.map { $0 + boundary } ?? (anchored ? run + boundary : nil)
+        }
+        /// Ngày giờ: cụm trước + cụm đã neo như cũ (cụm trước có thể dính chữ không
+        /// biết — vẫn đúng), không thì phần đã biết (sau lần dời con trỏ, #104).
+        var dateStream: String? {
+            anchored && !prevRun.isEmpty ? prevRun + " " + run + " " : known.map { $0 + boundary }
+        }
     }
 
     var keyGeneration: UInt64 { lock.withLock { keyGen } }
@@ -285,7 +329,7 @@ final class CaretHint {
         let gen = keyGeneration
         if dateEnabled, let phrase = DateHintLogic.detect(boundary: ev.boundary, prevRun: ev.prevRun, run: ev.run,
                                                           isEnglish: TypoFixLogic.isEnglish) {
-            let stream = ev.anchored && !ev.prevRun.isEmpty ? ev.prevRun + " " + ev.run + " " : nil
+            let stream = ev.dateStream
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self] in
                 self?.showIfCurrent(gen, client: client, controller: controller, keyStream: stream) { before in
                     DateHintLogic.suggestion(before: before, prevRun: ev.prevRun, run: ev.run, phrase: phrase, now: Date())
@@ -297,7 +341,7 @@ final class CaretHint {
            TypoFixLogic.worthChecking(boundary: ev.boundary, raw: ev.raw, word: ev.run),
            !lock.withLock({ rejectedTypos.contains(ev.run) }) {
             let flags = AppState.shared.engineFlags()
-            let stream = ev.anchored ? ev.run + ev.boundary : nil
+            let stream = ev.typoStream
             work.async { [weak self] in
                 guard let fix = TypoFixLogic.lexiconCorrection(raw: ev.raw, flags: flags) else { return }
                 DispatchQueue.main.async {
@@ -452,11 +496,12 @@ final class CaretHint {
         // controller đang active NẾU cùng app đang trước (firstRect thường đúng hơn AX).
         let posClient = client ?? TelexInputController.activeClientForFrontApp()
         let ax = AXTextEdit.focusedGeometryReader()
-        let field = ax?.fieldFrame()
+        let field = CaretHintLogic.isFieldRole(ax?.role()) ? ax?.fieldFrame() : nil
         let prevIsNewline = before.last == "\n" || before.last == "\r"
         let found = CaretHintLogic.anchor(field: field, screens: screens) { src in
             switch src {
             case .imkFirstRect: return posClient.flatMap(Self.imkCaretRect)
+            case .imkLineRect: return posClient.flatMap(Self.imkLineRect)
             case .axCaret: return ax?.caretBounds()
             case .axPrevChar:
                 guard !prevIsNewline, let r = ax?.previousCharBounds() else { return nil }
@@ -495,6 +540,14 @@ final class CaretHint {
         guard sel.location != NSNotFound else { return nil }
         var actual = NSRange(location: NSNotFound, length: 0)
         return client.firstRect(forCharacterRange: NSRange(location: sel.location, length: 0), actualRange: &actual)
+    }
+
+    private static func imkLineRect(_ client: IMKTextInput) -> NSRect? {
+        let sel = client.selectedRange()
+        guard sel.location != NSNotFound else { return nil }
+        var line = NSRect.zero
+        _ = client.attributes(forCharacterIndex: sel.location, lineHeightRectangle: &line)
+        return line == .zero ? nil : line
     }
 
     private static func visibleFrame(for caret: NSRect) -> NSRect {

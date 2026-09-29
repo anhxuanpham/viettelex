@@ -95,6 +95,77 @@ final class TextToolsPanelTests: XCTestCase {
         XCTAssertFalse(L.isUsableCaretRect(NSRect(x: 0, y: 0, width: 1440, height: 900), screens: screens))
     }
 
+    // MARK: #105 — bảng Công cụ ở ô chat Zalo nhảy lên góc trên-trái màn hình
+    //
+    // Field report #105 (v1.8.3, macOS 27): bấm "Công cụ…" khi ngoài desktop thì bảng ở chỗ
+    // hợp lý, khi đang ở ô chat Zalo (Electron) thì bảng ở GÓC TRÊN-TRÁI màn hình. Rect con
+    // trỏ Electron trả khi không biết con trỏ là gốc (0,0) AX/view lật sang Cocoa — lọt
+    // qua isUsableCaretRect cũ (chỉ loại đúng NSRect.zero) ⇒ bảng neo vào góc.
+
+    private let main = (frame: NSRect(x: 0, y: 0, width: 1440, height: 900),
+                        visible: NSRect(x: 0, y: 0, width: 1440, height: 875))
+
+    func testScreenTopLeftCornerIsNotACaret() {
+        let screens = [main.frame]
+        XCTAssertFalse(L.isUsableCaretRect(NSRect(x: 0, y: 900, width: 0, height: 0), screens: screens))
+        XCTAssertFalse(L.isUsableCaretRect(NSRect(x: 0, y: 883, width: 0, height: 17), screens: screens))
+        XCTAssertTrue(L.isUsableCaretRect(NSRect(x: 0, y: 500, width: 0, height: 17), screens: screens))
+    }
+
+    func testZaloGarbageCaretFallsBackToWindowTopThird() {
+        let zalo = NSRect(x: 200, y: 100, width: 1000, height: 700)
+        let garbage = [NSRect(x: 0, y: 900, width: 0, height: 0),          // (0,0) AX lật
+                       NSRect(x: 200, y: 800, width: 0, height: 0)]        // gốc view = góc cửa sổ
+        let r = L.placement(carets: garbage, window: zalo, mouse: NSPoint(x: 1300, y: 890),
+                            screens: [main], panelSize: size)
+        XCTAssertEqual(r.basis, .window)
+        XCTAssertEqual(r.origin.x + size.width / 2, zalo.midX, accuracy: 0.5)          // giữa ngang
+        XCTAssertEqual(r.origin.y + size.height / 2, zalo.maxY - zalo.height / 3, accuracy: 0.5)
+        XCTAssertTrue(main.visible.contains(NSRect(origin: r.origin, size: size)))
+    }
+
+    func testCaretOutsideFrontWindowIsRejected() {
+        let win = NSRect(x: 200, y: 100, width: 600, height: 500)
+        let outside = NSRect(x: 1000, y: 300, width: 1, height: 18)
+        XCTAssertFalse(L.plausibleCaret(outside, window: win, screens: [main.frame]))
+        let inside = NSRect(x: 400, y: 300, width: 1, height: 18)
+        XCTAssertTrue(L.plausibleCaret(inside, window: win, screens: [main.frame]))
+        XCTAssertTrue(L.plausibleCaret(inside, window: nil, screens: [main.frame]))
+    }
+
+    func testGoodCaretStillWins() {
+        let win = NSRect(x: 200, y: 100, width: 1000, height: 700)
+        let caret = NSRect(x: 400, y: 500, width: 1, height: 18)
+        let r = L.placement(carets: [.zero, caret], window: win, mouse: .zero, screens: [main], panelSize: size)
+        XCTAssertEqual(r.basis, .caret)
+        XCTAssertEqual(r.origin, L.origin(caret: caret, panelSize: size, visible: main.visible))
+    }
+
+    func testNoCaretNoWindowUsesMouseScreen() {
+        let second = (frame: NSRect(x: -1920, y: 0, width: 1920, height: 1080),
+                      visible: NSRect(x: -1920, y: 0, width: 1920, height: 1055))
+        let r = L.placement(carets: [], window: nil, mouse: NSPoint(x: -500, y: 1070),
+                            screens: [main, second], panelSize: size)
+        XCTAssertEqual(r.basis, .screen)
+        XCTAssertTrue(second.visible.contains(NSRect(origin: r.origin, size: size)))
+        XCTAssertEqual(r.origin.x + size.width / 2, second.visible.midX, accuracy: 0.5)
+        // Cùng đầu vào ⇒ cùng chỗ (không phụ thuộc chuột trong màn hình).
+        let again = L.placement(carets: [], window: nil, mouse: NSPoint(x: -1800, y: 10),
+                                screens: [main, second], panelSize: size)
+        XCTAssertEqual(again.origin, r.origin)
+    }
+
+    func testWindowPartlyOffscreenStillClampedOnScreen() {
+        let win = NSRect(x: 1200, y: -300, width: 900, height: 600)
+        let r = L.placement(carets: [], window: win, mouse: .zero, screens: [main], panelSize: size)
+        XCTAssertEqual(r.basis, .window)
+        XCTAssertTrue(main.visible.contains(NSRect(origin: r.origin, size: size)))
+        // Cửa sổ vô lý (nằm ngoài mọi màn hình / quá nhỏ) ⇒ bỏ, dùng màn hình.
+        let off = L.placement(carets: [], window: NSRect(x: 5000, y: 5000, width: 800, height: 600),
+                              mouse: NSPoint(x: 10, y: 10), screens: [main], panelSize: size)
+        XCTAssertEqual(off.basis, .screen)
+    }
+
     func testMenuHasToolsItemRightBelowSystemSettings() {
         XCTAssertEqual(TelexInputController.trailingMenuKeys(textToolsInMenu: true),
                        ["Settings…", "System Settings…", "Tools…"])

@@ -127,6 +127,87 @@ final class CaretHintTests: XCTestCase {
         XCTAssertNil(L.keyStreamBefore(anchored: false, prevRun: "", run: "50k"))
     }
 
+    // MARK: Firefox — AX mù, văn bản từ dòng phím (#104)
+    //
+    // Field report #104 (v1.8.3, macOS 27): Firefox trên docs.google.com / google.com gõ
+    // "50k␣" và "12*3=" không hiện gợi ý (Edge/Zen thì có). Log: đường tap (sel=true), và
+    // `field-scan org.mozilla.firefox: … host=? roles=[AXWindow→AXApplication→no-parent]`
+    // — Gecko không lộ phần tử văn bản AX, AX đọc chữ/caret đều nil. Cụm gõ ngay sau
+    // click chưa NEO nên keyStreamBefore(anchored:) cũng nil ⇒ không có nguồn văn bản.
+
+    /// Click vào ô rồi gõ "50k␣" (đường tap: "50" là ranh giới, "k" chốt ở dấu cách).
+    private func tailAfterClick(_ pieces: [String]) -> ShortcutTail {
+        var t = ShortcutTail()
+        t.caretMoved()
+        for p in pieces { t.append(p) }
+        return t
+    }
+
+    func testFirefoxNumberChipFromKeyStreamAfterClick() {
+        let t = tailAfterClick(["5", "0", "k"])
+        XCTAssertFalse(t.anchored)                                                   // gốc bug: chưa neo
+        XCTAssertNil(L.keyStreamBefore(anchored: t.anchored, prevRun: "", run: t.run))
+        let before = L.keyStreamBefore(known: t.knownText, pending: " ")
+        XCTAssertEqual(before, "50k ")
+        let s = L.moneyChip(before: before!)
+        XCTAssertEqual(s?.display, "50.000 ₫")
+        // Tab: dòng phím (đã nối dấu cách) xác nhận chữ cần thay ⇒ được ⌫ + gõ lại.
+        var after = t; after.append(" ")
+        XCTAssertTrue(L.keyStreamConfirms(replace: s!.replace, known: after.knownText))
+    }
+
+    func testFirefoxMathFromKeyStream() {
+        // "12*3=": mọi phím là ranh giới; "=" chưa vào tail lúc keyDown ⇒ pending "=".
+        let t = tailAfterClick(["1", "2", "*", "3"])
+        let before = L.keyStreamBefore(known: t.knownText, pending: "=")
+        XCTAssertEqual(before, "12*3=")
+        XCTAssertEqual(MathHintLogic.result(beforeCaret: before!), "36")
+        // Có dấu cách: "12 * 3 =" — cụm ShortcutTail chỉ còn "" nhưng recent giữ cả dòng.
+        let spaced = tailAfterClick(["1", "2", " ", "*", " ", "3", " "])
+        XCTAssertEqual(MathHintLogic.result(beforeCaret: L.keyStreamBefore(known: spaced.knownText, pending: "=")!), "36")
+    }
+
+    func testKeyStreamUnknownWithoutCaretJumpOrSpace() {
+        // Gõ tiếp từ chỗ con trỏ không biết (không click, không khoảng trắng): không đoán.
+        var t = ShortcutTail()
+        t.append("50k")
+        XCTAssertNil(t.knownText)
+        XCTAssertNil(L.keyStreamBefore(known: t.knownText, pending: " "))
+        XCTAssertFalse(L.keyStreamConfirms(replace: "50k ", known: t.knownText))
+        // Có khoảng trắng mình thấy gõ: phần từ đó về sau là chắc.
+        t.append(" 20k")
+        XCTAssertEqual(t.knownText, " 20k")
+        XCTAssertEqual(L.moneyChip(before: L.keyStreamBefore(known: t.knownText, pending: " ")!)?.display,
+                       "20.000 ₫")
+    }
+
+    func testKeyStreamConfirmRejectsGluedOrStale() {
+        XCTAssertFalse(L.keyStreamConfirms(replace: "50k ", known: " a50k "))        // dính chữ trước
+        XCTAssertFalse(L.keyStreamConfirms(replace: "50k ", known: "50k"))           // chưa có dấu cách
+        XCTAssertFalse(L.keyStreamConfirms(replace: "50k ", known: nil))
+        XCTAssertFalse(L.keyStreamConfirms(replace: "", known: "x"))
+        XCTAssertTrue(L.keyStreamConfirms(replace: "2 tỷ ", known: " 2 tỷ "))
+    }
+
+    func testFirefoxWindowIsNotAField() {
+        XCTAssertFalse(L.isFieldRole("AXWindow"))                                   // log #104
+        XCTAssertFalse(L.isFieldRole("AXApplication"))
+        XCTAssertTrue(L.isFieldRole("AXTextArea"))
+        XCTAssertTrue(L.isFieldRole(nil))
+    }
+
+    func testWordEventStreams() {
+        var ev = CaretHint.WordEvent(boundary: " ", run: "nay", prevRun: "hôm", raw: "nay",
+                                     anchored: false, tones: nil, known: "hôm nay")
+        XCTAssertEqual(ev.dateStream, "hôm nay ")                                    // sau click, chưa neo
+        XCTAssertEqual(ev.typoStream, "hôm nay ")
+        ev.known = nil
+        XCTAssertNil(ev.dateStream); XCTAssertNil(ev.typoStream)
+        ev.anchored = true
+        XCTAssertEqual(ev.dateStream, "hôm nay ")                                   // hành vi cũ giữ nguyên
+        XCTAssertEqual(ev.typoStream, "nay ")
+    }
+
     // MARK: Vị trí
 
     private let screens = [NSRect(x: 0, y: 0, width: 1440, height: 900)]
@@ -143,7 +224,9 @@ final class CaretHintTests: XCTestCase {
         var (src, asked) = pick([.imkFirstRect: caret, .axCaret: caret], field: field)
         XCTAssertEqual(src, .imkFirstRect); XCTAssertEqual(asked, [.imkFirstRect])   // không gọi AX thừa
         (src, asked) = pick([.axCaret: caret], field: field)
-        XCTAssertEqual(src, .axCaret); XCTAssertEqual(asked, [.imkFirstRect, .axCaret])
+        XCTAssertEqual(src, .axCaret); XCTAssertEqual(asked, [.imkFirstRect, .imkLineRect, .axCaret])
+        (src, _) = pick([.imkLineRect: caret, .axCaret: caret], field: field)
+        XCTAssertEqual(src, .imkLineRect)                                            // #104 Firefox: AX mù
         (src, _) = pick([.axPrevChar: caret], field: field)
         XCTAssertEqual(src, .axPrevChar)
         (src, _) = pick([.axLineEstimate: caret, .fieldStart: field], field: field)

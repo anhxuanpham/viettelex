@@ -189,6 +189,39 @@ final class ShortcutExpansionTests: XCTestCase {
         XCTAssertEqual(t.run, "hai"); XCTAssertTrue(t.anchored)
     }
 
+    /// #104: `recent`/`knownText` — văn bản chắc chắn trước con trỏ dựng từ dòng phím.
+    func testTailKnownText() {
+        var t = ShortcutTail()
+        XCTAssertNil(t.knownText)                                // chưa biết gì
+        t.caretMoved()
+        XCTAssertEqual(t.knownText, "")                          // vừa click: đầu phần đã biết
+        t.append("12 * 3")
+        XCTAssertEqual(t.knownText, "12 * 3"); XCTAssertEqual(t.run, "3")
+        t.backspace(); XCTAssertEqual(t.knownText, "12 * ")
+        t.backspace(); t.backspace(); t.backspace(); t.backspace(); t.backspace()
+        XCTAssertEqual(t.knownText, "")
+        t.backspace()                                            // xoá chữ có từ trước click
+        XCTAssertNil(t.knownText)
+        // Khoá ký hiệu nở: đuôi recent đổi theo.
+        t.caretMoved(); t.append("a k2"); t.replaceRun(with: "không hai")
+        XCTAssertEqual(t.knownText, "a không hai")
+        // Áp dụng gợi ý: đuôi khớp ⇒ thay; giữ "đầu đã biết" và neo.
+        t.caretMoved(); t.append("50k ")
+        t.replaceSuffix("50k ", with: "50.000 ₫ ")
+        XCTAssertEqual(t.knownText, "50.000 ₫ "); XCTAssertTrue(t.anchored); XCTAssertEqual(t.run, "")
+        t.replaceSuffix("zzz", with: "x")                        // không khớp ⇒ chỉ còn chữ mới
+        XCTAssertNil(t.knownText); XCTAssertEqual(t.run, "x")
+        // Cắt đầu (dài quá maxRecent) ⇒ chỉ còn phần từ khoảng trắng đầu tiên.
+        t.caretMoved()
+        t.append(String(repeating: "ab ", count: 50))
+        XCTAssertFalse(t.recentWhole)
+        XCTAssertEqual(t.knownText?.first, " ")
+        XCTAssertLessThanOrEqual(t.recent.count, ShortcutTail.maxRecent + 32)
+        // Click / phím điều hướng: reset + đầu mới.
+        t.caretMoved(); XCTAssertEqual(t.knownText, "")
+        t.reset(); XCTAssertNil(t.knownText)
+    }
+
     func testScreenVerify() {
         // "a ->|" → range của "->"
         XCTAssertEqual(ShortcutScreen.tokenRange(caret: 4, token: "->", window: " ->", windowStart: 1),

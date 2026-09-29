@@ -1281,6 +1281,14 @@ enum AXTextEdit {
             return AXTextEdit.flip(CGRect(origin: p, size: sz))
         }
 
+        /// kAXRole of the focused element (Firefox without AX reports the WINDOW — #104).
+        func role() -> String? {
+            var ref: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &ref) == .success
+            else { return nil }
+            return ref as? String
+        }
+
         /// kAXBoundsForRange on the 0-length caret range.
         func caretBounds() -> NSRect? {
             guard let caret else { return nil }
@@ -2880,7 +2888,11 @@ final class TerminalTapController {
             }
         }
         if keyCode == kVK_ANSI_Equal, mathMods.isEmpty, CaretHint.shared.mathEnabled {
-            CaretHint.shared.afterEquals(client: nil, controller: nil)
+            // AX không đọc được (Firefox — #104): biểu thức dựng từ dòng phím, "=" chưa
+            // vào tail (nhánh ranh giới bên dưới mới nối) nên thêm tay.
+            let stream = CaretHintLogic.keyStreamBefore(known: shortcutTail.knownText,
+                                                        pending: engine.composed + "=")
+            CaretHint.shared.afterEquals(client: nil, controller: nil, keyStream: stream)
         }
 
         if keyCode == kDelete {
@@ -3039,15 +3051,19 @@ final class TerminalTapController {
                 CaretHint.shared.afterWord(
                     .init(boundary: boundaryText, run: shortcutTail.run, prevRun: numberPrevRun,
                           raw: tapExpanded == nil ? lastCommitRaw : "",
-                          anchored: shortcutTail.anchored, tones: tones),
+                          anchored: shortcutTail.anchored, tones: tones,
+                          known: shortcutTail.knownText),
                     client: nil, controller: nil, canReplace: true)
             }
             if boundaryText == " " {
                 let run = shortcutTail.run
                 if CaretHint.shared.numberEnabled,
                    CaretHintLogic.numberWorthChecking(boundary: boundaryText, run: run, prevRun: numberPrevRun) {
+                    // Cụm đã neo như cũ; chưa neo nhưng ngay sau lần dời con trỏ (click rồi gõ
+                    // "50k␣" trong Firefox — #104) ⇒ phần dòng phím đã biết.
                     let stream = CaretHintLogic.keyStreamBefore(anchored: shortcutTail.anchored,
                                                                 prevRun: numberPrevRun, run: run)
+                        ?? CaretHintLogic.keyStreamBefore(known: shortcutTail.knownText, pending: " ")
                     CaretHint.shared.afterNumberSpace(client: nil, controller: nil, keyStream: stream,
                                                       canReplace: true)
                 }
@@ -3327,8 +3343,9 @@ final class TerminalTapController {
 
     /// Áp dụng gợi ý cạnh con trỏ (tap). Phép tính: gõ thêm kết quả. Chip số: có AX thì
     /// ĐỌC LẠI và chỉ thay khi chữ trước con trỏ đúng là cụm số + dấu cách, đứng riêng;
-    /// trình duyệt mà AX không đọc được ⇒ bỏ; terminal thuần ⇒ tin dòng phím (gợi ý dựng
-    /// từ chính các phím này, cụm đã neo). ⌫ theo KÝ TỰ như gõ tắt ký hiệu.
+    /// AX không đọc được ⇒ chỉ khi dòng phím (ShortcutTail.knownText) còn xác nhận chữ cần
+    /// thay đứng riêng ngay trước con trỏ (Firefox — #104); trình duyệt không xác nhận được
+    /// ⇒ bỏ; terminal thuần ⇒ tin dòng phím như cũ. ⌫ theo KÝ TỰ như gõ tắt ký hiệu.
     private func applyCaretSuggestionTap(_ s: CaretSuggestion, id: String?) {
         engine.reset()
         guard !s.replace.isEmpty else {
@@ -3344,13 +3361,17 @@ final class TerminalTapController {
                 DebugLog.log("caret hint(tap) \(s.kind) \(id ?? "?"): screen disagrees → skip")
                 return
             }
+        } else if CaretHintLogic.keyStreamConfirms(replace: s.replace, known: shortcutTail.knownText) {
+            // AX mù (Firefox — #104): chữ cần thay là đúng các phím mình thấy gõ từ lần dời
+            // con trỏ / khoảng trắng gần nhất (mọi click/phím điều hướng đã reset) ⇒ ⌫ đúng
+            // số ký tự đó + gõ lại, cùng đường với gõ tắt ở app AX mù (#99).
         } else if AppState.shared.usesAxDetect(id) {
+            DebugLog.log("caret hint(tap) \(s.kind) \(id ?? "?"): AX blind, key stream unsure → skip")
             return
         }
         engine.noteExternalWord(english: false)
         SyntheticKeyboard.apply(backspaces: s.replace.count, insert: s.insert, mode: emitMode)
-        shortcutTail.reset()
-        shortcutTail.append(s.insert)
+        shortcutTail.replaceSuffix(s.replace, with: s.insert)
         numberPrevRun = ""
         DebugLog.log("caret hint(tap) \(s.kind) \(id ?? "?"): bs=\(s.replace.count) ins=\(s.insert.count)")
     }
