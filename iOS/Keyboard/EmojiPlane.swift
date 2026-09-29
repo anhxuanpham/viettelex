@@ -157,7 +157,22 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
     /// Thanh tìm luôn hiện trên cùng (chạm → onSearch).
     private(set) var searchField: UIControl!
 
+    /// Chỗ phím emoji vừa bấm (toạ độ KeyboardView; plane cùng mép trái + đáy):
+    /// minX, maxX, top = khoảng từ đáy lên đỉnh phím. ABC đặt ĐÚNG cột đó —
+    /// bấm nhầm emoji thì chạm lại chỗ cũ là về chữ (Phil 26/09/2026, chốt lại 30/09).
+    struct ABCSlot: Equatable { var minX: CGFloat; var maxX: CGFloat; var top: CGFloat }
+    private let abcSlot: ABCSlot?
     private(set) var abcButton: UIButton?
+    private weak var categoryRowView: UIStackView?
+
+    /// Vùng chạm nở lên tới đỉnh phím emoji cũ và sang trái tới mép bàn phím.
+    private final class ABCButton: UIButton {
+        var hitRect: CGRect?   // toạ độ superview
+        override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+            guard let r = hitRect, let sv = superview else { return super.point(inside: point, with: event) }
+            return r.contains(convert(point, to: sv))
+        }
+    }
 
     /// iPad: không ô tìm trên cùng — 🔍 nằm ở hàng category như stock iPad.
     let pad: Bool
@@ -165,8 +180,9 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
     private var searchHeight: NSLayoutConstraint?
     private var rowHeight: NSLayoutConstraint?
 
-    init(dark: Bool,
+    init(dark: Bool, abcSlot: ABCSlot? = nil,
          pad: Bool = UIDevice.current.userInterfaceIdiom == .pad) {
+        self.abcSlot = abcSlot
         self.pad = pad
         self.spec = EmojiGridMetrics.spec(pad: pad, landscape: false)
         super.init(frame: .zero)
@@ -315,7 +331,7 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         row.translatesAutoresizingMaskIntoConstraints = false
 
         let ink: UIColor = dark ? .white : .black
-        let abc = UIButton(type: .custom)
+        let abc = ABCButton(type: .custom)
         abc.setTitle("ABC", for: .normal)
         abc.setTitleColor(ink, for: .normal)
         abc.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
@@ -323,12 +339,21 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
             KeyboardView.clickModifier()
             self?.onABC?()
         }, for: .touchDown)
-        // Như stock: ABC sát mép trái, icon category chia đều phần còn lại, ⌫ sát phải.
-        // (Trước: ABC đặt đúng cột phím emoji ⇒ spacer ~90pt, 10 icon dồn còn ~25pt/icon.)
         abc.accessibilityLabel = L("Chữ")
-        row.addArrangedSubview(abc)
-        abc.widthAnchor.constraint(equalToConstant: Self.edgeKeyWidth(pad: pad)).isActive = true
         abcButton = abc
+        if let slot = abcSlot {
+            // ABC nằm ngoài stack, ĐÚNG cột phím emoji (layoutSubviews đặt frame); stack chừa
+            // chỗ tới hết cột đó bằng spacer — icon chia đều phần còn lại tới ⌫. Phần trái cột
+            // (chỗ phím 123) thuộc vùng chạm của ABC.
+            let spacer = UIView()
+            spacer.widthAnchor.constraint(equalToConstant: max(slot.maxX - row.layoutMargins.left, 0)).isActive = true
+            row.addArrangedSubview(spacer)
+            addSubview(abc)
+        } else {
+            // Không biết chỗ phím emoji (mở bằng code): như stock, ABC sát mép trái.
+            row.addArrangedSubview(abc)
+            abc.widthAnchor.constraint(equalToConstant: Self.edgeKeyWidth(pad: pad)).isActive = true
+        }
 
         if pad {
             row.addArrangedSubview(searchField)
@@ -376,6 +401,8 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
         del.widthAnchor.constraint(equalToConstant: Self.edgeKeyWidth(pad: pad)).isActive = true
 
         addSubview(row)
+        categoryRowView = row
+        if abcSlot != nil { bringSubviewToFront(abc) }
         let rh = row.heightAnchor.constraint(equalToConstant: spec.categoryRow - 2)
         rowHeight = rh
         NSLayoutConstraint.activate([
@@ -391,7 +418,7 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
     #if DEBUG
     /// Test: frame (toạ độ plane) của ABC, các icon category (+ kaomoji), ⌫.
     var debugCategoryRow: (abc: CGRect, icons: [CGRect], delete: CGRect)? {
-        guard let abc = abcButton, let row = abc.superview as? UIStackView,
+        guard let abc = abcButton, let row = categoryRowView,
               let del = row.arrangedSubviews.last else { return nil }
         let icons = (categoryButtons + [kaomojiButton].compactMap { $0 }).map { convert($0.bounds, from: $0) }
         return (convert(abc.bounds, from: abc), icons, convert(del.bounds, from: del))
@@ -608,6 +635,14 @@ final class EmojiPlane: UIView, UICollectionViewDataSource, UICollectionViewDele
     override func layoutSubviews() {
         applySpecIfNeeded()
         super.layoutSubviews()
+        if let abc = abcButton as? ABCButton, let slot = abcSlot {
+            // Nhìn: cột phím emoji cũ, cao bằng hàng category (cách đáy 2).
+            abc.frame = CGRect(x: slot.minX, y: bounds.height - spec.categoryRow,
+                               width: slot.maxX - slot.minX, height: spec.categoryRow - 2)
+            // Chạm: từ mép trái tới hết phím cũ, từ đỉnh phím cũ xuống đáy.
+            abc.hitRect = CGRect(x: 0, y: bounds.height - max(slot.top, spec.categoryRow),
+                                 width: slot.maxX, height: max(slot.top, spec.categoryRow))
+        }
         let m = currentMetrics()
         if bounds.width != lastLayoutWidth || m != appliedMetrics {
             let resized = appliedMetrics != nil

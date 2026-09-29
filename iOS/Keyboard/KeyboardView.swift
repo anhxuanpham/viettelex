@@ -2037,9 +2037,11 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     // cuộn ngang column-major theo category + hàng [ABC][icons][⌫].
     // rowsContainer là fillEqually — plane emoji cần layout tự do nên đổi
     // distribution sang .fill khi vào plane này (rebuild() phục hồi).
+    private var emojiABCSlot: EmojiPlane.ABCSlot?
+
     private func buildEmoji() {
         rowsContainer.distribution = .fill
-        let plane = EmojiPlane(dark: dark)
+        let plane = EmojiPlane(dark: dark, abcSlot: emojiABCSlot)
         plane.onEmoji = { [weak self] e in self?.tapped(.text(e)) }
         plane.onABC = { [weak self] in
             guard let self else { return }
@@ -2227,6 +2229,14 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 self.rebuild()
             }
             emojiBtn.setImage(Self.emojiKeyIcon, for: .normal)
+            // Nhớ chỗ phím emoji (touchDown chạy trước action đổi plane) → EmojiPlane
+            // đặt ABC đúng chỗ đó (Phil 26/09, chốt lại 30/09/2026).
+            emojiBtn.addAction(UIAction { [weak self] a in
+                guard let self, let v = a.sender as? UIView else { return }
+                let r = self.convert(v.bounds, from: v)
+                self.emojiABCSlot = .init(minX: r.minX, maxX: r.maxX,
+                                          top: self.bounds.maxY - r.minY)
+            }, for: .touchDown)
             emojiBtn.tintColor = ink
             emojiBtn.accessibilityLabel = "Emoji"
         }
@@ -4218,6 +4228,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     var debugTrackpadDimmed: Bool { trackpadDimmed }
     func debugSetKeyPreview(_ on: Bool) { keyPreviewEnabled = on }
     func debugShowEmojiPlane() { plane = .emoji; rebuild() }
+    /// Test hook: frame phím emoji (toạ độ self) ở hàng đáy plane đang hiện.
+    var debugEmojiKeyFrame: CGRect? { debugControl("Emoji").map { convert($0.bounds, from: $0) } }
     var debugBalloonVisible: Bool { balloonMade && !balloon.isHidden && balloon.superview != nil }
     /// Test hook: một touch chữ chạm tại `p0`, kéo qua `points` (cách nhau `dt` giây),
     /// nhấc tay ở điểm cuối — đi đúng đường router (routeDown → swipeMoved → routeUp).
