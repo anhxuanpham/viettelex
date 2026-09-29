@@ -96,11 +96,11 @@
     });
   });
 
-  // --- Windows ARM: đưa nút ARM64 lên làm nút chính ------------------------------------
+  // --- Windows ARM: đưa nút ARM64 lên trước ------------------------------------
   function preferArm() {
     var a = document.getElementById("winX64"), b = document.getElementById("winArm");
     if (!a || !b) return;
-    a.classList.add("ghost"); b.classList.remove("ghost");
+    // Cả hai là nút phụ (Microsoft Store là cách chính) — chỉ đổi thứ tự.
     a.parentNode.insertBefore(b, a);
   }
   try {
