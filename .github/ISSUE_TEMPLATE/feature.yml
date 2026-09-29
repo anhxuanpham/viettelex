@@ -12,8 +12,24 @@ body:
     attributes:
       label: Trước khi gửi
       options:
-        - label: Đã xem qua **Cài đặt…** (tab **Tùy chỉnh** và **Thử nghiệm**) — tính năng này chưa có
+        - label: Đã xem qua phần Cài đặt của VietTelex trên nền tảng đó — tính năng này chưa có
           required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Nền tảng
+      description: Tính năng này bạn cần trên nền tảng nào? Chọn nhiều nếu muốn có ở nhiều nơi.
+      multiple: true
+      options:
+        - macOS
+        - iPhone / iPad
+        - Android
+        - Windows
+        - Linux
+        - Web (trang học gõ / JavaScript SDK)
+    validations:
+      required: true
 
   - type: textarea
     id: problem

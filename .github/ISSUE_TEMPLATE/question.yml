@@ -15,6 +15,22 @@ body:
         - label: Đã đọc [Câu hỏi thường gặp (FAQ)](https://ptrinh.github.io/viettelex/#faq)
           required: true
 
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Nền tảng
+      description: Bạn đang dùng VietTelex trên nền tảng nào?
+      multiple: true
+      options:
+        - macOS
+        - iPhone / iPad
+        - Android
+        - Windows
+        - Linux
+        - Web (trang học gõ / JavaScript SDK)
+    validations:
+      required: true
+
   - type: textarea
     id: question
     attributes:
@@ -25,8 +41,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: Phiên bản VietTelex + macOS
-      placeholder: 1.5.10 — macOS 26.1
+      label: Phiên bản VietTelex + hệ điều hành
+      placeholder: 1.8.3 — macOS 26.1 / 1.2.2 — iOS 27 / 1.1.5 — Windows 11
 
   - type: textarea
     id: tried

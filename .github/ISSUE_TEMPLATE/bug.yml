@@ -28,7 +28,7 @@ body:
         - Android
         - Windows
         - Linux
-        - Web (trang học gõ)
+        - Web (trang học gõ / JavaScript SDK)
     validations:
       required: true
 
@@ -81,4 +81,4 @@ body:
     attributes:
       label: Phiên bản VietTelex + hệ điều hành
       description: Chỉ cần điền nếu **không** kèm nhật ký ở trên.
-      placeholder: 1.5.10 — macOS 26.1 / iOS 1.1.2 — iOS 27
+      placeholder: 1.8.3 — macOS 26.1 / 1.2.2 — iOS 27 / 1.1.5 — Windows 11
