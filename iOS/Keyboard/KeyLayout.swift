@@ -36,6 +36,49 @@ enum KeyLayout {
         return unit * (numberRow ? 4 + numberRowRatio : 4)
     }
 
+    // MARK: Chiều cao bàn phím (bug tester 1.2.x: phím co lại ở Notes/Facebook, lúc
+    // ngẫu nhiên, và khi tìm emoji). Quy tắc: vùng phím LUÔN đủ `keyArea`.
+
+    /// Chế độ bố trí dọc: phím thường (strip ở trên), lưới emoji (lấn strip), tìm emoji
+    /// (ô tìm + 4 hàng chữ — ô tìm KHÔNG ăn vào chiều cao phím).
+    enum ChromeMode { case keys, emoji, emojiSearch }
+    struct Chrome: Equatable {
+        var rowsTop: CGFloat   // strip phía trên vùng hàng
+        var rows: CGFloat      // chiều cao vùng hàng (kể cả ô tìm emoji)
+        var total: CGFloat     // chiều cao xin host
+    }
+    /// Hàng ô tìm emoji (ô 38pt + đệm 5/3) — như dải tìm của stock.
+    static let emojiSearchRow: CGFloat = 46
+    static func emojiSearchBarHeight(strip: CGFloat) -> CGFloat { max(emojiSearchRow, strip) }
+
+    static func chrome(keyArea: CGFloat, strip: CGFloat, mode: ChromeMode) -> Chrome {
+        switch mode {
+        case .keys: return Chrome(rowsTop: strip, rows: keyArea, total: keyArea + strip)
+        case .emoji: return Chrome(rowsTop: 0, rows: keyArea + strip, total: keyArea + strip)
+        case .emojiSearch:
+            // Ô tìm nằm chỗ strip (bar gợi ý ẩn); phần nó cao hơn strip thì bàn phím cao
+            // thêm như stock — trước đây nó chen vào keyArea ⇒ 4 hàng chữ bị ép còn ~80%.
+            let bar = emojiSearchBarHeight(strip: strip)
+            return Chrome(rowsTop: 0, rows: keyArea + bar, total: keyArea + bar)
+        }
+    }
+
+    /// Strip gợi ý: giữ theo CÔNG TẮC toàn cục, không theo từng ô. Trước đây ô từ chối
+    /// gợi ý (mật khẩu, autocorrect = .no — ô tìm Facebook, trait Notes đọc chập chờn)
+    /// làm bàn phím thấp 34pt rồi cao lại khi đang hiện; host không phải lúc nào cũng
+    /// cấp lại chiều cao ⇒ strip (999) thắng, hàng phím (900) bị ép.
+    static func stripHeight(reserved: Bool, collapsed: Bool, open: CGFloat) -> CGFloat {
+        reserved ? (collapsed ? 14 : open) : 0
+    }
+
+    /// iPhone ngang theo BỀ NGANG view (dọc ≤ 440pt, ngang ≥ 568pt) — không tin
+    /// interfaceOrientation của scene extension (có lúc lệch với host ⇒ xin 162pt ngang
+    /// khi đang dọc = phím lùn). width 0 (chưa layout) thì mới dùng orientation.
+    static func isPhoneLandscape(width: CGFloat, sceneLandscape: Bool?) -> Bool {
+        if width > 0 { return width > 500 }
+        return sceneLandscape ?? false
+    }
+
     /// Hàng đáy — units = PHẦN của bề rộng hàng (multiplier theo stack width).
     /// iPad full plane chữ = stock [🌐][.?123][☺︎][space][.?123][⌨︎] — KHÔNG phím ","
     /// riêng (phím "!," hàng 3 đã có ","; Phil 27/09). Đo stock Pro 11": 58.7 / 88 trên 834.

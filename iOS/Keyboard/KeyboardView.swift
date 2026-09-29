@@ -89,6 +89,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private var heightConstraint: NSLayoutConstraint?
     private let suggestionBar = SuggestionBar()
     private var suggestionsEnabled = false
+    private var stripReserved = false
 
     private var plane: Plane = .letters {
         didSet {
@@ -106,6 +107,9 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private var rowsContainer = UIStackView()
     private var rowsHeightConstraint: NSLayoutConstraint?
     private var rowsMaxHeightConstraint: NSLayoutConstraint?
+    /// Sàn chiều cao vùng hàng (@999, trên rowsTop @998): host cấp THIẾU thì strip gợi ý
+    /// nhường trước, hàng phím giữ đủ cao (KeyLayout.chrome).
+    private var rowsMinHeightConstraint: NSLayoutConstraint?
     private var rowsTopConstraint: NSLayoutConstraint?
     private var rowsLeftConstraint: NSLayoutConstraint?
     private var rowsRightConstraint: NSLayoutConstraint?
@@ -184,8 +188,13 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // rows.top = view.top + strip — MỘT constraint quyết định vùng gợi ý,
         // không còn dây bar↔rows / margin động (nguồn của mọi conflict cũ).
         // 999: host áp frame khổng lồ lúc settle thì nhả êm, dư tràn lên trên.
+        // 998 (dưới sàn rowsMin 999): host cấp thiếu chiều cao thì strip co trước, phím
+        // không co (bug 1.2.x: phím lùn ở Notes/Facebook). rows.top ≥ view.top (required)
+        // chặn hàng phím tràn khỏi đỉnh khi host cấp thiếu cả keyArea.
         let rowsTop = rowsContainer.topAnchor.constraint(equalTo: topAnchor, constant: 0)
-        rowsTop.priority = UILayoutPriority(999)
+        rowsTop.priority = UILayoutPriority(998)
+        let rowsMin = rowsContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 212)
+        rowsMin.priority = UILayoutPriority(999)
         // Hai mép là constraint GIỮ LẠI: chế độ một tay thụt vào (applyOneHand).
         let rowsLeft = rowsContainer.leftAnchor.constraint(equalTo: leftAnchor)
         let rowsRight = rowsContainer.rightAnchor.constraint(equalTo: rightAnchor)
@@ -197,9 +206,12 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             rowsHeight,
             rowsMax,
             rowsTop,
+            rowsMin,
+            rowsContainer.topAnchor.constraint(greaterThanOrEqualTo: topAnchor),
             rowsContainer.bottomAnchor.constraint(equalTo: bottomAnchor, constant: 0),
         ])
         rowsHeightConstraint = rowsHeight
+        rowsMinHeightConstraint = rowsMin
         rowsMaxHeightConstraint = rowsMax
         rowsTopConstraint = rowsTop
         // Suggestion bar sống trong "khoảng trống 2" — chỉ hiện khi bật. KHUNG CỐ ĐỊNH
@@ -264,9 +276,11 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         if constraints { v.removeConstraints(v.constraints) }
     }
 
-    /// Bật/tắt thanh gợi ý: mở rộng khoảng trống phía trên vừa đủ (44pt).
-    func setSuggestionsEnabled(_ on: Bool) {
+    /// Bật/tắt thanh gợi ý cho ô hiện tại. `reserveStrip` = công tắc toàn cục: ô từ chối
+    /// gợi ý vẫn GIỮ dải strip (trống) để chiều cao bàn phím không đổi khi đổi ô.
+    func setSuggestionsEnabled(_ on: Bool, reserveStrip: Bool? = nil) {
         suggestionsEnabled = on
+        stripReserved = reserveStrip ?? on
         lastSuggestionSig = ""        // chrome đổi → lượt show kế phải ghi lại UI
         updateSuggestionChrome()
     }
@@ -294,8 +308,9 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         if !collapsing { suggestionBar.isHidden = false; suggestionBar.alpha = 0 }
         UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseInOut]) {
             let strip: CGFloat = collapsing ? 14 : Self.openStrip
-            self.rowsTopConstraint?.constant = strip
-            self.heightConstraint?.constant = self.keyAreaHeight() + strip
+            let c = KeyLayout.chrome(keyArea: self.keyAreaHeight(), strip: strip, mode: self.chromeMode)
+            self.rowsTopConstraint?.constant = c.rowsTop
+            self.heightConstraint?.constant = c.total
             self.suggestionBar.alpha = collapsing ? 0 : 1
             let flip = CGAffineTransform(rotationAngle: collapsing ? .pi : 0)
             self.chevronIcon?.transform = flip
@@ -413,7 +428,12 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private func layoutSuggestionBar() {
         let w = Self.stripZoneWidth
         let right = w + (clipboardButtonVisible ? Self.clipZoneWidth : 0)
-        let f = CGRect(x: w, y: Self.barTopPad, width: max(bounds.width - w - right, 0), height: 20)
+        // Host cấp thiếu chiều cao ⇒ strip co (phím giữ nguyên): bar dời lên VỪA đủ để không
+        // đè hàng đầu (còn vừa thì đứng yên).
+        let h: CGFloat = 20
+        let squeeze = rowsContainer.frame.height > 0
+            ? min(0, rowsContainer.frame.minY - (Self.barTopPad + h)) : 0
+        let f = CGRect(x: w, y: Self.barTopPad + squeeze, width: max(bounds.width - w - right, 0), height: h)
         if suggestionBar.frame != f { suggestionBar.frame = f }
     }
 
@@ -532,6 +552,11 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// rowsContainer cùng đi qua đây nên tổng luôn khớp từng hàng.
     private var landscapeCache: (size: CGSize, landscape: Bool)?
     private var isLandscapeNow: Bool {
+        // iPhone: theo bề ngang (KeyLayout.isPhoneLandscape) — orientation scene extension
+        // có lúc lệch host ⇒ xin chiều cao ngang 162pt khi đang dọc (phím lùn ngẫu nhiên).
+        if !Self.isPad, bounds.width > 0 {
+            return KeyLayout.isPhoneLandscape(width: bounds.width, sceneLandscape: nil)
+        }
         // interfaceOrientation chép cả bộ scene settings mỗi lần đọc; xoay/Split View luôn
         // đổi bounds ⇒ cache theo kích thước (chỉ khi đã gắn window).
         if let c = landscapeCache, c.size == bounds.size, window != nil { return c.landscape }
@@ -573,6 +598,14 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         if window != nil { lastLayoutWidth = -1; setNeedsLayout() }
     }
 
+    private var chromeMode: KeyLayout.ChromeMode {
+        switch plane {
+        case .emoji: return .emoji
+        case .emojiSearch: return .emojiSearch
+        default: return .keys
+        }
+    }
+
     /// Strip gợi ý chỉ hiện khi bật VÀ đang ở plane chữ/số — trong emoji plane
     /// ẩn đi cho gọn (user 2026-07-24). strip 30pt sát nút; phần dưới hàng
     /// phím cuối là vùng globe/mic hệ thống, không thuộc view mình.
@@ -581,15 +614,19 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // Strip mở (bar 20pt + đệm trên) / 14 thu gọn / 0 tắt. Plane emoji GIỮ NGUYÊN
         // chiều cao strip (chỉ ẩn bar): đổi chiều cao bàn phím khi vào emoji làm host
         // relayout dở dang — dải trống + vạch đè hàng emoji đầu (Telegram, 25/09/2026).
-        let strip: CGFloat = suggestionsEnabled ? (barCollapsed ? 14 : Self.openStrip) : 0
-        let keyArea = keyAreaHeight()
+        let strip = KeyLayout.stripHeight(reserved: stripReserved, collapsed: barCollapsed,
+                                          open: Self.openStrip)
         // Lưới emoji chiếm luôn dải strip (thanh tìm nằm đúng chỗ thanh gợi ý như stock):
         // chỉ dời vùng hàng phím, tổng chiều cao GIỮ NGUYÊN → host không relayout.
-        let emojiTakesStrip = plane == .emoji
-        rowsTopConstraint?.constant = emojiTakesStrip ? 0 : strip
-        heightConstraint?.constant = keyArea + strip
-        rowsHeightConstraint?.constant = keyArea + (emojiTakesStrip ? strip : 0)
-        rowsMaxHeightConstraint?.constant = keyArea + 60
+        // Tìm emoji: ô tìm thế chỗ strip, phím chữ giữ đủ keyArea (KeyLayout.chrome).
+        let c = KeyLayout.chrome(keyArea: keyAreaHeight(), strip: strip, mode: chromeMode)
+        if rowsTopConstraint?.constant != c.rowsTop { rowsTopConstraint?.constant = c.rowsTop }
+        if heightConstraint?.constant != c.total { heightConstraint?.constant = c.total }
+        if rowsHeightConstraint?.constant != c.rows { rowsHeightConstraint?.constant = c.rows }
+        if rowsMinHeightConstraint?.constant != c.rows { rowsMinHeightConstraint?.constant = c.rows }
+        if rowsMaxHeightConstraint?.constant != c.rows + 60 { rowsMaxHeightConstraint?.constant = c.rows + 60 }
+        let barH = KeyLayout.emojiSearchBarHeight(strip: strip)
+        if let h = searchBarHeight, h.constant != barH { h.constant = barH }
         suggestionBar.isHidden = !visible || barCollapsed
         suggestionBar.alpha = 1
         if !visible || barCollapsed { pasteCard.isHidden = true }   // thu gọn / emoji plane
@@ -1281,6 +1318,17 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         guard on != needsGlobe else { return }
         needsGlobe = on
         rebuild()   // globe nằm trong chữ ký → cache (hàng đáy cũ) bị vứt
+    }
+
+    /// Viết hoa đầu câu theo context hiện tại (controller đọc proxy) — nil = không áp.
+    var autoShiftProbe: (() -> Bool?)?
+
+    /// Về plane chữ bằng ABC: đánh giá lại shift (PlanePolicy.shiftOnReturnToLetters)
+    /// thay vì ép off — ". " vừa gõ ở plane 123 phải viết hoa chữ kế. CAPS giữ nguyên.
+    /// rebuild() ngay sau áp giao diện (cache) hoặc dựng phím theo shift mới.
+    private func reevaluateShiftForLetters() {
+        guard shift != .caps else { return }
+        shift = PlanePolicy.shiftOnReturnToLetters(autoShift: autoShiftProbe?()) ? .on : .off
     }
 
     /// Sentence-start auto-shift (only upgrades OFF→ON; never downgrades CAPS).
@@ -1989,11 +2037,9 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     // cuộn ngang column-major theo category + hàng [ABC][icons][⌫].
     // rowsContainer là fillEqually — plane emoji cần layout tự do nên đổi
     // distribution sang .fill khi vào plane này (rebuild() phục hồi).
-    private var emojiABCSlot: EmojiPlane.ABCSlot?
-
     private func buildEmoji() {
         rowsContainer.distribution = .fill
-        let plane = EmojiPlane(dark: dark, abcSlot: emojiABCSlot)
+        let plane = EmojiPlane(dark: dark)
         plane.onEmoji = { [weak self] e in self?.tapped(.text(e)) }
         plane.onABC = { [weak self] in
             guard let self else { return }
@@ -2013,12 +2059,14 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     }
 
     // MARK: tìm emoji (27/09/2026)
-    // Hàng ô tìm + kết quả chèn lên đầu plane chữ (5 hàng fillEqually — phím thấp
-    // hơn chút, chiều cao bàn phím giữ nguyên để host không relayout). Mọi phím chữ /
+    // Hàng ô tìm + kết quả chèn lên đầu plane chữ, thế chỗ strip gợi ý; phần nó cao hơn
+    // strip thì bàn phím cao thêm (KeyLayout.chrome .emojiSearch) — phím chữ giữ đủ
+    // keyArea (29/09/2026: trước chia 5 hàng trong keyArea, phím bị ép). Mọi phím chữ /
     // space / ⌫ đi vào EmojiSearchSession (Telex riêng), không tới ô nhập; chạm kết
     // quả mới chèn emoji thật. return / phím emoji → về lưới emoji; 123 → plane số.
     private var emojiSearch = EmojiSearchSession()
     private weak var searchBar: EmojiSearchBar?
+    private weak var searchBarHeight: NSLayoutConstraint?
 
     private func buildEmojiSearch() {
         let bar = EmojiSearchBar(dark: dark)
@@ -2035,14 +2083,20 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         }
         searchBar = bar
         buildLetters()
-        rowsContainer.insertArrangedSubview(bar, at: 0)
-        // rows thôi fillEqually (applyRowHeights) — ô tìm cao bằng hàng chữ (hàng z…m; hàng
-        // đáy iPhone thấp hơn 4pt nên không lấy làm mốc).
-        let rs = rowsContainer.arrangedSubviews
-        if rowsContainer.distribution == .fill, rs.count >= 2 {
-            let ref = rs[rs.count - 2]
-            crossRow(bar.heightAnchor.constraint(equalTo: ref.heightAnchor))
+        // iPad (không hàng số) dựng chữ bằng fillEqually → chuyển .fill + hàng bằng nhau,
+        // để ô tìm có chiều cao RIÊNG, không chia phần với hàng chữ.
+        let letterRows = rowsContainer.arrangedSubviews
+        if rowsContainer.distribution != .fill, letterRows.count >= 2 {
+            rowsContainer.distribution = .fill
+            for r in letterRows.dropFirst() { crossRow(r.heightAnchor.constraint(equalTo: letterRows[0].heightAnchor)) }
         }
+        rowsContainer.insertArrangedSubview(bar, at: 0)
+        // Ô tìm cao cố định = phần bàn phím cao thêm (KeyLayout.chrome .emojiSearch) — trước
+        // đây bằng một hàng chữ và CHIA keyArea với 4 hàng chữ ⇒ phím bị ép (bug 1.2.x).
+        let strip = KeyLayout.stripHeight(reserved: stripReserved, collapsed: barCollapsed, open: Self.openStrip)
+        let h = bar.heightAnchor.constraint(equalToConstant: KeyLayout.emojiSearchBarHeight(strip: strip))
+        crossRow(h)
+        searchBarHeight = h
         refreshSearchBar()
     }
 
@@ -2129,7 +2183,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             guard let self else { return }
             // Từ ô tìm emoji: 123 ra plane số (thoát tìm).
             self.plane = (self.plane == .letters || self.plane == .emojiSearch) ? .numbers : .letters
-            if self.plane == .letters, self.shift == .on { self.shift = .off }
+            if self.plane == .letters { self.reevaluateShiftForLetters() }
             self.rebuild()
         }
         planeBtn.accessibilityLabel = planeKey == "123" ? L("Số") : L("Chữ")
@@ -2173,14 +2227,6 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 self.rebuild()
             }
             emojiBtn.setImage(Self.emojiKeyIcon, for: .normal)
-            // Nhớ chỗ phím emoji (touchDown chạy trước action đổi plane) → EmojiPlane
-            // đặt ABC đúng chỗ đó.
-            emojiBtn.addAction(UIAction { [weak self] a in
-                guard let self, let v = a.sender as? UIView else { return }
-                let r = self.convert(v.bounds, from: v)
-                self.emojiABCSlot = .init(minX: r.minX, maxX: r.maxX,
-                                          top: self.bounds.maxY - r.minY)
-            }, for: .touchDown)
             emojiBtn.tintColor = ink
             emojiBtn.accessibilityLabel = "Emoji"
         }
@@ -2291,7 +2337,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             let b = controlButton(title: planeKey, fire: .down) { [weak self] in
                 guard let self else { return }
                 self.plane = padLetters ? .numbers : .letters
-                if self.plane == .letters, self.shift == .on { self.shift = .off }
+                if self.plane == .letters { self.reevaluateShiftForLetters() }
                 self.rebuild()
             }
             b.accessibilityLabel = padLetters ? L("Số") : L("Chữ")
@@ -4386,6 +4432,11 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         return find(rowsContainer)
     }
     var debugPlaneName: String { "\(plane)" }
+    var debugShiftOn: Bool { shift != .off }
+    /// Test hook: chiều cao xin host + vùng hàng (constant constraint).
+    var debugRequestedHeight: CGFloat { heightConstraint?.constant ?? 0 }
+    var debugRowsTop: CGFloat { rowsTopConstraint?.constant ?? 0 }
+    func debugEnterEmojiSearch() { plane = .emojiSearch; rebuild() }
     /// Test hook: frame phím chữ (toạ độ self).
     func debugLetterFrame(_ s: String) -> CGRect? {
         letterKeys.first { $0.base == s }.map { convert($0.button.bounds, from: $0.button) }

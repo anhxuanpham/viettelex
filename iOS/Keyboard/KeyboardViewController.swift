@@ -276,6 +276,14 @@ final class KeyboardViewController: UIInputViewController {
             else if self.acceptSwipeAlternative(item) { return }
             else { self.acceptSuggestion(item) }
         }
+        // Chạm ABC: đọc context lúc đó (". " tự thêm ở plane 123 ⇒ viết hoa) — XPC hiếm, không mỗi phím.
+        keyboard.autoShiftProbe = { [weak self] in
+            guard let self else { return nil }
+            return FieldPolicy.autoShift(
+                enabled: self.autoCapitalizeSetting,
+                autocap: vtSafe(nil) { self.textDocumentProxy.autocapitalizationType ?? nil },
+                before: { self.textDocumentProxy.documentContextBeforeInput ?? "" })
+        }
         updateAutoShift()
         updateSuggestions()            // field trống → gợi mở đầu ngay khi hiện
         keyboard.showLanguageBadge()   // "ViệtTelex" thoáng trên spacebar như stock
@@ -528,7 +536,9 @@ final class KeyboardViewController: UIInputViewController {
         let active = showSuggestionsSetting && t.allowsSuggestions
         if force || active != suggestionsActive {
             suggestionsActive = active
-            keyboard.setSuggestionsEnabled(active)
+            // Strip giữ theo công tắc toàn cục: đổi sang ô không gợi ý không làm bàn phím
+            // thấp/cao lại (host không luôn cấp lại ⇒ phím bị ép — bug 1.2.x).
+            keyboard.setSuggestionsEnabled(active, reserveStrip: showSuggestionsSetting)
         }
         updateSwipeEnabled()
     }

@@ -196,7 +196,9 @@ final class OneHandTests: XCTestCase {
         XCTAssertEqual(kb.debugRowFrames().count, 6)                 // ô tìm + hàng số + 4 hàng chữ
         for r in kb.debugRowFrames() { XCTAssertEqual(r.width, w, accuracy: 0.5) }
         let rows = kb.debugRowFrames()
-        XCTAssertEqual(rows[0].height, rows[2].height, accuracy: 0.5)  // ô tìm cao bằng hàng chữ
+        // Ô tìm cao cố định (KeyLayout.emojiSearchBarHeight), KHÔNG chia keyArea với hàng chữ
+        // (29/09/2026: trước bằng một hàng chữ ⇒ phím bị ép).
+        XCTAssertEqual(rows[0].height, KeyLayout.emojiSearchBarHeight(strip: 0), accuracy: 0.5)  // không bật gợi ý: strip 0
         XCTAssertTrue(kb.debugRailFrames().isEmpty)
         kb.debugSetPlane(numbers: false)
         kb.setNeedsLayout(); kb.layoutIfNeeded()

@@ -6,4 +6,12 @@ enum PlanePolicy {
                                        numericField: Bool) -> Bool {
         inSymbolPlane && typedInPlane && !numericField
     }
+
+    /// Chạm ABC (123/#+= → chữ): shift bật hay tắt. `autoShift` = viết hoa đầu câu
+    /// đánh giá theo context LÚC CHẠM (nil = công tắc tắt / ô không viết hoa).
+    /// Bug tester 1.2.x: gõ "." ở plane 123 + "Tự thêm dấu cách" → ". " rồi về ABC,
+    /// code cũ ép shift = off vô điều kiện ⇒ chữ kế không viết hoa. Stock đánh giá lại.
+    static func shiftOnReturnToLetters(autoShift: Bool?) -> Bool {
+        autoShift ?? false
+    }
 }

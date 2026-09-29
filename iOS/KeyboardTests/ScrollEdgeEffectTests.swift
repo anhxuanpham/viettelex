@@ -25,5 +25,5 @@ final class ScrollEdgeEffectTests: XCTestCase {
     func testKaomoji() throws {
         try assertNoEdgeEffects(EmojiPlane.KaomojiView(groups: [(name: "a", items: ["^‿^"])], dark: false), "KaomojiView")
     }
-    func testEmojiGrid() throws { try assertNoEdgeEffects(EmojiPlane(dark: false, abcSlot: nil), "EmojiPlane") }
+    func testEmojiGrid() throws { try assertNoEdgeEffects(EmojiPlane(dark: false), "EmojiPlane") }
 }

@@ -8,7 +8,7 @@ final class UXSnapshotTests: XCTestCase {
         guard let dir = ProcessInfo.processInfo.environment["VT_SNAPSHOT_DIR"] else {
             throw XCTSkip("đặt VT_SNAPSHOT_DIR để xuất ảnh")
         }
-        let w: CGFloat = 402
+        let w: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 834 : 402
         func shot(_ name: String, dark: Bool, _ configure: (KeyboardView) -> Void) throws {
             let kb = KeyboardView(needsGlobe: false, inputController: nil, onKey: { _ in })
             let host = UIView(frame: CGRect(x: 0, y: 0, width: w, height: 300))
@@ -39,6 +39,12 @@ final class UXSnapshotTests: XCTestCase {
                 kb.debugRefreshChrome()
             }
             try shot("emoji-\(s)", dark: dark) { $0.debugShowEmojiPlane() }
+            // Đường thật: chạm phím emoji (ABC nhớ chỗ phím) — rồi chế độ tìm emoji.
+            try shot("emojikey-\(s)", dark: dark) { kb in
+                kb.debugControl("Emoji")?.sendActions(for: .touchDown)
+                kb.debugControl("Emoji")?.sendActions(for: .touchUpInside)
+            }
+            try shot("emojisearch-\(s)", dark: dark) { $0.debugEnterEmojiSearch() }
             // Giữ phím ra số / ký hiệu (issue #98): nhãn nhỏ góc trên-phải.
             try shot("alternates-\(s)", dark: dark) { $0.configureKeyAlternates(numbers: true, symbols: true) }
         }

@@ -28,10 +28,17 @@ final class UXFeedbackTests: XCTestCase {
     /// (trước: iPad ô 41 → glyph 28pt; iPhone bật thanh gợi ý ô 43 → glyph 27.5pt).
     func testEmojiGridMatchesStockMetrics() {
         typealias M = EmojiGridMetrics
-        XCTAssertEqual(M.phonePortrait.pitchW, 46)
-        XCTAssertEqual(M.phoneLandscape.pitchW, 40)
-        XCTAssertEqual(M.padPortrait.pitchW, 62)
-        XCTAssertEqual(M.padLandscape.pitchW, 63)
+        // 29/09/2026 (tester 1.2.x: "emoji to hơn chút, thoáng hơn"): glyph +2pt, khe ngang
+        // ≥ stock (bước − bbox glyph ≥ 16.7pt như stock iPhone).
+        XCTAssertEqual(M.phonePortrait.pitchW, 50)
+        XCTAssertEqual(M.phoneLandscape.pitchW, 46)
+        XCTAssertEqual(M.padPortrait.pitchW, 70)
+        XCTAssertEqual(M.padLandscape.pitchW, 72)
+        for spec in [M.phonePortrait, M.phoneLandscape, M.padPortrait, M.padLandscape] {
+            XCTAssertGreaterThanOrEqual(spec.pitchW - spec.font * 0.917, 16.5)
+        }
+        XCTAssertEqual(M.phonePortrait.font, 34)
+        XCTAssertEqual(M.padPortrait.font, 52)
         XCTAssertEqual(M.phonePortrait.searchField, 40)
         XCTAssertEqual(M.phonePortrait.categoryRow, 40)
         XCTAssertEqual(M.padPortrait.searchField, 0, "iPad: 🔍 ở hàng category như stock")
@@ -41,20 +48,20 @@ final class UXFeedbackTests: XCTestCase {
         XCTAssertEqual(M.spec(pad: true, landscape: true), M.padLandscape)
 
         // iPhone dọc — lưới đo trên simulator: tắt gợi ý 121.5 (3 hàng), bật gợi ý
-        // (+34) 155.5 → 4 hàng; cao như stock (5 × 38.7) → 5 hàng.
+        // (+34) 155.5 → 3 hàng thoáng (trước: 4 hàng 38.5 sát nhau); cao 193.5 → 4 hàng.
         let off = M.compute(gridHeight: 121.5, spec: M.phonePortrait)
-        XCTAssertEqual(off, M(rows: 3, cellW: 46, cellH: 40.5, fontSize: 32))
+        XCTAssertEqual(off, M(rows: 3, cellW: 50, cellH: 40.5, fontSize: 34))
         let on = M.compute(gridHeight: 155.5, spec: M.phonePortrait)
-        XCTAssertEqual(on, M(rows: 4, cellW: 46, cellH: 38.5, fontSize: 32))
-        XCTAssertEqual(M.compute(gridHeight: 193.5, spec: M.phonePortrait).rows, 5)
+        XCTAssertEqual(on, M(rows: 3, cellW: 50, cellH: 51.5, fontSize: 34))
+        XCTAssertEqual(M.compute(gridHeight: 193.5, spec: M.phonePortrait).rows, 4)
         // iPhone ngang: 2 hàng 43 (tắt gợi ý).
         XCTAssertEqual(M.compute(gridHeight: 86, spec: M.phoneLandscape),
-                       M(rows: 2, cellW: 40, cellH: 43, fontSize: 32))
-        // iPad dọc 186 → 3 hàng 62 (stock 3 hàng); ngang 246 → 4 hàng 61.5 (stock 59.7).
+                       M(rows: 2, cellW: 46, cellH: 43, fontSize: 32))
+        // iPad dọc 186 → 3 hàng 62; ngang 246 → 4 hàng 61.5.
         XCTAssertEqual(M.compute(gridHeight: 186, spec: M.padPortrait),
-                       M(rows: 3, cellW: 62, cellH: 62, fontSize: 48))
+                       M(rows: 3, cellW: 70, cellH: 62, fontSize: 52))
         XCTAssertEqual(M.compute(gridHeight: 246, spec: M.padLandscape),
-                       M(rows: 4, cellW: 63, cellH: 61.5, fontSize: 48))
+                       M(rows: 4, cellW: 72, cellH: 61.5, fontSize: 52))
 
         for spec in [M.phonePortrait, M.phoneLandscape, M.padPortrait, M.padLandscape] {
             for h: CGFloat in stride(from: 60, through: 340, by: 7) {
@@ -80,8 +87,8 @@ final class UXFeedbackTests: XCTestCase {
         let grid = try XCTUnwrap(phone.subviews.compactMap { $0 as? UICollectionView }.first)
         grid.layoutIfNeeded()
         let cell = try XCTUnwrap(grid.visibleCells.first)
-        XCTAssertEqual(cell.bounds.width, 46)
-        XCTAssertGreaterThanOrEqual(cell.bounds.height, 38.5)
+        XCTAssertEqual(cell.bounds.width, 50)
+        XCTAssertGreaterThanOrEqual(cell.bounds.height, 40)
 
         let pad = EmojiPlane(dark: true, pad: true)
         pad.frame = CGRect(x: 0, y: 0, width: 834, height: 240)
@@ -90,7 +97,7 @@ final class UXFeedbackTests: XCTestCase {
                              150, "iPad: 🔍 nằm ở hàng category dưới đáy")
         let pgrid = try XCTUnwrap(pad.subviews.compactMap { $0 as? UICollectionView }.first)
         pgrid.layoutIfNeeded()
-        XCTAssertEqual(pgrid.visibleCells.first?.bounds.width, 62)
+        XCTAssertEqual(pgrid.visibleCells.first?.bounds.width, 70)
     }
 
     /// Thanh tìm luôn hiện trên cùng; chạm → onSearch (vào chế độ tìm với phím chữ).
@@ -106,6 +113,53 @@ final class UXFeedbackTests: XCTestCase {
         plane.onSearch = { searched = true }
         f.sendActions(for: .touchUpInside)
         XCTAssertTrue(searched)
+    }
+
+    /// Tester 1.2.x: hàng category phải trải hết bề ngang như stock — ABC sát trái, icon chia
+    /// đều, ⌫ sát phải (trước: ABC ở cột phím emoji ⇒ icon dồn ~25pt ở nửa phải).
+    @MainActor func testEmojiCategoryRowSpansFullWidth() throws {
+        for (pad, width, height) in [(false, CGFloat(402), CGFloat(246)), (true, CGFloat(834), CGFloat(274))] {
+            let plane = EmojiPlane(dark: false, pad: pad)
+            plane.frame = CGRect(x: 0, y: 0, width: width, height: height)
+            plane.layoutIfNeeded()
+            let r = try XCTUnwrap(plane.debugCategoryRow)
+            XCTAssertLessThanOrEqual(r.abc.minX, 8, "pad \(pad)")
+            XCTAssertGreaterThanOrEqual(r.delete.maxX, width - 8, "pad \(pad)")
+            let icons = r.icons
+            XCTAssertEqual(icons.count, 10)
+            let first = try XCTUnwrap(icons.first), last = try XCTUnwrap(icons.last)
+            let span = last.maxX - first.minX
+            // Vùng icon chiếm gần hết phần giữa ABC và ⌫ (iPad: trừ nút 🔍).
+            XCTAssertGreaterThan(span, width - 2 * EmojiPlane.edgeKeyWidth(pad: pad) - (pad ? 60 : 12))
+            for f in icons { XCTAssertEqual(f.width, icons[0].width, accuracy: 0.5, "chia đều") }
+            if !pad { XCTAssertGreaterThanOrEqual(icons[0].width, 28, "icon không bị dồn") }
+        }
+    }
+
+    /// Host co plane emoji sau lượt layout đầu (300 → 274, như lúc host settle): lưới phải
+    /// xếp lại theo ô MỚI. Trước: flow layout giữ ô cũ 81pt ⇒ 2 hàng cách nhau 137pt.
+    @MainActor func testEmojiGridRelayoutsWhenPlaneShrinks() throws {
+        for pad in [false, true] {
+            let width: CGFloat = pad ? 834 : 402
+            let plane = EmojiPlane(dark: false, pad: pad)
+            let win = UIWindow(frame: CGRect(x: 0, y: 0, width: width, height: 600))
+            win.addSubview(plane); win.isHidden = false
+            plane.frame = CGRect(x: 0, y: 0, width: width, height: 300)
+            plane.layoutIfNeeded()
+            plane.frame.size.height = 274
+            plane.layoutIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))   // lượt xếp lại ở nhịp kế
+            let grid = try XCTUnwrap(plane.subviews.compactMap { $0 as? UICollectionView }.first)
+            let spec = plane.spec
+            let m = EmojiGridMetrics.compute(
+                gridHeight: EmojiGridMetrics.gridHeight(planeHeight: 274, spec: spec, pad: pad), spec: spec)
+            XCTAssertEqual(grid.bounds.height, EmojiGridMetrics.gridHeight(planeHeight: 274, spec: spec, pad: pad),
+                           accuracy: 0.5, "pad \(pad): gridHeight khớp constraint")
+            let ys = Set(grid.visibleCells.map { $0.frame.minY.rounded() })
+            XCTAssertEqual(ys.count, m.rows, "pad \(pad): đủ hàng sau khi co")
+            for c in grid.visibleCells { XCTAssertEqual(c.frame.height, m.cellH, accuracy: 0.01) }
+            win.isHidden = true
+        }
     }
 
     // MARK: 2. dark mode
