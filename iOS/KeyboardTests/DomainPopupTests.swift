@@ -159,7 +159,7 @@ final class DomainPopupTests: XCTestCase {
         XCTAssertEqual(EmailDomains.chips(before: "hi @"), [])
         XCTAssertEqual(EmailDomains.chips(before: "phuc@gmail.com"), [], "đã đủ")
         XCTAssertEqual(EmailDomains.chips(before: "phuc@abc."), [], "có \".\" mà không khớp")
-        XCTAssertEqual(EmailDomains.chips(before: "phuc@senprints"), [])
+        XCTAssertEqual(EmailDomains.chips(before: "ban@congty"), [])
         XCTAssertEqual(EmailDomains.chips(before: "a@b@"), [], "hai @")
         XCTAssertEqual(EmailDomains.chips(before: "phuc@ "), [], "đã sang token khác")
         XCTAssertEqual(EmailDomains.chips(before: "phuc@", limit: 0), [])
