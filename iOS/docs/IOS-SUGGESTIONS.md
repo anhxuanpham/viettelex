@@ -212,11 +212,15 @@ chạm = chèn kết quả sau `=` (tính lại từ context lúc chạm — kh�
   là nhân chỉ khi đứng giữa hai số (`12x3`, `(1+2)x3`); `^` kết hợp phải, cao hơn trừ một
   ngôi (`-2^2` = -4); `A ± B%` = A ± A·B/100, còn lại `B%` = B/100. Không biến/hàm.
   Biểu thức ≤64 ký tự; dính liền sau chữ cái (`abc12*3=`) → không chip.
-- **Số**: quy tắc phân cách của `NumberChips` ở trên (`1,5` = 1.5; `1.000` / `1.000.000`
-  = nhóm nghìn; `1,000,000` = nhóm nghìn kiểu Anh).
+- **Số** (khác `NumberChips`: suy từ CẢ biểu thức): dấu lặp trong một số hoặc có cả hai
+  dấu (dấu cuối là thập phân) → chắc nhóm nghìn; một dấu không phải dạng `d,ddd` (1–3 chữ
+  số không mở đầu bằng 0 + đúng 3 chữ số) → chắc thập phân (`1,5`, `0.500`); `2,500` /
+  `26.163` mơ hồ. Có dấu chắc thập phân → dấu kia là nhóm (`26.163*2,5` = 65.407,5); chỉ
+  mơ hồ → nhóm nghìn (`26,160*2,500` = 65,400,000). Mâu thuẫn (`1,5+2.5`, `1,500+2.500`)
+  → không chip, không lùi sang đuôi ngắn hơn.
 - **Kết quả**: nguyên nếu tròn, không thì ≤6 chữ số lẻ (≤12 chữ số có nghĩa), bỏ 0 cuối;
-  dấu thập phân theo người gõ (`.` nếu biểu thức dùng `.` thập phân hoặc `,` nhóm nghìn,
-  còn lại `,`); phân nhóm nghìn chỉ khi biểu thức có. Chia 0 / |kết quả| ≥ 10^15 / vô hạn /
+  dấu thập phân = dấu đã suy (chỉ có nhóm → dấu kia; không có dấu nào → `,`); phân nhóm
+  nghìn chỉ khi biểu thức có. Chia 0 / |kết quả| ≥ 10^15 / vô hạn /
   NaN / khác 0 mà tròn thành 0 → không chip.
 
 ### 9. `ClipDetect` — chip tách số từ clipboard (Clipboard nâng cao, Plus)

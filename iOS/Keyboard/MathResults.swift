@@ -10,12 +10,21 @@
 //   hai số (trước: số / ")" / "%", sau: chữ số / "("). Không biến, không hàm.
 //   Ưu tiên: ^ (kết hợp phải, cao hơn trừ một ngôi: -2^2 = -4) > * / > + -.
 //   "A ± B%" = A ± A·B/100 (như máy tính điện thoại); còn lại "B%" = B/100.
-// • Số: quy tắc phân cách của NumberChips.parseNumber — "," một lần là thập phân kiểu
-//   Việt ("1,5"); "." là thập phân trừ khi là nhóm nghìn đúng 3 chữ số ("1.000" = 1000,
-//   "1.000.000"); "," lặp là nhóm nghìn kiểu Anh ("1,000,000").
+// • Số: "," / "." suy từ CẢ biểu thức (một quy tắc tất định, #bug "26,160*2,500=" → "65,4"):
+//   – Trong một số: "."/"," lặp ("1.000.000") hoặc có cả hai ("1.000,5": dấu CUỐI là thập
+//     phân, dấu kia nhóm nghìn) ⇒ CHẮC nhóm nghìn; một dấu duy nhất mà KHÔNG phải dạng
+//     "d,ddd"/"dd.ddd"/"ddd,ddd" (1–3 chữ số không bắt đầu bằng 0, rồi đúng 3 chữ số) ⇒
+//     CHẮC thập phân ("1,5", "0.500", "1234,567"); còn lại MƠ HỒ ("2,500", "26.163").
+//   – Cả biểu thức: có dấu CHẮC thập phân ⇒ nó là thập phân (kể cả ở số mơ hồ: "1,5+2,500"
+//     = 4), dấu kia là nhóm nghìn; không có mà có dấu CHẮC nhóm ⇒ dấu kia là thập phân;
+//     chỉ có số mơ hồ ⇒ nhóm nghìn ("2,500" = 2500, "1.500" = 1500).
+//   – Mâu thuẫn (cả hai dấu đều thập phân "1,5+2.5", cả hai đều nhóm, một dấu vừa thập
+//     phân vừa nhóm, hay hai dấu mơ hồ khác nhau "1,500+2.500") ⇒ KHÔNG chip (chip() cũng
+//     không lùi sang đuôi ngắn hơn như "2 + 2.5").
 // • Kết quả: số nguyên nếu tròn; không thì tối đa 6 chữ số lẻ (≤12 chữ số có nghĩa), bỏ 0
-//   cuối. Dấu thập phân theo kiểu người gõ: "." nếu biểu thức dùng "." thập phân hoặc ","
-//   nhóm nghìn, còn lại "," (kiểu Việt). Chia nhóm nghìn chỉ khi biểu thức có chia nhóm.
+//   cuối. Dấu thập phân = dấu thập phân đã suy (có dấu nhóm mà không có thập phân ⇒ dấu
+//   kia: "," nhóm → "." thập phân và ngược lại); biểu thức không có dấu nào ⇒ "," (kiểu
+//   Việt). Chia nhóm nghìn (bằng dấu kia) chỉ khi biểu thức có số dùng nhóm nghìn.
 // • Không chip: chia cho 0, tràn (|kết quả| ≥ 10^15, vô hạn, NaN), kết quả khác 0 mà làm
 //   tròn thành 0, biểu thức dài quá 64 ký tự, biểu thức dính liền sau chữ cái ("abc12*3=").
 import Foundation
@@ -31,10 +40,19 @@ enum MathResults {
 
     /// Biểu thức (không có "=") → giá trị, nil nếu sai dạng / không phải phép tính thật.
     static func evaluate(_ expr: String) -> Calc? {
+        if case .ok(let c) = analyze(expr) { return c }
+        return nil
+    }
+
+    /// `.conflict` = đúng dạng phép tính nhưng dấu phân cách mâu thuẫn ("1,5 * 2 + 2.5") —
+    /// chip() dừng hẳn, không thử đuôi ngắn hơn ("2 + 2.5").
+    private enum Outcome { case ok(Calc), invalid, conflict }
+
+    private static func analyze(_ expr: String) -> Outcome {
         let cs = Array(expr)
-        guard cs.count <= maxLength else { return nil }
+        guard cs.count <= maxLength else { return .invalid }
         var toks: [Tok] = []
-        var english = false, grouped = false
+        var lits: [String] = []
         var i = 0
         while i < cs.count {
             let c = cs[i]
@@ -42,12 +60,8 @@ enum MathResults {
             if isDigit(c) {
                 var j = i
                 while j < cs.count, isDigit(cs[j]) || cs[j] == "." || cs[j] == "," { j += 1 }
-                guard let lit = NumberChips.parseNumber(String(cs[i..<j])),
-                      let v = Double(lit.value.int + (lit.value.frac.isEmpty ? "" : "." + lit.value.frac))
-                else { return nil }
-                if lit.decSep == "." || lit.groupSep == "," { english = true }
-                if lit.groupSep != nil { grouped = true }
-                toks.append(.num(v)); i = j; continue
+                lits.append(String(cs[i..<j]))
+                toks.append(.num(0)); i = j; continue
             }
             switch c {
             case "+": toks.append(.op("+"))
@@ -62,14 +76,14 @@ enum MathResults {
                 case .num?, .rp?, .pct?: prevOk = true
                 default: prevOk = false
                 }
-                guard prevOk, k < cs.count, isDigit(cs[k]) || cs[k] == "(" else { return nil }
+                guard prevOk, k < cs.count, isDigit(cs[k]) || cs[k] == "(" else { return .invalid }
                 toks.append(.op("*"))
             case "/", "÷", ":": toks.append(.op("/"))
             case "^": toks.append(.op("^"))
             case "(": toks.append(.lp)
             case ")": toks.append(.rp)
             case "%": toks.append(.pct)
-            default: return nil
+            default: return .invalid
             }
             i += 1
         }
@@ -79,7 +93,79 @@ enum MathResults {
             if case .op = t { return k > 0 }
             return false
         }
-        guard hasOp else { return nil }
+        guard hasOp else { return .invalid }
+        func fill(_ values: [Double]) -> [Tok] {
+            var n = 0
+            return toks.map { t in
+                guard case .num = t else { return t }
+                defer { n += 1 }
+                return .num(values[n])
+            }
+        }
+        switch numbers(lits) {
+        case .malformed: return .invalid
+        case .conflict:
+            // Giá trị 1 không chia 0 / tràn ⇒ parse được ⇔ đúng dạng phép tính.
+            return parse(fill(lits.map { _ in 1 })) != nil ? .conflict : .invalid
+        case .ok(let values, let dec, let grouped):
+            guard let v = parse(fill(values)), v.isFinite, abs(v) < 1e15 else { return .invalid }
+            return .ok(Calc(value: v, english: dec == ".", grouped: grouped))
+        }
+    }
+
+    private enum Numbers { case ok([Double], dec: Character?, grouped: Bool), malformed, conflict }
+
+    /// Các số của biểu thức ("26,160", "2.5"…) → giá trị theo dấu phân cách suy từ CẢ
+    /// biểu thức (quy tắc đầu file). `dec` = dấu thập phân đã suy (nil: không có dấu nào),
+    /// `grouped` = có số dùng nhóm nghìn.
+    private static func numbers(_ lits: [String]) -> Numbers {
+        var certDec = Set<Character>(), certGroup = Set<Character>(), ambiguous = Set<Character>()
+        for lit in lits {
+            let cs = Array(lit)
+            guard let l = cs.last, isDigit(l) else { return .malformed }
+            let dots = cs.filter { $0 == "." }.count, commas = cs.filter { $0 == "," }.count
+            if dots > 0, commas > 0 {
+                let d: Character = cs.lastIndex(of: ".")! > cs.lastIndex(of: ",")! ? "." : ","
+                guard (d == "." ? dots : commas) == 1 else { return .malformed }
+                certDec.insert(d); certGroup.insert(d == "." ? "," : ".")
+            } else if dots + commas > 1 {
+                certGroup.insert(dots > 0 ? "." : ",")
+            } else if dots + commas == 1 {
+                let s: Character = dots > 0 ? "." : ","
+                let k = cs.firstIndex(of: s)!
+                if cs.count - k - 1 == 3, (1...3).contains(k), cs[0] != "0" { ambiguous.insert(s) } else { certDec.insert(s) }
+            }
+        }
+        guard certDec.count <= 1, certGroup.count <= 1, certDec.isDisjoint(with: certGroup) else { return .conflict }
+        let other: (Character) -> Character = { $0 == "." ? "," : "." }
+        var dec: Character? = nil
+        if let d = certDec.first { dec = d }
+        else if let g = certGroup.first { dec = other(g) }
+        else if ambiguous.count > 1 { return .conflict }
+        else if let a = ambiguous.first { dec = other(a) }
+        var values: [Double] = [], grouped = false
+        for lit in lits {
+            var intPart = Substring(lit), frac = ""[...]
+            if let d = dec, let k = lit.firstIndex(of: d) {
+                intPart = lit[..<k]; frac = lit[lit.index(after: k)...]
+                guard !frac.contains(d) else { return .malformed }
+            }
+            var digits = String(intPart)
+            if let d = dec, intPart.contains(other(d)) {
+                let groups = intPart.split(separator: other(d), omittingEmptySubsequences: false)
+                guard (1...3).contains(groups[0].count), groups.dropFirst().allSatisfy({ $0.count == 3 })
+                else { return .malformed }
+                digits = groups.joined(); grouped = true
+            }
+            guard !digits.isEmpty, digits.count <= NumberChips.maxDigits, frac.count <= NumberChips.maxDigits,
+                  frac.allSatisfy(isDigit),
+                  let v = Double(digits + (frac.isEmpty ? "" : "." + frac)) else { return .malformed }
+            values.append(v)
+        }
+        return .ok(values, dec: dec, grouped: grouped)
+    }
+
+    private static func parse(_ toks: [Tok]) -> Double? {
         var p = 0
         func peek() -> Tok? { p < toks.count ? toks[p] : nil }
         func primary(_ depth: Int) -> Double? {
@@ -130,8 +216,8 @@ enum MathResults {
             }
             return v
         }
-        guard let v = expression(0), p == toks.count, v.isFinite, abs(v) < 1e15 else { return nil }
-        return Calc(value: v, english: english, grouped: grouped)
+        guard let v = expression(0), p == toks.count else { return nil }
+        return v
     }
 
     /// Kết quả theo kiểu số của biểu thức (quy tắc ở đầu file). nil = khác 0 nhưng quá nhỏ.
@@ -175,8 +261,10 @@ enum MathResults {
         for cand in candidates {
             let e = cand.trimmingCharacters(in: .whitespaces)
             guard e.count <= maxLength, let f = e.first,
-                  isDigit(f) || f == "(" || f == "-" || f == "\u{2212}",
-                  let r = result(e) else { continue }
+                  isDigit(f) || f == "(" || f == "-" || f == "\u{2212}" else { continue }
+            let outcome = analyze(e)
+            if case .conflict = outcome { return nil }
+            guard case .ok(let c) = outcome, let r = format(c) else { continue }
             return NumberChip(display: r, replace: "", insert: r)
         }
         return nil

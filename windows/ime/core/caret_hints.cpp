@@ -685,10 +685,82 @@ private:
     size_t p_ = 0;
 };
 
-std::optional<Calc> evaluate(const std::u32string& cs) {
-    if (static_cast<int>(cs.size()) > kMathMaxLength) return std::nullopt;
+// Conflict = a well-formed calculation whose separators contradict ("1,5 * 2 + 2.5"):
+// mathChip stops instead of trying a shorter tail ("2 + 2.5").
+enum class Outcome : uint8_t { Ok, Invalid, Conflict };
+
+// Numbers of the expression -> values, with "," / "." inferred from the WHOLE expression
+// (rule at the top of MathResults.swift). dec = inferred decimal separator (0: none).
+Outcome numbers(const std::vector<std::u32string>& lits, std::vector<double>& values, char32_t& dec,
+                bool& grouped) {
+    auto other = [](char32_t c) { return c == U'.' ? U',' : U'.'; };
+    std::u32string certDec, certGroup, ambiguous;  // sets of at most '.' and ','
+    auto add = [](std::u32string& set, char32_t c) {
+        if (set.find(c) == std::u32string::npos) set.push_back(c);
+    };
+    for (const auto& lit : lits) {
+        if (!isDigit(lit.back())) return Outcome::Invalid;
+        const auto dots = std::count(lit.begin(), lit.end(), U'.');
+        const auto commas = std::count(lit.begin(), lit.end(), U',');
+        if (dots > 0 && commas > 0) {
+            const char32_t d = lit.rfind(U'.') > lit.rfind(U',') ? U'.' : U',';
+            if ((d == U'.' ? dots : commas) != 1) return Outcome::Invalid;
+            add(certDec, d);
+            add(certGroup, other(d));
+        } else if (dots + commas > 1) {
+            add(certGroup, dots > 0 ? U'.' : U',');
+        } else if (dots + commas == 1) {
+            const char32_t s = dots > 0 ? U'.' : U',';
+            const size_t k = lit.find(s);
+            if (lit.size() - k - 1 == 3 && k >= 1 && k <= 3 && lit[0] != U'0') add(ambiguous, s);
+            else add(certDec, s);
+        }
+    }
+    if (certDec.size() > 1 || certGroup.size() > 1) return Outcome::Conflict;
+    if (!certDec.empty() && !certGroup.empty() && certDec[0] == certGroup[0]) return Outcome::Conflict;
+    dec = 0;
+    if (!certDec.empty()) dec = certDec[0];
+    else if (!certGroup.empty()) dec = other(certGroup[0]);
+    else if (ambiguous.size() > 1) return Outcome::Conflict;
+    else if (!ambiguous.empty()) dec = other(ambiguous[0]);
+    grouped = false;
+    values.clear();
+    for (const auto& lit : lits) {
+        std::u32string intPart = lit, frac;
+        const size_t k = dec ? lit.find(dec) : std::u32string::npos;
+        if (k != std::u32string::npos) {
+            intPart = lit.substr(0, k);
+            frac = lit.substr(k + 1);
+            if (frac.find(dec) != std::u32string::npos) return Outcome::Invalid;
+        }
+        std::u32string digits = intPart;
+        if (dec && intPart.find(other(dec)) != std::u32string::npos) {
+            std::vector<std::u32string> groups;
+            for (size_t a = 0;;) {
+                const size_t b = intPart.find(other(dec), a);
+                groups.push_back(intPart.substr(a, b == std::u32string::npos ? std::u32string::npos : b - a));
+                if (b == std::u32string::npos) break;
+                a = b + 1;
+            }
+            if (groups[0].empty() || groups[0].size() > 3) return Outcome::Invalid;
+            for (size_t g = 1; g < groups.size(); ++g)
+                if (groups[g].size() != 3) return Outcome::Invalid;
+            digits.clear();
+            for (const auto& g : groups) digits += g;
+            grouped = true;
+        }
+        if (digits.empty() || static_cast<int>(digits.size()) > kMaxDigits ||
+            static_cast<int>(frac.size()) > kMaxDigits || !allOf(frac, isDigit))
+            return Outcome::Invalid;
+        values.push_back(parseDouble(ascii(digits), ascii(frac)));
+    }
+    return Outcome::Ok;
+}
+
+Outcome analyze(const std::u32string& cs, Calc& out) {
+    if (static_cast<int>(cs.size()) > kMathMaxLength) return Outcome::Invalid;
     std::vector<Tok> toks;
-    bool english = false, grouped = false;
+    std::vector<std::u32string> lits;
     size_t i = 0;
     while (i < cs.size()) {
         const char32_t c = cs[i];
@@ -699,12 +771,8 @@ std::optional<Calc> evaluate(const std::u32string& cs) {
         if (isDigit(c)) {
             size_t j = i;
             while (j < cs.size() && (isDigit(cs[j]) || cs[j] == U'.' || cs[j] == U',')) ++j;
-            auto lit = parseNumber(cs.substr(i, j - i));
-            if (!lit) return std::nullopt;
-            const double v = parseDouble(lit->value.intPart, lit->value.frac);
-            if (lit->decSep == U'.' || lit->groupSep == U',') english = true;
-            if (lit->groupSep) grouped = true;
-            toks.push_back({T::Num, v, 0});
+            lits.push_back(cs.substr(i, j - i));
+            toks.push_back({T::Num, 0, 0});
             i = j;
             continue;
         }
@@ -718,7 +786,7 @@ std::optional<Calc> evaluate(const std::u32string& cs) {
                 while (k < cs.size() && cs[k] == U' ') ++k;
                 const bool prevOk = !toks.empty() && (toks.back().t == T::Num || toks.back().t == T::RP ||
                                                       toks.back().t == T::Pct);
-                if (!prevOk || k >= cs.size() || !(isDigit(cs[k]) || cs[k] == U'(')) return std::nullopt;
+                if (!prevOk || k >= cs.size() || !(isDigit(cs[k]) || cs[k] == U'(')) return Outcome::Invalid;
                 toks.push_back({T::Op, 0, '*'});
                 break;
             }
@@ -727,7 +795,7 @@ std::optional<Calc> evaluate(const std::u32string& cs) {
             case U'(': toks.push_back({T::LP, 0, 0}); break;
             case U')': toks.push_back({T::RP, 0, 0}); break;
             case U'%': toks.push_back({T::Pct, 0, 0}); break;
-            default: return std::nullopt;
+            default: return Outcome::Invalid;
         }
         ++i;
     }
@@ -735,11 +803,23 @@ std::optional<Calc> evaluate(const std::u32string& cs) {
     bool hasOp = false;
     for (size_t k = 0; k < toks.size(); ++k)
         if (toks[k].t == T::Pct || (toks[k].t == T::Op && k > 0)) hasOp = true;
-    if (!hasOp) return std::nullopt;
+    if (!hasOp) return Outcome::Invalid;
+    std::vector<double> values;
+    char32_t dec = 0;
+    bool grouped = false;
+    const Outcome o = numbers(lits, values, dec, grouped);
+    if (o == Outcome::Conflict) values.assign(lits.size(), 1.0);  // 1s: parses <=> well-formed
+    else if (o != Outcome::Ok) return o;
+    size_t n = 0;
+    for (auto& t : toks)
+        if (t.t == T::Num) t.v = values[n++];
     double v = 0;
     Parser p(toks);
-    if (!p.run(v) || !std::isfinite(v) || std::fabs(v) >= 1e15) return std::nullopt;
-    return Calc{v, english, grouped};
+    if (!p.run(v)) return Outcome::Invalid;
+    if (o == Outcome::Conflict) return o;
+    if (!std::isfinite(v) || std::fabs(v) >= 1e15) return Outcome::Invalid;
+    out = Calc{v, dec == U'.', grouped};
+    return Outcome::Ok;
 }
 
 std::optional<std::string> format(const Calc& c) {
@@ -776,9 +856,9 @@ std::u32string trimSpaces(const std::u32string& s) {  // .whitespaces (no newlin
 }  // namespace
 
 std::optional<std::u32string> mathResult(const std::u32string& expr) {
-    auto c = evaluate(expr);
-    if (!c) return std::nullopt;
-    auto f = format(*c);
+    Calc c{};
+    if (analyze(expr, c) != Outcome::Ok) return std::nullopt;
+    auto f = format(c);
     if (!f) return std::nullopt;
     return fromAscii(*f);
 }
@@ -800,7 +880,11 @@ std::optional<std::u32string> mathChip(const std::u32string& before) {
         if (e.empty() || static_cast<int>(e.size()) > kMathMaxLength) continue;
         const char32_t f = e[0];
         if (!(isDigit(f) || f == U'(' || f == U'-' || f == 0x2212)) continue;
-        if (auto r = mathResult(e)) return r;
+        Calc c{};
+        const Outcome o = analyze(e, c);
+        if (o == Outcome::Conflict) return std::nullopt;
+        if (o != Outcome::Ok) continue;
+        if (auto f = format(c)) return fromAscii(*f);
     }
     return std::nullopt;
 }

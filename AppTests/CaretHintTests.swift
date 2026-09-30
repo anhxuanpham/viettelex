@@ -165,6 +165,14 @@ final class CaretHintTests: XCTestCase {
         // Có dấu cách: "12 * 3 =" — cụm ShortcutTail chỉ còn "" nhưng recent giữ cả dòng.
         let spaced = tailAfterClick(["1", "2", " ", "*", " ", "3", " "])
         XCTAssertEqual(MathHintLogic.result(beforeCaret: L.keyStreamBefore(known: spaced.knownText, pending: "=")!), "36")
+        // Dấu phân cách suy từ cả biểu thức, có dấu cách quanh phép tính (Phil: "26,160 * 2,500=").
+        for (typed, want) in [("26,160 * 2,500", "65,400,000"), ("26,160 * 2500", "65,400,000"),
+                              ("26.163 * 2,5", "65.407,5"), ("26,163 * 2.5", "65,407.5")] {
+            let t = tailAfterClick(typed.map { String($0) })
+            let before = L.keyStreamBefore(known: t.knownText, pending: "=")
+            XCTAssertEqual(before, typed + "=")
+            XCTAssertEqual(MathHintLogic.result(beforeCaret: before!), want, typed)
+        }
     }
 
     func testKeyStreamUnknownWithoutCaretJumpOrSpace() {
