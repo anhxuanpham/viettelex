@@ -172,6 +172,27 @@ final class TypingMatrixTests: XCTestCase {
         }
     }
 
+    /// DECOMPOSED (NFD) text on screen must be refused. Swift's `String ==` is canonical
+    /// equivalence, so "ta\u{302}n" == "tân" is TRUE — a plain `==` round-trip check used
+    /// to accept it, leaving the engine's NFC buffer (3 scalars) out of step with the 4
+    /// UTF-16 units on screen: the next edit's ⌫ count came up short and mangled the word.
+    func testSeedRefusesDecomposedText() {
+        let nfd = ["ta\u{302}n", "to\u{61}\u{301}n", "d\u{6F}\u{302}\u{323}", "Vie\u{302}\u{323}t"]
+        for word in nfd {
+            XCTAssertGreaterThan(word.unicodeScalars.count, word.count,
+                                 "fixture '\(word.debugDescription)' must really be decomposed")
+            for vni in [false, true] {
+                var e = TelexEngine(); e.freeMarking = true; e.liveSpellCheck = true
+                e.vniMode = vni
+                XCTAssertFalse(e.seed(word), "NFD '\(word.debugDescription)' must not seed (vni: \(vni))")
+                XCTAssertTrue(e.isEmpty, "a refused seed must leave the engine empty")
+            }
+        }
+        // The NFC spelling of the same word still seeds.
+        var e = TelexEngine(); e.freeMarking = true; e.liveSpellCheck = true
+        XCTAssertTrue(e.seed("tân"))
+    }
+
     /// VNI: seeding uses the DIGIT spelling, so a VNI tone digit edits the word.
     func testSeedInVniMode() {
         for (word, digit, want) in [("toan", "1", "toán"), ("đô", "5", "độ"), ("viet", "5", "viẹt")] {
