@@ -23,12 +23,26 @@ constexpr wchar_t kPath[] = L"/stable.json";
 constexpr size_t kMaxJson = 64 * 1024;
 constexpr size_t kMaxMsi = 64 * 1024 * 1024;
 
-// Publisher name the MSI must be signed with (Azure Trusted Signing certificate
-// subject). Empty = only require a valid, trusted Authenticode chain. Set at build
-// time with -DVTX_EXPECTED_PUBLISHER=L"..." once the signing identity exists.
-#ifndef VTX_EXPECTED_PUBLISHER
-#define VTX_EXPECTED_PUBLISHER L""
+// Publisher name the MSI must be signed with: the simple display name (CN) of the
+// Azure Trusted Signing certificate. Injected at configure time as UTF-8 via
+// `cmake -DVTX_EXPECTED_PUBLISHER="..."` (windows/scripts/release.sh requires it for
+// signed builds). FAIL-CLOSED: a build without it refuses every downloaded MSI — a
+// valid Authenticode chain alone would accept ANY publisher's signed file from the
+// allow-listed URLs, which is not "our update". Dev builds without the define simply
+// cannot self-update (the release page is still offered).
+#ifndef VTX_EXPECTED_PUBLISHER_UTF8
+#define VTX_EXPECTED_PUBLISHER_UTF8 ""
 #endif
+
+std::wstring expectedPublisher() {
+    const char* s = VTX_EXPECTED_PUBLISHER_UTF8;
+    const int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s, -1, nullptr, 0);
+    if (n <= 1) return {};
+    std::wstring w(static_cast<size_t>(n), L'\0');
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s, -1, w.data(), n) != n) return {};
+    w.resize(static_cast<size_t>(n - 1));   // drop the terminator
+    return w;
+}
 
 bool httpGet(const wchar_t* host, const wchar_t* path, size_t limit, std::string& body, HANDLE file = nullptr) {
     bool ok = false;
@@ -121,8 +135,8 @@ struct DownloadJob {
 };
 
 bool signerMatches(HANDLE stateData) {
-    const std::wstring expected = VTX_EXPECTED_PUBLISHER;
-    if (expected.empty()) return true;
+    const std::wstring expected = expectedPublisher();
+    if (expected.empty()) return false;   // fail closed: no pinned publisher, no install
     CRYPT_PROVIDER_DATA* pd = WTHelperProvDataFromStateData(stateData);
     CRYPT_PROVIDER_SGNR* sg = pd ? WTHelperGetProvSignerFromChain(pd, 0, FALSE, 0) : nullptr;
     if (!sg || !sg->pasCertChain || sg->csCertChain == 0) return false;

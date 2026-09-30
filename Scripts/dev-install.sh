@@ -19,12 +19,15 @@ DEST="$HOME/Library/Input Methods/VietTelex.app"
 # regeneration, and `ls | head -1` then installs a STALE build (bit us
 # 2026-07-22: engine changes "didn't take"). Same pattern as notarize-install.
 DERIVED="${TMPDIR:-/tmp}/viettelex-derived-dev"
+APP="$DERIVED/Build/Products/Release/VietTelex.app"
+rm -rf "$DERIVED/Build/Products/Release"   # never fall back to a previous build's app
+set -o pipefail   # xcodebuild's failure must reach `set -e`, not vanish into `| grep`
 xcodebuild -project VietTelex.xcodeproj -scheme VietTelex \
            -configuration Release -destination 'platform=macOS' \
            -derivedDataPath "$DERIVED" \
-           build | grep -E "BUILD" || true
-
-APP="$DERIVED/Build/Products/Release/VietTelex.app"
+           build | { grep -E "BUILD" || true; }
+set +o pipefail   # scoped to the build: later pipes (spctl | head …) keep their old semantics
+[ -d "$APP" ] || { echo "build product not found: $APP"; exit 1; }
 source Scripts/icloud-profile.sh      # → $ENTITLEMENTS (+ embedded.provisionprofile nếu có)
 codesign --force --options runtime \
          --entitlements "$ENTITLEMENTS" \

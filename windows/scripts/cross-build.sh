@@ -5,6 +5,7 @@
 # VietTelexTIP.dll with lld-link. Results: /out/bin/<arch>/.
 set -eu
 VERSION="$1"
+PUBLISHER="${2:-}"   # pinned update signer (app/src/updater.cpp); empty = updater fails closed
 W=/src/windows
 # Release TIP DLLs carry the version in their NAME (VietTelexTIP_1_0_6.dll): an upgrade
 # then installs a NEW file instead of overwriting the one loaded in running apps, and the
@@ -16,7 +17,8 @@ for pair in i686:x86 x86_64:x64 aarch64:arm64; do
   cmake -S "$W" -B "$b" -G Ninja -DCMAKE_SYSTEM_NAME=Windows \
     -DCMAKE_C_COMPILER="$triple-clang" -DCMAKE_CXX_COMPILER="$triple-clang++" \
     -DCMAKE_RC_COMPILER="$triple-windres" -DCMAKE_BUILD_TYPE=MinSizeRel \
-    -DVTX_BUILD_TESTS=OFF -DVTX_IME_TESTS=OFF -DVTX_VERSION="$VERSION" >/dev/null
+    -DVTX_BUILD_TESTS=OFF -DVTX_IME_TESTS=OFF -DVTX_VERSION="$VERSION" \
+    -DVTX_EXPECTED_PUBLISHER="$PUBLISHER" >/dev/null
   cmake --build "$b" > "$b.log" 2>&1 || { tail -40 "$b.log"; exit 1; }
   if grep -E "warning:" "$b.log" | grep -v character-conversion | grep -q .; then
     grep -E "warning:" "$b.log" | grep -v character-conversion | sort -u >&2

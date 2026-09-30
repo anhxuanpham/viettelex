@@ -92,7 +92,8 @@ enum UpdateCheck {
             let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
             guard code == 200 else { return .failed("HTTP \(code)") }
             guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let stable = obj["version"] as? String else { return .failed("dữ liệu lạ") }
+                  let stable = obj["version"] as? String,
+                  isValidVersion(stable) else { return .failed("dữ liệu lạ") }
             let pageURL = (obj["url"] as? String).flatMap(URL.init(string:))
                 ?? URL(string: "https://github.com/\(repo)/releases/latest")!
             guard isNewer(stable, than: current) else { return .upToDate(current) }
@@ -212,6 +213,7 @@ enum UpdateCheck {
             guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let tag = obj["tag_name"] as? String else { return .failed("dữ liệu lạ") }
             let latest = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+            guard isValidVersion(latest) else { return .failed("dữ liệu lạ") }
             let pageURL = (obj["html_url"] as? String).flatMap(URL.init(string:))
                 ?? URL(string: "https://github.com/\(repo)/releases/latest")!
             // This channel gets the changelog for free — the release body is already in
@@ -273,6 +275,21 @@ enum UpdateCheck {
             out.append(NoteBlock(id: out.count, kind: kind, text: text))
         }
         return out
+    }
+
+    /// A remote version string is only trusted as 1–4 dot-separated groups of ASCII
+    /// digits ("1.8.4"). It arrives from stable.json / the GitHub API and is later
+    /// interpolated into a download URL AND a filesystem path (`SelfUpdater`'s work
+    /// dir) BEFORE the signature gate runs — so "9.0/../../x" or anything with a slash,
+    /// space or non-ASCII digit must be refused at the parse boundary. `isNewer` alone
+    /// is no filter: it maps non-numeric parts to 0.
+    static func isValidVersion(_ v: String) -> Bool {
+        guard !v.isEmpty, v.utf8.count <= 32 else { return false }
+        let groups = v.split(separator: ".", omittingEmptySubsequences: false)
+        guard (1...4).contains(groups.count) else { return false }
+        return groups.allSatisfy { g in
+            !g.isEmpty && g.utf8.count <= 6 && g.utf8.allSatisfy { $0 >= 0x30 && $0 <= 0x39 }
+        }
     }
 
     /// Numeric, dot-separated compare: "1.1.2" > "1.1.1" > "1.1".
@@ -350,8 +367,21 @@ enum SelfUpdater {
     /// signature gate, unzip, swap). There is no success callback on purpose: a
     /// successful install ends in `exit(0)`.
     static func run(version: String, onFailure: (() -> Void)? = nil) {
-        let zipURL = URL(string:
-            "https://github.com/ptrinh/viettelex/releases/download/v\(version)/VietTelex-\(version).app.zip")!
+        // Re-checked here, not just at parse time: `version` can also come from a value
+        // persisted by an older build (pendingUpdateVersion), and it is about to be
+        // spliced into a URL. Refuse rather than force-unwrap.
+        guard UpdateCheck.isValidVersion(version),
+              let zipURL = URL(string:
+                "https://github.com/ptrinh/viettelex/releases/download/v\(version)/VietTelex-\(version).app.zip")
+        else {
+            DispatchQueue.main.async { onFailure?() }
+            return
+        }
+        // Random, never-before-used work dir: nothing remote-controlled goes into a path
+        // we create and later delete, and there is no stale dir to remove first. Cleaned
+        // up on EVERY exit path (success falls through to exit(0) after the removal).
+        let work = FileManager.default.temporaryDirectory
+            .appendingPathComponent("viettelex-update-\(UUID().uuidString)", isDirectory: true)
         Task.detached {
             do {
                 let (tmp, response) = try await URLSession.shared.download(from: zipURL)
@@ -359,9 +389,6 @@ enum SelfUpdater {
                     throw NSError(domain: "SelfUpdater", code: 1,
                                   userInfo: [NSLocalizedDescriptionKey: "HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)"])
                 }
-                let work = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("viettelex-update-\(version)", isDirectory: true)
-                try? FileManager.default.removeItem(at: work)
                 try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
 
                 try runTool("/usr/bin/ditto", ["-xk", tmp.path, work.path])
@@ -411,6 +438,7 @@ enum SelfUpdater {
                     exit(0)   // macOS relaunches the IME (new binary) on demand
                 }
             } catch {
+                try? FileManager.default.removeItem(at: work)
                 await MainActor.run {
                     onFailure?()
                     let fail = NSAlert()

@@ -24,6 +24,12 @@ mkdir -p "$OUTDIR"
 if ! xcrun stapler validate "$APP" >/dev/null 2>&1; then
     echo "App is not notarized+stapled — run Scripts/notarize-install.sh first."; exit 1
 fi
+# The artifacts are NAMED after the source Info.plist; the stapled app must BE that
+# version, or the release ships an old binary under a new name.
+APP_VER=$(plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist")
+if [ "$APP_VER" != "$VER" ]; then
+    echo "Stapled app is $APP_VER but App/Resources/Info.plist says $VER — re-run Scripts/notarize-install.sh."; exit 1
+fi
 
 # TCC GUARD: the Accessibility grant is stored against the app's Designated
 # Requirement. As long as the DR stays identity-based (bundle id + team OU) a re-signed
