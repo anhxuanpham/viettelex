@@ -49,18 +49,43 @@ if [ "$UNSIGNED" = 0 ]; then for t in jsign osslsigncode; do need "$t"; done; fi
 
 echo "== VietTelex for Windows $VERSION"
 
+# ------------------------------------------------------------------ 0. signing config
+# Loaded BEFORE the build: VTX_EXPECTED_PUBLISHER is compiled into VietTelex.exe (the
+# self-updater's pinned signer, app/src/updater.cpp), so it must be known up front.
+# It is the certificate's subject CN — what `CertGetNameStringW(SIMPLE_DISPLAY)` returns
+# and what osslsigncode prints as `Subject: …/CN=<name>`. The updater FAILS CLOSED
+# without it, so a signed release that forgot it would never be able to update itself.
+VTX_EXPECTED_PUBLISHER="${VTX_EXPECTED_PUBLISHER:-}"
+if [ "$UNSIGNED" = 0 ]; then
+  if [ -f "$WIN/installer/signing.local.env" ]; then
+    # shellcheck disable=SC1091
+    set -a; . "$WIN/installer/signing.local.env"; set +a
+  fi
+  for v in VTX_SIGN_ENDPOINT VTX_SIGN_ACCOUNT VTX_SIGN_PROFILE VTX_EXPECTED_PUBLISHER; do
+    [ -n "${!v:-}" ] || { echo "signing target not configured: $v (or pass --unsigned)" >&2; exit 1; }
+  done
+fi
+
 # ------------------------------------------------------------------ 1. build
 if [ "$SKIP_BUILD" = 0 ]; then
   rm -rf "$DIST"
   mkdir -p "$DIST"
   echo "-- cross-compiling in $IMAGE"
-  docker run --rm -v "$ROOT:/src:ro" -v "$DIST:/out" "$IMAGE" sh /src/windows/scripts/cross-build.sh "$VERSION"
+  docker run --rm -v "$ROOT:/src:ro" -v "$DIST:/out" "$IMAGE" sh /src/windows/scripts/cross-build.sh "$VERSION" "$VTX_EXPECTED_PUBLISHER"
 fi
 for f in x86/VietTelexTIP$V.dll x64/VietTelexTIP$V.dll x64/VietTelex.exe arm64/VietTelex.exe \
          x64/VietTelexSetupHelper.exe arm64/VietTelexSetupHelper.exe \
          arm64/VietTelexTIP$V.dll arm64/VietTelexTIP_arm64$V.dll arm64/VietTelexTIP_x64$V.dll; do
   [ -f "$DIST/bin/$f" ] || { echo "missing build output bin/$f" >&2; exit 1; }
 done
+# The pinned publisher must really be IN the shipped app (catches --skip-build over an
+# older build made without it): it is embedded as a plain UTF-8 literal.
+if [ "$UNSIGNED" = 0 ]; then
+  for f in x64/VietTelex.exe arm64/VietTelex.exe; do
+    LC_ALL=C grep -aqF -- "$VTX_EXPECTED_PUBLISHER" "$DIST/bin/$f" \
+      || { echo "bin/$f was built without VTX_EXPECTED_PUBLISHER — rebuild without --skip-build" >&2; exit 1; }
+  done
+fi
 
 # Host-side generator/checker for the MSI registry rows (same core as the DLL).
 HOSTB="$DIST/host"
@@ -69,16 +94,6 @@ cmake --build "$HOSTB" --target vtx_regtable >/dev/null
 REGTABLE="$HOSTB/ime/vtx_regtable"
 
 # ------------------------------------------------------------------ signing helpers
-if [ "$UNSIGNED" = 0 ]; then
-  if [ -f "$WIN/installer/signing.local.env" ]; then
-    # shellcheck disable=SC1091
-    set -a; . "$WIN/installer/signing.local.env"; set +a
-  fi
-  for v in VTX_SIGN_ENDPOINT VTX_SIGN_ACCOUNT VTX_SIGN_PROFILE; do
-    [ -n "${!v:-}" ] || { echo "signing target not configured: $v (or pass --unsigned)" >&2; exit 1; }
-  done
-fi
-
 signing_token() {
   if [ -n "${AZURE_TENANT_ID:-}" ] && [ -n "${AZURE_CLIENT_ID:-}" ] && [ -n "${AZURE_CLIENT_SECRET:-}" ]; then
     curl -fsS -X POST "https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/token" \
@@ -120,6 +135,10 @@ verify() {  # verify <file>... — read the signature back off the bytes, with t
     grep -q "Signature verification: ok" <<<"$out" || { echo "$out" >&2; exit 1; }
     grep -q "Timestamp Server Signature verification: ok" <<<"$out" \
       || { echo "$out" >&2; echo "no valid timestamp: $f" >&2; exit 1; }
+    # Same name the shipped updater pins: if the certificate's CN ever changes, fail HERE
+    # rather than ship MSIs every installed copy will refuse as "bad signature".
+    grep -F "Subject" <<<"$out" | grep -qF -- "CN=${VTX_EXPECTED_PUBLISHER}" \
+      || { echo "$out" >&2; echo "signer CN is not '$VTX_EXPECTED_PUBLISHER': $f" >&2; exit 1; }
   done
 }
 

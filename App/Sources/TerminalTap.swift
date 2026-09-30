@@ -3209,7 +3209,9 @@ final class TerminalTapController {
         guard let caret = AXTextEdit.readCaret(), caret > 0 else { return }
         let window = min(caret, 24)
         guard let text = AXTextEdit.readString(at: caret - window, length: window) else { return }
-        guard text == text.precomposedStringWithCanonicalMapping else {
+        // Exact UTF-16 compare — `==` is canonical-equivalence and would let NFD through
+        // (see TelexInputController.tryReEditWord).
+        guard text.utf16.elementsEqual(text.precomposedStringWithCanonicalMapping.utf16) else {
             DebugLog.log("re-edit(tap) \(id ?? "?"): skipped (field text is not precomposed)")
             return
         }
@@ -3258,7 +3260,7 @@ final class TerminalTapController {
         let start = caret - 1 - wordLen                 // this ⌫ removes the boundary char
         guard start >= 0,
               let text = AXTextEdit.readString(at: start, length: wordLen),
-              text == word
+              text.utf16.elementsEqual(word.utf16)     // exact, not `==` (canonical)
         else {
             engine.reset()
             DebugLog.log("⌫ re-open(tap) \(id ?? "?"): skipped (screen disagrees)")

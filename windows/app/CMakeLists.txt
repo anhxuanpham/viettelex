@@ -38,6 +38,19 @@ if(WIN32)
   target_include_directories(VietTelex PRIVATE src ../ime/src)
   target_compile_definitions(VietTelex PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
                              _WIN32_WINNT=0x0A00 WINVER=0x0A00)
+  # Pinned Authenticode publisher for the self-updater (src/updater.cpp). Empty = the
+  # updater refuses every downloaded MSI (fail closed); release.sh always sets it.
+  set(VTX_EXPECTED_PUBLISHER "" CACHE STRING "Expected signer CN of update MSIs (UTF-8)")
+  if(NOT VTX_EXPECTED_PUBLISHER STREQUAL "")
+    string(FIND "${VTX_EXPECTED_PUBLISHER}" "\"" _vtx_q)
+    string(FIND "${VTX_EXPECTED_PUBLISHER}" "\\" _vtx_bs)
+    if(NOT _vtx_q EQUAL -1 OR NOT _vtx_bs EQUAL -1)
+      message(FATAL_ERROR "VTX_EXPECTED_PUBLISHER must not contain quotes or backslashes")
+    endif()
+    target_compile_definitions(VietTelex PRIVATE VTX_EXPECTED_PUBLISHER_UTF8="${VTX_EXPECTED_PUBLISHER}")
+  else()
+    message(STATUS "VTX_EXPECTED_PUBLISHER not set: this build's self-updater will refuse all MSIs")
+  endif()
   target_link_libraries(VietTelex PRIVATE vtx_app_core comctl32 comdlg32 shell32 advapi32 user32 gdi32
                         dwmapi uxtheme winhttp wintrust crypt32 ole32 oleaut32 uuid gdiplus msi)
   # MSI-only helper (Binary table): quit the app before files are replaced, move in-use

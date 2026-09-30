@@ -28,7 +28,7 @@ cmake -S windows -B build-x64 -A x64 && cmake --build build-x64 --config Release
 3. **Build MSIs.** It builds them with `wixl`. The ARM64 MSI is an x64-shaped database with the Template `Arm64;1033`.
 4. **Sign MSIs and verify.** It checks every signature with `osslsigncode` against `installer/microsoft-identity-verification-root-2020.pem`, then writes `SHA256SUMS`.
 
-The signing target comes from `VTX_SIGN_ENDPOINT`, `VTX_SIGN_ACCOUNT` and `VTX_SIGN_PROFILE`, set in the environment or in the gitignored `installer/signing.local.env`. The access token comes from `az login`, or in CI from `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET`. No secret is stored in the repo.
+The signing target comes from `VTX_SIGN_ENDPOINT`, `VTX_SIGN_ACCOUNT` and `VTX_SIGN_PROFILE`, set in the environment or in the gitignored `installer/signing.local.env`. Signed releases also need `VTX_EXPECTED_PUBLISHER`: the certificate's subject CN, compiled into `VietTelex.exe` as the only publisher the self-updater accepts. `release.sh` checks it against the actual signatures. A build without it (dev builds, `build.ps1` without `-DVTX_EXPECTED_PUBLISHER=...`) refuses every downloaded update and only offers the release page. The access token comes from `az login`, or in CI from `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET`. No secret is stored in the repo.
 
 ### MSI registration (no regsvr32)
 

@@ -288,7 +288,12 @@ public struct TelexEngine {
     ///   • non-Vietnamese text ("google" → keys "google" → composes "gôgle" ✗),
     ///   • a tone-placement style the current settings spell differently
     ///     ("hòa" on screen while `modernTone` produces "hoà" ✗),
-    ///   • anything with a character no keystroke can produce (digits, symbols, é/ñ…).
+    ///   • anything with a character no keystroke can produce (digits, symbols, é/ñ…),
+    ///   • DECOMPOSED (NFD) text ("ta\u{302}n"): the engine always composes NFC, and
+    ///     Swift's `String ==` / Character hashing are canonical-equivalence, so a plain
+    ///     `==` would ACCEPT it — then every later edit's ⌫ count (derived from the NFC
+    ///     buffer) would be short of what is really on screen, mangling the word.
+    ///     Hence the scalar-exact comparison below, not `==`.
     /// Refusing costs the user nothing (the word simply isn't re-editable); guessing
     /// would rewrite text they never asked to change.
     public mutating func seed(_ word: String) -> Bool {
@@ -297,7 +302,9 @@ public struct TelexEngine {
         guard let keys = Self.seedKeystrokes(for: word, vni: vniMode) else { return false }
         guard keys.count <= Self.capacity else { reset(); return false }
         for ch in keys { _ = feed(ch) }
-        guard composed == word else { reset(); return false }
+        guard composed.unicodeScalars.elementsEqual(word.unicodeScalars) else {
+            reset(); return false
+        }
         return true
     }
 

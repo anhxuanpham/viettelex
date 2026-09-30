@@ -1172,7 +1172,10 @@ final class TelexInputController: IMKInputController {
         guard let sub = client.attributedSubstring(from: NSRange(location: caret - window,
                                                                  length: window)) else { return }
         let text = sub.string
-        guard text == text.precomposedStringWithCanonicalMapping else {
+        // Exact UTF-16 compare, NOT `==`: Swift String equality is canonical-equivalence,
+        // so an NFD field ("ta\u{302}n") would pass `==` against its NFC form and the
+        // later ⌫ counts would fall short of what is really on screen.
+        guard text.utf16.elementsEqual(text.precomposedStringWithCanonicalMapping.utf16) else {
             DebugLog.log("re-edit \(id ?? "?"): skipped (field text is not precomposed)")
             return
         }
@@ -1235,7 +1238,7 @@ final class TelexInputController: IMKInputController {
         let start = sel.location - 1 - wordLen          // this ⌫ removes the boundary char
         guard start >= 0,
               let sub = client.attributedSubstring(from: NSRange(location: start, length: wordLen)),
-              sub.string == word                        // NFD field ⇒ mismatch ⇒ skip, as intended
+              sub.string.utf16.elementsEqual(word.utf16) // exact, not `==` (canonical): NFD field ⇒ skip
         else {
             engine.reset()
             DebugLog.log("⌫ re-open \(id ?? "?"): skipped (screen disagrees)")

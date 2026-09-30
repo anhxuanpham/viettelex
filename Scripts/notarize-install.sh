@@ -40,12 +40,21 @@ xcodegen generate >/dev/null 2>&1 || true
 # `ls | head -1` pick an OUTDATED build (shipped old icons/name once). Build
 # and install from ONE deterministic location.
 DERIVED="${TMPDIR:-/tmp}/viettelex-derived"
+APP="$DERIVED/Build/Products/Release/VietTelex.app"
+# Remove the previous product FIRST: with the old `| grep … || true` a FAILED build
+# still found last run's app here and signed/notarized/installed it as if new.
+rm -rf "$DERIVED/Build/Products/Release"
+set -o pipefail   # xcodebuild's failure must reach `set -e`, not vanish into `| grep`
 xcodebuild -project VietTelex.xcodeproj -scheme VietTelex \
            -configuration Release -destination 'platform=macOS' \
            -derivedDataPath "$DERIVED" \
-           build | grep -E "BUILD" || true
-APP="$DERIVED/Build/Products/Release/VietTelex.app"
+           build | { grep -E "BUILD" || true; }
+set +o pipefail   # scoped to the build: later pipes (spctl | head …) keep their old semantics
 [ -d "$APP" ] || { echo "build product not found: $APP"; exit 1; }
+SRC_VER=$(plutil -extract CFBundleShortVersionString raw App/Resources/Info.plist)
+APP_VER=$(plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist")
+[ "$SRC_VER" = "$APP_VER" ] || {
+  echo "built app is $APP_VER but App/Resources/Info.plist says $SRC_VER — refusing"; exit 1; }
 
 echo "→ cleaning stray legacy code seal + Developer ID sign + hardened runtime"
 # xcodebuild leaves a legacy top-level Contents/CodeResources that no valid app

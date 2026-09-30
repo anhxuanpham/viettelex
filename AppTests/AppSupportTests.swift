@@ -53,6 +53,19 @@ final class AppSupportTests: XCTestCase {
         XCTAssertFalse(UpdateCheck.currentVersion().isEmpty)
     }
 
+    /// Remote version strings reach a download URL and (formerly) a temp-dir path before
+    /// the signature gate — only plain dotted digits may pass the parse boundary.
+    func testRemoteVersionValidation() {
+        for ok in ["1", "1.8", "1.8.4", "1.8.4.1", "10.20.300"] {
+            XCTAssertTrue(UpdateCheck.isValidVersion(ok), ok)
+        }
+        for bad in ["", ".", "1.", ".1", "1..2", "1.2.3.4.5", "v1.8.4", "1.8.4-beta",
+                    "9.0/../../../../tmp/x", "1.8 4", "1.8.4\n", "１.８", "1.2.3456789",
+                    String(repeating: "1.", count: 20) + "1"] {
+            XCTAssertFalse(UpdateCheck.isValidVersion(bad), bad.debugDescription)
+        }
+    }
+
     func testReleaseNotesSanitizing() {
         XCTAssertNil(UpdateCheck.sanitizeNotes(nil))
         XCTAssertNil(UpdateCheck.sanitizeNotes(""))
